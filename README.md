@@ -11,9 +11,9 @@
 </p>
 
 <p align="center">
-  <img alt="Violentmonkey Supported" src="https://img.shields.io/badge/Violentmonkey-Supported-4C8BF5?style=flat-square">
-  <img alt="Tampermonkey Supported" src="https://img.shields.io/badge/Tampermonkey-Supported-1C7ED6?style=flat-square">
-  <img alt="Chrome Supported" src="https://img.shields.io/badge/Chrome-Supported-4285F4?style=flat-square&logo=googlechrome&logoColor=white">
+  <img alt="Violentmonkey Supported" src="https://img.shields.io/badge/Violentmonkey-Supported-7C3AED?style=flat-square">
+  <img alt="Tampermonkey Supported" src="https://img.shields.io/badge/Tampermonkey-Supported-00A67E?style=flat-square">
+  <img alt="Chrome Supported" src="https://img.shields.io/badge/Chrome-Supported-34A853?style=flat-square&logo=googlechrome&logoColor=white">
   <img alt="Firefox Supported" src="https://img.shields.io/badge/Firefox-Supported-FF7139?style=flat-square&logo=firefoxbrowser&logoColor=white">
   <img alt="PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/Code-PolyForm%20NC%201.0.0-6B7280?style=flat-square">
   <img alt="CC BY-NC-SA 4.0" src="https://img.shields.io/badge/Assets-CC%20BY--NC--SA%204.0-1769AA?style=flat-square">
@@ -25,7 +25,7 @@
   <a href="https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js">
     <img alt="Install Dropper" src="https://img.shields.io/badge/Install-Dropper-9147FF?style=flat-square">
   </a>
-  <img alt="Version 2.5.0" src="https://img.shields.io/badge/version-2.5.1-22C55E?style=flat-square">
+  <img alt="Version 2.5.0" src="https://img.shields.io/badge/version-2.5.2-22C55E?style=flat-square">
   <a href="https://github.com/ExtraPotions/Dropper/releases">
     <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/ExtraPotions/Dropper/total?style=flat-square&label=Downloads">
   </a>
@@ -35,6 +35,7 @@
 
 - Tracks Twitch-credited Drop progress and watch time.
 - Redeems completed Twitch Drops and claims channel point bonus chests.
+- Skips subscription-required Drops and continues with watch-time rewards.
 - Keeps eligible streams active while Twitch is in the background.
 - Maintains a Stream Queue of eligible backup channels and can switch when progress stalls or a stream goes offline.
 - Moves to the next eligible game after the current Drop is completed.
