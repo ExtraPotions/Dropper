@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.5.9
+// @version      2.5.10
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,17 +27,29 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.5.9";
+  const APP_VERSION = "2.5.10";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
+  const PROGRESS_CARD_STATE_KEY = "dropper-progress-card-collapsed";
+  const HANDOFF_STAGE_TIMEOUT_MS = 45 * 1000;
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
-  const CURRENT_CHANGELOG = [
-    "Matches Dropper's width to Twitch's visible chat/right column.",
-    "Automatically adapts when the Twitch chat panel is resized.",
-    "Collapsed progress cards still show full details on hover.",
-    "Keeps the menu and progress stack at the same compact width.",
-  ];
+  const RELEASE_NOTES = {
+    "2.5.10": [
+      "Adds stale-progress warnings before a Drop is considered stalled.",
+      "Retries another eligible game when a Drops directory handoff times out.",
+      "Remembers the progress card's manual collapsed state across navigation.",
+      "Adds adaptive hover placement and expanded diagnostics.",
+    ],
+    "2.5.9": [
+      "Matches Dropper's width to Twitch's visible chat/right column.",
+      "Automatically adapts when the Twitch chat panel is resized.",
+    ],
+    "2.5.8": [
+      "Restores expanded Drop details as a hover preview while collapsed.",
+      "Changes the Chrome compatibility badge to golden-yellow.",
+    ],
+  };
   const DEFAULTS = {
     claimBonus: true,
     keepTabActive: true,
@@ -121,6 +133,10 @@
   let lastInventoryCampaigns = [];
   let chatWidthObserver = null;
   let chatDomObserver = null;
+  let lastGqlPollAt = 0;
+  let lastGqlSuccessAt = 0;
+  let lastGqlError = "";
+  let lastTwitchGqlAt = 0;
 
   hookAuth(page);
   if (settings.keepTabActive) installKeepTabActive(page);
@@ -254,6 +270,7 @@
   }
 
   function ingestTwitchGqlPayload(payload) {
+    lastTwitchGqlAt = Date.now();
     const rows = Array.isArray(payload) ? payload : [payload];
     let inventoryCampaigns = null;
 
@@ -494,14 +511,16 @@
     return remaining[0] || null;
   }
 
-  function pickNextGameDrop(campaigns, completedGame) {
+  function pickNextGameDrop(campaigns, completedGame, excludedGames = []) {
     const previous = cleanText(completedGame).toLowerCase();
+    const excluded = new Set((excludedGames || []).map((game) => cleanText(game).toLowerCase()).filter(Boolean));
     const next = [];
     const now = Date.now();
 
     for (const campaign of campaigns || []) {
       const game = campaign.game?.displayName || campaign.game?.name || campaign.name || "";
-      if (!game || game.toLowerCase() === previous) continue;
+      const normalizedGame = cleanText(game).toLowerCase();
+      if (!game || normalizedGame === previous || excluded.has(normalizedGame)) continue;
 
       const drops = campaign.timeBasedDrops || campaign.drops || [];
       for (const drop of drops) {
@@ -614,9 +633,28 @@
     const pending = readSession(NEXT_GAME_KEY, null);
     if (!pending || pending.stage !== "directory" || !isDirectoryCategoryPage()) return false;
 
+    const stageStartedAt = Number(pending.stageStartedAt || pending.startedAt || Date.now());
+    const stageAge = Date.now() - stageStartedAt;
+    if (stageAge > HANDOFF_STAGE_TIMEOUT_MS) {
+      const skippedGames = [...new Set([...(pending.skippedGames || []), pending.targetGame].filter(Boolean))];
+      writeSession(NEXT_GAME_KEY, {
+        ...pending,
+        stage: "retry",
+        targetGame: "",
+        targetSlug: "",
+        skippedGames,
+        stageStartedAt: Date.now(),
+      });
+      setStatus(`No Drops Stream Found For ${pending.targetGame || "Target Game"} · Trying Next Game`);
+      notifyUser(`Skipping ${pending.targetGame || "Unavailable Game"} · Trying Next Eligible Game`);
+      location.href = INVENTORY_URL;
+      return true;
+    }
+
     const href = findEligibleDirectoryStream(pending.targetGame || "");
     if (!href) {
-      setStatus(`Finding A Drops Stream For ${pending.targetGame || "Next Game"}`);
+      const secondsLeft = Math.max(0, Math.ceil((HANDOFF_STAGE_TIMEOUT_MS - stageAge) / 1000));
+      setStatus(`Finding A Drops Stream For ${pending.targetGame || "Next Game"} · ${secondsLeft}s`);
       return false;
     }
 
@@ -704,7 +742,7 @@
       return false;
     }
 
-    const next = pickNextGameDrop(campaigns, pending.completedGame);
+    const next = pickNextGameDrop(campaigns, pending.completedGame, pending.skippedGames || []);
     if (!next) {
       writeSession(NEXT_GAME_KEY, null);
       setStatus("No More Eligible Games");
@@ -733,6 +771,8 @@
         stage: "directory",
         targetGame: next.game,
         targetSlug: next.gameSlug || "",
+        skippedGames: pending.skippedGames || [],
+        stageStartedAt: Date.now(),
         startedAt: pending.startedAt || Date.now(),
       });
       setStatus(`${pending.completedGame} Complete · Finding ${next.game} Stream`);
@@ -801,6 +841,7 @@
   }
 
   async function pollGqlDrops() {
+    lastGqlPollAt = Date.now();
     try {
       if (!getToken()) {
         setStatus("Waiting for Twitch login…");
@@ -811,6 +852,8 @@
       const requests = [{ op: "inventory" }];
       if (login) requests.push({ op: "streamInfo", variables: { channel: login } });
       const first = await gql(requests);
+      lastGqlSuccessAt = Date.now();
+      lastGqlError = "";
       const inventoryCampaigns = first[0]?.data?.currentUser?.inventory?.dropCampaignsInProgress || [];
       lastInventoryCampaigns = inventoryCampaigns;
       if (continueToNextGame(inventoryCampaigns)) return;
@@ -875,6 +918,7 @@
         refreshDropCard();
       }
     } catch (error) {
+      lastGqlError = error?.message || String(error);
       setStatus(error.message === "Not logged in" ? "Waiting for Twitch login…" : `Drops update failed: ${error.message}`);
       refreshDropCard();
     }
@@ -1512,6 +1556,10 @@
         background:#18181b; border-right:1px solid #9147ff66; border-bottom:1px solid #9147ff66;
         transform:translateX(-50%) rotate(45deg);
       }
+      #tdh-drop-card.collapsed.preview-below .expanded-content { top:calc(100% + 8px); bottom:auto; }
+      #tdh-drop-card.collapsed.preview-below .expanded-content::after {
+        top:-6px; bottom:auto; border:0; border-left:1px solid #9147ff66; border-top:1px solid #9147ff66;
+      }
       #tdh-drop-card:not(.collapsed) .compact-line { display:none; }
       .compact-line { min-height:48px; padding:0 10px; display:grid; grid-template-columns:6px minmax(0,1fr) auto auto; gap:7px; align-items:center; cursor:help; }
       .compact-dot { width:6px; height:6px; border-radius:50%; background:#9147ff; }
@@ -1551,6 +1599,9 @@
       .drop-percent { font-size:10px; font-weight:800; color:#bf94ff; min-width:28px; text-align:right; }
       .drop-meta { font-size:8px; color:#9c9ca5; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .drop-status-row { margin-top:4px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:8px; color:#a7a7b0; }
+      .progress-age { color:#a7a7b0; }
+      .progress-age.warn { color:#f59e0b; }
+      .progress-age.bad { color:#ef4444; font-weight:800; }
       #tdh-settings-launcher {
         position:relative; width:48px; min-width:48px; min-height:48px; padding:0; margin:0;
         display:grid; place-items:center; border:1px solid #9147ff77; border-radius:0 12px 12px 0;
@@ -1732,6 +1783,7 @@
     bindSwitches();
     bindPanels();
     bindDropperControls();
+    setProgressCardCollapsed(localStorage.getItem(PROGRESS_CARD_STATE_KEY) === "true", false);
     renderSwitches();
     applyMotionSetting();
     refreshDropCard();
@@ -1871,23 +1923,31 @@
     let label = "Idle", cls = "state-pill";
     if (!getToken()) { label = "Login Required"; cls += " warn"; }
     else if (currentDrop?.percent >= 100) { label = currentDrop.isClaimed ? "Claimed ✓" : "Claim Ready"; cls += " good"; }
-    else if (currentDrop && staleMs > 5 * 60 * 1000) { label = "Stalled"; cls += " warn"; }
+    else if (currentDrop && staleMs > 5 * 60 * 1000) { label = "Stalled"; cls += " bad"; }
+    else if (currentDrop && staleMs > 90 * 1000) { label = "Delayed"; cls += " warn"; }
     else if (currentDrop && settings.backgroundEarning) { label = "BG Earning"; cls += " good"; }
     else if (currentDrop) { label = "Earning"; cls += " good"; }
     if (reward) reward.textContent = currentDrop?.name || "Waiting For Drop";
     if (extra) extra.textContent = currentDrop ? `${currentDrop.percent || 0}% · ${Math.max(0, currentDrop.remainingMinutes || 0)}m` : "";
     if (state) { state.textContent = label; state.className = cls; }
     if (detail) { detail.textContent = label; detail.className = cls; }
-    if (updated) updated.textContent = currentDrop ? `Updated ${Math.max(0, Math.floor(staleMs / 1000))}s Ago` : "";
+    if (updated) {
+      updated.textContent = currentDrop ? `Updated ${Math.max(0, Math.floor(staleMs / 1000))}s Ago` : "";
+      updated.className = "progress-age";
+      if (currentDrop && staleMs > 5 * 60 * 1000) updated.classList.add("bad");
+      else if (currentDrop && staleMs > 90 * 1000) updated.classList.add("warn");
+    }
     const dot = ui.shadow.getElementById("tdh-compact-dot");
-    if (dot) dot.style.background = label === "Stalled" ? "#f59e0b" : label.includes("Earning") || label.includes("Claim") ? "#22c55e" : "#9147ff";
+    if (dot) {
+      dot.style.background = label === "Stalled" ? "#ef4444" : label === "Delayed" ? "#f59e0b" : label.includes("Earning") || label.includes("Claim") ? "#22c55e" : "#9147ff";
+    }
   }
 
   function applyMotionSetting() {
     ui?.cluster?.classList.toggle("reduce-motion", Boolean(settings.reduceMotion));
   }
 
-  function setProgressCardCollapsed(collapsed) {
+  function setProgressCardCollapsed(collapsed, persist = false) {
     if (!ui) return;
     const card = ui.shadow.getElementById("tdh-drop-card");
     const control = ui.shadow.getElementById("tdh-card-collapse");
@@ -1899,7 +1959,20 @@
     control.setAttribute("aria-expanded", String(expanded));
     control.setAttribute("aria-label", expanded ? "Collapse Progress Card" : "Expand Progress Card");
     control.title = expanded ? "Collapse Progress Card" : "Expand Progress Card";
+    if (persist) localStorage.setItem(PROGRESS_CARD_STATE_KEY, String(Boolean(collapsed)));
     requestAnimationFrame(layoutChrome);
+  }
+
+  function positionCollapsedPreview() {
+    if (!ui) return;
+    const card = ui.shadow.getElementById("tdh-drop-card");
+    const preview = card?.querySelector(".expanded-content");
+    if (!card?.classList.contains("collapsed") || !preview) return;
+    const rect = card.getBoundingClientRect();
+    const previewHeight = preview.offsetHeight || 120;
+    const spaceAbove = rect.top - 8;
+    const spaceBelow = window.innerHeight - rect.bottom - 8;
+    card.classList.toggle("preview-below", spaceAbove < previewHeight + 12 && spaceBelow > spaceAbove);
   }
 
   function scheduleAutoHide() {
@@ -1921,7 +1994,7 @@
     });
     s.getElementById("tdh-card-collapse")?.addEventListener("click", () => {
       const card = s.getElementById("tdh-drop-card");
-      setProgressCardCollapsed(!card.classList.contains("collapsed"));
+      setProgressCardCollapsed(!card.classList.contains("collapsed"), true);
     });
     s.getElementById("tdh-refresh-now")?.addEventListener("click", () => pollGqlDrops());
     const diag = s.getElementById("tdh-diagnostics");
@@ -1935,7 +2008,11 @@
     const pref = s.getElementById("tdh-queue-preference"); pref.value = settings.queuePreference; pref.addEventListener("change", () => { settings.queuePreference = pref.value; saveSettings(); refreshQueueList(); });
     const pause = s.getElementById("tdh-pause-switch"); pause.value = String(settings.pauseAutoSwitchMinutes || 0); pause.addEventListener("change", () => { settings.pauseAutoSwitchMinutes = Number(pause.value); pauseAutoSwitchUntil = settings.pauseAutoSwitchMinutes ? Date.now() + settings.pauseAutoSwitchMinutes * 60000 : 0; saveSettings(); });
     const card = s.getElementById("tdh-drop-card");
-    card.addEventListener("mouseenter", () => clearTimeout(autoHideTimer));
+    card.addEventListener("mouseenter", () => {
+      clearTimeout(autoHideTimer);
+      positionCollapsedPreview();
+    });
+    card.addEventListener("focusin", positionCollapsedPreview);
     card.addEventListener("mouseleave", scheduleAutoHide);
     s.getElementById("tdh-update-dismiss")?.addEventListener("click", hideUpdateNotice);
   }
@@ -2000,7 +2077,7 @@
         `Updated from v${previous} to v${APP_VERSION}.`,
         "Got It",
         hideUpdateNotice,
-        { kicker: "Update Complete", version: APP_VERSION, details: CURRENT_CHANGELOG },
+        { kicker: "Update Complete", version: APP_VERSION, details: RELEASE_NOTES[APP_VERSION] || [] },
       );
     }
     localStorage.setItem(LAST_VERSION_KEY, APP_VERSION);
@@ -2039,7 +2116,39 @@
   }
 
   function dropperDebugSnapshot() {
-    return { version:APP_VERSION, tokenCaptured:Boolean(getToken()), deviceCaptured:Boolean(capturedDevice || cookie("unique_id")), watchingLogin:watchingLogin(), currentDrop, lastProgress, lastProgressAt:new Date(lastProgressAt).toISOString(), queueEnabled:settings.queueEnabled, queueCandidates:discoverQueueCandidates().map((item) => item.login), autoSwitchPaused:isAutoSwitchPaused(), statusText };
+    const now = Date.now();
+    const handoff = readSession(NEXT_GAME_KEY, null);
+    const card = ui?.shadow?.getElementById("tdh-drop-card");
+    const chat = findTwitchChatColumn();
+    return {
+      version: APP_VERSION,
+      tokenCaptured: Boolean(getToken()),
+      deviceCaptured: Boolean(capturedDevice || cookie("unique_id")),
+      watchingLogin: watchingLogin(),
+      currentDrop,
+      progressAgeSeconds: Math.max(0, Math.floor((now - lastProgressAt) / 1000)),
+      lastProgress,
+      lastProgressAt: new Date(lastProgressAt).toISOString(),
+      gql: {
+        lastPollAt: lastGqlPollAt ? new Date(lastGqlPollAt).toISOString() : null,
+        lastSuccessAt: lastGqlSuccessAt ? new Date(lastGqlSuccessAt).toISOString() : null,
+        lastInterceptedTwitchResponseAt: lastTwitchGqlAt ? new Date(lastTwitchGqlAt).toISOString() : null,
+        lastError: lastGqlError || null,
+      },
+      handoff: handoff ? {
+        stage: handoff.stage || "claim-check",
+        targetGame: handoff.targetGame || null,
+        skippedGames: handoff.skippedGames || [],
+        ageSeconds: Math.max(0, Math.floor((now - Number(handoff.startedAt || now)) / 1000)),
+        stageAgeSeconds: Math.max(0, Math.floor((now - Number(handoff.stageStartedAt || handoff.startedAt || now)) / 1000)),
+      } : null,
+      queueEnabled: settings.queueEnabled,
+      queueCandidates: discoverQueueCandidates().map((item) => item.login),
+      autoSwitchPaused: isAutoSwitchPaused(),
+      progressCardCollapsed: Boolean(card?.classList.contains("collapsed")),
+      chatWidth: chat ? Math.round(chat.getBoundingClientRect().width) : null,
+      statusText,
+    };
   }
 
   function layoutChrome() {
