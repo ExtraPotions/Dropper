@@ -998,3 +998,620 @@
           } catch (_) {
             /* ignore */
           }
+        };
+        return new NativeIO(wrapped, options);
+      };
+      IOProxy.prototype = NativeIO.prototype;
+      uw.IntersectionObserver = IOProxy;
+    }
+
+    uw.setInterval(() => {
+      try {
+        uw.dispatchEvent(new uw.MouseEvent("mousemove", { bubbles: true }));
+      } catch (_) {
+        /* ignore */
+      }
+    }, 30000);
+
+    try {
+      uw.navigator.wakeLock?.request?.("screen").catch(() => {});
+    } catch (_) {
+      /* ignore */
+    }
+
+    let lastGateClick = 0;
+    const clickGate = (selector) => {
+      const now = Date.now();
+      if (now - lastGateClick < 3000) return;
+      const button = uw.document.querySelector(selector);
+      const target = button?.matches?.("button") ? button : button?.querySelector?.("button:not([disabled])");
+      if (target && !target.disabled) {
+        lastGateClick = now;
+        target.click();
+      }
+    };
+    new uw.MutationObserver(() => {
+      clickGate('[data-a-target="content-classification-gate-overlay-start-watching-button"]');
+      clickGate('[data-a-target="player-overlay-content-gate"]');
+    }).observe(uw.document.documentElement || uw.document, { childList: true, subtree: true, attributes: true });
+  }
+
+  function switchHtml(id, label, description, on) {
+    const tip = String(description || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+    return `
+      <div class="fl-switch">
+        <span class="fl-switch-text has-tooltip" data-tip="${tip}" id="${id}-label">${label}</span>
+        <button id="${id}" type="button" class="fl-switch-input toggleSwitch" role="switch" aria-labelledby="${id}-label" aria-checked="${on ? "true" : "false"}"></button>
+      </div>`;
+  }
+
+  function css() {
+    return `
+      :host { all: initial; }
+      * { box-sizing: border-box; }
+      .cluster {
+        position: fixed; right: 12px; z-index: 2147483001;
+        display: flex; flex-direction: column-reverse; align-items: flex-end;
+        width: max-content; max-width: calc(100vw - 24px); gap: 8px;
+        font: 13px/1.42 ui-sans-serif, system-ui, "Segoe UI", sans-serif; color: #efeff1;
+      }
+      .cluster.open-up { flex-direction: column; }
+      .badge-row { display:flex; align-items:stretch; width:max-content; }
+      #tdh-drop-card {
+        position: relative; width: 292px; max-width: min(292px, calc(100vw - 76px));
+        background:#18181b; border:1px solid #9147ff66; border-right:0;
+        border-radius:12px 0 0 12px; box-shadow:0 8px 30px #0007; overflow:hidden;
+      }
+      #tdh-drop-card.collapsed { width: 270px; }
+      #tdh-drop-card.collapsed .expanded-content { display:none; }
+      #tdh-drop-card:not(.collapsed) .compact-line { display:none; }
+      .compact-line { min-height:48px; padding:0 10px; display:grid; grid-template-columns:6px minmax(0,1fr) auto auto; gap:7px; align-items:center; }
+      .compact-dot { width:6px; height:6px; border-radius:50%; background:#9147ff; }
+      .compact-reward { font-size:10px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .compact-extra { font-size:9px; color:#b8b8c0; white-space:nowrap; }
+      .state-pill { display:inline-flex; align-items:center; border:1px solid #34343a; border-radius:999px; padding:1px 5px; font-size:8px; font-weight:800; color:#d0d0d5; background:#1c1c21; white-space:nowrap; }
+      .state-pill.good { color:#c8ffd7; border-color:#22c55e66; background:#22c55e18; }
+      .state-pill.warn { color:#ffe5a8; border-color:#f59e0b66; background:#f59e0b18; }
+      .state-pill.bad { color:#ffd1d1; border-color:#ef444466; background:#ef444418; }
+      .card-collapse { position:absolute; top:4px; right:5px; width:22px; height:22px; border:1px solid #34343b; border-radius:6px; background:#151519; color:#adadb8; cursor:pointer; z-index:3; }
+      .card-collapse:hover { border-color:#9147ff; color:#fff; }
+      .stream-info { padding:7px 9px 6px; display:grid; grid-template-columns:32px minmax(0,1fr); gap:7px; align-items:center; }
+      .stream-info-hidden { display:none; }
+      .stream-avatar { width:32px; height:32px; border-radius:50%; object-fit:cover; grid-row:1 / span 2; }
+      .stream-head { min-width:0; display:flex; align-items:center; gap:5px; }
+      .stream-channel { font-size:11px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .stream-live { font-size:8px; font-weight:900; background:#eb0400; color:#fff; border-radius:4px; padding:1px 4px; }
+      .stream-title { display:none; }
+      .stream-game { font-size:9px; color:#adadb8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .stream-badges { grid-column:2; display:flex; gap:4px; flex-wrap:wrap; font-size:8px; color:#8f8f98; }
+      .stream-badge { padding:1px 4px; border:1px solid #34343b; border-radius:99px; }
+      .stream-badge.drops-enabled { color:#d7ffd7; border-color:#22c55e66; background:#22c55e18; }
+      .stream-dot { color:#5f5f68; }
+      .drop-section { padding:7px 9px 8px; border-top:1px solid #29292f; }
+      .drop-kicker { font-size:8px; color:#bf94ff; font-weight:900; letter-spacing:.07em; text-transform:uppercase; margin-bottom:2px; }
+      .drop-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding-right:24px; }
+      .drop-name { font-size:11px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .drop-game { display:none; }
+      .drop-bar-row { margin-top:6px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:7px; align-items:center; }
+      .drop-bar { height:6px; border-radius:99px; background:#2b2b31; overflow:hidden; }
+      .drop-bar > span { display:block; height:100%; width:0; background:#9147ff; transition:.2s width,.2s background; }
+      .drop-percent { font-size:10px; font-weight:800; color:#bf94ff; min-width:28px; text-align:right; }
+      .drop-meta { font-size:8px; color:#9c9ca5; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .drop-status-row { margin-top:4px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:8px; color:#a7a7b0; }
+      #tdh-settings-launcher {
+        position:relative; width:48px; min-width:48px; min-height:48px; padding:0; margin:0;
+        display:grid; place-items:center; border:1px solid #9147ff77; border-radius:0 12px 12px 0;
+        background:#18181b; box-shadow:0 8px 30px #0007; cursor:grab; touch-action:none; user-select:none;
+      }
+      #tdh-settings-launcher:hover, #tdh-settings-launcher[aria-expanded="true"] { border-color:#9147ff; background:#202026; }
+      #tdh-settings-launcher .ring { position:absolute; top:50%; left:50%; width:40px; height:40px; transform:translate(-50%,-50%); }
+      .track { fill:none; stroke:#303038; stroke-width:3; }
+      .fill { fill:none; stroke:#9147ff; stroke-width:3; stroke-linecap:round; transform:rotate(-90deg); transform-origin:18px 18px; transition:.2s stroke; }
+      #tdh-settings-launcher .icon { width:22px; height:22px; pointer-events:none; position:relative; z-index:1; }
+      #tdh-tools-dock {
+        display:none; width:292px; max-width:calc(100vw - 24px); max-height:min(72vh,560px); overflow:auto;
+        padding:9px; background:#111114; border:1px solid #2f2f35; border-radius:14px; box-shadow:0 18px 50px #0008; color-scheme:dark;
+      }
+      #tdh-tools-dock.fl-rail-open { display:block; }
+      .menu-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+      .header-brand { display:flex; align-items:center; gap:9px; min-width:0; }
+      .header-icon { width:48px; height:48px; flex:0 0 48px; }
+      .header-icon svg { width:48px; height:48px; display:block; }
+      .header-copy { min-width:0; }
+      #tdh-rail-title { margin:0; font-size:15px; font-weight:800; line-height:1.1; }
+      #tdh-rail-subtitle { margin-top:2px; font-size:9px; color:#adadb8; white-space:nowrap; }
+      #tdh-rail-close { width:30px; height:30px; border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0; cursor:pointer; font:18px/1 Arial,sans-serif; }
+      #tdh-rail-close:hover { border-color:#9147ff; color:#fff; background:#211b2b; }
+      .header-divider { height:1px; width:100%; margin:7px 0; background:linear-gradient(90deg,transparent,#9147ff88 50%,transparent); }
+      .update-notice { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:7px; align-items:center; margin-bottom:7px; padding:7px 8px; border:1px solid #9147ff66; border-radius:8px; background:#9147ff18; }
+      .update-notice[hidden] { display:none; }
+      .update-title { font-size:10px; font-weight:800; }
+      .update-text { margin-top:1px; font-size:9px; color:#adadb8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .update-action, .update-dismiss, .life-btn { border:1px solid #34343b; border-radius:7px; background:#18181b; color:#efeff1; cursor:pointer; }
+      .update-action { height:25px; padding:0 8px; border-color:#9147ff; background:#772ce8; font-size:9px; font-weight:800; }
+      .update-dismiss { width:25px; height:25px; padding:0; color:#adadb8; }
+      .update-action:hover, .update-dismiss:hover, .life-btn:hover { border-color:#9147ff; color:#fff; }
+      .toast { margin-bottom:7px; padding:6px 8px; border:1px solid #34343b; border-radius:8px; background:#18181b; color:#efeff1; font-size:9px; box-shadow:0 8px 24px #0006; }
+      .toast[hidden] { display:none; }
+      .fl-tool-panel { position:relative; margin-top:5px; border:1px solid #27272d; background:#19191e; border-radius:9px; overflow:visible; }
+      .fl-tool-header { display:flex; justify-content:space-between; align-items:center; min-height:29px; padding:5px 8px; cursor:pointer; border-radius:8px; }
+      .fl-tool-header:hover { background:#9147ff18; }
+      .fl-tool-title { font-size:12px; font-weight:700; }
+      .fl-tool-chevron { background:none; border:0; color:#adadb8; cursor:pointer; }
+      .fl-tool-body { padding:0 10px 8px; }
+      .fl-tool-hidden { display:none !important; }
+      .fl-switch, .mini-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 0; }
+      .fl-switch + .fl-switch, .mini-row + .mini-row { border-top:1px solid #26262b; }
+      .fl-switch-text, .mini-row > span { min-width:0; font-size:11px; }
+      .toggleSwitch { position:relative; flex:none; width:34px; height:20px; border:0; border-radius:20px; background:#626873; cursor:pointer; }
+      .toggleSwitch::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.15s transform; }
+      .toggleSwitch[aria-checked="true"] { background:#9147ff; }
+      .toggleSwitch[aria-checked="true"]::after { transform:translateX(14px); }
+      .life-btn { width:100%; min-height:28px; margin-top:6px; font-size:11px; }
+      .select-lite { background:#111114; color:#efeff1; border:1px solid #34343b; border-radius:6px; padding:4px 6px; font-size:10px; }
+      .compact-inventory { display:none; margin-top:6px; border:1px solid #9147ff55; background:#111114; border-radius:9px; overflow:hidden; }
+      .compact-inventory.open { display:block; }
+      .inventory-head { padding:7px 8px; border-bottom:1px solid #2a2a30; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+      .inventory-head strong { font-size:11px; }
+      .inventory-head span { font-size:9px; color:#adadb8; }
+      .inventory-list { padding:3px 7px 6px; }
+      .inventory-item { display:grid; grid-template-columns:24px minmax(0,1fr) auto; gap:7px; align-items:center; padding:6px 0; }
+      .inventory-item + .inventory-item { border-top:1px solid #242429; }
+      .reward-thumb { width:24px; height:24px; border-radius:6px; background:linear-gradient(135deg,#9147ff,#5c16c5); display:grid; place-items:center; font-size:9px; font-weight:900; color:#fff; }
+      .reward-copy { min-width:0; }
+      .reward-name { font-size:10px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .reward-meta { margin-top:1px; font-size:8px; color:#adadb8; }
+      .reward-state { font-size:8px; font-weight:800; color:#bf94ff; white-space:nowrap; }
+      .queue-list { display:block; }
+      .diag { display:none; margin-top:6px; padding:7px; border:1px solid #2b2b31; border-radius:7px; background:#101014; font:9px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; color:#b8b8c0; white-space:pre-wrap; }
+      .diag.open { display:block; }
+      .has-tooltip { position:relative; }
+      .has-tooltip::after { content:attr(data-tip); position:absolute; left:0; top:calc(100% + 4px); width:190px; padding:6px 8px; border:1px solid #3b3b44; border-radius:7px; background:#0e0e10; color:#efeff1; box-shadow:0 6px 18px #0007; font-size:10px; line-height:1.35; opacity:0; pointer-events:none; z-index:999; transform:translateY(-2px); transition:.12s opacity,.12s transform; }
+      .has-tooltip:hover::after, .has-tooltip:focus-visible::after { opacity:1; transform:translateY(0); }
+      .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation:none !important; transition:none !important; }
+      @media (max-width:700px) { #tdh-tools-dock { width:min(292px,calc(100vw - 24px)); } #tdh-drop-card { width:min(292px,calc(100vw - 76px)); } }
+    `;
+  }
+
+  function mountUi() {
+    if (ui) return ui;
+    const host = document.createElement("div");
+    host.id = "tdh-root";
+    const shadow = host.attachShadow({ mode: "open" });
+    shadow.innerHTML = `
+      <style>${css()}</style>
+      <div class="cluster" id="tdh-cluster">
+        <aside id="tdh-tools-dock" role="region" aria-labelledby="tdh-rail-title">
+          <div class="menu-head">
+            <div class="header-brand">
+              <div class="header-icon" aria-hidden="true">
+                <svg viewBox="0 0 1024 1024">
+                  <defs><linearGradient id="dh-border" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#B9BBC7"/><stop offset="52%" stop-color="#8A6BE8"/><stop offset="100%" stop-color="#9147FF"/></linearGradient></defs>
+                  <rect x="32" y="32" width="960" height="960" rx="185" fill="#111114"/>
+                  <rect x="42" y="42" width="940" height="940" rx="175" fill="none" stroke="url(#dh-border)" stroke-width="28"/>
+                  <polygon points="494,210 285,500 430,590" fill="#D9B5FF"/><polygon points="494,210 430,590 494,470" fill="#9B5AF9"/><polygon points="285,500 285,685 430,590" fill="#8C39F2"/><polygon points="285,685 494,842 430,590" fill="#5417B3"/><polygon points="430,590 494,470 494,842" fill="#7428E8"/>
+                  <polygon points="530,210 739,500 594,590" fill="#AEB0C2"/><polygon points="530,210 594,590 530,470" fill="#6A6E87"/><polygon points="739,500 739,685 594,590" fill="#4E5268"/><polygon points="739,685 530,842 594,590" fill="#242633"/><polygon points="594,590 530,470 530,842" fill="#3F4254"/><rect x="502" y="205" width="20" height="650" rx="10" fill="#101017"/>
+                </svg>
+              </div>
+              <div class="header-copy"><h2 id="tdh-rail-title">Dropper</h2><div id="tdh-rail-subtitle">Twitch Drops: Track and Redeem</div></div>
+            </div>
+            <button type="button" id="tdh-rail-close" aria-label="Close">×</button>
+          </div>
+          <div class="header-divider"></div>
+          <div class="toast" id="tdh-toast" hidden></div>
+          <div class="update-notice" id="tdh-update-notice" hidden>
+            <div><div class="update-title" id="tdh-update-title"></div><div class="update-text" id="tdh-update-text"></div></div>
+            <button type="button" class="update-action" id="tdh-update-action">View</button>
+            <button type="button" class="update-dismiss" id="tdh-update-dismiss" aria-label="Dismiss">×</button>
+          </div>
+          <section class="fl-tool-panel"><div class="fl-tool-header has-tooltip" data-tip="Core Dropper Controls." data-panel="tdh-features-body"><span class="fl-tool-title">Features</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-features-body">
+            ${switchHtml("tdh-claim-bonus", "Auto-Claim Bonus Chests", "Clicks Claim Bonus When The Chest Appears.", settings.claimBonus)}
+            ${switchHtml("tdh-keep-tab", "Keep Tab Active", "Keeps Twitch From Pausing Or Throttling In The Background. Reload After Changing.", settings.keepTabActive)}
+            ${switchHtml("tdh-claim-drops", "Auto-Claim Drops", "Claims Completed Twitch Drops When Twitch Reports Them As Claimable.", settings.claimDrops)}
+          </div></section>
+          <section class="fl-tool-panel"><div class="fl-tool-header has-tooltip" data-tip="Optional Progress And Inventory Tools." data-panel="tdh-drops-body"><span class="fl-tool-title">Drops Extras</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-drops-body">
+            ${switchHtml("tdh-progress-title", "Show Progress In Tab", "Shows Current Drop Progress In The Browser Tab Title.", settings.progressInTitle)}
+            ${switchHtml("tdh-find-next", "Find Next Drops Stream", "Switches To Another Eligible Stream If Progress Stalls.", settings.findNextStream)}
+            ${switchHtml("tdh-mute-next", "Mute Opened Streams", "Mutes Any Separate Stream Window Opened By Dropper.", settings.muteRestarted)}
+            <button type="button" class="life-btn" id="tdh-toggle-inventory">Show Drops Inventory</button>
+            <div class="compact-inventory" id="tdh-compact-inventory"><div class="inventory-head"><div><strong>Campaign Drops</strong><span id="tdh-inventory-game"></span></div></div><div class="inventory-list" id="tdh-inventory-list"></div></div>
+          </div></section>
+          <section class="fl-tool-panel"><div class="fl-tool-header has-tooltip" data-tip="Maintain Backup Drops Channels Without Opening Extra Tabs." data-panel="tdh-queue-body"><span class="fl-tool-title">Stream Queue</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-queue-body">
+            ${switchHtml("tdh-queue-enabled", "Maintain Backup Streams", "Keeps A Short List Of Eligible Backup Drops Channels Ready.", settings.queueEnabled)}
+            <div class="mini-row"><span>Standby Streams</span><select class="select-lite" id="tdh-queue-count"><option value="1">1</option><option value="3">3</option><option value="5">5</option></select></div>
+            ${switchHtml("tdh-queue-stall", "Switch On Stall", "Switches The Current Tab When Credited Progress Stalls.", settings.queueOnStall)}
+            ${switchHtml("tdh-queue-offline", "Switch On Offline", "Switches The Current Tab When The Active Stream Goes Offline.", settings.queueOnOffline)}
+            <div class="mini-row"><span>Channel Preference</span><select class="select-lite" id="tdh-queue-preference"><option>Any Eligible</option><option>Lowest Viewers</option><option>Highest Viewers</option></select></div>
+            <div class="compact-inventory open queue-list"><div class="inventory-head"><div><strong>Active + Standby</strong><span id="tdh-queue-summary"></span></div></div><div class="inventory-list" id="tdh-queue-list"></div></div>
+          </div></section>
+          <section class="fl-tool-panel"><div class="fl-tool-header has-tooltip" data-tip="Background Earning, Interface Preferences, Notifications, Diagnostics, And Shortcuts." data-panel="tdh-advanced-body"><span class="fl-tool-title">Advanced</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-advanced-body">
+            ${switchHtml("tdh-background-earning", "Background Earning Mode", "Monitors Twitch-Credited Minutes While The Stream Is In The Background.", settings.backgroundEarning)}
+            ${switchHtml("tdh-auto-hide", "Auto-Hide Card", "Collapses The Progress Card After A Short Delay.", settings.autoHideCard)}
+            ${switchHtml("tdh-reduce-motion", "Reduce Motion", "Disables Dropper Interface Animations.", settings.reduceMotion)}
+            ${switchHtml("tdh-notifications", "Notifications", "Shows Brief Dropper Notices For Important State Changes.", settings.notifications)}
+            <div class="mini-row"><span>Pause Auto-Switch</span><select class="select-lite" id="tdh-pause-switch"><option value="0">Off</option><option value="30">30 Min</option><option value="60">1 Hour</option></select></div>
+            <button type="button" class="life-btn" id="tdh-refresh-now">Refresh Drop State</button>
+            <button type="button" class="life-btn" id="tdh-diagnostics-toggle">Show Diagnostics</button><div class="diag" id="tdh-diagnostics"></div>
+          </div></section>
+        </aside>
+        <div class="badge-row">
+          <section id="tdh-drop-card" aria-live="polite">
+            <button type="button" class="card-collapse" id="tdh-card-collapse" aria-label="Collapse Progress Card">−</button>
+            <div class="compact-line" id="tdh-compact-line"><span class="compact-dot" id="tdh-compact-dot"></span><span class="compact-reward" id="tdh-compact-reward">Waiting For Drop</span><span class="compact-extra" id="tdh-compact-extra"></span><span class="state-pill" id="tdh-compact-state">Idle</span></div>
+            <div class="expanded-content">
+              <div class="stream-info stream-info-hidden" id="tdh-stream-info"><img class="stream-avatar" id="tdh-stream-avatar" alt="" hidden><div><div class="stream-head"><div class="stream-channel" id="tdh-stream-channel"></div><span class="stream-live" id="tdh-stream-live" hidden>LIVE</span></div><div class="stream-game" id="tdh-stream-game" hidden></div><div class="stream-badges" id="tdh-stream-badges"></div></div><div class="stream-title" id="tdh-stream-title" hidden></div></div>
+              <div class="drop-section"><div class="drop-kicker">Working Toward</div><div class="drop-head"><div class="drop-name" id="tdh-drop-name">Looking For An Active Drop…</div></div><div class="drop-game" id="tdh-drop-game"></div><div class="drop-bar-row"><div class="drop-bar"><span id="tdh-drop-fill"></span></div><div class="drop-percent" id="tdh-drop-percent">0%</div></div><div class="drop-meta" id="tdh-drop-meta"></div><div class="drop-status-row"><span class="state-pill" id="tdh-drop-state">Idle</span><span id="tdh-updated-ago"></span></div></div>
+            </div>
+          </section>
+          <button type="button" id="tdh-settings-launcher" aria-controls="tdh-tools-dock" aria-expanded="false" aria-label="Open Dropper Settings" data-userscript-launcher="userscript-launcher-v1" data-launcher-id="dropper" data-launcher-preferred-position="right-bottom">
+            <svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle class="track" cx="18" cy="18" r="15"></circle><circle class="fill" id="tdh-ring" cx="18" cy="18" r="15" pathLength="100" stroke-dasharray="0 100"></circle></svg>
+            <svg class="icon" viewBox="0 0 1024 1024" aria-hidden="true"><polygon points="494,210 285,500 430,590" fill="#D9B5FF"/><polygon points="494,210 430,590 494,470" fill="#9B5AF9"/><polygon points="285,500 285,685 430,590" fill="#8C39F2"/><polygon points="285,685 494,842 430,590" fill="#5417B3"/><polygon points="430,590 494,470 494,842" fill="#7428E8"/><polygon points="530,210 739,500 594,590" fill="#AEB0C2"/><polygon points="530,210 594,590 530,470" fill="#6A6E87"/><polygon points="739,500 739,685 594,590" fill="#4E5268"/><polygon points="739,685 530,842 594,590" fill="#242633"/><polygon points="594,590 530,470 530,842" fill="#3F4254"/><rect x="502" y="205" width="20" height="650" rx="10" fill="#101017"/></svg>
+          </button>
+        </div>
+      </div>`;
+    document.documentElement.appendChild(host);
+    ui = { host, shadow, cluster: shadow.getElementById("tdh-cluster"), launcher: shadow.getElementById("tdh-settings-launcher"), dock: shadow.getElementById("tdh-tools-dock") };
+    if (!clusterTop) clusterTop = window.innerHeight - 88;
+    bindDrag();
+    bindSwitches();
+    bindPanels();
+    bindDropperControls();
+    renderSwitches();
+    applyMotionSetting();
+    refreshDropCard();
+    refreshQueueList();
+    layoutChrome();
+    ui.launcher.addEventListener("click", () => setRailOpen(!railOpen));
+    shadow.getElementById("tdh-rail-close").addEventListener("click", () => setRailOpen(false));
+    document.addEventListener("keydown", (event) => {
+      if (event.altKey && (event.key === "g" || event.key === "G") && !event.repeat) { event.preventDefault(); setRailOpen(!railOpen, true); }
+      if (event.key === "Escape" && railOpen) setRailOpen(false, true);
+      if (!event.altKey && (event.key === "r" || event.key === "R") && railOpen) pollGqlDrops();
+    });
+    document.addEventListener("pointerdown", (event) => { if (railOpen && !event.composedPath().includes(host)) setRailOpen(false); });
+    return ui;
+  }
+
+
+  function formatUptime(value) {
+    const match = String(value || "").match(/^(?:(\d+):)?(\d{1,2}):(\d{2})$/);
+    if (!match) return value || "";
+    const hours = Number(match[1] || 0);
+    const minutes = Number(match[2] || 0);
+    return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
+  }
+
+  function isTrustedTwitchUrl(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      const host = parsed.hostname.toLowerCase();
+      return parsed.protocol === "https:" && (host === "twitch.tv" || host === "www.twitch.tv" || host === "player.twitch.tv" || host === "embed.twitch.tv" || host.endsWith(".twitch.tv"));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function discoverQueueCandidates() {
+    const seen = new Set();
+    const items = [];
+    const add = (href, label = "") => {
+      if (!href || !isTrustedTwitchUrl(href)) return;
+      try {
+        const parsed = new URL(href, location.href);
+        const login = parsed.pathname.split("/").filter(Boolean)[0]?.toLowerCase() || "";
+        if (!login || RESERVED.has(login) || seen.has(login) || login === watchingLogin()) return;
+        seen.add(login);
+        const cleanLabel = cleanText(label) || login;
+        const viewerMatch = cleanLabel.match(/([\d,.]+)\s*(?:viewers?|watching)/i);
+        const viewers = viewerMatch ? Number(viewerMatch[1].replace(/,/g, "")) || 0 : 0;
+        items.push({ login, href: parsed.href, label: cleanLabel, viewers });
+      } catch (_) { /* ignore */ }
+    };
+    document.querySelectorAll("[data-test-selector='DropsCampaignInProgressDescription-hint-text-parent'] a, [data-test-selector='DropsCampaignInProgressDescription-no-channels-hint-text'] a, a[href*='twitch.tv/']").forEach((node) => add(node.href, node.textContent));
+    if (settings.queuePreference === "Lowest Viewers") items.sort((a, b) => (a.viewers || Number.MAX_SAFE_INTEGER) - (b.viewers || Number.MAX_SAFE_INTEGER));
+    if (settings.queuePreference === "Highest Viewers") items.sort((a, b) => (b.viewers || 0) - (a.viewers || 0));
+    return items.slice(0, Number(settings.queueCount) || 3);
+  }
+
+  function refreshQueueList() {
+    if (!ui) return;
+    const list = ui.shadow.getElementById("tdh-queue-list");
+    const summary = ui.shadow.getElementById("tdh-queue-summary");
+    if (!list) return;
+    list.replaceChildren();
+    const active = watchingLogin();
+    if (active) appendQueueItem(list, active, "Active", currentDrop ? `${currentDrop.percent || 0}%` : "Watching", true);
+    const candidates = settings.queueEnabled ? discoverQueueCandidates() : [];
+    candidates.forEach((item, index) => appendQueueItem(list, item.label, item.viewers ? `Standby ${index + 1} · ${item.viewers} Viewers` : `Standby ${index + 1}`, "Eligible", false));
+    if (!active && !candidates.length) appendQueueItem(list, "No Eligible Streams Found", "Open Drops Inventory To Discover Channels", "Idle", false);
+    if (summary) summary.textContent = settings.queueEnabled ? ` · ${candidates.length} Standby` : " · Off";
+  }
+
+  function appendQueueItem(list, name, meta, state, active) {
+    const row = document.createElement("div");
+    row.className = `inventory-item${active ? " current" : ""}`;
+    const thumb = document.createElement("div"); thumb.className = "reward-thumb"; thumb.textContent = active ? "▶" : "•";
+    const copy = document.createElement("div"); copy.className = "reward-copy";
+    const title = document.createElement("div"); title.className = "reward-name"; title.textContent = name;
+    const sub = document.createElement("div"); sub.className = "reward-meta"; sub.textContent = meta;
+    copy.append(title, sub);
+    const badge = document.createElement("div"); badge.className = "reward-state"; badge.textContent = state;
+    row.append(thumb, copy, badge); list.appendChild(row);
+  }
+
+  function renderCompactInventory() {
+    if (!ui) return;
+    const list = ui.shadow.getElementById("tdh-inventory-list");
+    const game = ui.shadow.getElementById("tdh-inventory-game");
+    if (!list) return;
+    list.replaceChildren();
+    if (game) game.textContent = currentDrop?.game ? ` · ${currentDrop.game}` : "";
+    if (!currentDrop) {
+      appendInventoryItem(list, "No Active Drop", "Waiting For Twitch", "Idle");
+      return;
+    }
+    const current = Number(currentDrop.currentMinutes) || 0;
+    const required = Number(currentDrop.requiredMinutes) || 0;
+    const state = currentDrop.isClaimed ? "Claimed" : currentDrop.percent >= 100 ? "Claim Ready" : `${currentDrop.percent || 0}%`;
+    appendInventoryItem(list, currentDrop.name || "Current Drop", required ? `${current} / ${required} Min` : "Progress Pending", state);
+  }
+
+  function appendInventoryItem(list, name, meta, state) {
+    const row = document.createElement("div"); row.className = "inventory-item current";
+    const thumb = document.createElement("div"); thumb.className = "reward-thumb"; thumb.textContent = "◆";
+    const copy = document.createElement("div"); copy.className = "reward-copy";
+    const title = document.createElement("div"); title.className = "reward-name"; title.textContent = name;
+    const sub = document.createElement("div"); sub.className = "reward-meta"; sub.textContent = meta;
+    copy.append(title, sub);
+    const badge = document.createElement("div"); badge.className = "reward-state"; badge.textContent = state;
+    row.append(thumb, copy, badge); list.appendChild(row);
+  }
+
+  function applyProgressColor(percent) {
+    if (!ui) return;
+    const fill = ui.shadow.getElementById("tdh-drop-fill");
+    const pct = ui.shadow.getElementById("tdh-drop-percent");
+    const ring = ui.shadow.getElementById("tdh-ring");
+    let main = "#dc2626", soft = "#fb7185";
+    if (percent >= 90) { main = "#16a34a"; soft = "#4ade80"; }
+    else if (percent >= 70) { main = "#65a30d"; soft = "#a3e635"; }
+    else if (percent >= 50) { main = "#ca8a04"; soft = "#facc15"; }
+    else if (percent >= 25) { main = "#ea580c"; soft = "#fb923c"; }
+    if (fill) fill.style.background = `linear-gradient(90deg, ${main}, ${soft})`;
+    if (pct) pct.style.color = soft;
+    if (ring) ring.style.stroke = main;
+  }
+
+  function syncCompactState() {
+    if (!ui) return;
+    const reward = ui.shadow.getElementById("tdh-compact-reward");
+    const extra = ui.shadow.getElementById("tdh-compact-extra");
+    const state = ui.shadow.getElementById("tdh-compact-state");
+    const detail = ui.shadow.getElementById("tdh-drop-state");
+    const updated = ui.shadow.getElementById("tdh-updated-ago");
+    const staleMs = Date.now() - lastProgressAt;
+    let label = "Idle", cls = "state-pill";
+    if (!getToken()) { label = "Login Required"; cls += " warn"; }
+    else if (currentDrop?.percent >= 100) { label = currentDrop.isClaimed ? "Claimed ✓" : "Claim Ready"; cls += " good"; }
+    else if (currentDrop && staleMs > 5 * 60 * 1000) { label = "Stalled"; cls += " warn"; }
+    else if (currentDrop && settings.backgroundEarning) { label = "BG Earning"; cls += " good"; }
+    else if (currentDrop) { label = "Earning"; cls += " good"; }
+    if (reward) reward.textContent = currentDrop?.name || "Waiting For Drop";
+    if (extra) extra.textContent = currentDrop ? `${currentDrop.percent || 0}% · ${Math.max(0, currentDrop.remainingMinutes || 0)}m` : "";
+    if (state) { state.textContent = label; state.className = cls; }
+    if (detail) { detail.textContent = label; detail.className = cls; }
+    if (updated) updated.textContent = currentDrop ? `Updated ${Math.max(0, Math.floor(staleMs / 1000))}s Ago` : "";
+    const dot = ui.shadow.getElementById("tdh-compact-dot");
+    if (dot) dot.style.background = label === "Stalled" ? "#f59e0b" : label.includes("Earning") || label.includes("Claim") ? "#22c55e" : "#9147ff";
+  }
+
+  function applyMotionSetting() {
+    ui?.cluster?.classList.toggle("reduce-motion", Boolean(settings.reduceMotion));
+  }
+
+  function scheduleAutoHide() {
+    clearTimeout(autoHideTimer);
+    if (!settings.autoHideCard || !ui) return;
+    autoHideTimer = setTimeout(() => ui.shadow.getElementById("tdh-drop-card")?.classList.add("collapsed"), 6000);
+  }
+
+  function isAutoSwitchPaused() { return pauseAutoSwitchUntil > Date.now(); }
+
+  function bindDropperControls() {
+    const s = ui.shadow;
+    const inventory = s.getElementById("tdh-compact-inventory");
+    s.getElementById("tdh-toggle-inventory")?.addEventListener("click", (event) => {
+      const open = inventory.classList.toggle("open");
+      event.currentTarget.textContent = open ? "Hide Drops Inventory" : "Show Drops Inventory";
+      renderCompactInventory();
+      requestAnimationFrame(layoutChrome);
+    });
+    s.getElementById("tdh-card-collapse")?.addEventListener("click", () => {
+      const card = s.getElementById("tdh-drop-card");
+      const collapsed = card.classList.toggle("collapsed");
+      s.getElementById("tdh-card-collapse").textContent = collapsed ? "+" : "−";
+      requestAnimationFrame(layoutChrome);
+    });
+    s.getElementById("tdh-refresh-now")?.addEventListener("click", () => pollGqlDrops());
+    const diag = s.getElementById("tdh-diagnostics");
+    s.getElementById("tdh-diagnostics-toggle")?.addEventListener("click", (event) => {
+      diag.classList.toggle("open");
+      event.currentTarget.textContent = diag.classList.contains("open") ? "Hide Diagnostics" : "Show Diagnostics";
+      diag.textContent = JSON.stringify(dropperDebugSnapshot(), null, 2);
+      requestAnimationFrame(layoutChrome);
+    });
+    const queueCount = s.getElementById("tdh-queue-count"); queueCount.value = String(settings.queueCount); queueCount.addEventListener("change", () => { settings.queueCount = Number(queueCount.value); saveSettings(); refreshQueueList(); });
+    const pref = s.getElementById("tdh-queue-preference"); pref.value = settings.queuePreference; pref.addEventListener("change", () => { settings.queuePreference = pref.value; saveSettings(); refreshQueueList(); });
+    const pause = s.getElementById("tdh-pause-switch"); pause.value = String(settings.pauseAutoSwitchMinutes || 0); pause.addEventListener("change", () => { settings.pauseAutoSwitchMinutes = Number(pause.value); pauseAutoSwitchUntil = settings.pauseAutoSwitchMinutes ? Date.now() + settings.pauseAutoSwitchMinutes * 60000 : 0; saveSettings(); });
+    const card = s.getElementById("tdh-drop-card"); card.addEventListener("mouseenter", () => { if (settings.autoHideCard) card.classList.remove("collapsed"); clearTimeout(autoHideTimer); }); card.addEventListener("mouseleave", scheduleAutoHide);
+    s.getElementById("tdh-update-dismiss")?.addEventListener("click", hideUpdateNotice);
+  }
+
+  function notifyUser(text) {
+    if (!settings.notifications || !ui) return;
+    const toast = ui.shadow.getElementById("tdh-toast");
+    if (!toast) return;
+    toast.textContent = text;
+    toast.hidden = false;
+    clearTimeout(notifyUser.timer);
+    notifyUser.timer = setTimeout(() => { toast.hidden = true; }, 3000);
+    requestAnimationFrame(layoutChrome);
+  }
+
+  function showUpdateNotice(title, text, actionText = "View", action = null) {
+    if (!ui) { updateNoticeState = { title, text, actionText, action }; return; }
+    const notice = ui.shadow.getElementById("tdh-update-notice");
+    ui.shadow.getElementById("tdh-update-title").textContent = title;
+    ui.shadow.getElementById("tdh-update-text").textContent = text;
+    const button = ui.shadow.getElementById("tdh-update-action"); button.textContent = actionText; button.onclick = action || (() => {});
+    notice.hidden = false;
+    updateNoticeState = { title, text, actionText, action };
+    requestAnimationFrame(layoutChrome);
+  }
+
+  function hideUpdateNotice() {
+    const notice = ui?.shadow?.getElementById("tdh-update-notice"); if (notice) notice.hidden = true;
+    updateNoticeState = null;
+  }
+
+  function checkVersionNotice() {
+    const previous = localStorage.getItem(LAST_VERSION_KEY);
+    if (previous && previous !== APP_VERSION) showUpdateNotice(`Updated To ${APP_VERSION}`, "Stream Queue, Dropper UI, Compact Inventory, And Reliability Improvements.", "Got It", hideUpdateNotice);
+    localStorage.setItem(LAST_VERSION_KEY, APP_VERSION);
+  }
+
+  function compareVersions(a, b) {
+    const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) { const diff = (pa[i] || 0) - (pb[i] || 0); if (diff) return diff; }
+    return 0;
+  }
+
+  function scheduleUpdateCheck() {
+    const last = Number(localStorage.getItem(UPDATE_CHECK_KEY) || 0);
+    if (Date.now() - last < 6 * 60 * 60 * 1000 || typeof GM_xmlhttpRequest !== "function") return;
+    localStorage.setItem(UPDATE_CHECK_KEY, String(Date.now()));
+    GM_xmlhttpRequest({ method:"GET", url:UPDATE_URL, timeout:12000, onload(response) { const match = String(response.responseText || "").match(/^\/\/ @version\s+([^\s]+)/m); if (match && compareVersions(match[1], APP_VERSION) > 0) showUpdateNotice("Update Available", `Dropper ${match[1]} Is Available.`, "View", () => window.open("https://github.com/ExtraPotions/Dropper", "_blank", "noopener")); }, onerror() {}, ontimeout() {} });
+  }
+
+  function dropperDebugSnapshot() {
+    return { version:APP_VERSION, tokenCaptured:Boolean(getToken()), deviceCaptured:Boolean(capturedDevice || cookie("unique_id")), watchingLogin:watchingLogin(), currentDrop, lastProgress, lastProgressAt:new Date(lastProgressAt).toISOString(), queueEnabled:settings.queueEnabled, queueCandidates:discoverQueueCandidates().map((item) => item.login), autoSwitchPaused:isAutoSwitchPaused(), statusText };
+  }
+
+  function layoutChrome() {
+    if (!ui?.cluster) return;
+    const row = ui.cluster.querySelector(".badge-row");
+    const rowHeight = row?.offsetHeight || 56;
+    const menuHeight = railOpen ? ui.dock.scrollHeight || ui.dock.offsetHeight || 280 : 0;
+    const gap = railOpen ? 8 : 0;
+    const spaceBelow = window.innerHeight - clusterTop - rowHeight - 8;
+    const spaceAbove = clusterTop - 8;
+    const openUp = railOpen && menuHeight > 0 && spaceBelow < menuHeight + 12 && spaceAbove >= spaceBelow;
+    ui.cluster.classList.toggle("open-up", openUp);
+    const clusterHeight = rowHeight + gap + (railOpen ? menuHeight : 0);
+    let top = openUp ? clusterTop - menuHeight - gap : clusterTop;
+    top = Math.max(8, Math.min(window.innerHeight - clusterHeight - 8, top));
+    ui.cluster.style.top = `${top}px`;
+    ui.cluster.style.right = "12px";
+  }
+
+  function bindDrag() {
+    let startY = 0;
+    let startTop = 0;
+    let didDrag = false;
+    ui.launcher.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      startY = event.clientY;
+      startTop = ui.cluster.querySelector(".badge-row").getBoundingClientRect().top;
+      didDrag = false;
+      ui.launcher.setPointerCapture(event.pointerId);
+    });
+    ui.launcher.addEventListener("pointermove", (event) => {
+      if (!ui.launcher.hasPointerCapture(event.pointerId)) return;
+      const delta = event.clientY - startY;
+      if (Math.abs(delta) > 4) didDrag = true;
+      if (!didDrag) return;
+      clusterTop = startTop + delta;
+      localStorage.setItem(LAUNCHER_TOP_KEY, String(clusterTop));
+      layoutChrome();
+    });
+    ui.launcher.addEventListener("click", (event) => {
+      if (!didDrag) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      didDrag = false;
+    }, true);
+  }
+
+  function setRailOpen(open, focus) {
+    railOpen = open;
+    ui.dock.classList.toggle("fl-rail-open", open);
+    ui.launcher.setAttribute("aria-expanded", String(open));
+    layoutChrome();
+    requestAnimationFrame(layoutChrome);
+    if (focus && open) ui.dock.querySelector("button")?.focus();
+    if (focus && !open) ui.launcher.focus();
+  }
+
+  function bindPanels() {
+    ui.shadow.querySelectorAll(".fl-tool-header").forEach((header) => {
+      header.addEventListener("click", () => {
+        const target = ui.shadow.getElementById(header.dataset.panel);
+        const willOpen = target.classList.contains("fl-tool-hidden");
+        ui.shadow.querySelectorAll(".fl-tool-header").forEach((other) => {
+          const body = ui.shadow.getElementById(other.dataset.panel);
+          const open = other === header && willOpen;
+          body.classList.toggle("fl-tool-hidden", !open);
+          other.querySelector(".fl-tool-chevron").textContent = open ? "▾" : "▸";
+          other.querySelector(".fl-tool-chevron").setAttribute("aria-expanded", String(open));
+        });
+        requestAnimationFrame(layoutChrome);
+      });
+    });
+  }
+
+  function bindSwitches() {
+    const map = {
+      "tdh-claim-bonus": "claimBonus", "tdh-keep-tab": "keepTabActive", "tdh-claim-drops": "claimDrops",
+      "tdh-progress-title": "progressInTitle", "tdh-find-next": "findNextStream", "tdh-mute-next": "muteRestarted",
+      "tdh-background-earning": "backgroundEarning", "tdh-auto-hide": "autoHideCard", "tdh-reduce-motion": "reduceMotion", "tdh-notifications": "notifications",
+      "tdh-queue-enabled": "queueEnabled", "tdh-queue-stall": "queueOnStall", "tdh-queue-offline": "queueOnOffline",
+    };
+    Object.entries(map).forEach(([id, key]) => {
+      ui.shadow.getElementById(id)?.addEventListener("click", () => {
+        settings[key] = !settings[key];
+        saveSettings();
+        if (key === "keepTabActive") setStatus("Reload The Page To Apply Keep Tab Active.");
+        if (key === "backgroundEarning" && settings.backgroundEarning && !settings.keepTabActive) {
+          settings.keepTabActive = true;
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+          renderSwitches();
+          notifyUser("Keep Tab Active Enabled. Reload Twitch To Apply Background Earning.");
+        }
+        if (key === "reduceMotion") applyMotionSetting();
+        if (key === "autoHideCard") scheduleAutoHide();
+        if (key.startsWith("queue")) refreshQueueList();
+        syncCompactState();
+      });
+    });
+  }
+
+  function renderSwitches() {
+    if (!ui) return;
+    const map = {
+      "tdh-claim-bonus": settings.claimBonus, "tdh-keep-tab": settings.keepTabActive, "tdh-claim-drops": settings.claimDrops,
+      "tdh-progress-title": settings.progressInTitle, "tdh-find-next": settings.findNextStream, "tdh-mute-next": settings.muteRestarted,
+      "tdh-background-earning": settings.backgroundEarning, "tdh-auto-hide": settings.autoHideCard, "tdh-reduce-motion": settings.reduceMotion, "tdh-notifications": settings.notifications,
+      "tdh-queue-enabled": settings.queueEnabled, "tdh-queue-stall": settings.queueOnStall, "tdh-queue-offline": settings.queueOnOffline,
+    };
+    Object.entries(map).forEach(([id, on]) => ui.shadow.getElementById(id)?.setAttribute("aria-checked", String(Boolean(on))));
+  }
+
+  window.dropperDebug = function dropperDebug() { return dropperDebugSnapshot(); };
+  window.tdhDebug = window.dropperDebug;
+
+  window.dropperShow = function dropperShow() {
+    mountUi();
+    setRailOpen(true, true);
+  };
+  window.tdhShow = window.dropperShow;
+})();
