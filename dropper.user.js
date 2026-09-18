@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.22
+// @version      2.6.23
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.22";
+  const APP_VERSION = "2.6.23";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -85,6 +85,12 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.23": [
+      "Makes Settings auto-close deadline-based instead of relying only on a timeout callback.",
+      "Makes progress auto-collapse deadline-based and enforced by the heartbeat.",
+      "Collapses the progress card exactly 5 seconds after expansion.",
+      "Adds deadline diagnostics for both auto-dismiss behaviors.",
+    ],
     "2.6.22": [
       "Automatically closes the Settings menu after 15 seconds without interaction.",
       "Resets the Settings timeout when the menu is used.",
@@ -329,7 +335,9 @@
   let clusterTop = Number(localStorage.getItem(LAUNCHER_TOP_KEY) || 0);
   let autoHideTimer = null;
   let progressExpandTimer = null;
+  let progressCollapseAt = 0;
   let menuDismissTimer = null;
+  let menuDismissAt = 0;
   let updateNoticeTimer = null;
   let updateNoticeState = null;
   let pauseAutoSwitchUntil = 0;
@@ -578,6 +586,7 @@
     if (!ui) return;
     const now = Date.now();
     lastHeartbeatAt = now;
+    enforceAutoDismissDeadlines(now);
     noteWatching();
 
     if (location.pathname !== lastPath) {
@@ -4430,20 +4439,24 @@
   function clearProgressExpandTimer() {
     clearTimeout(progressExpandTimer);
     progressExpandTimer = null;
+    progressCollapseAt = 0;
   }
 
   function scheduleProgressExpandCollapse() {
-    clearProgressExpandTimer();
+    clearTimeout(progressExpandTimer);
+    progressExpandTimer = null;
     if (!ui) return;
 
     const card = ui.shadow.getElementById("tdh-drop-card");
-    if (!card || card.classList.contains("collapsed")) return;
+    if (!card || card.classList.contains("collapsed")) {
+      progressCollapseAt = 0;
+      return;
+    }
 
+    progressCollapseAt = Date.now() + PROGRESS_EXPAND_AUTO_COLLAPSE_MS;
     progressExpandTimer = setTimeout(() => {
-      const currentCard = ui?.shadow?.getElementById("tdh-drop-card");
-      if (!currentCard || currentCard.classList.contains("collapsed")) return;
-      setProgressCardCollapsed(true, true);
-    }, PROGRESS_EXPAND_AUTO_COLLAPSE_MS);
+      enforceAutoDismissDeadlines(Date.now());
+    }, PROGRESS_EXPAND_AUTO_COLLAPSE_MS + 20);
   }
 
   function setProgressCardCollapsed(collapsed, persist = false) {
@@ -4453,6 +4466,8 @@
 
     card.classList.toggle("collapsed", Boolean(collapsed));
     if (collapsed) clearProgressExpandTimer();
+    else scheduleProgressExpandCollapse();
+
     updateProgressToggleIcon();
     if (persist) localStorage.setItem(PROGRESS_CARD_STATE_KEY, String(Boolean(collapsed)));
     requestAnimationFrame(layoutChrome);
@@ -4489,16 +4504,7 @@
     });
     s.getElementById("tdh-card-collapse")?.addEventListener("click", () => {
       const card = s.getElementById("tdh-drop-card");
-      const willCollapse = !card.classList.contains("collapsed");
-      setProgressCardCollapsed(willCollapse, true);
-      if (!willCollapse) scheduleProgressExpandCollapse();
-    });
-
-    const progressCard = s.getElementById("tdh-drop-card");
-    ["pointerdown", "wheel", "keydown"].forEach((type) => {
-      progressCard?.addEventListener(type, () => {
-        if (!progressCard.classList.contains("collapsed")) scheduleProgressExpandCollapse();
-      }, { passive: type === "wheel" });
+      setProgressCardCollapsed(!card.classList.contains("collapsed"), true);
     });
     s.getElementById("tdh-refresh-now")?.addEventListener("click", () => requestGqlPoll("manual-refresh", true));
     const diag = s.getElementById("tdh-diagnostics");
@@ -4891,6 +4897,10 @@
         progressExpandSeconds: Math.round(PROGRESS_EXPAND_AUTO_COLLAPSE_MS / 1000),
         menuTimerActive: Boolean(menuDismissTimer),
         progressTimerActive: Boolean(progressExpandTimer),
+        menuDismissAt: menuDismissAt ? new Date(menuDismissAt).toISOString() : null,
+        progressCollapseAt: progressCollapseAt ? new Date(progressCollapseAt).toISOString() : null,
+        menuRemainingSeconds: menuDismissAt ? Math.max(0, Math.ceil((menuDismissAt - now) / 1000)) : null,
+        progressRemainingSeconds: progressCollapseAt ? Math.max(0, Math.ceil((progressCollapseAt - now) / 1000)) : null,
       },
       updateNoticePlacement: ui?.shadow?.getElementById("tdh-update-notice")?.dataset?.placement || null,
       generatedAt: new Date(now).toISOString(),
@@ -5159,15 +5169,37 @@
   function clearMenuDismissTimer() {
     clearTimeout(menuDismissTimer);
     menuDismissTimer = null;
+    menuDismissAt = 0;
   }
 
   function scheduleMenuDismiss() {
-    clearMenuDismissTimer();
-    if (!railOpen || !ui) return;
+    clearTimeout(menuDismissTimer);
+    menuDismissTimer = null;
+    if (!railOpen || !ui) {
+      menuDismissAt = 0;
+      return;
+    }
 
+    menuDismissAt = Date.now() + MENU_INACTIVITY_DISMISS_MS;
     menuDismissTimer = setTimeout(() => {
-      if (railOpen) setRailOpen(false);
-    }, MENU_INACTIVITY_DISMISS_MS);
+      enforceAutoDismissDeadlines(Date.now());
+    }, MENU_INACTIVITY_DISMISS_MS + 20);
+  }
+
+  function enforceAutoDismissDeadlines(now = Date.now()) {
+    if (railOpen && menuDismissAt && now >= menuDismissAt) {
+      setRailOpen(false);
+    }
+
+    const card = ui?.shadow?.getElementById("tdh-drop-card");
+    if (
+      card &&
+      !card.classList.contains("collapsed") &&
+      progressCollapseAt &&
+      now >= progressCollapseAt
+    ) {
+      setProgressCardCollapsed(true, true);
+    }
   }
 
   function bindMenuInactivity() {
