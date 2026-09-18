@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.8
+// @version      2.6.9
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.8";
+  const APP_VERSION = "2.6.9";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -43,6 +43,8 @@
   const GQL_MAX_BACKOFF_MS = 5 * 60 * 1000;
   const ACTIVITY_LOG_KEY = "dropper-activity-log";
   const NETWORK_STATE_KEY = "dropper-network-state";
+  const STANDBY_CACHE_KEY = "dropper-standby-streams";
+  const STANDBY_CACHE_TTL_MS = 30 * 60 * 1000;
   const ACTIVITY_LOG_LIMIT = 40;
   const NETWORK_WINDOW_MS = 60 * 60 * 1000;
   const NETWORK_REQUEST_BUDGET = 140;
@@ -69,7 +71,15 @@
     FAILED: "failed",
   });
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
+  const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
+  const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const RELEASE_NOTES = {
+    "2.6.9": [
+      "Caches compatible category stream candidates so Standby Streams survive navigation to the active channel.",
+      "Expands standby discovery across Twitch category cards and filters the active or failed channels.",
+      "Moves update and changelog notices above the progress badge instead of keeping them inside Settings.",
+      "Adds a GitHub Releases link and automatically fades update/changelog notices after 30 seconds.",
+    ],
     "2.6.8": [
       "Treats newly credited Drop progress as definitive proof that the current stream is compatible.",
       "Stops replacing a stream once the target campaign advances on that channel.",
@@ -231,6 +241,7 @@
   let railOpen = false;
   let clusterTop = Number(localStorage.getItem(LAUNCHER_TOP_KEY) || 0);
   let autoHideTimer = null;
+  let updateNoticeTimer = null;
   let updateNoticeState = null;
   let pauseAutoSwitchUntil = 0;
   let lastInventoryCampaigns = [];
@@ -248,6 +259,7 @@
   let pendingGqlReason = "startup";
   let lastGqlReason = "";
   let activityLog = readSession(ACTIVITY_LOG_KEY, []);
+  let standbyCache = readSession(STANDBY_CACHE_KEY, []);
   let networkState = readSession(NETWORK_STATE_KEY, {
     requestTimes: [],
     consecutiveFailures: 0,
@@ -1535,7 +1547,7 @@
       .replace(/^-+|-+$/g, "");
   }
 
-  function findEligibleDirectoryStream(gameName, gameSlug = "", excludedStreams = []) {
+  function collectDirectoryStreamCandidates(gameName, gameSlug = "", excludedStreams = []) {
     const wantedGame = normalizeGameName(gameName);
     const wantedSlug = resolveCategorySlug({ game: gameName, gameSlug });
     const pageSlug = currentDirectorySlug();
@@ -1545,8 +1557,7 @@
       (pageSlug === wantedSlug || pageSlug.includes(wantedSlug) || wantedSlug.includes(pageSlug))
     );
     const excluded = new Set((excludedStreams || []).map((login) => cleanText(login).toLowerCase()).filter(Boolean));
-    const preferred = [];
-    const fallback = [];
+    const candidates = [];
     const seen = new Set();
 
     const links = [
@@ -1584,19 +1595,47 @@
         normalizedText.includes(wantedGame);
 
       if (!gameMatches) continue;
-      if (hasDropsTag) preferred.push(href);
-      else if (pageIsTargetCategory) fallback.push(href);
-    }
-
-    const chosen = preferred[0] || fallback[0] || "";
-    if (chosen && !preferred.length) {
-      logActivity("stream-candidate", "Trying category stream without visible Drops badge", {
-        game: gameName || null,
-        stream: streamLoginFromUrl(chosen) || null,
-        excludedStreams: [...excluded],
+      const viewerMatch = text.match(/([\d,.]+)\s*(?:viewers?|watching)/i);
+      const viewers = viewerMatch ? Number(viewerMatch[1].replace(/,/g, "")) || 0 : 0;
+      candidates.push({
+        login,
+        href,
+        label: login,
+        viewers,
+        dropsTagged: hasDropsTag,
+        game: gameName,
+        gameSlug: wantedSlug,
       });
     }
-    return chosen;
+
+    candidates.sort((a, b) => {
+      if (Boolean(b.dropsTagged) !== Boolean(a.dropsTagged)) return Number(Boolean(b.dropsTagged)) - Number(Boolean(a.dropsTagged));
+      if (settings.queuePreference === "Lowest Viewers") return (a.viewers || Number.MAX_SAFE_INTEGER) - (b.viewers || Number.MAX_SAFE_INTEGER);
+      if (settings.queuePreference === "Highest Viewers") return (b.viewers || 0) - (a.viewers || 0);
+      return 0;
+    });
+
+    const pending = getHandoffState();
+    rememberStandbyCandidates(candidates, {
+      game: gameName,
+      gameSlug: wantedSlug,
+      campaignKey: pending?.targetCampaignKey || currentDrop?.campaignKey || "",
+    });
+
+    return candidates;
+  }
+
+  function findEligibleDirectoryStream(gameName, gameSlug = "", excludedStreams = []) {
+    const candidates = collectDirectoryStreamCandidates(gameName, gameSlug, excludedStreams);
+    const chosen = candidates[0] || null;
+    if (chosen && !chosen.dropsTagged) {
+      logActivity("stream-candidate", "Trying category stream without visible Drops badge", {
+        game: gameName || null,
+        stream: chosen.login || null,
+        excludedStreams: excludedStreams || [],
+      });
+    }
+    return chosen?.href || "";
   }
 
   function campaignMatchesTarget(campaign, pending) {
@@ -3227,7 +3266,14 @@
       #tdh-rail-close { width:30px; height:30px; border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0; cursor:pointer; font:18px/1 Arial,sans-serif; }
       #tdh-rail-close:hover { border-color:#9147ff; color:#fff; background:#211b2b; }
       .header-divider { height:1px; width:100%; margin:7px 0; background:linear-gradient(90deg,transparent,#9147ff88 50%,transparent); }
-      .update-notice { position:relative; display:block; margin-bottom:8px; padding:10px; border:1px solid #9147ff70; border-radius:10px; background:linear-gradient(180deg,#9147ff1f,#18181d); box-shadow:0 8px 22px #0003; }
+      .update-notice {
+        position:relative; order:-3; display:block; width:100%; margin:0 0 8px; padding:10px;
+        border:1px solid #9147ff70; border-radius:10px;
+        background:linear-gradient(180deg,#9147ff26,#18181d 70%);
+        box-shadow:0 10px 28px #0008; opacity:1; transform:translateY(0);
+        transition:.4s opacity,.4s transform; z-index:12;
+      }
+      .update-notice.fading { opacity:0; transform:translateY(6px); pointer-events:none; }
       .update-notice[hidden] { display:none; }
       .update-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding-right:22px; }
       .update-heading { min-width:0; }
@@ -3238,10 +3284,12 @@
       .update-list { margin:7px 0 0; padding:0 0 0 15px; max-height:86px; overflow:auto; color:#d7d7df; font-size:9px; line-height:1.4; scrollbar-width:thin; }
       .update-list li + li { margin-top:3px; }
       .update-footer { display:flex; justify-content:flex-end; gap:6px; margin-top:8px; padding-top:7px; border-top:1px solid #ffffff12; }
-      .update-action, .update-dismiss, .life-btn { border:1px solid #34343b; border-radius:7px; background:#18181b; color:#efeff1; cursor:pointer; }
-      .update-action { min-height:27px; padding:0 10px; border-color:#9147ff; background:#772ce8; font-size:9px; font-weight:800; }
+      .update-action, .update-release, .update-dismiss, .life-btn { border:1px solid #34343b; border-radius:7px; background:#18181b; color:#efeff1; cursor:pointer; }
+      .update-action, .update-release { min-height:27px; padding:0 10px; font-size:9px; font-weight:800; }
+      .update-action { border-color:#9147ff; background:#772ce8; }
+      .update-release { border-color:#4b4b55; background:#202026; }
       .update-dismiss { position:absolute; top:7px; right:7px; width:23px; height:23px; padding:0; border-color:transparent; background:transparent; color:#adadb8; font-size:15px; line-height:1; }
-      .update-action:hover, .update-dismiss:hover, .life-btn:hover { border-color:#9147ff; color:#fff; }
+      .update-action:hover, .update-release:hover, .update-dismiss:hover, .life-btn:hover { border-color:#9147ff; color:#fff; }
       .toast { margin-bottom:7px; padding:6px 8px; border:1px solid #34343b; border-radius:8px; background:#18181b; color:#efeff1; font-size:9px; box-shadow:0 8px 24px #0006; }
       .toast[hidden] { display:none; }
       .fl-tool-panel { position:relative; margin-top:5px; border:1px solid #27272d; background:#19191e; border-radius:9px; overflow:visible; }
@@ -3326,6 +3374,7 @@
             <div class="update-text" id="tdh-update-text"></div>
             <ul class="update-list" id="tdh-update-list"></ul>
             <div class="update-footer">
+              <button type="button" class="update-release" id="tdh-update-release">GitHub Release</button>
               <button type="button" class="update-action" id="tdh-update-action">View Update</button>
             </div>
           </div>
@@ -3382,6 +3431,9 @@
       </div>`;
     document.documentElement.appendChild(host);
     ui = { host, shadow, cluster: shadow.getElementById("tdh-cluster"), launcher: shadow.getElementById("tdh-settings-launcher"), dock: shadow.getElementById("tdh-tools-dock") };
+    const updateNotice = shadow.getElementById("tdh-update-notice");
+    const progressStack = shadow.querySelector(".progress-stack");
+    if (updateNotice && progressStack) progressStack.prepend(updateNotice);
     if (!clusterTop) clusterTop = window.innerHeight - 88;
     bindDrag();
     bindSwitches();
@@ -3425,30 +3477,133 @@
     }
   }
 
+  function pruneStandbyCache(now = Date.now()) {
+    const source = Array.isArray(standbyCache) ? standbyCache : [];
+    standbyCache = source.filter((item) =>
+      item &&
+      item.login &&
+      Number(item.seenAt || 0) > now - STANDBY_CACHE_TTL_MS
+    ).slice(-60);
+    writeSession(STANDBY_CACHE_KEY, standbyCache);
+    return standbyCache;
+  }
+
+  function rememberStandbyCandidates(candidates, context = {}) {
+    if (!Array.isArray(candidates) || !candidates.length) return;
+    const now = Date.now();
+    const existing = pruneStandbyCache(now);
+    const byLogin = new Map(existing.map((item) => [item.login, item]));
+
+    for (const candidate of candidates) {
+      const login = cleanText(candidate?.login).toLowerCase();
+      const href = twitchChannelHref(candidate?.href);
+      if (!login || !href) continue;
+      byLogin.set(login, {
+        ...(byLogin.get(login) || {}),
+        login,
+        href,
+        label: cleanText(candidate.label || login),
+        viewers: Number(candidate.viewers || 0),
+        dropsTagged: Boolean(candidate.dropsTagged),
+        game: cleanText(context.game || candidate.game || ""),
+        gameSlug: cleanText(context.gameSlug || candidate.gameSlug || ""),
+        campaignKey: cleanText(context.campaignKey || candidate.campaignKey || ""),
+        seenAt: now,
+      });
+    }
+
+    standbyCache = [...byLogin.values()]
+      .sort((a, b) => Number(a.seenAt || 0) - Number(b.seenAt || 0))
+      .slice(-60);
+    writeSession(STANDBY_CACHE_KEY, standbyCache);
+  }
+
+  function cachedStandbyCandidates(gameName = currentDrop?.game || "", campaignKeyValue = currentDrop?.campaignKey || "") {
+    const active = watchingLogin();
+    const failed = new Set((getHandoffState()?.failedStreams || []).map((login) => cleanText(login).toLowerCase()));
+    const wantedGame = normalizeGameName(gameName);
+    const wantedCampaign = cleanText(campaignKeyValue);
+
+    const items = pruneStandbyCache().filter((item) => {
+      if (!item?.login || item.login === active || failed.has(item.login)) return false;
+      if (wantedGame && item.game && !gameNamesMatch(wantedGame, item.game)) return false;
+      if (wantedCampaign && item.campaignKey && item.campaignKey !== wantedCampaign) return false;
+      return true;
+    });
+
+    items.sort((a, b) => {
+      if (Boolean(b.dropsTagged) !== Boolean(a.dropsTagged)) return Number(Boolean(b.dropsTagged)) - Number(Boolean(a.dropsTagged));
+      if (settings.queuePreference === "Lowest Viewers") return (a.viewers || Number.MAX_SAFE_INTEGER) - (b.viewers || Number.MAX_SAFE_INTEGER);
+      if (settings.queuePreference === "Highest Viewers") return (b.viewers || 0) - (a.viewers || 0);
+      return Number(b.seenAt || 0) - Number(a.seenAt || 0);
+    });
+    return items;
+  }
+
   function discoverQueueCandidates() {
     const seen = new Set();
     const items = [];
-    const add = (href, label = "") => {
+    const active = watchingLogin();
+    const pending = getHandoffState();
+    const targetGame = pending?.targetGame || currentDrop?.game || "";
+    const targetCampaignKey = pending?.targetCampaignKey || currentDrop?.campaignKey || "";
+
+    const add = (href, label = "", metadata = {}) => {
       const channelHref = twitchChannelHref(href);
       if (!channelHref) return;
       try {
         const parsed = new URL(channelHref);
         const login = parsed.pathname.split("/").filter(Boolean)[0]?.toLowerCase() || "";
-        if (!login || login.length < 2 || seen.has(login) || login === watchingLogin()) return;
+        if (!login || login.length < 2 || seen.has(login) || login === active) return;
         seen.add(login);
         const cleanLabel = cleanText(label) || login;
         const viewerMatch = cleanLabel.match(/([\d,.]+)\s*(?:viewers?|watching)/i);
-        const viewers = viewerMatch ? Number(viewerMatch[1].replace(/,/g, "")) || 0 : 0;
-        items.push({ login, href: channelHref, label: cleanLabel, viewers });
+        const viewers = Number(metadata.viewers || (viewerMatch ? Number(viewerMatch[1].replace(/,/g, "")) : 0)) || 0;
+        items.push({
+          login,
+          href: channelHref,
+          label: metadata.label || cleanLabel || login,
+          viewers,
+          dropsTagged: Boolean(metadata.dropsTagged),
+          source: metadata.source || "dom",
+        });
       } catch (_) { /* ignore */ }
     };
+
+    cachedStandbyCandidates(targetGame, targetCampaignKey).forEach((item) =>
+      add(item.href, item.label, { ...item, source: "cache" })
+    );
+
     document.querySelectorAll(
       "[data-test-selector='DropsCampaignInProgressDescription-hint-text-parent'] a, " +
-      "[data-test-selector='DropsCampaignInProgressDescription-no-channels-hint-text'] a, " +
-      "a[data-a-target='preview-card-channel-link'], a[data-test-selector*='channel-link']"
-    ).forEach((node) => add(node.href, node.textContent));
-    if (settings.queuePreference === "Lowest Viewers") items.sort((a, b) => (a.viewers || Number.MAX_SAFE_INTEGER) - (b.viewers || Number.MAX_SAFE_INTEGER));
-    if (settings.queuePreference === "Highest Viewers") items.sort((a, b) => (b.viewers || 0) - (a.viewers || 0));
+      "[data-test-selector='DropsCampaignInProgressDescription-no-channels-hint-text'] a"
+    ).forEach((node) => add(node.href, node.textContent, { dropsTagged: true, source: "campaign-hint" }));
+
+    if (isDirectoryCategoryPage()) {
+      document.querySelectorAll(
+        "a[data-a-target='preview-card-channel-link'], a[data-test-selector*='channel-link']"
+      ).forEach((node) => {
+        const card =
+          node.closest(
+            'article, [data-a-target="preview-card"], [data-test-selector*="preview-card"], [class*="preview-card"]'
+          ) || node.parentElement?.parentElement?.parentElement || node.parentElement;
+        const text = cleanText(card?.textContent);
+        const dropsTagged = Boolean(
+          card?.querySelector?.(
+            'a[href*="DropsEnabled"], [data-a-target*="Drops"], [data-test-selector*="Drops"], [aria-label*="Drops"]'
+          )
+        ) || /\bdrops\s*enabled\b/i.test(text);
+        add(node.href, text || node.textContent, { dropsTagged, source: "category-card" });
+      });
+    }
+
+    items.sort((a, b) => {
+      if (Boolean(b.dropsTagged) !== Boolean(a.dropsTagged)) return Number(Boolean(b.dropsTagged)) - Number(Boolean(a.dropsTagged));
+      if (settings.queuePreference === "Lowest Viewers") return (a.viewers || Number.MAX_SAFE_INTEGER) - (b.viewers || Number.MAX_SAFE_INTEGER);
+      if (settings.queuePreference === "Highest Viewers") return (b.viewers || 0) - (a.viewers || 0);
+      return 0;
+    });
+
     return items.slice(0, Number(settings.queueCount) || 3);
   }
 
@@ -3461,7 +3616,13 @@
     const active = watchingLogin();
     if (active) appendQueueItem(list, active, "Active", currentDrop ? `${currentDrop.percent || 0}%` : "Watching", true);
     const candidates = settings.queueEnabled ? discoverQueueCandidates() : [];
-    candidates.forEach((item, index) => appendQueueItem(list, item.label, item.viewers ? `Standby ${index + 1} · ${item.viewers} Viewers` : `Standby ${index + 1}`, "Eligible", false));
+    candidates.forEach((item, index) => appendQueueItem(
+      list,
+      item.label,
+      item.viewers ? `Standby ${index + 1} · ${item.viewers} Viewers` : `Standby ${index + 1}`,
+      item.dropsTagged ? "Drops" : "Standby",
+      false,
+    ));
     if (!active && !candidates.length) appendQueueItem(list, "No Eligible Streams Found", "Open Drops Inventory To Discover Channels", "Idle", false);
     if (summary) summary.textContent = settings.queueEnabled ? ` · ${candidates.length} Standby` : " · Off";
   }
@@ -3703,11 +3864,14 @@
       kicker: options.kicker || "What's New",
       version: options.version || APP_VERSION,
       details,
+      releaseUrl: options.releaseUrl || RELEASES_URL,
     };
     if (!ui) { updateNoticeState = state; return; }
 
+    clearTimeout(updateNoticeTimer);
     const notice = ui.shadow.getElementById("tdh-update-notice");
     const list = ui.shadow.getElementById("tdh-update-list");
+    notice.classList.remove("fading");
     ui.shadow.getElementById("tdh-update-kicker").textContent = state.kicker;
     ui.shadow.getElementById("tdh-update-title").textContent = title;
     ui.shadow.getElementById("tdh-update-version").textContent = state.version ? `v${state.version}` : "";
@@ -3721,17 +3885,40 @@
     });
     list.hidden = details.length === 0;
 
+    const releaseButton = ui.shadow.getElementById("tdh-update-release");
+    releaseButton.hidden = !state.releaseUrl;
+    releaseButton.onclick = state.releaseUrl
+      ? () => window.open(state.releaseUrl, "_blank", "noopener")
+      : null;
+
     const button = ui.shadow.getElementById("tdh-update-action");
     button.textContent = actionText;
     button.onclick = action || hideUpdateNotice;
+
     notice.hidden = false;
     updateNoticeState = state;
     requestAnimationFrame(layoutChrome);
+
+    updateNoticeTimer = setTimeout(() => {
+      if (!notice.hidden) {
+        notice.classList.add("fading");
+        setTimeout(() => {
+          if (notice.classList.contains("fading")) hideUpdateNotice();
+        }, settings.reduceMotion ? 0 : 420);
+      }
+    }, UPDATE_NOTICE_DURATION_MS);
   }
 
   function hideUpdateNotice() {
-    const notice = ui?.shadow?.getElementById("tdh-update-notice"); if (notice) notice.hidden = true;
+    clearTimeout(updateNoticeTimer);
+    updateNoticeTimer = null;
+    const notice = ui?.shadow?.getElementById("tdh-update-notice");
+    if (notice) {
+      notice.hidden = true;
+      notice.classList.remove("fading");
+    }
     updateNoticeState = null;
+    requestAnimationFrame(layoutChrome);
   }
 
   function loadUpdateState() {
@@ -4076,6 +4263,18 @@
       } : { state: "idle" },
       selectors: selectorHealthSnapshot(),
       queueEnabled: settings.queueEnabled,
+      standbyCache: {
+        total: pruneStandbyCache().length,
+        matchingActiveCampaign: cachedStandbyCandidates(
+          getHandoffState()?.targetGame || currentDrop?.game || "",
+          getHandoffState()?.targetCampaignKey || currentDrop?.campaignKey || "",
+        ).map((item) => ({
+          login: item.login,
+          viewers: item.viewers || 0,
+          dropsTagged: Boolean(item.dropsTagged),
+          seenAt: item.seenAt ? new Date(item.seenAt).toISOString() : null,
+        })),
+      },
       queueCandidates: discoverQueueCandidates().map((item) => item.login),
       autoSwitchPaused: isAutoSwitchPaused(),
       progressCardCollapsed: Boolean(card?.classList.contains("collapsed")),
