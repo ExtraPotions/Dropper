@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.26
+// @version      2.6.27
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.26";
+  const APP_VERSION = "2.6.27";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -82,9 +82,19 @@
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
+  const UPDATE_RELOAD_KEY = "dropper-update-reload-pending";
+  const UPDATE_RETURN_DELAY_MS = 3 * 1000;
+  const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
+  const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.27": [
+      "Adds automatic Twitch refresh after starting a Dropper update install.",
+      "Refreshes 3 seconds after returning to Twitch from the userscript installer.",
+      "Adds a 45-second fallback refresh if the return event is missed.",
+      "Expires pending update-refresh state after 2 minutes and clears it before reloading.",
+    ],
     "2.6.26": [
       "Moves Hide Twitch Subscribe Promos into Appearance.",
       "Also hides Twitch collapsed highlight promo cards such as Watch for reward messages.",
@@ -357,6 +367,8 @@
   let menuDismissAt = 0;
   let updateNoticeTimer = null;
   let updateNoticeState = null;
+  let updateReloadTimer = null;
+  let updateFallbackTimer = null;
   let pauseAutoSwitchUntil = 0;
   let lastInventoryCampaigns = [];
   let chatWidthObserver = null;
@@ -403,21 +415,30 @@
     logActivity("lifecycle", `Dropper ${APP_VERSION} started`);
     refreshDropCard();
     watchTwitchSubscriptionPromos();
+    resumeUpdateReloadPending();
     checkVersionNotice();
     scheduleUpdateCheck();
     watchDirectoryHandoff();
     startHeartbeat();
 
+    window.addEventListener("blur", () => {
+      markUpdateInstallerLeft("blur");
+    }, { passive: true });
     window.addEventListener("focus", () => {
+      handleUpdateInstallerReturn("focus");
       queueGqlPollSoon("focus", 0);
       heartbeat();
     }, { passive: true });
     window.addEventListener("pageshow", () => {
+      handleUpdateInstallerReturn("pageshow");
       queueGqlPollSoon("pageshow", 0);
       heartbeat();
     }, { passive: true });
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) {
+      if (document.hidden) {
+        markUpdateInstallerLeft("hidden");
+      } else {
+        handleUpdateInstallerReturn("visible");
         queueGqlPollSoon("visible", 0);
         heartbeat();
       }
@@ -603,6 +624,7 @@
     if (!ui) return;
     const now = Date.now();
     lastHeartbeatAt = now;
+    enforceUpdateReloadPending(now);
     enforceAutoDismissDeadlines(now);
     noteWatching();
 
@@ -4592,6 +4614,181 @@
     requestAnimationFrame(layoutChrome);
   }
 
+  function loadUpdateReloadState() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(UPDATE_RELOAD_KEY) || "{}");
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function saveUpdateReloadState(state) {
+    try {
+      localStorage.setItem(UPDATE_RELOAD_KEY, JSON.stringify(state || {}));
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  function clearUpdateReloadState(reason = "") {
+    clearTimeout(updateReloadTimer);
+    clearTimeout(updateFallbackTimer);
+    updateReloadTimer = null;
+    updateFallbackTimer = null;
+    try { localStorage.removeItem(UPDATE_RELOAD_KEY); } catch (_) { /* ignore */ }
+    if (reason) logActivity("update-reload", reason);
+  }
+
+  function validUpdateReloadState(now = Date.now()) {
+    const state = loadUpdateReloadState();
+    if (!state?.startedAt || !state?.targetVersion) return null;
+
+    if (Number(state.expiresAt || 0) <= now) {
+      clearUpdateReloadState("Pending update refresh expired");
+      return null;
+    }
+
+    if (compareVersions(APP_VERSION, state.targetVersion) >= 0) {
+      clearUpdateReloadState(`Installed v${APP_VERSION} already satisfies pending update v${state.targetVersion}`);
+      return null;
+    }
+
+    return state;
+  }
+
+  function performUpdateReload(reason) {
+    const state = validUpdateReloadState();
+    if (!state) return false;
+
+    clearUpdateReloadState(`Refreshing Twitch after update install · ${reason}`);
+    setStatus("Update Install Started · Refreshing Twitch");
+    location.reload();
+    return true;
+  }
+
+  function scheduleUpdateReload(delayMs = UPDATE_RETURN_DELAY_MS, reason = "return") {
+    const state = validUpdateReloadState();
+    if (!state) return false;
+
+    const now = Date.now();
+    const reloadAt = now + Math.max(0, Number(delayMs) || 0);
+    const existingReloadAt = Number(state.reloadAt || 0);
+
+    // Keep an already-sooner refresh instead of extending it because focus and
+    // visibility events often arrive together.
+    if (existingReloadAt && existingReloadAt <= reloadAt) return true;
+
+    state.reloadAt = reloadAt;
+    state.reloadReason = reason;
+    saveUpdateReloadState(state);
+
+    clearTimeout(updateReloadTimer);
+    updateReloadTimer = setTimeout(() => {
+      performUpdateReload(reason);
+    }, Math.max(0, reloadAt - Date.now()));
+
+    setStatus(`Update Install Started · Refreshing In ${Math.max(1, Math.ceil(delayMs / 1000))}s`);
+    return true;
+  }
+
+  function markUpdateInstallerLeft(reason = "blur") {
+    const state = validUpdateReloadState();
+    if (!state || state.leftAt) return false;
+    state.leftAt = Date.now();
+    state.leftReason = reason;
+    saveUpdateReloadState(state);
+    logActivity("update-reload", "Left Twitch for userscript installer", {
+      targetVersion: state.targetVersion,
+      reason,
+    });
+    return true;
+  }
+
+  function handleUpdateInstallerReturn(reason = "focus") {
+    const state = validUpdateReloadState();
+    if (!state) return false;
+
+    if (state.leftAt) {
+      return scheduleUpdateReload(UPDATE_RETURN_DELAY_MS, `returned-via-${reason}`);
+    }
+
+    // If the browser never reported blur/hidden, the fallback deadline can
+    // still safely trigger a refresh while Twitch is visible.
+    if (Date.now() >= Number(state.fallbackAt || 0)) {
+      return scheduleUpdateReload(UPDATE_RETURN_DELAY_MS, `fallback-via-${reason}`);
+    }
+    return false;
+  }
+
+  function enforceUpdateReloadPending(now = Date.now()) {
+    const state = validUpdateReloadState(now);
+    if (!state) return false;
+
+    if (state.reloadAt && now >= Number(state.reloadAt)) {
+      return performUpdateReload(state.reloadReason || "scheduled");
+    }
+
+    if (now < Number(state.fallbackAt || 0)) return false;
+
+    if (document.visibilityState === "visible") {
+      return scheduleUpdateReload(UPDATE_RETURN_DELAY_MS, "45-second-fallback");
+    }
+    return false;
+  }
+
+  function scheduleUpdateReloadFallback() {
+    const state = validUpdateReloadState();
+    if (!state) return;
+
+    clearTimeout(updateFallbackTimer);
+    const delay = Math.max(0, Number(state.fallbackAt || 0) - Date.now());
+    updateFallbackTimer = setTimeout(() => {
+      enforceUpdateReloadPending(Date.now());
+    }, delay + 20);
+  }
+
+  function beginUpdateInstall(targetVersion) {
+    const version = cleanText(targetVersion);
+    if (!version || compareVersions(version, APP_VERSION) <= 0) {
+      window.open(UPDATE_URL, "_blank", "noopener");
+      return;
+    }
+
+    const now = Date.now();
+    clearTimeout(updateReloadTimer);
+    clearTimeout(updateFallbackTimer);
+    updateReloadTimer = null;
+    updateFallbackTimer = null;
+
+    saveUpdateReloadState({
+      sourceVersion: APP_VERSION,
+      targetVersion: version,
+      startedAt: now,
+      leftAt: 0,
+      fallbackAt: now + UPDATE_RELOAD_FALLBACK_MS,
+      expiresAt: now + UPDATE_RELOAD_PENDING_TTL_MS,
+      reloadAt: 0,
+      reloadReason: "",
+    });
+
+    logActivity("update-reload", `Started install for Dropper v${version}`, {
+      fallbackSeconds: Math.round(UPDATE_RELOAD_FALLBACK_MS / 1000),
+      expiresSeconds: Math.round(UPDATE_RELOAD_PENDING_TTL_MS / 1000),
+    });
+
+    scheduleUpdateReloadFallback();
+    setStatus("Update Installer Opened · Return To Twitch After Reinstalling");
+    window.open(UPDATE_URL, "_blank", "noopener");
+  }
+
+  function resumeUpdateReloadPending() {
+    const state = validUpdateReloadState();
+    if (!state) return;
+    scheduleUpdateReloadFallback();
+    enforceUpdateReloadPending(Date.now());
+  }
+
   function showCurrentChangelog() {
     showUpdateNotice(
       "Dropper Changelog",
@@ -4734,13 +4931,14 @@
       "New Dropper Version Available",
       `v${version} is ready to install.`,
       "Install Update",
-      () => window.open(UPDATE_URL, "_blank", "noopener"),
+      () => beginUpdateInstall(version),
       {
         kicker: "Update Available",
         version,
         details: [
           "A newer Dropper build is available.",
           "Install the latest userscript to get the newest fixes and improvements.",
+          "After reinstalling, return to Twitch and Dropper will refresh this page automatically.",
         ],
       },
     );
@@ -4999,6 +5197,20 @@
           availableAt: state.availableAt ? new Date(state.availableAt).toISOString() : null,
           lastHttpStatus: Number(state.lastHttpStatus || 0) || null,
           lastError: state.lastError || null,
+          pendingRefresh: (() => {
+            const pending = loadUpdateReloadState();
+            if (!pending?.startedAt || !pending?.targetVersion) return null;
+            return {
+              sourceVersion: pending.sourceVersion || null,
+              targetVersion: pending.targetVersion,
+              ageSeconds: Math.max(0, Math.floor((now - Number(pending.startedAt)) / 1000)),
+              leftInstallerAt: pending.leftAt ? new Date(pending.leftAt).toISOString() : null,
+              fallbackAt: pending.fallbackAt ? new Date(pending.fallbackAt).toISOString() : null,
+              expiresAt: pending.expiresAt ? new Date(pending.expiresAt).toISOString() : null,
+              reloadAt: pending.reloadAt ? new Date(pending.reloadAt).toISOString() : null,
+              reloadReason: pending.reloadReason || null,
+            };
+          })(),
         };
       })(),
       networkSafety: {
