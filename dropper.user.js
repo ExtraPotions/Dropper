@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.29
+// @version      2.6.30
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.29";
+  const APP_VERSION = "2.6.30";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -89,6 +89,11 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.30": [
+      "Makes Panel + Menu Width apply to the expanded progress card too.",
+      "Keeps Full, Compact, and Narrow widths consistent across collapsed, expanded, hover-preview, menu, and changelog states.",
+      "Preserves Narrow as the default width.",
+    ],
     "2.6.29": [
       "Changes the default Panel + Menu Width from Compact to Narrow.",
       "Makes the collapsed progress hover preview match Full, Compact, and Narrow widths exactly.",
@@ -3792,8 +3797,9 @@
         display:flex; flex-direction:column; align-items:stretch;
         transition:.15s width;
       }
-      .progress-stack.is-collapsed[data-collapsed-width="compact"] { width:min(260px, calc(100vw - 24px)); }
-      .progress-stack.is-collapsed[data-collapsed-width="narrow"] { width:min(220px, calc(100vw - 24px)); }
+      .progress-stack[data-collapsed-width="compact"] { width:min(260px, calc(100vw - 24px)); }
+      .progress-stack[data-collapsed-width="narrow"] { width:min(220px, calc(100vw - 24px)); }
+      .progress-stack[data-collapsed-width="full"] { width:min(var(--dropper-width, 312px), calc(100vw - 24px)); }
       .cluster[data-panel-width="compact"] #tdh-tools-dock,
       .cluster[data-panel-width="compact"] > .update-notice[data-placement="menu"] {
         width:min(260px, calc(100vw - 24px));
@@ -3836,13 +3842,13 @@
         overflow:hidden; opacity:0; visibility:hidden; transform:translateY(4px); pointer-events:none;
         transition:.12s opacity,.12s transform,.12s visibility; z-index:31;
       }
-      .progress-stack.is-collapsed[data-collapsed-width="full"] #tdh-drop-card.collapsed .expanded-content {
+      .progress-stack[data-collapsed-width="full"] #tdh-drop-card.collapsed .expanded-content {
         width:min(var(--dropper-width, 312px), calc(100vw - 24px));
       }
-      .progress-stack.is-collapsed[data-collapsed-width="compact"] #tdh-drop-card.collapsed .expanded-content {
+      .progress-stack[data-collapsed-width="compact"] #tdh-drop-card.collapsed .expanded-content {
         width:min(260px, calc(100vw - 24px));
       }
-      .progress-stack.is-collapsed[data-collapsed-width="narrow"] #tdh-drop-card.collapsed .expanded-content {
+      .progress-stack[data-collapsed-width="narrow"] #tdh-drop-card.collapsed .expanded-content {
         width:min(220px, calc(100vw - 24px));
       }
       #tdh-drop-card.collapsed:hover .expanded-content,
@@ -5382,6 +5388,9 @@
       autoSwitchPaused: isAutoSwitchPaused(),
       progressCardCollapsed: Boolean(card?.classList.contains("collapsed")),
       panelAndMenuWidth: normalizedCollapsedPanelWidth(),
+      progressPanelWidth: ui?.shadow?.querySelector(".progress-stack")
+        ? Math.round(ui.shadow.querySelector(".progress-stack").getBoundingClientRect().width)
+        : null,
       menuWidth: ui?.dock ? Math.round(ui.dock.getBoundingClientRect().width) : null,
       progressHoverWidth: ui?.shadow?.querySelector("#tdh-drop-card .expanded-content")
         ? Math.round(ui.shadow.querySelector("#tdh-drop-card .expanded-content").getBoundingClientRect().width)
