@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.18
+// @version      2.6.19
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.18";
+  const APP_VERSION = "2.6.19";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -83,6 +83,11 @@
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const RELEASE_NOTES = {
+    "2.6.19": [
+      "Adds the current Dropper version number to the Settings header.",
+      "Makes the version badge clickable to reopen the current version changelog.",
+      "Reuses the floating changelog card above the progress badge.",
+    ],
     "2.6.18": [
       "Stops healthy matching streams from being labeled Delayed after only 90 seconds.",
       "Keeps the progress card in Earning while the live player is active and on the correct game.",
@@ -3787,7 +3792,16 @@
       .header-icon { width:48px; height:48px; flex:0 0 48px; }
       .header-icon svg { width:48px; height:48px; display:block; }
       .header-copy { min-width:0; }
+      .header-title-row { display:flex; align-items:center; gap:6px; min-width:0; }
       #tdh-rail-title { margin:0; font-size:15px; font-weight:800; line-height:1.1; }
+      #tdh-header-version {
+        min-height:18px; padding:1px 6px; border:1px solid #4a3b61; border-radius:999px;
+        background:#1b1721; color:#c9a7ff; cursor:pointer; font:800 8px/1 ui-sans-serif,system-ui,sans-serif;
+        white-space:nowrap;
+      }
+      #tdh-header-version:hover, #tdh-header-version:focus-visible {
+        border-color:#9147ff; background:#251d31; color:#fff; outline:none;
+      }
       #tdh-rail-subtitle { margin-top:2px; font-size:9px; color:#adadb8; white-space:nowrap; }
       #tdh-rail-close { width:30px; height:30px; border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0; cursor:pointer; font:18px/1 Arial,sans-serif; }
       #tdh-rail-close:hover { border-color:#9147ff; color:#fff; background:#211b2b; }
@@ -3881,7 +3895,13 @@
                   <polygon points="530,210 739,500 594,590" fill="#AEB0C2"/><polygon points="530,210 594,590 530,470" fill="#6A6E87"/><polygon points="739,500 739,685 594,590" fill="#4E5268"/><polygon points="739,685 530,842 594,590" fill="#242633"/><polygon points="594,590 530,470 530,842" fill="#3F4254"/><rect x="502" y="205" width="20" height="650" rx="10" fill="#101017"/>
                 </svg>
               </div>
-              <div class="header-copy"><h2 id="tdh-rail-title">Dropper</h2><div id="tdh-rail-subtitle">Twitch Drops: Track and Redeem</div></div>
+              <div class="header-copy">
+                <div class="header-title-row">
+                  <h2 id="tdh-rail-title">Dropper</h2>
+                  <button type="button" id="tdh-header-version" aria-label="View Dropper v${APP_VERSION} Changelog" title="View Changelog">v${APP_VERSION}</button>
+                </div>
+                <div id="tdh-rail-subtitle">Twitch Drops: Track and Redeem</div>
+              </div>
             </div>
             <button type="button" id="tdh-rail-close" aria-label="Close">×</button>
           </div>
@@ -3974,6 +3994,10 @@
     syncDropperWidthToChat();
     layoutChrome();
     ui.launcher.addEventListener("click", () => setRailOpen(!railOpen));
+    shadow.getElementById("tdh-header-version")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      showCurrentChangelog();
+    });
     shadow.getElementById("tdh-rail-close").addEventListener("click", () => setRailOpen(false));
     document.addEventListener("keydown", (event) => {
       if (event.altKey && (event.key === "g" || event.key === "G") && !event.repeat) { event.preventDefault(); setRailOpen(!railOpen, true); }
@@ -4476,6 +4500,21 @@
     requestAnimationFrame(layoutChrome);
   }
 
+  function showCurrentChangelog() {
+    showUpdateNotice(
+      "Dropper Changelog",
+      `What\'s new in v${APP_VERSION}.`,
+      "",
+      null,
+      {
+        kicker: "Current Version",
+        version: APP_VERSION,
+        details: RELEASE_NOTES[APP_VERSION] || [],
+        releaseUrl: RELEASES_URL,
+      },
+    );
+  }
+
   function showUpdateNotice(title, text, actionText = "View Update", action = null, options = {}) {
     const details = Array.isArray(options.details) ? options.details.slice(0, 4) : [];
     const state = {
@@ -4755,6 +4794,7 @@
     const circuit = networkCircuitSnapshot(now);
     return {
       version: APP_VERSION,
+      headerVersionControl: Boolean(ui?.shadow?.getElementById("tdh-header-version")),
       generatedAt: new Date(now).toISOString(),
       tokenCaptured: Boolean(getToken()),
       deviceCaptured: Boolean(capturedDevice || cookie("unique_id")),
