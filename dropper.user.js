@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.27
+// @version      2.6.28
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.27";
+  const APP_VERSION = "2.6.28";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -89,6 +89,12 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.28": [
+      "Keeps the collapsed progress hover preview above update and changelog notices.",
+      "Applies Full, Compact, and Narrow width choices to the Settings menu too.",
+      "Makes menu-attached changelogs match the selected panel width.",
+      "Renames Collapsed Panel Width to Panel + Menu Width for clarity.",
+    ],
     "2.6.27": [
       "Adds automatic Twitch refresh after starting a Dropper update install.",
       "Refreshes 3 seconds after returning to Twitch from the userscript installer.",
@@ -3774,13 +3780,29 @@
       }
       .progress-stack.is-collapsed[data-collapsed-width="compact"] { width:min(260px, calc(100vw - 24px)); }
       .progress-stack.is-collapsed[data-collapsed-width="narrow"] { width:min(220px, calc(100vw - 24px)); }
-      .badge-row { display:flex; align-items:stretch; width:100%; }
+      .cluster[data-panel-width="compact"] #tdh-tools-dock,
+      .cluster[data-panel-width="compact"] > .update-notice[data-placement="menu"] {
+        width:min(260px, calc(100vw - 24px));
+      }
+      .cluster[data-panel-width="narrow"] #tdh-tools-dock,
+      .cluster[data-panel-width="narrow"] > .update-notice[data-placement="menu"] {
+        width:min(220px, calc(100vw - 24px));
+      }
+      .cluster[data-panel-width="full"] #tdh-tools-dock,
+      .cluster[data-panel-width="full"] > .update-notice[data-placement="menu"] {
+        width:min(var(--dropper-width, 312px), calc(100vw - 24px));
+      }
+      .badge-row { display:flex; align-items:stretch; width:100%; position:relative; }
       #tdh-drop-card {
         position: relative; flex:1 1 auto; width:auto; min-width:0; max-width:none;
         background:#18181b; border:1px solid #9147ff66; border-right:0;
         border-radius:12px 0 0 12px; box-shadow:0 8px 30px #0007; overflow:hidden;
       }
       #tdh-drop-card.collapsed { width:auto; overflow:visible; cursor:pointer; }
+      #tdh-drop-card.collapsed:hover,
+      #tdh-drop-card.collapsed:focus-within {
+        z-index:30;
+      }
       #tdh-drop-card.collapsed:focus-visible { outline:2px solid #9147ff; outline-offset:2px; }
       #tdh-drop-card.collapsed::before {
         content:attr(data-help); position:absolute; right:0; top:calc(100% + 7px);
@@ -3797,7 +3819,7 @@
         display:block; position:absolute; left:0; bottom:calc(100% + 8px); width:100%; min-width:240px;
         background:#18181b; border:1px solid #9147ff66; border-radius:12px; box-shadow:0 14px 36px #000a;
         overflow:hidden; opacity:0; visibility:hidden; transform:translateY(4px); pointer-events:none;
-        transition:.12s opacity,.12s transform,.12s visibility; z-index:8;
+        transition:.12s opacity,.12s transform,.12s visibility; z-index:31;
       }
       #tdh-drop-card.collapsed:hover .expanded-content,
       #tdh-drop-card.collapsed:focus-within .expanded-content {
@@ -3875,6 +3897,7 @@
       #tdh-settings-launcher .icon { width:22px; height:22px; pointer-events:none; position:relative; z-index:1; }
       #tdh-tools-dock {
         display:none; width:min(var(--dropper-width, 312px), calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:min(72vh,560px); overflow:auto;
+        transition:.15s width;
         padding:9px 9px 0; background:#111114; border:1px solid #2f2f35; border-radius:14px; box-shadow:0 18px 50px #0008; color-scheme:dark;
         scrollbar-width:none; -ms-overflow-style:none;
       }
@@ -3900,7 +3923,8 @@
       #tdh-rail-close:hover { border-color:#9147ff; color:#fff; background:#211b2b; }
       .header-divider { height:1px; width:100%; margin:5px 0; background:linear-gradient(90deg,transparent,#9147ff88 50%,transparent); }
       .update-notice {
-        position:relative; display:block; width:100%; margin:0 0 8px; padding:10px;
+        position:relative; display:block; width:100%; max-width:calc(100vw - 24px); margin:0 0 8px; padding:10px;
+        box-sizing:border-box;
         border:1px solid #6f42b4; border-radius:10px;
         background:linear-gradient(180deg,#251a35,#18181d 70%);
         box-shadow:0 10px 28px #0008; z-index:12;
@@ -3961,7 +3985,6 @@
       .has-tooltip:hover::after, .has-tooltip:focus-visible::after { opacity:1; transform:translateY(0); }
       .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation:none !important; transition:none !important; }
       @media (max-width:700px) {
-        #tdh-tools-dock, .progress-stack { width:min(var(--dropper-width,312px),calc(100vw - 24px)); }
         .badge-row { width:100%; }
         #tdh-drop-card { flex:1 1 auto; width:auto; min-width:0; max-width:none; }
       }
@@ -4031,7 +4054,7 @@
             ${switchHtml("tdh-progress-title", "Show Progress In Tab", "Shows Current Drop Progress In The Browser Tab Title.", settings.progressInTitle)}
             ${switchHtml("tdh-reduce-motion", "Reduce Motion", "Disables Dropper Interface Animations.", settings.reduceMotion)}
             ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "Hides Twitch Subscribe CTAs And Promotional Highlight Cards.", settings.hideTwitchSubscriptionPromos)}
-            <div class="mini-row"><span>Collapsed Panel Width</span><select class="select-lite" id="tdh-collapsed-width"><option value="full">Full</option><option value="compact">Compact</option><option value="narrow">Narrow</option></select></div>
+            <div class="mini-row"><span>Panel + Menu Width</span><select class="select-lite" id="tdh-collapsed-width"><option value="full">Full</option><option value="compact">Compact</option><option value="narrow">Narrow</option></select></div>
           </div></section>
           <section class="fl-tool-panel"><div class="fl-tool-header has-tooltip" data-tip="Maintain Backup Drops Channels Without Opening Extra Tabs." data-panel="tdh-queue-body"><span class="fl-tool-title">Stream Queue</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-queue-body">
             ${switchHtml("tdh-queue-enabled", "Maintain Backup Streams", "Keeps A Short List Of Eligible Backup Drops Channels Ready.", settings.queueEnabled)}
@@ -4473,6 +4496,7 @@
     if (!stack) return;
     const width = normalizedCollapsedPanelWidth();
     stack.dataset.collapsedWidth = width;
+    ui.cluster.dataset.panelWidth = width;
     const select = ui.shadow.getElementById("tdh-collapsed-width");
     if (select && select.value !== width) select.value = width;
     requestAnimationFrame(layoutChrome);
@@ -4596,6 +4620,7 @@
       settings.collapsedPanelWidth = normalizedCollapsedPanelWidth(collapsedWidth.value);
       saveSettings();
       applyAppearanceSettings();
+      layoutChrome();
     });
     const card = s.getElementById("tdh-drop-card");
     card.addEventListener("mouseenter", positionCollapsedPreview);
@@ -4812,6 +4837,7 @@
     if (!notice || !progressStack) return;
 
     notice.dataset.placement = placement === "menu" ? "menu" : "progress";
+    if (ui.cluster) ui.cluster.dataset.panelWidth = normalizedCollapsedPanelWidth();
     if (notice.dataset.placement === "progress") {
       progressStack.prepend(notice);
     } else if (notice.parentElement !== ui.cluster) {
@@ -5331,7 +5357,8 @@
       queueCandidates: discoverQueueCandidates().map((item) => item.login),
       autoSwitchPaused: isAutoSwitchPaused(),
       progressCardCollapsed: Boolean(card?.classList.contains("collapsed")),
-      collapsedPanelWidth: normalizedCollapsedPanelWidth(),
+      panelAndMenuWidth: normalizedCollapsedPanelWidth(),
+      menuWidth: ui?.dock ? Math.round(ui.dock.getBoundingClientRect().width) : null,
       chatWidth: chat ? Math.round(chat.getBoundingClientRect().width) : null,
       recentActivity: (Array.isArray(activityLog) ? activityLog : []).slice(-20).map((entry) => ({
         at: new Date(entry.at).toISOString(),
