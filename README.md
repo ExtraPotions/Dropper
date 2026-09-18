@@ -22,16 +22,12 @@
 
 <p>
   <a href="https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js">
-    <img alt="Install with Violentmonkey" src="https://img.shields.io/badge/Install%20with-Violentmonkey-4C8BF5?style=for-the-badge">
+    <img alt="Download Dropper" src="https://img.shields.io/badge/Download-Dropper-9147FF?style=for-the-badge&logo=twitch&logoColor=white">
   </a>
-  <a href="https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js">
-    <img alt="Install with Tampermonkey" src="https://img.shields.io/badge/Install%20with-Tampermonkey-111111?style=for-the-badge">
+  <a href="https://github.com/ExtraPotions/Dropper/stargazers">
+    <img alt="GitHub Stars" src="https://img.shields.io/github/stars/ExtraPotions/Dropper?style=for-the-badge&logo=github&label=Stars">
   </a>
 </p>
-
-Install a userscript manager, then click either button above. Both buttons open the current raw `dropper.user.js` release and should hand it off to your installed userscript manager.
-
-**Direct install:** https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
 
 ## What Dropper Does
 
