@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.16
+// @version      2.6.17
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.16";
+  const APP_VERSION = "2.6.17";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -38,6 +38,11 @@
   const HANDOFF_STAGE_TIMEOUT_MS = 45 * 1000;
   const HEARTBEAT_INTERVAL_MS = 5000;
   const STARTUP_NETWORK_QUIET_MS = 12 * 1000;
+  const STREAM_ROUTE_SETTLE_MS = 15 * 1000;
+  const NAVIGATION_GUARD_KEY = "dropper-auto-navigation-guard";
+  const AUTO_NAVIGATION_WINDOW_MS = 60 * 1000;
+  const AUTO_NAVIGATION_LIMIT = 4;
+  const AUTO_NAVIGATION_COOLDOWN_MS = 90 * 1000;
   const GQL_POLL_INTERVAL_MS = 60 * 1000;
   const GQL_RECOVERY_INTERVAL_MS = 30 * 1000;
   const GQL_MIN_GAP_MS = 15 * 1000;
@@ -75,6 +80,12 @@
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const RELEASE_NOTES = {
+    "2.6.17": [
+      "Stops channel/category reload loops caused by stale finding-stream handoff state.",
+      "Recognizes a matching channel page as a verification target instead of bouncing back to the category.",
+      "Adds a hard automatic-navigation loop guard with a 90-second cooldown.",
+      "Lets freshly loaded stream pages settle before Dropper can route away from them.",
+    ],
     "2.6.16": [
       "Expands subscription-promo suppression beyond chat.",
       "Hides Gift a Sub and Subscribe CTAs below the player.",
@@ -259,6 +270,7 @@
 
   const settings = loadSettings();
   const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+  const PAGE_STARTED_AT = Date.now();
   let statusText = "Starting…";
   let progressLabel = "";
   let lastBonusAt = 0;
@@ -521,7 +533,7 @@
 
     if (targetDirectory) {
       setStatus(`Resuming ${targetGame} Drops · Finding Compatible Stream`);
-      location.href = targetDirectory;
+      autoNavigateTwitch(targetDirectory, "automatic-routing");
       return true;
     }
     return false;
@@ -955,6 +967,99 @@
       message,
       consecutiveFailures: networkState.consecutiveFailures,
     });
+  }
+
+  function readNavigationGuard() {
+    return readSession(NAVIGATION_GUARD_KEY, {
+      events: [],
+      blockedUntil: 0,
+      lastTarget: "",
+      lastReason: "",
+    });
+  }
+
+  function writeNavigationGuard(state) {
+    writeSession(NAVIGATION_GUARD_KEY, state);
+  }
+
+  function navigationGuardSnapshot(now = Date.now()) {
+    const state = readNavigationGuard();
+    const events = (Array.isArray(state.events) ? state.events : [])
+      .filter((time) => Number(time) > now - AUTO_NAVIGATION_WINDOW_MS);
+
+    if (Number(state.blockedUntil || 0) && now >= Number(state.blockedUntil)) {
+      state.blockedUntil = 0;
+    }
+
+    state.events = events;
+    writeNavigationGuard(state);
+    return {
+      ...state,
+      events,
+      blocked: Number(state.blockedUntil || 0) > now,
+    };
+  }
+
+  function autoNavigateTwitch(url, reason = "automatic-routing") {
+    if (!url || !isTrustedTwitchUrl(url)) return false;
+
+    let target;
+    let current;
+    try {
+      target = new URL(url, location.href);
+      current = new URL(location.href);
+    } catch (_) {
+      return false;
+    }
+
+    const targetKey = `${target.origin}${target.pathname}${target.search}`;
+    const currentKey = `${current.origin}${current.pathname}${current.search}`;
+    if (targetKey === currentKey) return false;
+
+    const now = Date.now();
+    const guard = navigationGuardSnapshot(now);
+    if (guard.blocked) {
+      setStatus(`Auto-Switch Paused · Reload Loop Protection ${Math.ceil((guard.blockedUntil - now) / 1000)}s`);
+      return false;
+    }
+
+    if (watchingLogin() && now - PAGE_STARTED_AT < STREAM_ROUTE_SETTLE_MS) {
+      return false;
+    }
+
+    const events = [...guard.events, now].filter((time) => time > now - AUTO_NAVIGATION_WINDOW_MS);
+    if (events.length > AUTO_NAVIGATION_LIMIT) {
+      const blockedUntil = now + AUTO_NAVIGATION_COOLDOWN_MS;
+      writeNavigationGuard({
+        events,
+        blockedUntil,
+        lastTarget: targetKey,
+        lastReason: reason,
+      });
+      logActivity("navigation-guard", "Automatic routing paused to stop a reload loop", {
+        reason,
+        target: target.pathname,
+        attemptsInWindow: events.length,
+        cooldownSeconds: Math.round(AUTO_NAVIGATION_COOLDOWN_MS / 1000),
+      });
+      setStatus("Auto-Switch Paused · Reload Loop Protection");
+      return false;
+    }
+
+    writeNavigationGuard({
+      events,
+      blockedUntil: 0,
+      lastTarget: targetKey,
+      lastReason: reason,
+    });
+
+    logActivity("navigation", "Automatic Twitch navigation", {
+      reason,
+      from: current.pathname,
+      to: target.pathname,
+    });
+    location.assign(target.href);
+    return true;
   }
 
   function normalizedHandoffState(pending) {
@@ -1716,11 +1821,11 @@
 
     const directoryUrl = gameDirectoryUrl(currentDrop);
     if (directoryUrl) {
-      location.href = directoryUrl;
+      autoNavigateTwitch(directoryUrl, "automatic-routing");
       return true;
     }
 
-    location.href = INVENTORY_URL;
+    autoNavigateTwitch(INVENTORY_URL, "automatic-routing");
     return true;
   }
 
@@ -2022,7 +2127,7 @@
       game: pending.targetGame,
       gameSlug: pending.targetSlug || currentDrop?.gameSlug || "",
     });
-    if (url && location.href !== url) location.href = url;
+    if (url && location.href !== url) autoNavigateTwitch(url, "automatic-routing");
     return true;
   }
 
@@ -2060,7 +2165,7 @@
       );
       setStatus(`No Drops Stream Found For ${pending.targetGame || "Target Game"} · Trying Next Game`);
       notifyUser(`Skipping ${pending.targetGame || "Unavailable Game"} · Trying Next Eligible Game`);
-      location.href = INVENTORY_URL;
+      autoNavigateTwitch(INVENTORY_URL, "automatic-routing");
       return true;
     }
 
@@ -2090,7 +2195,7 @@
     lastStreamSwitch = Date.now();
     setStatus(`Opening ${pending.targetGame || "Next Game"} Drops Stream`);
     notifyUser(`Moving To ${pending.targetGame || "Next Game"}`);
-    location.href = href;
+    autoNavigateTwitch(href, "automatic-routing");
     return true;
   }
 
@@ -2319,7 +2424,7 @@
         { targetGame: "", targetSlug: "", targetStream: "", skippedGames },
         `Could not verify ${pending.targetGame || "target game"} after switching`,
       );
-      location.href = INVENTORY_URL;
+      autoNavigateTwitch(INVENTORY_URL, "automatic-routing");
       return true;
     }
     return false;
@@ -2419,7 +2524,7 @@
           { targetGame: "", targetSlug: "", targetStream: "", skippedGames },
           `Stream switch timed out for ${pending.targetGame || "target game"} · selecting another game`,
         );
-        location.href = INVENTORY_URL;
+        autoNavigateTwitch(INVENTORY_URL, "automatic-routing");
         return true;
       }
       return true;
@@ -2441,7 +2546,7 @@
           `Verification timed out for ${pending.targetGame || "target game"} · selecting another game`,
         );
         setStatus(`Could Not Verify ${pending.targetGame || "Target Game"} · Trying Next Game`);
-        location.href = INVENTORY_URL;
+        autoNavigateTwitch(INVENTORY_URL, "automatic-routing");
         return true;
       }
       return false;
@@ -2452,14 +2557,37 @@
         continueDirectoryHandoffFromDom();
         return true;
       }
+
+      const currentLogin = watchingLogin();
+      if (currentLogin) {
+        const info = readStreamInfo();
+
+        if (info.live && info.game && gameNamesMatch(pending.targetGame || "", info.game)) {
+          transitionHandoff(
+            HANDOFF_STATES.VERIFYING,
+            {
+              targetStream: currentLogin,
+              verifyStartedAt: Date.now(),
+              verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
+              verifyBaselinePercent: Number(currentDrop?.percent || 0),
+            },
+            `Found target game on ${currentLogin} · verifying current channel in place`,
+          );
+          return false;
+        }
+
+        if (Date.now() - PAGE_STARTED_AT < STREAM_ROUTE_SETTLE_MS || !info.game) {
+          setStatus(`Loading ${pending.targetGame || "Target"} Stream Info…`);
+          return false;
+        }
+      }
+
       const targetUrl = gameDirectoryUrl({
         game: pending.targetGame,
         gameSlug: pending.targetSlug,
       });
-      if (targetUrl) {
-        location.href = targetUrl;
-        return true;
-      }
+      if (targetUrl && autoNavigateTwitch(targetUrl, "find-target-category")) return true;
+
       transitionHandoff(HANDOFF_STATES.SELECTING_GAME, {}, "Target game directory URL unavailable");
       state = HANDOFF_STATES.SELECTING_GAME;
     }
@@ -2538,7 +2666,7 @@
         lastStreamSwitch = Date.now();
         setStatus(`Moving To ${next.game}`);
         notifyUser(`${current.completedGame} Complete · Moving To ${next.game}`);
-        location.href = inventoryHref;
+        autoNavigateTwitch(inventoryHref, "automatic-routing");
         return true;
       }
     }
@@ -2558,7 +2686,7 @@
         `Searching ${next.game} directory for a Drops-enabled stream`,
       );
       setStatus(`${current.completedGame} Complete · Finding ${next.game} Stream`);
-      location.href = directoryUrl;
+      autoNavigateTwitch(directoryUrl, "automatic-routing");
       return true;
     }
 
@@ -3331,7 +3459,7 @@
     logActivity("stream-switch", "Opening next Drops channel", { target: streamLoginFromUrl(href) || null });
     setStatus("Opening Next Drops Channel");
     if (settings.queueEnabled) {
-      location.href = href;
+      autoNavigateTwitch(href, "automatic-routing");
       return;
     }
     const next = window.open(href, "tdh-drops-live");
@@ -4541,6 +4669,19 @@
       progressAgeSeconds: Math.max(0, Math.floor((now - lastProgressAt) / 1000)),
       lastProgress,
       lastProgressAt: new Date(lastProgressAt).toISOString(),
+      navigationGuard: (() => {
+        const guard = navigationGuardSnapshot(now);
+        return {
+          blocked: guard.blocked,
+          blockedUntil: guard.blockedUntil ? new Date(guard.blockedUntil).toISOString() : null,
+          attemptsLastMinute: guard.events.length,
+          limitPerMinute: AUTO_NAVIGATION_LIMIT,
+          lastTarget: guard.lastTarget || null,
+          lastReason: guard.lastReason || null,
+          streamRouteSettleSeconds: Math.round(STREAM_ROUTE_SETTLE_MS / 1000),
+          pageAgeSeconds: Math.floor((now - PAGE_STARTED_AT) / 1000),
+        };
+      })(),
       heartbeat: {
         intervalMs: HEARTBEAT_INTERVAL_MS,
         lastAt: lastHeartbeatAt ? new Date(lastHeartbeatAt).toISOString() : null,
