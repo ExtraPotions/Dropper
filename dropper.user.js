@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.14
+// @version      2.6.15
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.14";
+  const APP_VERSION = "2.6.15";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -75,6 +75,12 @@
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const RELEASE_NOTES = {
+    "2.6.15": [
+      "Adds a Hide Chat Subscription Promos option, enabled by default.",
+      "Suppresses compact Twitch subscription upsell cards inside the chat column without hiding normal chat.",
+      "Leaves the normal Subscribe controls below the player untouched.",
+      "Restores suppressed cards immediately if the option is turned off.",
+    ],
     "2.6.14": [
       "Reduces Twitch page-load contention during stream reloads.",
       "Waits 12 seconds before Dropper starts its own automatic GQL polling after a fresh page load.",
@@ -195,6 +201,7 @@
     autoHideCard: false,
     reduceMotion: false,
     notifications: true,
+    hideChatSubscriptionPromos: true,
     pauseAutoSwitchMinutes: 0,
     queueEnabled: true,
     queueCount: 3,
@@ -276,6 +283,7 @@
   let lastInventoryCampaigns = [];
   let chatWidthObserver = null;
   let chatDomObserver = null;
+  let suppressedChatPromoCount = 0;
   let lastGqlPollAt = 0;
   let lastGqlSuccessAt = 0;
   let lastGqlError = "";
@@ -315,6 +323,7 @@
     setStatus(featureStatus());
     logActivity("lifecycle", `Dropper ${APP_VERSION} started`);
     refreshDropCard();
+    suppressChatSubscriptionPromos();
     checkVersionNotice();
     scheduleUpdateCheck();
     watchDirectoryHandoff();
@@ -535,6 +544,7 @@
     else refreshDropCard();
 
     refreshQueueList();
+    suppressChatSubscriptionPromos();
 
     if (settings.queueEnabled && settings.queueOnOffline && watchingLogin() && document.readyState === "complete" && !getHandoffState()) {
       const info = readStreamInfo();
@@ -554,6 +564,85 @@
     ) {
       scheduleUpdateCheck();
     }
+  }
+
+  function isChatSubscriptionPromoText(value) {
+    const text = cleanText(value);
+    if (!text || text.length > 320) return false;
+    return (
+      /\bsub(?:scribe)?\s+(?:for|to)\b/i.test(text) ||
+      /\bsub(?:scription)?\s+benefits?\b/i.test(text)
+    );
+  }
+
+  function restoreChatSubscriptionPromos() {
+    document.querySelectorAll('[data-dropper-chat-promo-suppressed="true"]').forEach((node) => {
+      const previous = node.getAttribute("data-dropper-prev-display");
+      if (previous) node.style.display = previous;
+      else node.style.removeProperty("display");
+      node.removeAttribute("data-dropper-chat-promo-suppressed");
+      node.removeAttribute("data-dropper-prev-display");
+    });
+  }
+
+  function suppressChatSubscriptionPromos() {
+    if (!settings.hideChatSubscriptionPromos) {
+      restoreChatSubscriptionPromos();
+      return 0;
+    }
+
+    const chat = findTwitchChatColumn();
+    if (!chat) return 0;
+
+    const candidates = chat.querySelectorAll([
+      'button',
+      '[role="button"]',
+      'a[href*="/subscriptions"]',
+      'a[href*="/subscribe"]',
+      '[data-a-target*="subscribe" i]',
+      '[data-test-selector*="subscribe" i]',
+      '[aria-label*="subscribe" i]',
+      '[aria-label*="sub for" i]'
+    ].join(","));
+
+    const cards = new Set();
+    candidates.forEach((candidate) => {
+      let node = candidate instanceof Element ? candidate : null;
+      let matched = null;
+
+      for (let depth = 0; node && node !== chat && depth < 7; depth += 1, node = node.parentElement) {
+        if (node.getAttribute?.("data-dropper-chat-promo-suppressed") === "true") {
+          matched = node;
+          break;
+        }
+
+        const text = cleanText(node.textContent);
+        if (!isChatSubscriptionPromoText(text)) continue;
+
+        const rect = node.getBoundingClientRect();
+        const compactCard = rect.width >= 180 && rect.height >= 36 && rect.height <= 190;
+        if (compactCard) matched = node;
+      }
+
+      if (matched) cards.add(matched);
+    });
+
+    let hidden = 0;
+    cards.forEach((card) => {
+      if (card.getAttribute("data-dropper-chat-promo-suppressed") === "true") return;
+      card.setAttribute("data-dropper-prev-display", card.style.display || "");
+      card.setAttribute("data-dropper-chat-promo-suppressed", "true");
+      card.style.setProperty("display", "none", "important");
+      hidden += 1;
+      suppressedChatPromoCount += 1;
+    });
+
+    if (hidden) {
+      logActivity("chat-ui", "Suppressed " + hidden + " Twitch subscription promo" + (hidden === 1 ? "" : "s"), {
+        totalSuppressed: suppressedChatPromoCount
+      });
+    }
+    return hidden;
   }
 
   function findTwitchChatColumn() {
@@ -3580,6 +3669,7 @@
             ${switchHtml("tdh-auto-hide", "Auto-Hide Card", "Collapses The Progress Card After A Short Delay.", settings.autoHideCard)}
             ${switchHtml("tdh-reduce-motion", "Reduce Motion", "Disables Dropper Interface Animations.", settings.reduceMotion)}
             ${switchHtml("tdh-notifications", "Notifications", "Shows Brief Dropper Notices For Important State Changes.", settings.notifications)}
+            ${switchHtml("tdh-hide-chat-promos", "Hide Chat Subscription Promos", "Hides Compact Twitch Subscription Upsell Cards Inside Stream Chat.", settings.hideChatSubscriptionPromos)}
             <div class="mini-row"><span>Pause Auto-Switch</span><select class="select-lite" id="tdh-pause-switch"><option value="0">Off</option><option value="30">30 Min</option><option value="60">1 Hour</option></select></div>
             <button type="button" class="life-btn" id="tdh-refresh-now">Refresh Drop State</button>
             <button type="button" class="life-btn" id="tdh-diagnostics-toggle">Show Diagnostics</button>
@@ -4436,6 +4526,11 @@
         stateAgeSeconds: Math.max(0, Math.floor((now - Number(handoff.stateStartedAt || handoff.startedAt || now)) / 1000)),
       } : { state: "idle" },
       selectors: selectorHealthSnapshot(),
+      chatPromoSuppression: {
+        enabled: Boolean(settings.hideChatSubscriptionPromos),
+        totalSuppressed: suppressedChatPromoCount,
+        currentlyHidden: document.querySelectorAll('[data-dropper-chat-promo-suppressed="true"]').length,
+      },
       queueEnabled: settings.queueEnabled,
       standbyCache: {
         total: pruneStandbyCache().length,
@@ -4543,6 +4638,7 @@
       "tdh-claim-bonus": "claimBonus", "tdh-keep-tab": "keepTabActive", "tdh-claim-drops": "claimDrops",
       "tdh-progress-title": "progressInTitle", "tdh-find-next": "findNextStream", "tdh-mute-next": "muteRestarted",
       "tdh-background-earning": "backgroundEarning", "tdh-auto-hide": "autoHideCard", "tdh-reduce-motion": "reduceMotion", "tdh-notifications": "notifications",
+      "tdh-hide-chat-promos": "hideChatSubscriptionPromos",
       "tdh-queue-enabled": "queueEnabled", "tdh-queue-stall": "queueOnStall", "tdh-queue-offline": "queueOnOffline",
     };
     Object.entries(map).forEach(([id, key]) => {
@@ -4558,6 +4654,10 @@
         }
         if (key === "reduceMotion") applyMotionSetting();
         if (key === "autoHideCard") scheduleAutoHide();
+        if (key === "hideChatSubscriptionPromos") {
+          if (settings.hideChatSubscriptionPromos) suppressChatSubscriptionPromos();
+          else restoreChatSubscriptionPromos();
+        }
         if (key.startsWith("queue")) refreshQueueList();
         syncCompactState();
       });
@@ -4570,6 +4670,7 @@
       "tdh-claim-bonus": settings.claimBonus, "tdh-keep-tab": settings.keepTabActive, "tdh-claim-drops": settings.claimDrops,
       "tdh-progress-title": settings.progressInTitle, "tdh-find-next": settings.findNextStream, "tdh-mute-next": settings.muteRestarted,
       "tdh-background-earning": settings.backgroundEarning, "tdh-auto-hide": settings.autoHideCard, "tdh-reduce-motion": settings.reduceMotion, "tdh-notifications": settings.notifications,
+      "tdh-hide-chat-promos": settings.hideChatSubscriptionPromos,
       "tdh-queue-enabled": settings.queueEnabled, "tdh-queue-stall": settings.queueOnStall, "tdh-queue-offline": settings.queueOnOffline,
     };
     Object.entries(map).forEach(([id, on]) => ui.shadow.getElementById(id)?.setAttribute("aria-checked", String(Boolean(on))));
