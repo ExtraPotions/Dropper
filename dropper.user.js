@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.15
+// @version      2.6.16
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.15";
+  const APP_VERSION = "2.6.16";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -75,6 +75,12 @@
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const RELEASE_NOTES = {
+    "2.6.16": [
+      "Expands subscription-promo suppression beyond chat.",
+      "Hides Gift a Sub and Subscribe CTAs below the player.",
+      "Suppresses compact inline and header channel-subscription upsells.",
+      "Keeps Follow, player controls, normal chat, and Dropper controls untouched.",
+    ],
     "2.6.15": [
       "Adds a Hide Chat Subscription Promos option, enabled by default.",
       "Suppresses compact Twitch subscription upsell cards inside the chat column without hiding normal chat.",
@@ -201,7 +207,7 @@
     autoHideCard: false,
     reduceMotion: false,
     notifications: true,
-    hideChatSubscriptionPromos: true,
+    hideTwitchSubscriptionPromos: true,
     pauseAutoSwitchMinutes: 0,
     queueEnabled: true,
     queueCount: 3,
@@ -283,7 +289,8 @@
   let lastInventoryCampaigns = [];
   let chatWidthObserver = null;
   let chatDomObserver = null;
-  let suppressedChatPromoCount = 0;
+  let suppressedSubscriptionPromoCount = 0;
+  let subscriptionPromoObserver = null;
   let lastGqlPollAt = 0;
   let lastGqlSuccessAt = 0;
   let lastGqlError = "";
@@ -323,7 +330,7 @@
     setStatus(featureStatus());
     logActivity("lifecycle", `Dropper ${APP_VERSION} started`);
     refreshDropCard();
-    suppressChatSubscriptionPromos();
+    watchTwitchSubscriptionPromos();
     checkVersionNotice();
     scheduleUpdateCheck();
     watchDirectoryHandoff();
@@ -544,7 +551,7 @@
     else refreshDropCard();
 
     refreshQueueList();
-    suppressChatSubscriptionPromos();
+    suppressTwitchSubscriptionPromos();
 
     if (settings.queueEnabled && settings.queueOnOffline && watchingLogin() && document.readyState === "complete" && !getHandoffState()) {
       const info = readStreamInfo();
@@ -566,36 +573,77 @@
     }
   }
 
-  function isChatSubscriptionPromoText(value) {
+  function isSubscriptionPromoText(value) {
     const text = cleanText(value);
-    if (!text || text.length > 320) return false;
+    if (!text || text.length > 360) return false;
     return (
-      /\bsub(?:scribe)?\s+(?:for|to)\b/i.test(text) ||
-      /\bsub(?:scription)?\s+benefits?\b/i.test(text)
+      /\bgift\s+(?:a\s+)?sub\b/i.test(text) ||
+      /\bsubscribe(?:\s*:|\s+for|\s+to|\s+with|\s+and|\s*$)/i.test(text) ||
+      /\bsub(?:scription)?\s+benefits?\b/i.test(text) ||
+      /\bsub\s+for\b/i.test(text)
     );
   }
 
-  function restoreChatSubscriptionPromos() {
-    document.querySelectorAll('[data-dropper-chat-promo-suppressed="true"]').forEach((node) => {
+  function subscriptionPromoStyle() {
+    let style = document.getElementById("dropper-subscription-promo-style");
+    if (!settings.hideTwitchSubscriptionPromos) {
+      style?.remove();
+      return;
+    }
+    if (style) return;
+
+    style = document.createElement("style");
+    style.id = "dropper-subscription-promo-style";
+    style.textContent = `
+      button[data-a-target="subscribe-button"],
+      [data-a-target="subscribe-button"],
+      button[data-a-target="gift-sub-button"],
+      [data-a-target="gift-sub-button"],
+      button[data-a-target="gift-a-sub-button"],
+      [data-a-target="gift-a-sub-button"],
+      button[data-test-selector*="subscribe-button" i],
+      button[data-test-selector*="gift-sub" i],
+      button[aria-label^="Subscribe" i],
+      button[aria-label*="Gift a Sub" i],
+      [role="button"][aria-label^="Subscribe" i],
+      [role="button"][aria-label*="Gift a Sub" i] {
+        display: none !important;
+      }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function restoreTwitchSubscriptionPromos() {
+    document.getElementById("dropper-subscription-promo-style")?.remove();
+    document.querySelectorAll('[data-dropper-sub-promo-suppressed="true"]').forEach((node) => {
       const previous = node.getAttribute("data-dropper-prev-display");
       if (previous) node.style.display = previous;
       else node.style.removeProperty("display");
-      node.removeAttribute("data-dropper-chat-promo-suppressed");
+      node.removeAttribute("data-dropper-sub-promo-suppressed");
       node.removeAttribute("data-dropper-prev-display");
+      node.removeAttribute("data-dropper-sub-promo-scope");
     });
   }
 
-  function suppressChatSubscriptionPromos() {
-    if (!settings.hideChatSubscriptionPromos) {
-      restoreChatSubscriptionPromos();
-      return 0;
-    }
+  function suppressPromoNode(node, scope) {
+    if (!(node instanceof Element)) return false;
+    if (node.closest("#tdh-root")) return false;
+    if (node.getAttribute("data-dropper-sub-promo-suppressed") === "true") return false;
 
+    node.setAttribute("data-dropper-prev-display", node.style.display || "");
+    node.setAttribute("data-dropper-sub-promo-suppressed", "true");
+    node.setAttribute("data-dropper-sub-promo-scope", scope);
+    node.style.setProperty("display", "none", "important");
+    suppressedSubscriptionPromoCount += 1;
+    return true;
+  }
+
+  function suppressChatSubscriptionPromos() {
     const chat = findTwitchChatColumn();
     if (!chat) return 0;
 
     const candidates = chat.querySelectorAll([
-      'button',
+      "button",
       '[role="button"]',
       'a[href*="/subscriptions"]',
       'a[href*="/subscribe"]',
@@ -611,13 +659,13 @@
       let matched = null;
 
       for (let depth = 0; node && node !== chat && depth < 7; depth += 1, node = node.parentElement) {
-        if (node.getAttribute?.("data-dropper-chat-promo-suppressed") === "true") {
+        if (node.getAttribute?.("data-dropper-sub-promo-suppressed") === "true") {
           matched = node;
           break;
         }
 
         const text = cleanText(node.textContent);
-        if (!isChatSubscriptionPromoText(text)) continue;
+        if (!isSubscriptionPromoText(text)) continue;
 
         const rect = node.getBoundingClientRect();
         const compactCard = rect.width >= 180 && rect.height >= 36 && rect.height <= 190;
@@ -629,20 +677,86 @@
 
     let hidden = 0;
     cards.forEach((card) => {
-      if (card.getAttribute("data-dropper-chat-promo-suppressed") === "true") return;
-      card.setAttribute("data-dropper-prev-display", card.style.display || "");
-      card.setAttribute("data-dropper-chat-promo-suppressed", "true");
-      card.style.setProperty("display", "none", "important");
-      hidden += 1;
-      suppressedChatPromoCount += 1;
+      if (suppressPromoNode(card, "chat")) hidden += 1;
+    });
+    return hidden;
+  }
+
+  function suppressPageSubscriptionPromos() {
+    const chat = findTwitchChatColumn();
+    const selectors = [
+      'button[data-a-target*="subscribe" i]',
+      'button[data-a-target*="gift-sub" i]',
+      'button[data-a-target*="gift-a-sub" i]',
+      'button[data-test-selector*="subscribe" i]',
+      'button[data-test-selector*="gift-sub" i]',
+      'button[aria-label*="subscribe" i]',
+      'button[aria-label*="gift a sub" i]',
+      '[role="button"][aria-label*="subscribe" i]',
+      '[role="button"][aria-label*="gift a sub" i]',
+      'a[href*="/subscriptions"]',
+      'a[href*="/subscribe"]'
+    ].join(",");
+
+    let hidden = 0;
+    document.querySelectorAll(selectors).forEach((candidate) => {
+      if (!(candidate instanceof Element)) return;
+      if (candidate.closest("#tdh-root")) return;
+      if (chat?.contains(candidate)) return;
+
+      const text = cleanText(
+        candidate.textContent ||
+        candidate.getAttribute("aria-label") ||
+        candidate.getAttribute("title") ||
+        ""
+      );
+
+      const explicitSelector = Boolean(
+        candidate.matches?.(
+          '[data-a-target="subscribe-button"], [data-a-target="gift-sub-button"], [data-a-target="gift-a-sub-button"]'
+        )
+      );
+      if (!explicitSelector && !isSubscriptionPromoText(text)) return;
+
+      const rect = candidate.getBoundingClientRect();
+      if (rect.height > 120 || rect.width > 420) return;
+
+      if (suppressPromoNode(candidate, "page-cta")) hidden += 1;
     });
 
+    return hidden;
+  }
+
+  function suppressTwitchSubscriptionPromos() {
+    if (!settings.hideTwitchSubscriptionPromos) {
+      restoreTwitchSubscriptionPromos();
+      return 0;
+    }
+
+    subscriptionPromoStyle();
+    const hidden = suppressChatSubscriptionPromos() + suppressPageSubscriptionPromos();
     if (hidden) {
-      logActivity("chat-ui", "Suppressed " + hidden + " Twitch subscription promo" + (hidden === 1 ? "" : "s"), {
-        totalSuppressed: suppressedChatPromoCount
-      });
+      logActivity(
+        "twitch-ui",
+        "Suppressed " + hidden + " Twitch subscription promo" + (hidden === 1 ? "" : "s"),
+        { totalSuppressed: suppressedSubscriptionPromoCount }
+      );
     }
     return hidden;
+  }
+
+  function watchTwitchSubscriptionPromos() {
+    subscriptionPromoStyle();
+    suppressTwitchSubscriptionPromos();
+
+    if (subscriptionPromoObserver || typeof MutationObserver !== "function") return;
+    let timer = null;
+    subscriptionPromoObserver = new MutationObserver(() => {
+      if (!settings.hideTwitchSubscriptionPromos) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => suppressTwitchSubscriptionPromos(), 120);
+    });
+    subscriptionPromoObserver.observe(document.documentElement, { childList: true, subtree: true });
   }
 
   function findTwitchChatColumn() {
@@ -2809,7 +2923,15 @@
 
   function loadSettings() {
     try {
-      return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") };
+      const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+      if (
+        stored.hideTwitchSubscriptionPromos == null &&
+        stored.hideChatSubscriptionPromos != null
+      ) {
+        stored.hideTwitchSubscriptionPromos = Boolean(stored.hideChatSubscriptionPromos);
+      }
+      delete stored.hideChatSubscriptionPromos;
+      return { ...DEFAULTS, ...stored };
     } catch (_) {
       return { ...DEFAULTS };
     }
@@ -3669,7 +3791,7 @@
             ${switchHtml("tdh-auto-hide", "Auto-Hide Card", "Collapses The Progress Card After A Short Delay.", settings.autoHideCard)}
             ${switchHtml("tdh-reduce-motion", "Reduce Motion", "Disables Dropper Interface Animations.", settings.reduceMotion)}
             ${switchHtml("tdh-notifications", "Notifications", "Shows Brief Dropper Notices For Important State Changes.", settings.notifications)}
-            ${switchHtml("tdh-hide-chat-promos", "Hide Chat Subscription Promos", "Hides Compact Twitch Subscription Upsell Cards Inside Stream Chat.", settings.hideChatSubscriptionPromos)}
+            ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "Hides Channel Subscribe And Gift-A-Sub Upsells In Chat And Around The Stream Player.", settings.hideTwitchSubscriptionPromos)}
             <div class="mini-row"><span>Pause Auto-Switch</span><select class="select-lite" id="tdh-pause-switch"><option value="0">Off</option><option value="30">30 Min</option><option value="60">1 Hour</option></select></div>
             <button type="button" class="life-btn" id="tdh-refresh-now">Refresh Drop State</button>
             <button type="button" class="life-btn" id="tdh-diagnostics-toggle">Show Diagnostics</button>
@@ -4526,10 +4648,13 @@
         stateAgeSeconds: Math.max(0, Math.floor((now - Number(handoff.stateStartedAt || handoff.startedAt || now)) / 1000)),
       } : { state: "idle" },
       selectors: selectorHealthSnapshot(),
-      chatPromoSuppression: {
-        enabled: Boolean(settings.hideChatSubscriptionPromos),
-        totalSuppressed: suppressedChatPromoCount,
-        currentlyHidden: document.querySelectorAll('[data-dropper-chat-promo-suppressed="true"]').length,
+      subscriptionPromoSuppression: {
+        enabled: Boolean(settings.hideTwitchSubscriptionPromos),
+        totalSuppressed: suppressedSubscriptionPromoCount,
+        currentlyHidden: document.querySelectorAll('[data-dropper-sub-promo-suppressed="true"]').length,
+        hiddenChat: document.querySelectorAll('[data-dropper-sub-promo-scope="chat"]').length,
+        hiddenPageCtas: document.querySelectorAll('[data-dropper-sub-promo-scope="page-cta"]').length,
+        cssSuppressionActive: Boolean(document.getElementById("dropper-subscription-promo-style")),
       },
       queueEnabled: settings.queueEnabled,
       standbyCache: {
@@ -4638,7 +4763,7 @@
       "tdh-claim-bonus": "claimBonus", "tdh-keep-tab": "keepTabActive", "tdh-claim-drops": "claimDrops",
       "tdh-progress-title": "progressInTitle", "tdh-find-next": "findNextStream", "tdh-mute-next": "muteRestarted",
       "tdh-background-earning": "backgroundEarning", "tdh-auto-hide": "autoHideCard", "tdh-reduce-motion": "reduceMotion", "tdh-notifications": "notifications",
-      "tdh-hide-chat-promos": "hideChatSubscriptionPromos",
+      "tdh-hide-sub-promos": "hideTwitchSubscriptionPromos",
       "tdh-queue-enabled": "queueEnabled", "tdh-queue-stall": "queueOnStall", "tdh-queue-offline": "queueOnOffline",
     };
     Object.entries(map).forEach(([id, key]) => {
@@ -4654,9 +4779,9 @@
         }
         if (key === "reduceMotion") applyMotionSetting();
         if (key === "autoHideCard") scheduleAutoHide();
-        if (key === "hideChatSubscriptionPromos") {
-          if (settings.hideChatSubscriptionPromos) suppressChatSubscriptionPromos();
-          else restoreChatSubscriptionPromos();
+        if (key === "hideTwitchSubscriptionPromos") {
+          if (settings.hideTwitchSubscriptionPromos) suppressTwitchSubscriptionPromos();
+          else restoreTwitchSubscriptionPromos();
         }
         if (key.startsWith("queue")) refreshQueueList();
         syncCompactState();
@@ -4670,7 +4795,7 @@
       "tdh-claim-bonus": settings.claimBonus, "tdh-keep-tab": settings.keepTabActive, "tdh-claim-drops": settings.claimDrops,
       "tdh-progress-title": settings.progressInTitle, "tdh-find-next": settings.findNextStream, "tdh-mute-next": settings.muteRestarted,
       "tdh-background-earning": settings.backgroundEarning, "tdh-auto-hide": settings.autoHideCard, "tdh-reduce-motion": settings.reduceMotion, "tdh-notifications": settings.notifications,
-      "tdh-hide-chat-promos": settings.hideChatSubscriptionPromos,
+      "tdh-hide-sub-promos": settings.hideTwitchSubscriptionPromos,
       "tdh-queue-enabled": settings.queueEnabled, "tdh-queue-stall": settings.queueOnStall, "tdh-queue-offline": settings.queueOnOffline,
     };
     Object.entries(map).forEach(([id, on]) => ui.shadow.getElementById(id)?.setAttribute("aria-checked", String(Boolean(on))));
