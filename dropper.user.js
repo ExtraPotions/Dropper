@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.5.2
+// @version      2.5.3
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,7 +27,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.5.2";
+  const APP_VERSION = "2.5.3";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
@@ -338,6 +338,55 @@
     return pool[0];
   }
 
+  function pickRemainingGameDrop(campaigns, gameName, completedDropId = "", completedDropName = "") {
+    const wantedGame = cleanText(gameName).toLowerCase();
+    const completedName = cleanText(completedDropName).toLowerCase();
+    const now = Date.now();
+    const remaining = [];
+
+    if (!wantedGame) return null;
+
+    for (const campaign of campaigns || []) {
+      const game = campaign.game?.displayName || campaign.game?.name || campaign.name || "";
+      if (cleanText(game).toLowerCase() !== wantedGame) continue;
+
+      const drops = campaign.timeBasedDrops || campaign.drops || [];
+      for (const drop of drops) {
+        const self = drop.self || {};
+        if (self.isClaimed || requiresSubscription(drop)) continue;
+
+        const dropId = drop.id || "";
+        const dropName = cleanText(drop.name || drop.benefitEdges?.[0]?.benefit?.name || "Drop");
+        const required = Number(drop.requiredMinutesWatched) || 0;
+        const current = Number(self.currentMinutesWatched) || 0;
+
+        // Ignore the just-claimed Drop while Twitch's inventory catches up.
+        if (completedDropId && dropId === completedDropId) continue;
+        if (!completedDropId && completedName && dropName.toLowerCase() === completedName && current >= required) continue;
+
+        if (required <= 0) continue;
+        if (drop.startAt && Date.parse(drop.startAt) > now) continue;
+        if (drop.endAt && Date.parse(drop.endAt) <= now) continue;
+
+        remaining.push({
+          id: dropId,
+          name: dropName,
+          game,
+          campaign: campaign.name || game,
+          currentMinutes: current,
+          requiredMinutes: required,
+          remainingMinutes: Math.max(0, required - current),
+        });
+      }
+    }
+
+    remaining.sort((a, b) => {
+      if ((b.currentMinutes > 0) !== (a.currentMinutes > 0)) return (b.currentMinutes > 0) - (a.currentMinutes > 0);
+      return a.remainingMinutes - b.remainingMinutes;
+    });
+    return remaining[0] || null;
+  }
+
   function pickNextGameDrop(campaigns, completedGame) {
     const previous = cleanText(completedGame).toLowerCase();
     const next = [];
@@ -386,18 +435,15 @@
 
   function scheduleNextGameAfterClaim(drop) {
     const game = cleanText(drop?.game);
-    if (!settings.queueEnabled || !settings.findNextStream || !game) return;
+    if (!settings.findNextStream || !game) return;
     writeSession(NEXT_GAME_KEY, {
       completedGame: game,
       completedDrop: drop?.name || "Drop",
+      completedDropId: drop?.id || "",
       startedAt: Date.now(),
     });
-    setStatus(`${game} Complete · Finding Next Game`);
-    notifyUser(`${game} Drop Complete · Finding Next Game`);
-    setTimeout(() => {
-      if (!isInventory()) location.href = INVENTORY_URL;
-      else pollGqlDrops();
-    }, 1400);
+    setStatus(`${game} Drop Claimed · Checking Remaining Drops`);
+    setTimeout(pollGqlDrops, 1400);
   }
 
   function findInventoryStreamForGame(gameName) {
@@ -434,15 +480,32 @@
       return false;
     }
 
+    // Stay on the current game until every non-subscription watch-time Drop is done.
+    const remainingCurrentGameDrop = pickRemainingGameDrop(
+      campaigns,
+      pending.completedGame,
+      pending.completedDropId || "",
+      pending.completedDrop || "",
+    );
+
+    if (remainingCurrentGameDrop) {
+      writeSession(NEXT_GAME_KEY, null);
+      setStatus(`Continuing ${pending.completedGame} · ${remainingCurrentGameDrop.name}`);
+      return false;
+    }
+
+    // No normal watch-time Drops remain for this game. Subscription-only leftovers
+    // are intentionally ignored, so it is safe to advance to the next game.
     const next = pickNextGameDrop(campaigns, pending.completedGame);
     if (!next) {
       writeSession(NEXT_GAME_KEY, null);
       setStatus("No More Eligible Games");
-      notifyUser("All Eligible Drops Complete");
+      notifyUser("All Eligible Watch-Time Drops Complete");
       return false;
     }
 
     if (!isInventory()) {
+      setStatus(`${pending.completedGame} Complete · Moving To Next Game`);
       location.href = INVENTORY_URL;
       return true;
     }
@@ -458,7 +521,7 @@
     lastProgressAt = Date.now();
     writeSession("tdh-progress-at", lastProgressAt);
     setStatus(`Moving To ${next.game}`);
-    notifyUser(`Moving To Next Game: ${next.game}`);
+    notifyUser(`${pending.completedGame} Complete · Moving To ${next.game}`);
     location.href = href;
     return true;
   }
