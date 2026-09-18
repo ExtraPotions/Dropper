@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.7
+// @version      2.6.8
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.7";
+  const APP_VERSION = "2.6.8";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -50,7 +50,7 @@
   const CIRCUIT_ERROR_COOLDOWN_MS = 5 * 60 * 1000;
   const CIRCUIT_RATE_COOLDOWN_MS = 15 * 60 * 1000;
   const HANDOFF_VERIFY_TIMEOUT_MS = 90 * 1000;
-  const ACTIVE_STREAM_VERIFY_TIMEOUT_MS = 45 * 1000;
+  const ACTIVE_STREAM_VERIFY_TIMEOUT_MS = 90 * 1000;
   const CAMPAIGN_EXPIRY_GRACE_MS = 60 * 1000;
   const CLAIM_RETRY_INTERVAL_MS = 30 * 1000;
   const CLAIM_READY_GRACE_MS = 60 * 1000;
@@ -70,6 +70,12 @@
   });
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const RELEASE_NOTES = {
+    "2.6.8": [
+      "Treats newly credited Drop progress as definitive proof that the current stream is compatible.",
+      "Stops replacing a stream once the target campaign advances on that channel.",
+      "Records a progress baseline before each candidate switch instead of resetting the last-progress timestamp.",
+      "Extends stream verification to 90 seconds so Twitch has time to credit a watch minute.",
+    ],
     "2.6.7": [
       "Moves the progress expand/collapse tab to the top or bottom based on the card's screen position.",
       "Keeps the toggle on the inward-facing edge so it stays comfortably inside the viewport.",
@@ -209,6 +215,7 @@
   let claimReadySince = 0;
   let claimReadySignature = "";
   let lastProgressReconcile = null;
+  let lastStreamVerification = null;
   let lastStreamSwitch = 0;
   let categoryMismatchSince = 0;
   let categoryMismatchSignature = "";
@@ -1701,13 +1708,13 @@
       {
         targetStream,
         switchStartedAt: Date.now(),
+        verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
+        verifyBaselinePercent: Number(currentDrop?.percent || 0),
         failedStreams: pending.failedStreams || [],
       },
       `Trying stream ${targetStream || "channel"} for ${pending.targetGame || "next game"}`,
     );
     lastStreamSwitch = Date.now();
-    lastProgressAt = Date.now();
-    writeSession("tdh-progress-at", lastProgressAt);
     setStatus(`Opening ${pending.targetGame || "Next Game"} Drops Stream`);
     notifyUser(`Moving To ${pending.targetGame || "Next Game"}`);
     location.href = href;
@@ -1744,6 +1751,141 @@
     return "";
   }
 
+  function dropMatchesHandoffTarget(drop, pending) {
+    if (!drop || !pending) return false;
+    if (pending.targetGame && !gameNamesMatch(pending.targetGame, drop.game || "")) return false;
+
+    const targetKey = String(pending.targetCampaignKey || "");
+    if (
+      targetKey &&
+      drop.campaignKey !== targetKey &&
+      drop.campaignId !== targetKey
+    ) {
+      const targetName = normalizeGameName(pending.targetCampaign || "");
+      const dropName = normalizeGameName(drop.campaign || "");
+      if (!targetName || targetName !== dropName) return false;
+    }
+    return true;
+  }
+
+  function creditedProgressProvesStream(drop, pending, previousDrop = null) {
+    if (!dropMatchesHandoffTarget(drop, pending)) return false;
+
+    const currentMinutes = Number(drop.currentMinutes);
+    const currentPercent = Number(drop.percent);
+    const baselineMinutes = Number(pending.verifyBaselineMinutes);
+    const baselinePercent = Number(pending.verifyBaselinePercent);
+
+    const minutesAdvanced = Number.isFinite(currentMinutes) && (
+      (Number.isFinite(baselineMinutes) && currentMinutes > baselineMinutes) ||
+      (
+        previousDrop &&
+        dropMatchesHandoffTarget(previousDrop, pending) &&
+        currentMinutes > Number(previousDrop.currentMinutes || 0)
+      )
+    );
+
+    const percentAdvanced = Number.isFinite(currentPercent) && (
+      (Number.isFinite(baselinePercent) && currentPercent > baselinePercent) ||
+      (
+        previousDrop &&
+        dropMatchesHandoffTarget(previousDrop, pending) &&
+        currentPercent > Number(previousDrop.percent || 0)
+      )
+    );
+
+    const switchAt = Number(pending.switchStartedAt || pending.verifyStartedAt || 0);
+    const creditedAfterSwitch = Boolean(
+      switchAt &&
+      lastProgressAt > switchAt + 250 &&
+      dropMatchesHandoffTarget(drop, pending)
+    );
+
+    return minutesAdvanced || percentAdvanced || creditedAfterSwitch;
+  }
+
+  function completeVerifiedHandoff(pending, method, details = {}) {
+    if (!pending) return false;
+    const channel = watchingLogin() || pending.targetStream || "";
+    lastStreamVerification = {
+      at: Date.now(),
+      method,
+      channel: channel || null,
+      game: pending.targetGame || currentDrop?.game || null,
+      campaign: pending.targetCampaign || currentDrop?.campaign || null,
+      ...sanitizeDiagnosticMeta(details),
+    };
+
+    transitionHandoff(
+      HANDOFF_STATES.COMPLETE,
+      {},
+      `Verified ${channel || "stream"} for ${pending.targetCampaign || pending.targetGame}`,
+    );
+    clearHandoff(`Active campaign stream verified for ${pending.targetGame}`);
+    logActivity("stream-verified", "Compatible Drops stream verified", {
+      method,
+      channel: channel || null,
+      game: pending.targetGame || null,
+      campaign: pending.targetCampaign || null,
+      ...details,
+    });
+    return true;
+  }
+
+  function verifyHandoffWithCreditedProgress(drop, previousDrop = null) {
+    const pending = getHandoffState();
+    if (!pending) return false;
+    const state = normalizedHandoffState(pending);
+    if (state !== HANDOFF_STATES.SWITCHING && state !== HANDOFF_STATES.VERIFYING) return false;
+    if (!creditedProgressProvesStream(drop, pending, previousDrop)) return false;
+
+    return completeVerifiedHandoff(pending, "credited-progress", {
+      baselineMinutes: Number.isFinite(Number(pending.verifyBaselineMinutes)) ? Number(pending.verifyBaselineMinutes) : null,
+      currentMinutes: Number.isFinite(Number(drop.currentMinutes)) ? Number(drop.currentMinutes) : null,
+      baselinePercent: Number.isFinite(Number(pending.verifyBaselinePercent)) ? Number(pending.verifyBaselinePercent) : null,
+      currentPercent: Number.isFinite(Number(drop.percent)) ? Number(drop.percent) : null,
+    });
+  }
+
+  function verifyHandoffFromInventory(campaigns) {
+    const pending = getHandoffState();
+    if (!pending || !pending.lockActiveCampaign) return false;
+    const state = normalizedHandoffState(pending);
+    if (state !== HANDOFF_STATES.SWITCHING && state !== HANDOFF_STATES.VERIFYING) return false;
+
+    const info = readStreamInfo();
+    if (!info.live || !info.game || !gameNamesMatch(pending.targetGame || "", info.game)) return false;
+
+    const targetDropId = pending.completedDropId || currentDrop?.id || "";
+    for (const campaign of campaigns || []) {
+      if (!campaignMatchesTarget(campaign, pending)) continue;
+      const drops = campaign.timeBasedDrops || campaign.drops || [];
+      for (const raw of drops) {
+        if (targetDropId && raw.id !== targetDropId) continue;
+        const required = Number(raw.requiredMinutesWatched || currentDrop?.requiredMinutes || 0);
+        const minutes = Number(raw.self?.currentMinutesWatched || 0);
+        const percent = required ? Math.min(100, Math.round((minutes / required) * 100)) : 0;
+        const proof = {
+          id: raw.id || targetDropId,
+          game: campaign.game?.displayName || campaign.game?.name || pending.targetGame || "",
+          campaignId: campaign.id || "",
+          campaignKey: campaignKey(campaign),
+          campaign: campaign.name || pending.targetCampaign || "",
+          currentMinutes: minutes,
+          requiredMinutes: required,
+          percent,
+        };
+        if (creditedProgressProvesStream(proof, pending, currentDrop)) {
+          return completeVerifiedHandoff(pending, "inventory-progress", {
+            currentMinutes: minutes,
+            currentPercent: percent,
+          });
+        }
+      }
+    }
+    return false;
+  }
+
   function verifyHandoffChannel(login, streamGame, availableCampaigns, sessionDrop) {
     const pending = getHandoffState();
     if (!pending) return false;
@@ -1762,19 +1904,17 @@
         sessionDrop.campaignId === pending.targetCampaignKey
       )
     );
+    const creditedProgress = creditedProgressProvesStream(currentDrop, pending);
 
-    if (gameMatches && (campaignSupport === true || sessionMatches)) {
-      transitionHandoff(
-        HANDOFF_STATES.COMPLETE,
-        {},
-        `Verified ${login || pending.targetStream || "stream"} for ${pending.targetCampaign || pending.targetGame}`,
+    if (gameMatches && (campaignSupport === true || sessionMatches || creditedProgress)) {
+      completeVerifiedHandoff(
+        pending,
+        creditedProgress ? "credited-progress" : sessionMatches ? "session-match" : "available-campaign",
+        {
+          streamGame: streamGame || null,
+          campaignSupport,
+        },
       );
-      clearHandoff(`Active campaign stream verified for ${pending.targetGame}`);
-      logActivity("stream-verified", "Compatible Drops stream verified", {
-        channel: login || pending.targetStream || null,
-        game: streamGame || null,
-        campaign: pending.targetCampaign || null,
-      });
       return false;
     }
 
@@ -1829,7 +1969,15 @@
       if (login && (!pending.targetStream || login === pending.targetStream)) {
         transitionHandoff(
           HANDOFF_STATES.VERIFYING,
-          { verifyStartedAt: Date.now() },
+          {
+            verifyStartedAt: Date.now(),
+            verifyBaselineMinutes: Number.isFinite(Number(pending.verifyBaselineMinutes))
+              ? Number(pending.verifyBaselineMinutes)
+              : Number(currentDrop?.currentMinutes || 0),
+            verifyBaselinePercent: Number.isFinite(Number(pending.verifyBaselinePercent))
+              ? Number(pending.verifyBaselinePercent)
+              : Number(currentDrop?.percent || 0),
+          },
           `Arrived at ${login} · verifying Drop eligibility`,
         );
         return false;
@@ -1952,12 +2100,12 @@
             targetCampaign: next.campaign || "",
             targetCampaignKey: next.campaignKey || "",
             switchStartedAt: Date.now(),
+            verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
+            verifyBaselinePercent: Number(currentDrop?.percent || 0),
           },
           `Switching directly to ${targetStream || "eligible stream"} for ${next.game}`,
         );
         lastStreamSwitch = Date.now();
-        lastProgressAt = Date.now();
-        writeSession("tdh-progress-at", lastProgressAt);
         setStatus(`Moving To ${next.game}`);
         notifyUser(`${current.completedGame} Complete · Moving To ${next.game}`);
         location.href = inventoryHref;
@@ -2206,6 +2354,7 @@
       lastGqlError = "";
       const inventoryCampaigns = first[0]?.data?.currentUser?.inventory?.dropCampaignsInProgress || [];
       lastInventoryCampaigns = inventoryCampaigns;
+      verifyHandoffFromInventory(inventoryCampaigns);
       if (maybeAdvanceExpiredCampaign(inventoryCampaigns)) return;
       if (maybeAdvanceStuckClaim(inventoryCampaigns)) return;
       if (continueToNextGame(inventoryCampaigns)) return;
@@ -2346,6 +2495,7 @@
         writeSession("tdh-progress-at", lastProgressAt);
       }
     }
+    verifyHandoffWithCreditedProgress(currentDrop, previousDrop);
     refreshDropCard();
     layoutChrome();
     maybeClaimCurrentDrop(currentDrop);
@@ -3860,6 +4010,15 @@
         requestsLastHour: circuit.requestsLastHour,
         requestBudgetPerHour: circuit.budget,
         consecutiveFailures: circuit.consecutiveFailures,
+      },
+      streamVerification: {
+        timeoutSeconds: Math.round(ACTIVE_STREAM_VERIFY_TIMEOUT_MS / 1000),
+        lastVerified: lastStreamVerification ? {
+          ...lastStreamVerification,
+          at: new Date(lastStreamVerification.at).toISOString(),
+        } : null,
+        baselineMinutes: Number.isFinite(Number(handoff?.verifyBaselineMinutes)) ? Number(handoff.verifyBaselineMinutes) : null,
+        baselinePercent: Number.isFinite(Number(handoff?.verifyBaselinePercent)) ? Number(handoff.verifyBaselinePercent) : null,
       },
       activeCampaignRouting: {
         needsStream: activeDropNeedsStream(),
