@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.28
+// @version      2.6.29
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.28";
+  const APP_VERSION = "2.6.29";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -89,6 +89,11 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.29": [
+      "Changes the default Panel + Menu Width from Compact to Narrow.",
+      "Makes the collapsed progress hover preview match Full, Compact, and Narrow widths exactly.",
+      "Removes the old 240px hover-preview minimum that broke Narrow alignment.",
+    ],
     "2.6.28": [
       "Keeps the collapsed progress hover preview above update and changelog notices.",
       "Applies Full, Compact, and Narrow width choices to the Settings menu too.",
@@ -288,7 +293,7 @@
     muteRestarted: true,
     backgroundEarning: false,
     reduceMotion: false,
-    collapsedPanelWidth: "compact",
+    collapsedPanelWidth: "narrow",
     notifications: true,
     hideTwitchSubscriptionPromos: true,
     pauseAutoSwitchMinutes: 0,
@@ -3165,6 +3170,15 @@
       }
       delete stored.hideChatSubscriptionPromos;
       delete stored.autoHideCard;
+
+      const widthMigrationKey = "dropper-panel-width-default-v2";
+      if (!localStorage.getItem(widthMigrationKey)) {
+        if (stored.collapsedPanelWidth == null || stored.collapsedPanelWidth === "compact") {
+          stored.collapsedPanelWidth = "narrow";
+        }
+        localStorage.setItem(widthMigrationKey, "1");
+      }
+
       return { ...DEFAULTS, ...stored };
     } catch (_) {
       return { ...DEFAULTS };
@@ -3816,10 +3830,20 @@
       #tdh-drop-card.collapsed:focus-visible::before { opacity:1; visibility:visible; transform:translateY(0); }
       #tdh-drop-card.collapsed.preview-below::before { top:auto; bottom:calc(100% + 7px); }
       #tdh-drop-card.collapsed .expanded-content {
-        display:block; position:absolute; left:0; bottom:calc(100% + 8px); width:100%; min-width:240px;
+        display:block; position:absolute; left:0; bottom:calc(100% + 8px);
+        width:min(var(--dropper-width, 312px), calc(100vw - 24px)); min-width:0; box-sizing:border-box;
         background:#18181b; border:1px solid #9147ff66; border-radius:12px; box-shadow:0 14px 36px #000a;
         overflow:hidden; opacity:0; visibility:hidden; transform:translateY(4px); pointer-events:none;
         transition:.12s opacity,.12s transform,.12s visibility; z-index:31;
+      }
+      .progress-stack.is-collapsed[data-collapsed-width="full"] #tdh-drop-card.collapsed .expanded-content {
+        width:min(var(--dropper-width, 312px), calc(100vw - 24px));
+      }
+      .progress-stack.is-collapsed[data-collapsed-width="compact"] #tdh-drop-card.collapsed .expanded-content {
+        width:min(260px, calc(100vw - 24px));
+      }
+      .progress-stack.is-collapsed[data-collapsed-width="narrow"] #tdh-drop-card.collapsed .expanded-content {
+        width:min(220px, calc(100vw - 24px));
       }
       #tdh-drop-card.collapsed:hover .expanded-content,
       #tdh-drop-card.collapsed:focus-within .expanded-content {
@@ -4487,7 +4511,7 @@
 
   function normalizedCollapsedPanelWidth(value = settings.collapsedPanelWidth) {
     const normalized = cleanText(value).toLowerCase();
-    return ["full", "compact", "narrow"].includes(normalized) ? normalized : "compact";
+    return ["full", "compact", "narrow"].includes(normalized) ? normalized : "narrow";
   }
 
   function applyAppearanceSettings() {
@@ -5359,6 +5383,9 @@
       progressCardCollapsed: Boolean(card?.classList.contains("collapsed")),
       panelAndMenuWidth: normalizedCollapsedPanelWidth(),
       menuWidth: ui?.dock ? Math.round(ui.dock.getBoundingClientRect().width) : null,
+      progressHoverWidth: ui?.shadow?.querySelector("#tdh-drop-card .expanded-content")
+        ? Math.round(ui.shadow.querySelector("#tdh-drop-card .expanded-content").getBoundingClientRect().width)
+        : null,
       chatWidth: chat ? Math.round(chat.getBoundingClientRect().width) : null,
       recentActivity: (Array.isArray(activityLog) ? activityLog : []).slice(-20).map((entry) => ({
         at: new Date(entry.at).toISOString(),
