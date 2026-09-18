@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.5.10
+// @version      2.5.11
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,14 +27,25 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.5.10";
+  const APP_VERSION = "2.5.11";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
   const PROGRESS_CARD_STATE_KEY = "dropper-progress-card-collapsed";
   const HANDOFF_STAGE_TIMEOUT_MS = 45 * 1000;
+  const HEARTBEAT_INTERVAL_MS = 5000;
+  const GQL_POLL_INTERVAL_MS = 60 * 1000;
+  const GQL_RECOVERY_INTERVAL_MS = 30 * 1000;
+  const GQL_MIN_GAP_MS = 15 * 1000;
+  const GQL_MAX_BACKOFF_MS = 5 * 60 * 1000;
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const RELEASE_NOTES = {
+    "2.5.11": [
+      "Replaces frequent Drop polling timers with one coordinated heartbeat.",
+      "Limits normal Twitch GQL polling to once per minute with recovery polling at 30 seconds.",
+      "Prevents overlapping network polls and enforces a minimum request gap.",
+      "Adds automatic backoff after Twitch GQL errors.",
+    ],
     "2.5.10": [
       "Adds stale-progress warnings before a Drop is considered stalled.",
       "Retries another eligible game when a Drops directory handoff times out.",
@@ -137,6 +148,13 @@
   let lastGqlSuccessAt = 0;
   let lastGqlError = "";
   let lastTwitchGqlAt = 0;
+  let heartbeatTimer = null;
+  let lastHeartbeatAt = 0;
+  let nextGqlPollAt = 0;
+  let gqlPollInFlight = false;
+  let gqlErrorStreak = 0;
+  let pendingGqlReason = "startup";
+  let lastGqlReason = "";
 
   hookAuth(page);
   if (settings.keepTabActive) installKeepTabActive(page);
@@ -155,44 +173,117 @@
     refreshDropCard();
     checkVersionNotice();
     scheduleUpdateCheck();
-    pollGqlDrops();
-    setTimeout(pollGqlDrops, 2500);
-    setTimeout(pollGqlDrops, 7000);
-    setInterval(pollGqlDrops, 10000);
     watchDirectoryHandoff();
-    setInterval(() => {
-      if (isDirectoryCategoryPage() && readSession(NEXT_GAME_KEY, null)) {
-        continueDirectoryHandoffFromDom();
-      }
-    }, 1500);
-    window.addEventListener("focus", () => pollGqlDrops(), { passive: true });
-    window.addEventListener("pageshow", () => pollGqlDrops(), { passive: true });
+    startHeartbeat();
+
+    window.addEventListener("focus", () => {
+      queueGqlPollSoon("focus", 0);
+      heartbeat();
+    }, { passive: true });
+    window.addEventListener("pageshow", () => {
+      queueGqlPollSoon("pageshow", 0);
+      heartbeat();
+    }, { passive: true });
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) pollGqlDrops();
+      if (!document.hidden) {
+        queueGqlPollSoon("visible", 0);
+        heartbeat();
+      }
     });
-    setInterval(() => {
-      noteWatching();
-      if (location.pathname !== lastPath) {
-        lastPath = location.pathname;
-        pollGqlDrops();
-      }
-      if (settings.claimDrops) scanDrops();
-      else refreshDropCard();
-      refreshQueueList();
-      if (settings.queueEnabled && settings.queueOnOffline && watchingLogin() && document.readyState === "complete") {
-        const info = readStreamInfo();
-        if (!info.live && Date.now() - lastStreamSwitch > 60000 && !isAutoSwitchPaused()) findNextStream();
-      }
-      if (settings.progressInTitle) updateTitle();
-    }, 4000);
-    setInterval(() => {
-      noteWatching();
-      refreshDropCard();
-    }, 1000);
     window.addEventListener("resize", () => {
       syncDropperWidthToChat();
+      positionCollapsedPreview();
       layoutChrome();
     }, { passive: true });
+  }
+
+  function startHeartbeat() {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    nextGqlPollAt = Date.now();
+    heartbeat();
+    heartbeatTimer = setInterval(heartbeat, HEARTBEAT_INTERVAL_MS);
+  }
+
+  function queueGqlPollSoon(reason = "heartbeat", delayMs = HEARTBEAT_INTERVAL_MS) {
+    const dueAt = Date.now() + Math.max(0, Number(delayMs) || 0);
+    if (!nextGqlPollAt || dueAt < nextGqlPollAt) nextGqlPollAt = dueAt;
+    pendingGqlReason = reason;
+  }
+
+  function gqlPollInterval() {
+    if (gqlErrorStreak > 0) {
+      return Math.min(
+        GQL_POLL_INTERVAL_MS * Math.pow(2, Math.min(gqlErrorStreak - 1, 3)),
+        GQL_MAX_BACKOFF_MS,
+      );
+    }
+    const handoff = readSession(NEXT_GAME_KEY, null);
+    const progressAge = Date.now() - lastProgressAt;
+    if (handoff || !currentDrop || progressAge > 90 * 1000) return GQL_RECOVERY_INTERVAL_MS;
+    return GQL_POLL_INTERVAL_MS;
+  }
+
+  async function requestGqlPoll(reason = "heartbeat", urgent = false) {
+    const now = Date.now();
+    if (gqlPollInFlight) return false;
+
+    if (!getToken()) {
+      nextGqlPollAt = now + GQL_RECOVERY_INTERVAL_MS;
+      return false;
+    }
+
+    const minGap = urgent ? 5000 : GQL_MIN_GAP_MS;
+    if (lastGqlPollAt && now - lastGqlPollAt < minGap) {
+      nextGqlPollAt = Math.max(nextGqlPollAt || 0, lastGqlPollAt + minGap);
+      return false;
+    }
+
+    if (!urgent && nextGqlPollAt && now < nextGqlPollAt) return false;
+
+    gqlPollInFlight = true;
+    lastGqlReason = reason;
+    try {
+      await pollGqlDrops();
+      if (lastGqlError) gqlErrorStreak += 1;
+      else gqlErrorStreak = 0;
+    } finally {
+      gqlPollInFlight = false;
+      nextGqlPollAt = Date.now() + gqlPollInterval();
+      pendingGqlReason = "heartbeat";
+    }
+    return true;
+  }
+
+  function heartbeat() {
+    if (!ui) return;
+    const now = Date.now();
+    lastHeartbeatAt = now;
+    noteWatching();
+
+    if (location.pathname !== lastPath) {
+      lastPath = location.pathname;
+      queueGqlPollSoon("route-change", 5000);
+    }
+
+    if (isDirectoryCategoryPage() && readSession(NEXT_GAME_KEY, null)) {
+      continueDirectoryHandoffFromDom();
+    }
+
+    if (settings.claimDrops) scanDrops();
+    else refreshDropCard();
+
+    refreshQueueList();
+
+    if (settings.queueEnabled && settings.queueOnOffline && watchingLogin() && document.readyState === "complete") {
+      const info = readStreamInfo();
+      if (!info.live && now - lastStreamSwitch > 60000 && !isAutoSwitchPaused()) findNextStream();
+    }
+
+    if (settings.progressInTitle) updateTitle();
+
+    if (!nextGqlPollAt || now >= nextGqlPollAt) {
+      requestGqlPoll(pendingGqlReason || "heartbeat");
+    }
   }
 
   function findTwitchChatColumn() {
@@ -569,7 +660,7 @@
       startedAt: Date.now(),
     });
     setStatus(`${game} Drop Claimed · Checking Remaining Drops`);
-    setTimeout(pollGqlDrops, 1400);
+    queueGqlPollSoon("drop-claimed", 5000);
   }
 
   function isDirectoryCategoryPage() {
@@ -1031,7 +1122,6 @@
         lastDropAt = Date.now();
         setStatus(status === "DROP_INSTANCE_ALREADY_CLAIMED" ? "Drop already claimed" : `Claimed ${drop.name || "drop"}`);
         scheduleNextGameAfterClaim(drop);
-        setTimeout(pollGqlDrops, 1200);
         return true;
       }
     } catch (_) {
@@ -1796,7 +1886,7 @@
     document.addEventListener("keydown", (event) => {
       if (event.altKey && (event.key === "g" || event.key === "G") && !event.repeat) { event.preventDefault(); setRailOpen(!railOpen, true); }
       if (event.key === "Escape" && railOpen) setRailOpen(false, true);
-      if (!event.altKey && (event.key === "r" || event.key === "R") && railOpen) pollGqlDrops();
+      if (!event.altKey && (event.key === "r" || event.key === "R") && railOpen) requestGqlPoll("keyboard-refresh", true);
     });
     document.addEventListener("pointerdown", (event) => { if (railOpen && !event.composedPath().includes(host)) setRailOpen(false); });
     return ui;
@@ -1996,7 +2086,7 @@
       const card = s.getElementById("tdh-drop-card");
       setProgressCardCollapsed(!card.classList.contains("collapsed"), true);
     });
-    s.getElementById("tdh-refresh-now")?.addEventListener("click", () => pollGqlDrops());
+    s.getElementById("tdh-refresh-now")?.addEventListener("click", () => requestGqlPoll("manual-refresh", true));
     const diag = s.getElementById("tdh-diagnostics");
     s.getElementById("tdh-diagnostics-toggle")?.addEventListener("click", (event) => {
       diag.classList.toggle("open");
@@ -2129,7 +2219,19 @@
       progressAgeSeconds: Math.max(0, Math.floor((now - lastProgressAt) / 1000)),
       lastProgress,
       lastProgressAt: new Date(lastProgressAt).toISOString(),
+      heartbeat: {
+        intervalMs: HEARTBEAT_INTERVAL_MS,
+        lastAt: lastHeartbeatAt ? new Date(lastHeartbeatAt).toISOString() : null,
+      },
       gql: {
+        normalIntervalMs: GQL_POLL_INTERVAL_MS,
+        recoveryIntervalMs: GQL_RECOVERY_INTERVAL_MS,
+        minimumGapMs: GQL_MIN_GAP_MS,
+        nextPollAt: nextGqlPollAt ? new Date(nextGqlPollAt).toISOString() : null,
+        inFlight: gqlPollInFlight,
+        errorStreak: gqlErrorStreak,
+        lastReason: lastGqlReason || null,
+        pendingReason: pendingGqlReason || null,
         lastPollAt: lastGqlPollAt ? new Date(lastGqlPollAt).toISOString() : null,
         lastSuccessAt: lastGqlSuccessAt ? new Date(lastGqlSuccessAt).toISOString() : null,
         lastInterceptedTwitchResponseAt: lastTwitchGqlAt ? new Date(lastTwitchGqlAt).toISOString() : null,
