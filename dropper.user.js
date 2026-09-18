@@ -1082,10 +1082,35 @@
         );
         return false;
       }
+      const switchStartedAt = Number(pending.switchStartedAt || pending.stateStartedAt || pending.startedAt || Date.now());
+      if (Date.now() - switchStartedAt > HANDOFF_VERIFY_TIMEOUT_MS) {
+        const skippedGames = [...new Set([...(pending.skippedGames || []), pending.targetGame].filter(Boolean))];
+        transitionHandoff(
+          HANDOFF_STATES.SELECTING_GAME,
+          { targetGame: "", targetSlug: "", targetStream: "", skippedGames },
+          `Stream switch timed out for ${pending.targetGame || "target game"} · selecting another game`,
+        );
+        location.href = INVENTORY_URL;
+        return true;
+      }
       return true;
     }
 
-    if (state === HANDOFF_STATES.VERIFYING) return false;
+    if (state === HANDOFF_STATES.VERIFYING) {
+      const verifyStartedAt = Number(pending.verifyStartedAt || pending.stateStartedAt || pending.startedAt || Date.now());
+      if (Date.now() - verifyStartedAt > HANDOFF_VERIFY_TIMEOUT_MS) {
+        const skippedGames = [...new Set([...(pending.skippedGames || []), pending.targetGame].filter(Boolean))];
+        transitionHandoff(
+          HANDOFF_STATES.SELECTING_GAME,
+          { targetGame: "", targetSlug: "", targetStream: "", skippedGames },
+          `Verification timed out for ${pending.targetGame || "target game"} · selecting another game`,
+        );
+        setStatus(`Could Not Verify ${pending.targetGame || "Target Game"} · Trying Next Game`);
+        location.href = INVENTORY_URL;
+        return true;
+      }
+      return false;
+    }
 
     if (state === HANDOFF_STATES.FINDING_STREAM) {
       if (isDirectoryCategoryPage()) {
