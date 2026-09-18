@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.5.3
+// @version      2.5.4
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,11 +27,17 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.5.3";
+  const APP_VERSION = "2.5.4";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
+  const CURRENT_CHANGELOG = [
+    "Finishes all watch-time Drops for a game before switching games.",
+    "Skips subscription-only Drops when deciding what to earn next.",
+    "Improves Stream Queue handoff between completed games.",
+    "Expands update notices with a concise, readable changelog.",
+  ];
   const DEFAULTS = {
     claimBonus: true,
     keepTabActive: true,
@@ -1332,13 +1338,20 @@
       #tdh-rail-close { width:30px; height:30px; border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0; cursor:pointer; font:18px/1 Arial,sans-serif; }
       #tdh-rail-close:hover { border-color:#9147ff; color:#fff; background:#211b2b; }
       .header-divider { height:1px; width:100%; margin:7px 0; background:linear-gradient(90deg,transparent,#9147ff88 50%,transparent); }
-      .update-notice { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:7px; align-items:center; margin-bottom:7px; padding:7px 8px; border:1px solid #9147ff66; border-radius:8px; background:#9147ff18; }
+      .update-notice { position:relative; display:block; margin-bottom:8px; padding:10px; border:1px solid #9147ff70; border-radius:10px; background:linear-gradient(180deg,#9147ff1f,#18181d); box-shadow:0 8px 22px #0003; }
       .update-notice[hidden] { display:none; }
-      .update-title { font-size:10px; font-weight:800; }
-      .update-text { margin-top:1px; font-size:9px; color:#adadb8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .update-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding-right:22px; }
+      .update-heading { min-width:0; }
+      .update-kicker { margin-bottom:2px; color:#bf94ff; font-size:8px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
+      .update-title { font-size:12px; line-height:1.25; font-weight:850; color:#fff; }
+      .update-version { flex:none; padding:2px 6px; border:1px solid #9147ff66; border-radius:999px; background:#9147ff22; color:#d8b4fe; font-size:8px; font-weight:800; white-space:nowrap; }
+      .update-text { margin-top:6px; font-size:9px; line-height:1.45; color:#c7c7d0; white-space:normal; overflow:visible; }
+      .update-list { margin:7px 0 0; padding:0 0 0 15px; max-height:86px; overflow:auto; color:#d7d7df; font-size:9px; line-height:1.4; scrollbar-width:thin; }
+      .update-list li + li { margin-top:3px; }
+      .update-footer { display:flex; justify-content:flex-end; gap:6px; margin-top:8px; padding-top:7px; border-top:1px solid #ffffff12; }
       .update-action, .update-dismiss, .life-btn { border:1px solid #34343b; border-radius:7px; background:#18181b; color:#efeff1; cursor:pointer; }
-      .update-action { height:25px; padding:0 8px; border-color:#9147ff; background:#772ce8; font-size:9px; font-weight:800; }
-      .update-dismiss { width:25px; height:25px; padding:0; color:#adadb8; }
+      .update-action { min-height:27px; padding:0 10px; border-color:#9147ff; background:#772ce8; font-size:9px; font-weight:800; }
+      .update-dismiss { position:absolute; top:7px; right:7px; width:23px; height:23px; padding:0; border-color:transparent; background:transparent; color:#adadb8; font-size:15px; line-height:1; }
       .update-action:hover, .update-dismiss:hover, .life-btn:hover { border-color:#9147ff; color:#fff; }
       .toast { margin-bottom:7px; padding:6px 8px; border:1px solid #34343b; border-radius:8px; background:#18181b; color:#efeff1; font-size:9px; box-shadow:0 8px 24px #0006; }
       .toast[hidden] { display:none; }
@@ -1409,9 +1422,19 @@
           <div class="header-divider"></div>
           <div class="toast" id="tdh-toast" hidden></div>
           <div class="update-notice" id="tdh-update-notice" hidden>
-            <div><div class="update-title" id="tdh-update-title"></div><div class="update-text" id="tdh-update-text"></div></div>
-            <button type="button" class="update-action" id="tdh-update-action">View</button>
-            <button type="button" class="update-dismiss" id="tdh-update-dismiss" aria-label="Dismiss">×</button>
+            <button type="button" class="update-dismiss" id="tdh-update-dismiss" aria-label="Dismiss Update Notice">×</button>
+            <div class="update-head">
+              <div class="update-heading">
+                <div class="update-kicker" id="tdh-update-kicker">What's New</div>
+                <div class="update-title" id="tdh-update-title"></div>
+              </div>
+              <div class="update-version" id="tdh-update-version"></div>
+            </div>
+            <div class="update-text" id="tdh-update-text"></div>
+            <ul class="update-list" id="tdh-update-list"></ul>
+            <div class="update-footer">
+              <button type="button" class="update-action" id="tdh-update-action">View Update</button>
+            </div>
           </div>
           <section class="fl-tool-panel"><div class="fl-tool-header has-tooltip" data-tip="Core Dropper Controls." data-panel="tdh-features-body"><span class="fl-tool-title">Features</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-features-body">
             ${switchHtml("tdh-claim-bonus", "Auto-Claim Bonus Chests", "Clicks Claim Bonus When The Chest Appears.", settings.claimBonus)}
@@ -1667,14 +1690,39 @@
     requestAnimationFrame(layoutChrome);
   }
 
-  function showUpdateNotice(title, text, actionText = "View", action = null) {
-    if (!ui) { updateNoticeState = { title, text, actionText, action }; return; }
+  function showUpdateNotice(title, text, actionText = "View Update", action = null, options = {}) {
+    const details = Array.isArray(options.details) ? options.details.slice(0, 4) : [];
+    const state = {
+      title,
+      text,
+      actionText,
+      action,
+      kicker: options.kicker || "What's New",
+      version: options.version || APP_VERSION,
+      details,
+    };
+    if (!ui) { updateNoticeState = state; return; }
+
     const notice = ui.shadow.getElementById("tdh-update-notice");
+    const list = ui.shadow.getElementById("tdh-update-list");
+    ui.shadow.getElementById("tdh-update-kicker").textContent = state.kicker;
     ui.shadow.getElementById("tdh-update-title").textContent = title;
-    ui.shadow.getElementById("tdh-update-text").textContent = text;
-    const button = ui.shadow.getElementById("tdh-update-action"); button.textContent = actionText; button.onclick = action || (() => {});
+    ui.shadow.getElementById("tdh-update-version").textContent = state.version ? `v${state.version}` : "";
+    ui.shadow.getElementById("tdh-update-text").textContent = text || "";
+
+    list.replaceChildren();
+    details.forEach((detail) => {
+      const item = document.createElement("li");
+      item.textContent = detail;
+      list.appendChild(item);
+    });
+    list.hidden = details.length === 0;
+
+    const button = ui.shadow.getElementById("tdh-update-action");
+    button.textContent = actionText;
+    button.onclick = action || hideUpdateNotice;
     notice.hidden = false;
-    updateNoticeState = { title, text, actionText, action };
+    updateNoticeState = state;
     requestAnimationFrame(layoutChrome);
   }
 
@@ -1685,7 +1733,15 @@
 
   function checkVersionNotice() {
     const previous = localStorage.getItem(LAST_VERSION_KEY);
-    if (previous && previous !== APP_VERSION) showUpdateNotice(`Updated To ${APP_VERSION}`, "Stream Queue, Dropper UI, Compact Inventory, And Reliability Improvements.", "Got It", hideUpdateNotice);
+    if (previous && previous !== APP_VERSION) {
+      showUpdateNotice(
+        "Dropper Updated",
+        `Updated from v${previous} to v${APP_VERSION}.`,
+        "Got It",
+        hideUpdateNotice,
+        { kicker: "Update Complete", version: APP_VERSION, details: CURRENT_CHANGELOG },
+      );
+    }
     localStorage.setItem(LAST_VERSION_KEY, APP_VERSION);
   }
 
@@ -1699,7 +1755,26 @@
     const last = Number(localStorage.getItem(UPDATE_CHECK_KEY) || 0);
     if (Date.now() - last < 6 * 60 * 60 * 1000 || typeof GM_xmlhttpRequest !== "function") return;
     localStorage.setItem(UPDATE_CHECK_KEY, String(Date.now()));
-    GM_xmlhttpRequest({ method:"GET", url:UPDATE_URL, timeout:12000, onload(response) { const match = String(response.responseText || "").match(/^\/\/ @version\s+([^\s]+)/m); if (match && compareVersions(match[1], APP_VERSION) > 0) showUpdateNotice("Update Available", `Dropper ${match[1]} Is Available.`, "View", () => window.open("https://github.com/ExtraPotions/Dropper", "_blank", "noopener")); }, onerror() {}, ontimeout() {} });
+    GM_xmlhttpRequest({ method:"GET", url:UPDATE_URL, timeout:12000, onload(response) {
+      const remote = String(response.responseText || "");
+      const match = remote.match(/^\/\/ @version\s+([^\s]+)/m);
+      if (match && compareVersions(match[1], APP_VERSION) > 0) {
+        showUpdateNotice(
+          "New Dropper Version Available",
+          `v${match[1]} is ready to install.`,
+          "Open Update",
+          () => window.open("https://github.com/ExtraPotions/Dropper", "_blank", "noopener"),
+          {
+            kicker: "Update Available",
+            version: match[1],
+            details: [
+              "A newer Dropper build is available.",
+              "Open the update page to review and install the latest version.",
+            ],
+          },
+        );
+      }
+    }, onerror() {}, ontimeout() {} });
   }
 
   function dropperDebugSnapshot() {
