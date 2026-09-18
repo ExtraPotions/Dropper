@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.23
+// @version      2.6.24
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,10 +29,10 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.23";
+  const APP_VERSION = "2.6.24";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
-  const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+  const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
   const PROGRESS_CARD_STATE_KEY = "dropper-progress-card-collapsed";
   const HANDOFF_STAGE_TIMEOUT_MS = 45 * 1000;
@@ -85,6 +85,11 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.24": [
+      "Reduces GitHub update checks from 60 minutes to 15 minutes.",
+      "Keeps Twitch GQL polling cadence unchanged.",
+      "Preserves per-version caching, cache-busting, and native userscript update metadata.",
+    ],
     "2.6.23": [
       "Makes Settings auto-close deadline-based instead of relying only on a timeout callback.",
       "Makes progress auto-collapse deadline-based and enforced by the heartbeat.",
