@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.5.11
+// @version      2.6.0
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,7 +27,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.5.11";
+  const APP_VERSION = "2.6.0";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
@@ -38,8 +38,32 @@
   const GQL_RECOVERY_INTERVAL_MS = 30 * 1000;
   const GQL_MIN_GAP_MS = 15 * 1000;
   const GQL_MAX_BACKOFF_MS = 5 * 60 * 1000;
+  const ACTIVITY_LOG_KEY = "dropper-activity-log";
+  const NETWORK_STATE_KEY = "dropper-network-state";
+  const ACTIVITY_LOG_LIMIT = 40;
+  const NETWORK_WINDOW_MS = 60 * 60 * 1000;
+  const NETWORK_REQUEST_BUDGET = 140;
+  const NETWORK_FAILURE_THRESHOLD = 3;
+  const CIRCUIT_ERROR_COOLDOWN_MS = 5 * 60 * 1000;
+  const CIRCUIT_RATE_COOLDOWN_MS = 15 * 60 * 1000;
+  const HANDOFF_VERIFY_TIMEOUT_MS = 90 * 1000;
+  const HANDOFF_STATES = Object.freeze({
+    CHECKING_GAME: "checking-game",
+    SELECTING_GAME: "selecting-game",
+    FINDING_STREAM: "finding-stream",
+    SWITCHING: "switching",
+    VERIFYING: "verifying",
+    COMPLETE: "complete",
+    FAILED: "failed",
+  });
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const RELEASE_NOTES = {
+    "2.6.0": [
+      "Adds an explicit handoff state machine for game and stream switching.",
+      "Adds a rolling sanitized activity log for live-test troubleshooting.",
+      "Adds a network circuit breaker with request-budget, error, and rate-limit protection.",
+      "Expands Diagnostics with selector health, network safety, handoff state, and copy/reset tools.",
+    ],
     "2.5.11": [
       "Replaces frequent Drop polling timers with one coordinated heartbeat.",
       "Limits normal Twitch GQL polling to once per minute with recovery polling at 30 seconds.",
@@ -155,6 +179,14 @@
   let gqlErrorStreak = 0;
   let pendingGqlReason = "startup";
   let lastGqlReason = "";
+  let activityLog = readSession(ACTIVITY_LOG_KEY, []);
+  let networkState = readSession(NETWORK_STATE_KEY, {
+    requestTimes: [],
+    consecutiveFailures: 0,
+    openUntil: 0,
+    reason: "",
+    lastOpenedAt: 0,
+  });
 
   hookAuth(page);
   if (settings.keepTabActive) installKeepTabActive(page);
@@ -170,6 +202,7 @@
     if (settings.claimBonus) watchBonus();
     if (settings.claimDrops) watchDrops();
     setStatus(featureStatus());
+    logActivity("lifecycle", `Dropper ${APP_VERSION} started`);
     refreshDropCard();
     checkVersionNotice();
     scheduleUpdateCheck();
@@ -226,6 +259,13 @@
   async function requestGqlPoll(reason = "heartbeat", urgent = false) {
     const now = Date.now();
     if (gqlPollInFlight) return false;
+
+    const circuit = networkCircuitSnapshot(now);
+    if (circuit.open) {
+      nextGqlPollAt = Math.max(nextGqlPollAt || 0, circuit.openUntil);
+      setStatus(`Network Pause · ${circuit.reason || "Protection Active"}`);
+      return false;
+    }
 
     if (!getToken()) {
       nextGqlPollAt = now + GQL_RECOVERY_INTERVAL_MS;
@@ -337,6 +377,171 @@
     chatDomObserver.observe(document.documentElement, { childList: true, subtree: true });
   }
 
+  function sanitizeDiagnosticMeta(value, depth = 0) {
+    if (depth > 3 || value == null) return value;
+    if (Array.isArray(value)) return value.slice(0, 12).map((item) => sanitizeDiagnosticMeta(item, depth + 1));
+    if (typeof value !== "object") {
+      if (typeof value === "string") return value.slice(0, 240);
+      return value;
+    }
+    const clean = {};
+    Object.entries(value).slice(0, 20).forEach(([key, item]) => {
+      if (/token|auth|authorization|cookie|device/i.test(key)) return;
+      clean[key] = sanitizeDiagnosticMeta(item, depth + 1);
+    });
+    return clean;
+  }
+
+  function logActivity(type, message, meta = null) {
+    const entry = {
+      at: Date.now(),
+      type: cleanText(type || "info").slice(0, 32),
+      message: cleanText(message || "").slice(0, 240),
+      meta: meta ? sanitizeDiagnosticMeta(meta) : null,
+    };
+    activityLog = [...(Array.isArray(activityLog) ? activityLog : []), entry].slice(-ACTIVITY_LOG_LIMIT);
+    writeSession(ACTIVITY_LOG_KEY, activityLog);
+    return entry;
+  }
+
+  function clearActivityLog() {
+    activityLog = [];
+    writeSession(ACTIVITY_LOG_KEY, activityLog);
+  }
+
+  function cleanupNetworkWindow(now = Date.now()) {
+    const times = Array.isArray(networkState?.requestTimes) ? networkState.requestTimes : [];
+    networkState.requestTimes = times.filter((time) => Number(time) > now - NETWORK_WINDOW_MS);
+  }
+
+  function persistNetworkState() {
+    cleanupNetworkWindow();
+    writeSession(NETWORK_STATE_KEY, networkState);
+  }
+
+  function openNetworkCircuit(reason, durationMs) {
+    const now = Date.now();
+    const until = now + Math.max(1000, Number(durationMs) || CIRCUIT_ERROR_COOLDOWN_MS);
+    const changed = networkState.reason !== reason || Number(networkState.openUntil || 0) < until - 1000;
+    networkState.openUntil = Math.max(Number(networkState.openUntil || 0), until);
+    networkState.reason = cleanText(reason || "network protection");
+    networkState.lastOpenedAt = now;
+    persistNetworkState();
+    nextGqlPollAt = Math.max(nextGqlPollAt || 0, networkState.openUntil);
+    if (changed) {
+      logActivity("network", "Circuit breaker opened", {
+        reason: networkState.reason,
+        cooldownSeconds: Math.ceil((networkState.openUntil - now) / 1000),
+      });
+    }
+  }
+
+  function networkCircuitSnapshot(now = Date.now()) {
+    cleanupNetworkWindow(now);
+    if (Number(networkState.openUntil || 0) && now >= Number(networkState.openUntil)) {
+      const previousReason = networkState.reason;
+      networkState.openUntil = 0;
+      networkState.reason = "";
+      networkState.consecutiveFailures = 0;
+      persistNetworkState();
+      logActivity("network", "Circuit breaker closed", { previousReason });
+    }
+    if (networkState.requestTimes.length >= NETWORK_REQUEST_BUDGET && !networkState.openUntil) {
+      openNetworkCircuit("hourly request budget reached", CIRCUIT_RATE_COOLDOWN_MS);
+    }
+    return {
+      open: Number(networkState.openUntil || 0) > now,
+      openUntil: Number(networkState.openUntil || 0),
+      reason: networkState.reason || "",
+      requestsLastHour: networkState.requestTimes.length,
+      budget: NETWORK_REQUEST_BUDGET,
+      consecutiveFailures: Number(networkState.consecutiveFailures || 0),
+    };
+  }
+
+  function beforeDropperNetworkRequest() {
+    const state = networkCircuitSnapshot();
+    if (state.open) {
+      const error = new Error(`Network protection active: ${state.reason || "cooldown"}`);
+      error.circuitOpen = true;
+      throw error;
+    }
+    networkState.requestTimes.push(Date.now());
+    persistNetworkState();
+  }
+
+  function recordDropperNetworkSuccess() {
+    if (networkState.consecutiveFailures) {
+      logActivity("network", "Twitch GQL recovered", { previousFailures: networkState.consecutiveFailures });
+    }
+    networkState.consecutiveFailures = 0;
+    persistNetworkState();
+  }
+
+  function recordDropperNetworkFailure(error) {
+    if (error?.circuitOpen) return;
+    const message = cleanText(error?.message || String(error));
+    networkState.consecutiveFailures = Number(networkState.consecutiveFailures || 0) + 1;
+    persistNetworkState();
+
+    if (/\b429\b|rate.?limit|too many requests/i.test(message)) {
+      openNetworkCircuit("Twitch rate limit response", CIRCUIT_RATE_COOLDOWN_MS);
+    } else if (/\b401\b|\b403\b|unauthorized|forbidden/i.test(message)) {
+      openNetworkCircuit("authorization failures", 10 * 60 * 1000);
+    } else if (networkState.consecutiveFailures >= NETWORK_FAILURE_THRESHOLD) {
+      openNetworkCircuit("repeated Twitch GQL failures", CIRCUIT_ERROR_COOLDOWN_MS);
+    }
+
+    logActivity("network-error", "Twitch GQL request failed", {
+      message,
+      consecutiveFailures: networkState.consecutiveFailures,
+    });
+  }
+
+  function normalizedHandoffState(pending) {
+    const raw = pending?.state || pending?.stage || HANDOFF_STATES.CHECKING_GAME;
+    if (raw === "directory") return HANDOFF_STATES.FINDING_STREAM;
+    if (raw === "retry") return HANDOFF_STATES.SELECTING_GAME;
+    return raw;
+  }
+
+  function getHandoffState() {
+    return readSession(NEXT_GAME_KEY, null);
+  }
+
+  function transitionHandoff(state, patch = {}, note = "") {
+    const previous = getHandoffState();
+    const next = {
+      ...(previous || {}),
+      ...patch,
+      state,
+      stage: state,
+      startedAt: Number(previous?.startedAt || patch.startedAt || Date.now()),
+      stateStartedAt: Date.now(),
+    };
+    writeSession(NEXT_GAME_KEY, next);
+    logActivity("handoff", note || `${normalizedHandoffState(previous)} → ${state}`, {
+      from: normalizedHandoffState(previous),
+      to: state,
+      targetGame: next.targetGame || null,
+      targetStream: next.targetStream || null,
+      skippedGames: next.skippedGames || [],
+    });
+    return next;
+  }
+
+  function clearHandoff(reason = "Handoff finished") {
+    const previous = getHandoffState();
+    if (previous) {
+      logActivity("handoff", reason, {
+        state: normalizedHandoffState(previous),
+        targetGame: previous.targetGame || null,
+        targetStream: previous.targetStream || null,
+      });
+    }
+    writeSession(NEXT_GAME_KEY, null);
+  }
+
   function hookAuth(uw) {
     const origFetch = uw.fetch.bind(uw);
     uw.fetch = function hookedFetch(input, init) {
@@ -424,6 +629,7 @@
     if (!token) throw new Error("Not logged in");
     const body = requests.map((req) => gqlPayload(GQL_OPS[req.op], req.variables));
     const send = async (clientId) => {
+      beforeDropperNetworkRequest();
       const headers = {
         "Client-ID": clientId,
         Authorization: `OAuth ${token}`,
@@ -486,9 +692,21 @@
       return parseRows(json, response.status);
     };
     try {
-      return await send(CLIENT_IDS[0]);
+      const result = await send(CLIENT_IDS[0]);
+      recordDropperNetworkSuccess();
+      return result;
     } catch (error) {
-      if (/401|403|integrity/i.test(error.message)) return send(CLIENT_IDS[1]);
+      if (/401|403|integrity/i.test(error.message) && !error?.circuitOpen) {
+        try {
+          const fallback = await send(CLIENT_IDS[1]);
+          recordDropperNetworkSuccess();
+          return fallback;
+        } catch (fallbackError) {
+          recordDropperNetworkFailure(fallbackError);
+          throw fallbackError;
+        }
+      }
+      recordDropperNetworkFailure(error);
       throw error;
     }
   }
@@ -653,12 +871,20 @@
   function scheduleNextGameAfterClaim(drop) {
     const game = cleanText(drop?.game);
     if (!settings.findNextStream || !game) return;
-    writeSession(NEXT_GAME_KEY, {
-      completedGame: game,
-      completedDrop: drop?.name || "Drop",
-      completedDropId: drop?.id || "",
-      startedAt: Date.now(),
-    });
+    transitionHandoff(
+      HANDOFF_STATES.CHECKING_GAME,
+      {
+        completedGame: game,
+        completedDrop: drop?.name || "Drop",
+        completedDropId: drop?.id || "",
+        targetGame: "",
+        targetSlug: "",
+        targetStream: "",
+        skippedGames: [],
+        startedAt: Date.now(),
+      },
+      `Claimed ${drop?.name || "Drop"} · checking remaining ${game} Drops`,
+    );
     setStatus(`${game} Drop Claimed · Checking Remaining Drops`);
     queueGqlPollSoon("drop-claimed", 5000);
   }
@@ -685,6 +911,16 @@
       const login = parts[0].toLowerCase();
       if (!login || RESERVED.has(login)) return "";
       return parsed.href;
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function streamLoginFromUrl(url) {
+    const href = twitchChannelHref(url);
+    if (!href) return "";
+    try {
+      return new URL(href).pathname.split("/").filter(Boolean)[0]?.toLowerCase() || "";
     } catch (_) {
       return "";
     }
@@ -721,21 +957,23 @@
   }
 
   function continueDirectoryHandoffFromDom() {
-    const pending = readSession(NEXT_GAME_KEY, null);
-    if (!pending || pending.stage !== "directory" || !isDirectoryCategoryPage()) return false;
+    const pending = getHandoffState();
+    if (!pending || normalizedHandoffState(pending) !== HANDOFF_STATES.FINDING_STREAM || !isDirectoryCategoryPage()) return false;
 
-    const stageStartedAt = Number(pending.stageStartedAt || pending.startedAt || Date.now());
-    const stageAge = Date.now() - stageStartedAt;
+    const stateStartedAt = Number(pending.stateStartedAt || pending.stageStartedAt || pending.startedAt || Date.now());
+    const stageAge = Date.now() - stateStartedAt;
     if (stageAge > HANDOFF_STAGE_TIMEOUT_MS) {
       const skippedGames = [...new Set([...(pending.skippedGames || []), pending.targetGame].filter(Boolean))];
-      writeSession(NEXT_GAME_KEY, {
-        ...pending,
-        stage: "retry",
-        targetGame: "",
-        targetSlug: "",
-        skippedGames,
-        stageStartedAt: Date.now(),
-      });
+      transitionHandoff(
+        HANDOFF_STATES.SELECTING_GAME,
+        {
+          targetGame: "",
+          targetSlug: "",
+          targetStream: "",
+          skippedGames,
+        },
+        `No Drops stream found for ${pending.targetGame || "target game"} · selecting another game`,
+      );
       setStatus(`No Drops Stream Found For ${pending.targetGame || "Target Game"} · Trying Next Game`);
       notifyUser(`Skipping ${pending.targetGame || "Unavailable Game"} · Trying Next Eligible Game`);
       location.href = INVENTORY_URL;
@@ -749,7 +987,12 @@
       return false;
     }
 
-    writeSession(NEXT_GAME_KEY, null);
+    const targetStream = streamLoginFromUrl(href);
+    transitionHandoff(
+      HANDOFF_STATES.SWITCHING,
+      { targetStream, switchStartedAt: Date.now() },
+      `Found Drops stream ${targetStream || "channel"} for ${pending.targetGame || "next game"}`,
+    );
     lastStreamSwitch = Date.now();
     lastProgressAt = Date.now();
     writeSession("tdh-progress-at", lastProgressAt);
@@ -782,29 +1025,69 @@
     for (const card of cards) {
       if (!cleanText(card.textContent).toLowerCase().includes(wanted)) continue;
       for (const link of card.querySelectorAll("a[href]")) {
-        if (!isTrustedTwitchUrl(link.href)) continue;
-        try {
-          const parsed = new URL(link.href, location.href);
-          const login = parsed.pathname.split("/").filter(Boolean)[0]?.toLowerCase() || "";
-          if (login && !RESERVED.has(login)) return parsed.href;
-        } catch (_) {
-          /* ignore */
-        }
+        const href = twitchChannelHref(link.href);
+        if (href) return href;
       }
     }
     return "";
   }
 
+  function verifyHandoffWithDrop(drop) {
+    const pending = getHandoffState();
+    if (!pending) return false;
+    const state = normalizedHandoffState(pending);
+    if (state !== HANDOFF_STATES.SWITCHING && state !== HANDOFF_STATES.VERIFYING) return false;
+
+    const targetGame = cleanText(pending.targetGame).toLowerCase();
+    const dropGame = cleanText(drop?.game).toLowerCase();
+    if (targetGame && dropGame && targetGame === dropGame) {
+      transitionHandoff(HANDOFF_STATES.COMPLETE, {}, `Verified earning target for ${pending.targetGame}`);
+      clearHandoff(`Handoff verified for ${pending.targetGame}`);
+      return true;
+    }
+
+    const verifyStartedAt = Number(pending.verifyStartedAt || pending.switchStartedAt || pending.stateStartedAt || Date.now());
+    if (state === HANDOFF_STATES.VERIFYING && Date.now() - verifyStartedAt > HANDOFF_VERIFY_TIMEOUT_MS) {
+      const skippedGames = [...new Set([...(pending.skippedGames || []), pending.targetGame].filter(Boolean))];
+      transitionHandoff(
+        HANDOFF_STATES.SELECTING_GAME,
+        { targetGame: "", targetSlug: "", targetStream: "", skippedGames },
+        `Could not verify ${pending.targetGame || "target game"} after switching`,
+      );
+      location.href = INVENTORY_URL;
+      return true;
+    }
+    return false;
+  }
+
   function continueToNextGame(campaigns) {
-    const pending = readSession(NEXT_GAME_KEY, null);
+    const pending = getHandoffState();
     if (!pending) return false;
 
     if (!pending.startedAt || Date.now() - pending.startedAt > 15 * 60 * 1000) {
-      writeSession(NEXT_GAME_KEY, null);
+      transitionHandoff(HANDOFF_STATES.FAILED, {}, "Handoff expired after 15 minutes");
+      clearHandoff("Expired handoff cleared");
       return false;
     }
 
-    if (pending.stage === "directory") {
+    let state = normalizedHandoffState(pending);
+
+    if (state === HANDOFF_STATES.SWITCHING) {
+      const login = watchingLogin();
+      if (login && (!pending.targetStream || login === pending.targetStream)) {
+        transitionHandoff(
+          HANDOFF_STATES.VERIFYING,
+          { verifyStartedAt: Date.now() },
+          `Arrived at ${login} · verifying Drop eligibility`,
+        );
+        return false;
+      }
+      return true;
+    }
+
+    if (state === HANDOFF_STATES.VERIFYING) return false;
+
+    if (state === HANDOFF_STATES.FINDING_STREAM) {
       if (isDirectoryCategoryPage()) {
         continueDirectoryHandoffFromDom();
         return true;
@@ -817,39 +1100,63 @@
         location.href = targetUrl;
         return true;
       }
+      transitionHandoff(HANDOFF_STATES.SELECTING_GAME, {}, "Target game directory URL unavailable");
+      state = HANDOFF_STATES.SELECTING_GAME;
     }
 
-    // Stay on the current game until every non-subscription watch-time Drop is done.
-    const remainingCurrentGameDrop = pickRemainingGameDrop(
-      campaigns,
-      pending.completedGame,
-      pending.completedDropId || "",
-      pending.completedDrop || "",
-    );
+    if (state === HANDOFF_STATES.CHECKING_GAME) {
+      const remainingCurrentGameDrop = pickRemainingGameDrop(
+        campaigns,
+        pending.completedGame,
+        pending.completedDropId || "",
+        pending.completedDrop || "",
+      );
 
-    if (remainingCurrentGameDrop) {
-      writeSession(NEXT_GAME_KEY, null);
-      setStatus(`Continuing ${pending.completedGame} · ${remainingCurrentGameDrop.name}`);
-      return false;
+      if (remainingCurrentGameDrop) {
+        clearHandoff(`Continuing ${pending.completedGame} · ${remainingCurrentGameDrop.name}`);
+        setStatus(`Continuing ${pending.completedGame} · ${remainingCurrentGameDrop.name}`);
+        return false;
+      }
+
+      transitionHandoff(
+        HANDOFF_STATES.SELECTING_GAME,
+        {},
+        `${pending.completedGame} watch-time Drops complete · selecting next game`,
+      );
+      state = HANDOFF_STATES.SELECTING_GAME;
     }
 
-    const next = pickNextGameDrop(campaigns, pending.completedGame, pending.skippedGames || []);
+    if (state !== HANDOFF_STATES.SELECTING_GAME) return false;
+
+    const current = getHandoffState() || pending;
+    const next = pickNextGameDrop(campaigns, current.completedGame, current.skippedGames || []);
     if (!next) {
-      writeSession(NEXT_GAME_KEY, null);
+      transitionHandoff(HANDOFF_STATES.COMPLETE, {}, "No more eligible watch-time games");
       setStatus("No More Eligible Games");
       notifyUser("All Eligible Watch-Time Drops Complete");
+      clearHandoff("All eligible watch-time Drops complete");
       return false;
     }
 
     if (isInventory()) {
       const inventoryHref = findInventoryStreamForGame(next.game);
       if (inventoryHref) {
-        writeSession(NEXT_GAME_KEY, null);
+        const targetStream = streamLoginFromUrl(inventoryHref);
+        transitionHandoff(
+          HANDOFF_STATES.SWITCHING,
+          {
+            targetGame: next.game,
+            targetSlug: next.gameSlug || "",
+            targetStream,
+            switchStartedAt: Date.now(),
+          },
+          `Switching directly to ${targetStream || "eligible stream"} for ${next.game}`,
+        );
         lastStreamSwitch = Date.now();
         lastProgressAt = Date.now();
         writeSession("tdh-progress-at", lastProgressAt);
         setStatus(`Moving To ${next.game}`);
-        notifyUser(`${pending.completedGame} Complete · Moving To ${next.game}`);
+        notifyUser(`${current.completedGame} Complete · Moving To ${next.game}`);
         location.href = inventoryHref;
         return true;
       }
@@ -857,27 +1164,28 @@
 
     const directoryUrl = gameDirectoryUrl(next);
     if (directoryUrl) {
-      writeSession(NEXT_GAME_KEY, {
-        ...pending,
-        stage: "directory",
-        targetGame: next.game,
-        targetSlug: next.gameSlug || "",
-        skippedGames: pending.skippedGames || [],
-        stageStartedAt: Date.now(),
-        startedAt: pending.startedAt || Date.now(),
-      });
-      setStatus(`${pending.completedGame} Complete · Finding ${next.game} Stream`);
+      transitionHandoff(
+        HANDOFF_STATES.FINDING_STREAM,
+        {
+          targetGame: next.game,
+          targetSlug: next.gameSlug || "",
+          targetStream: "",
+          skippedGames: current.skippedGames || [],
+        },
+        `Searching ${next.game} directory for a Drops-enabled stream`,
+      );
+      setStatus(`${current.completedGame} Complete · Finding ${next.game} Stream`);
       location.href = directoryUrl;
       return true;
     }
 
-    if (!isInventory()) {
-      setStatus(`${pending.completedGame} Complete · Checking Drops Inventory`);
-      location.href = INVENTORY_URL;
-      return true;
-    }
-
-    setStatus(`Next Game: ${next.game} · Waiting For Eligible Stream`);
+    const skippedGames = [...new Set([...(current.skippedGames || []), next.game].filter(Boolean))];
+    transitionHandoff(
+      HANDOFF_STATES.SELECTING_GAME,
+      { skippedGames },
+      `Could not build a directory URL for ${next.game} · skipping`,
+    );
+    queueGqlPollSoon("handoff-retry", 5000);
     return true;
   }
 
@@ -987,6 +1295,7 @@
       }
       if (drop) {
         applyDrop(drop);
+        verifyHandoffWithDrop(drop);
         const channelNote = login ? ` on ${login}` : "";
         setStatus(`Working toward ${drop.name}${channelNote}`);
         if (settings.findNextStream && Date.now() - lastProgressAt > 6 * 60 * 1000 && !isAutoSwitchPaused()) {
@@ -1010,6 +1319,7 @@
       }
     } catch (error) {
       lastGqlError = error?.message || String(error);
+      logActivity("poll-error", "Drop state refresh failed", { message: lastGqlError, reason: lastGqlReason || null });
       setStatus(error.message === "Not logged in" ? "Waiting for Twitch login…" : `Drops update failed: ${error.message}`);
       refreshDropCard();
     }
@@ -1017,8 +1327,18 @@
 
   function applyDrop(drop) {
     if (!drop) return;
+    const previousDrop = currentDrop;
     const percent = drop.percent ?? (drop.requiredMinutes ? Math.round((drop.currentMinutes / drop.requiredMinutes) * 100) : 0);
     currentDrop = { ...drop, percent };
+    const changedDrop = previousDrop?.id !== currentDrop.id || previousDrop?.name !== currentDrop.name;
+    const changedPercent = Number(previousDrop?.percent ?? -1) !== Number(percent);
+    if (changedDrop || changedPercent) {
+      logActivity("progress", `${currentDrop.name || "Drop"} · ${percent}%`, {
+        game: currentDrop.game || null,
+        currentMinutes: currentDrop.currentMinutes || 0,
+        requiredMinutes: currentDrop.requiredMinutes || 0,
+      });
+    }
     writeSession("tdh-drop", currentDrop);
     if (percent) {
       progressLabel = `${percent}%`;
@@ -1120,6 +1440,7 @@
       const status = result[0]?.data?.claimDropRewards?.status || "";
       if (/ELIGIBLE_FOR_ALL|DROP_INSTANCE_ALREADY_CLAIMED/i.test(status)) {
         lastDropAt = Date.now();
+        logActivity("claim", status === "DROP_INSTANCE_ALREADY_CLAIMED" ? "Drop already claimed" : `Claimed ${drop.name || "drop"}`, { game: drop.game || null });
         setStatus(status === "DROP_INSTANCE_ALREADY_CLAIMED" ? "Drop already claimed" : `Claimed ${drop.name || "drop"}`);
         scheduleNextGameAfterClaim(drop);
         return true;
@@ -1157,6 +1478,7 @@
     }
     if (claimed) {
       lastDropAt = Date.now();
+      logActivity("claim", `Claimed ${claimed} Drop${claimed === 1 ? "" : "s"} via page controls`, { game: currentDrop?.game || null });
       setStatus(`Claimed ${claimed} Drop${claimed === 1 ? "" : "s"}`);
       notifyUser(`Claimed ${claimed} Drop${claimed === 1 ? "" : "s"}`);
       if (currentDrop?.percent >= 100) scheduleNextGameAfterClaim(currentDrop);
@@ -1412,6 +1734,7 @@
     lastStreamSwitch = Date.now();
     lastProgressAt = Date.now();
     writeSession("tdh-progress-at", lastProgressAt);
+    logActivity("stream-switch", "Opening next Drops channel", { target: streamLoginFromUrl(href) || null });
     setStatus("Opening Next Drops Channel");
     if (settings.queueEnabled) {
       location.href = href;
@@ -1846,7 +2169,11 @@
             ${switchHtml("tdh-notifications", "Notifications", "Shows Brief Dropper Notices For Important State Changes.", settings.notifications)}
             <div class="mini-row"><span>Pause Auto-Switch</span><select class="select-lite" id="tdh-pause-switch"><option value="0">Off</option><option value="30">30 Min</option><option value="60">1 Hour</option></select></div>
             <button type="button" class="life-btn" id="tdh-refresh-now">Refresh Drop State</button>
-            <button type="button" class="life-btn" id="tdh-diagnostics-toggle">Show Diagnostics</button><div class="diag" id="tdh-diagnostics"></div>
+            <button type="button" class="life-btn" id="tdh-diagnostics-toggle">Show Diagnostics</button>
+            <button type="button" class="life-btn" id="tdh-copy-diagnostics">Copy Diagnostics</button>
+            <button type="button" class="life-btn" id="tdh-clear-activity">Clear Activity Log</button>
+            <button type="button" class="life-btn" id="tdh-reset-session">Reset Session State</button>
+            <div class="diag" id="tdh-diagnostics"></div>
           </div></section>
         </aside>
         <div class="progress-stack">
@@ -2091,8 +2418,31 @@
     s.getElementById("tdh-diagnostics-toggle")?.addEventListener("click", (event) => {
       diag.classList.toggle("open");
       event.currentTarget.textContent = diag.classList.contains("open") ? "Hide Diagnostics" : "Show Diagnostics";
-      diag.textContent = JSON.stringify(dropperDebugSnapshot(), null, 2);
+      diag.textContent = diagnosticsText();
       requestAnimationFrame(layoutChrome);
+    });
+    s.getElementById("tdh-copy-diagnostics")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      try {
+        await navigator.clipboard.writeText(diagnosticsText());
+        button.textContent = "Diagnostics Copied";
+        logActivity("diagnostics", "Diagnostics copied to clipboard");
+      } catch (_) {
+        button.textContent = "Copy Failed";
+      }
+      setTimeout(() => { button.textContent = "Copy Diagnostics"; }, 1600);
+    });
+    s.getElementById("tdh-clear-activity")?.addEventListener("click", (event) => {
+      clearActivityLog();
+      event.currentTarget.textContent = "Activity Cleared";
+      if (diag.classList.contains("open")) diag.textContent = diagnosticsText();
+      setTimeout(() => { event.currentTarget.textContent = "Clear Activity Log"; }, 1600);
+    });
+    s.getElementById("tdh-reset-session")?.addEventListener("click", (event) => {
+      resetTransientSessionState();
+      event.currentTarget.textContent = "Session Reset";
+      if (diag.classList.contains("open")) diag.textContent = diagnosticsText();
+      setTimeout(() => { event.currentTarget.textContent = "Reset Session State"; }, 1600);
     });
     const queueCount = s.getElementById("tdh-queue-count"); queueCount.value = String(settings.queueCount); queueCount.addEventListener("change", () => { settings.queueCount = Number(queueCount.value); saveSettings(); refreshQueueList(); });
     const pref = s.getElementById("tdh-queue-preference"); pref.value = settings.queuePreference; pref.addEventListener("change", () => { settings.queuePreference = pref.value; saveSettings(); refreshQueueList(); });
@@ -2205,13 +2555,49 @@
     }, onerror() {}, ontimeout() {} });
   }
 
+  function selectorHealthSnapshot() {
+    return {
+      video: Boolean(document.querySelector("video")),
+      streamInfo: Boolean(document.querySelector("#live-channel-stream-information")),
+      dropsEnabledTag: Boolean(document.querySelector('[data-a-target="DropsEnabled"], a[href*="/tags/DropsEnabled"]')),
+      inventoryCampaignCards: document.querySelectorAll(
+        ".inventory-max-width > div:not(:first-child), [data-test-selector*='DropsCampaign'], [class*='drops-campaign']",
+      ).length,
+      directoryChannelLinks: document.querySelectorAll(
+        'a[data-a-target="preview-card-channel-link"], a[data-test-selector*="channel-link"]',
+      ).length,
+      claimButtons: document.querySelectorAll(DROP_CLAIM_SELECTOR).length,
+      chatColumn: Boolean(findTwitchChatColumn()),
+      uiMounted: Boolean(ui?.host?.isConnected),
+    };
+  }
+
+  function resetTransientSessionState() {
+    [NEXT_GAME_KEY, "tdh-drop", "tdh-progress", "tdh-progress-at"].forEach((key) => {
+      try { sessionStorage.removeItem(key); } catch (_) { /* ignore */ }
+    });
+    currentDrop = null;
+    lastProgress = 0;
+    lastProgressAt = Date.now();
+    progressLabel = "";
+    logActivity("diagnostics", "Transient Dropper session state reset");
+    refreshDropCard();
+    queueGqlPollSoon("session-reset", GQL_MIN_GAP_MS);
+  }
+
+  function diagnosticsText() {
+    return JSON.stringify(dropperDebugSnapshot(), null, 2);
+  }
+
   function dropperDebugSnapshot() {
     const now = Date.now();
-    const handoff = readSession(NEXT_GAME_KEY, null);
+    const handoff = getHandoffState();
     const card = ui?.shadow?.getElementById("tdh-drop-card");
     const chat = findTwitchChatColumn();
+    const circuit = networkCircuitSnapshot(now);
     return {
       version: APP_VERSION,
+      generatedAt: new Date(now).toISOString(),
       tokenCaptured: Boolean(getToken()),
       deviceCaptured: Boolean(capturedDevice || cookie("unique_id")),
       watchingLogin: watchingLogin(),
@@ -2237,18 +2623,35 @@
         lastInterceptedTwitchResponseAt: lastTwitchGqlAt ? new Date(lastTwitchGqlAt).toISOString() : null,
         lastError: lastGqlError || null,
       },
+      networkSafety: {
+        circuitOpen: circuit.open,
+        circuitReason: circuit.reason || null,
+        circuitOpenUntil: circuit.openUntil ? new Date(circuit.openUntil).toISOString() : null,
+        requestsLastHour: circuit.requestsLastHour,
+        requestBudgetPerHour: circuit.budget,
+        consecutiveFailures: circuit.consecutiveFailures,
+      },
       handoff: handoff ? {
-        stage: handoff.stage || "claim-check",
+        state: normalizedHandoffState(handoff),
         targetGame: handoff.targetGame || null,
+        targetStream: handoff.targetStream || null,
+        completedGame: handoff.completedGame || null,
         skippedGames: handoff.skippedGames || [],
         ageSeconds: Math.max(0, Math.floor((now - Number(handoff.startedAt || now)) / 1000)),
-        stageAgeSeconds: Math.max(0, Math.floor((now - Number(handoff.stageStartedAt || handoff.startedAt || now)) / 1000)),
-      } : null,
+        stateAgeSeconds: Math.max(0, Math.floor((now - Number(handoff.stateStartedAt || handoff.startedAt || now)) / 1000)),
+      } : { state: "idle" },
+      selectors: selectorHealthSnapshot(),
       queueEnabled: settings.queueEnabled,
       queueCandidates: discoverQueueCandidates().map((item) => item.login),
       autoSwitchPaused: isAutoSwitchPaused(),
       progressCardCollapsed: Boolean(card?.classList.contains("collapsed")),
       chatWidth: chat ? Math.round(chat.getBoundingClientRect().width) : null,
+      recentActivity: (Array.isArray(activityLog) ? activityLog : []).slice(-20).map((entry) => ({
+        at: new Date(entry.at).toISOString(),
+        type: entry.type,
+        message: entry.message,
+        meta: entry.meta || null,
+      })),
       statusText,
     };
   }
