@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.0
+// @version      2.6.1
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,7 +27,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.0";
+  const APP_VERSION = "2.6.1";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
@@ -47,6 +47,8 @@
   const CIRCUIT_ERROR_COOLDOWN_MS = 5 * 60 * 1000;
   const CIRCUIT_RATE_COOLDOWN_MS = 15 * 60 * 1000;
   const HANDOFF_VERIFY_TIMEOUT_MS = 90 * 1000;
+  const CAMPAIGN_EXPIRY_GRACE_MS = 60 * 1000;
+  const CLAIM_RETRY_INTERVAL_MS = 30 * 1000;
   const HANDOFF_STATES = Object.freeze({
     CHECKING_GAME: "checking-game",
     SELECTING_GAME: "selecting-game",
@@ -58,6 +60,12 @@
   });
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const RELEASE_NOTES = {
+    "2.6.1": [
+      "Adds a 60-second campaign-expiry escape hatch when Twitch leaves rewards stuck on Claim Ready.",
+      "Moves to the next open eligible watch-time campaign even when the previous campaign never finishes claiming.",
+      "Uses cached campaign timing in the local heartbeat instead of adding more Twitch polling.",
+      "Throttles claim retries to prevent repeated claim requests while waiting for campaign rollover.",
+    ],
     "2.6.0": [
       "Adds an explicit handoff state machine for game and stream switching.",
       "Adds a rolling sanitized activity log for live-test troubleshooting.",
@@ -151,6 +159,7 @@
   let progressLabel = "";
   let lastBonusAt = 0;
   let lastDropAt = 0;
+  let lastClaimAttemptAt = 0;
   let lastStreamSwitch = 0;
   let lastProgress = readSession("tdh-progress", 0);
   let lastProgressAt = readSession("tdh-progress-at", Date.now());
@@ -308,6 +317,8 @@
     if (isDirectoryCategoryPage() && readSession(NEXT_GAME_KEY, null)) {
       continueDirectoryHandoffFromDom();
     }
+
+    if (maybeAdvanceExpiredCampaign(lastInventoryCampaigns)) return;
 
     if (settings.claimDrops) scanDrops();
     else refreshDropCard();
@@ -723,11 +734,158 @@
     return requiredSubs > 0;
   }
 
+  function campaignKey(campaign) {
+    const game = campaign?.game?.displayName || campaign?.game?.name || "";
+    return String(campaign?.id || `${game}|${campaign?.name || ""}`).toLowerCase();
+  }
+
+  function campaignWindow(campaign, drop = null) {
+    const startAt = campaign?.startAt || drop?.startAt || "";
+    const endAt = campaign?.endAt || drop?.endAt || "";
+    const startMs = startAt ? Date.parse(startAt) : 0;
+    const endMs = endAt ? Date.parse(endAt) : 0;
+    return {
+      startAt,
+      endAt,
+      startMs: Number.isFinite(startMs) ? startMs : 0,
+      endMs: Number.isFinite(endMs) ? endMs : 0,
+    };
+  }
+
+  function campaignIsOpen(campaign, drop = null, now = Date.now()) {
+    const window = campaignWindow(campaign, drop);
+    if (window.startMs && window.startMs > now) return false;
+    if (window.endMs && window.endMs <= now) return false;
+    return true;
+  }
+
+  function findCampaignForDrop(campaigns, activeDrop = currentDrop) {
+    if (!activeDrop) return null;
+    const wantedId = String(activeDrop.campaignId || "");
+    const wantedName = cleanText(activeDrop.campaign).toLowerCase();
+    const wantedGame = cleanText(activeDrop.game).toLowerCase();
+    const wantedDropId = String(activeDrop.id || "");
+
+    for (const campaign of campaigns || []) {
+      if (wantedId && String(campaign?.id || "") === wantedId) return campaign;
+      const drops = campaign?.timeBasedDrops || campaign?.drops || [];
+      if (wantedDropId && drops.some((drop) => String(drop?.id || "") === wantedDropId)) return campaign;
+
+      const name = cleanText(campaign?.name).toLowerCase();
+      const game = cleanText(campaign?.game?.displayName || campaign?.game?.name).toLowerCase();
+      if (wantedName && name === wantedName && (!wantedGame || !game || game === wantedGame)) return campaign;
+    }
+    return null;
+  }
+
+  function campaignHasUnclaimedWatchDrops(campaign) {
+    const drops = campaign?.timeBasedDrops || campaign?.drops || [];
+    return drops.some((drop) => {
+      const self = drop?.self || {};
+      return !self.isClaimed && !requiresSubscription(drop) && Number(drop?.requiredMinutesWatched || 0) > 0;
+    });
+  }
+
+  function campaignExpirySnapshot(campaigns = lastInventoryCampaigns, activeDrop = currentDrop, now = Date.now()) {
+    if (!activeDrop) return null;
+    const campaign = findCampaignForDrop(campaigns, activeDrop);
+    const fallbackDrop = {
+      endAt: activeDrop.dropEndAt || activeDrop.campaignEndAt || "",
+      startAt: activeDrop.dropStartAt || activeDrop.campaignStartAt || "",
+    };
+    const window = campaignWindow(campaign, fallbackDrop);
+    if (!window.endMs) return null;
+
+    const hasUnclaimed = campaign
+      ? campaignHasUnclaimedWatchDrops(campaign)
+      : !activeDrop.isClaimed;
+
+    const key = campaign
+      ? campaignKey(campaign)
+      : String(activeDrop.campaignId || `${activeDrop.game || ""}|${activeDrop.campaign || ""}`).toLowerCase();
+
+    const graceEndsAt = window.endMs + CAMPAIGN_EXPIRY_GRACE_MS;
+    return {
+      campaignKey: key,
+      campaignId: campaign?.id || activeDrop.campaignId || "",
+      campaignName: campaign?.name || activeDrop.campaign || activeDrop.game || "Current Campaign",
+      game: campaign?.game?.displayName || campaign?.game?.name || activeDrop.game || "",
+      endAt: window.endAt,
+      endMs: window.endMs,
+      graceEndsAt,
+      graceRemainingMs: Math.max(0, graceEndsAt - now),
+      ended: now >= window.endMs,
+      overdue: hasUnclaimed && now >= graceEndsAt,
+      hasUnclaimed,
+    };
+  }
+
+  function pickNextOpenCampaignDrop(campaigns, excludedCampaignKeys = [], excludedGames = []) {
+    const now = Date.now();
+    const excludedCampaigns = new Set((excludedCampaignKeys || []).map((key) => String(key || "").toLowerCase()).filter(Boolean));
+    const excludedGameSet = new Set((excludedGames || []).map((game) => cleanText(game).toLowerCase()).filter(Boolean));
+    const candidates = [];
+
+    for (const campaign of campaigns || []) {
+      const key = campaignKey(campaign);
+      if (excludedCampaigns.has(key)) continue;
+
+      const game = campaign?.game?.displayName || campaign?.game?.name || campaign?.name || "";
+      if (excludedGameSet.has(cleanText(game).toLowerCase())) continue;
+      if (!campaignIsOpen(campaign, null, now)) continue;
+
+      const drops = campaign?.timeBasedDrops || campaign?.drops || [];
+      for (const drop of drops) {
+        const self = drop?.self || {};
+        if (self.isClaimed || requiresSubscription(drop)) continue;
+        const required = Number(drop?.requiredMinutesWatched || 0);
+        const current = Number(self.currentMinutesWatched || 0);
+        if (required <= 0 || !campaignIsOpen(campaign, drop, now)) continue;
+
+        const preconditionsMet = (drop.preconditionDrops || []).every((item) => {
+          const other = drops.find((candidate) => candidate.id === item.id);
+          return other?.self?.isClaimed;
+        });
+        if (!preconditionsMet) continue;
+
+        const window = campaignWindow(campaign, drop);
+        candidates.push({
+          id: drop.id || "",
+          dropInstanceID: self.dropInstanceID || "",
+          name: drop.name || drop.benefitEdges?.[0]?.benefit?.name || "Drop",
+          game,
+          gameSlug: campaign.game?.slug || campaign.game?.name || "",
+          gameId: campaign.game?.id || "",
+          campaignId: campaign.id || "",
+          campaignKey: key,
+          campaign: campaign.name || game,
+          campaignStartAt: campaign.startAt || "",
+          campaignEndAt: campaign.endAt || drop.endAt || "",
+          dropStartAt: drop.startAt || "",
+          dropEndAt: drop.endAt || "",
+          endMs: window.endMs || Number.MAX_SAFE_INTEGER,
+          percent: Math.min(100, Math.round((current / required) * 100)),
+          currentMinutes: current,
+          requiredMinutes: required,
+          remainingMinutes: Math.max(0, required - current),
+        });
+      }
+    }
+
+    candidates.sort((a, b) => {
+      if ((b.currentMinutes > 0) !== (a.currentMinutes > 0)) return (b.currentMinutes > 0) - (a.currentMinutes > 0);
+      if (a.endMs !== b.endMs) return a.endMs - b.endMs;
+      return a.remainingMinutes - b.remainingMinutes;
+    });
+    return candidates[0] || null;
+  }
+
   function pickTimedDrop(campaigns, gameName) {
     const now = Date.now();
     const wantedGame = (gameName || "").toLowerCase();
     const options = [];
     for (const campaign of campaigns || []) {
+      if (!campaignIsOpen(campaign, null, now)) continue;
       const game = campaign.game?.displayName || campaign.game?.name || campaign.name || "";
       const drops = campaign.timeBasedDrops || campaign.drops || [];
       for (const drop of drops) {
@@ -735,9 +893,7 @@
         if (self.isClaimed || requiresSubscription(drop)) continue;
         const required = Number(drop.requiredMinutesWatched) || 0;
         const current = Number(self.currentMinutesWatched) || 0;
-        if (required <= 0) continue;
-        if (drop.startAt && Date.parse(drop.startAt) > now) continue;
-        if (drop.endAt && Date.parse(drop.endAt) <= now) continue;
+        if (required <= 0 || !campaignIsOpen(campaign, drop, now)) continue;
         const pre = (drop.preconditionDrops || []).every((item) => {
           const other = drops.find((candidate) => candidate.id === item.id);
           return other?.self?.isClaimed;
@@ -751,7 +907,13 @@
           game,
           gameSlug: campaign.game?.slug || campaign.game?.name || "",
           gameId: campaign.game?.id || "",
+          campaignId: campaign.id || "",
+          campaignKey: campaignKey(campaign),
           campaign: campaign.name || game,
+          campaignStartAt: campaign.startAt || "",
+          campaignEndAt: campaign.endAt || drop.endAt || "",
+          dropStartAt: drop.startAt || "",
+          dropEndAt: drop.endAt || "",
           percent: Math.min(100, Math.round((current / required) * 100)),
           currentMinutes: current,
           requiredMinutes: required,
@@ -780,6 +942,7 @@
     if (!wantedGame) return null;
 
     for (const campaign of campaigns || []) {
+      if (!campaignIsOpen(campaign, null, now)) continue;
       const game = campaign.game?.displayName || campaign.game?.name || campaign.name || "";
       if (cleanText(game).toLowerCase() !== wantedGame) continue;
 
@@ -797,9 +960,7 @@
         if (completedDropId && dropId === completedDropId) continue;
         if (!completedDropId && completedName && dropName.toLowerCase() === completedName && current >= required) continue;
 
-        if (required <= 0) continue;
-        if (drop.startAt && Date.parse(drop.startAt) > now) continue;
-        if (drop.endAt && Date.parse(drop.endAt) <= now) continue;
+        if (required <= 0 || !campaignIsOpen(campaign, drop, now)) continue;
 
         remaining.push({
           id: dropId,
@@ -827,6 +988,7 @@
     const now = Date.now();
 
     for (const campaign of campaigns || []) {
+      if (!campaignIsOpen(campaign, null, now)) continue;
       const game = campaign.game?.displayName || campaign.game?.name || campaign.name || "";
       const normalizedGame = cleanText(game).toLowerCase();
       if (!game || normalizedGame === previous || excluded.has(normalizedGame)) continue;
@@ -837,9 +999,7 @@
         if (self.isClaimed || requiresSubscription(drop)) continue;
         const required = Number(drop.requiredMinutesWatched) || 0;
         const current = Number(self.currentMinutesWatched) || 0;
-        if (required <= 0) continue;
-        if (drop.startAt && Date.parse(drop.startAt) > now) continue;
-        if (drop.endAt && Date.parse(drop.endAt) <= now) continue;
+        if (required <= 0 || !campaignIsOpen(campaign, drop, now)) continue;
 
         const preconditionsMet = (drop.preconditionDrops || []).every((item) => {
           const other = drops.find((candidate) => candidate.id === item.id);
@@ -853,7 +1013,13 @@
           game,
           gameSlug: campaign.game?.slug || campaign.game?.name || "",
           gameId: campaign.game?.id || "",
+          campaignId: campaign.id || "",
+          campaignKey: campaignKey(campaign),
           campaign: campaign.name || game,
+          campaignStartAt: campaign.startAt || "",
+          campaignEndAt: campaign.endAt || drop.endAt || "",
+          dropStartAt: drop.startAt || "",
+          dropEndAt: drop.endAt || "",
           currentMinutes: current,
           requiredMinutes: required,
           remainingMinutes: Math.max(0, required - current),
@@ -866,6 +1032,60 @@
       return a.remainingMinutes - b.remainingMinutes;
     });
     return next[0] || null;
+  }
+
+  function maybeAdvanceExpiredCampaign(campaigns = lastInventoryCampaigns) {
+    if (!settings.findNextStream || !currentDrop) return false;
+
+    const expiry = campaignExpirySnapshot(campaigns, currentDrop);
+    if (!expiry?.ended || !expiry.hasUnclaimed) return false;
+
+    if (!expiry.overdue) {
+      if (currentDrop.percent >= 100) {
+        setStatus(`Campaign Ended · Claim Grace ${Math.ceil(expiry.graceRemainingMs / 1000)}s`);
+      }
+      return false;
+    }
+
+    const pending = getHandoffState();
+    const state = normalizedHandoffState(pending);
+    if (pending && [
+      HANDOFF_STATES.SELECTING_GAME,
+      HANDOFF_STATES.FINDING_STREAM,
+      HANDOFF_STATES.SWITCHING,
+      HANDOFF_STATES.VERIFYING,
+    ].includes(state)) {
+      return false;
+    }
+
+    transitionHandoff(
+      HANDOFF_STATES.SELECTING_GAME,
+      {
+        completedGame: currentDrop.game || expiry.game,
+        completedDrop: currentDrop.name || "Drop",
+        completedDropId: currentDrop.id || "",
+        targetGame: "",
+        targetSlug: "",
+        targetStream: "",
+        skippedGames: pending?.skippedGames || [],
+        forceOpenCampaign: true,
+        expiredCampaignKey: expiry.campaignKey,
+        expiredCampaignName: expiry.campaignName,
+        excludedCampaignKeys: [...new Set([...(pending?.excludedCampaignKeys || []), expiry.campaignKey].filter(Boolean))],
+        startedAt: pending?.startedAt || Date.now(),
+      },
+      `${expiry.campaignName} ended with unclaimed rewards · advancing after 60s grace`,
+    );
+
+    logActivity("campaign-expiry", "Campaign claim grace expired · selecting next open campaign", {
+      campaign: expiry.campaignName,
+      game: expiry.game,
+      endedAt: expiry.endAt,
+      graceSeconds: Math.round(CAMPAIGN_EXPIRY_GRACE_MS / 1000),
+    });
+    setStatus(`${expiry.campaignName} Ended · Finding Next Open Campaign`);
+    notifyUser("Campaign Ended · Moving To Next Open Drops Campaign");
+    return continueToNextGame(campaigns);
   }
 
   function scheduleNextGameAfterClaim(drop) {
@@ -1154,8 +1374,20 @@
     if (state !== HANDOFF_STATES.SELECTING_GAME) return false;
 
     const current = getHandoffState() || pending;
-    const next = pickNextGameDrop(campaigns, current.completedGame, current.skippedGames || []);
+    const next = current.forceOpenCampaign
+      ? pickNextOpenCampaignDrop(
+          campaigns,
+          current.excludedCampaignKeys || [],
+          current.skippedGames || [],
+        )
+      : pickNextGameDrop(campaigns, current.completedGame, current.skippedGames || []);
+
     if (!next) {
+      if (current.forceOpenCampaign) {
+        setStatus("Campaign Ended · Waiting For Next Open Eligible Campaign");
+        queueGqlPollSoon("waiting-open-campaign", GQL_RECOVERY_INTERVAL_MS);
+        return false;
+      }
       transitionHandoff(HANDOFF_STATES.COMPLETE, {}, "No more eligible watch-time games");
       setStatus("No More Eligible Games");
       notifyUser("All Eligible Watch-Time Drops Complete");
@@ -1173,6 +1405,8 @@
             targetGame: next.game,
             targetSlug: next.gameSlug || "",
             targetStream,
+            targetCampaign: next.campaign || "",
+            targetCampaignKey: next.campaignKey || "",
             switchStartedAt: Date.now(),
           },
           `Switching directly to ${targetStream || "eligible stream"} for ${next.game}`,
@@ -1195,6 +1429,8 @@
           targetGame: next.game,
           targetSlug: next.gameSlug || "",
           targetStream: "",
+          targetCampaign: next.campaign || "",
+          targetCampaignKey: next.campaignKey || "",
           skippedGames: current.skippedGames || [],
         },
         `Searching ${next.game} directory for a Drops-enabled stream`,
@@ -1247,9 +1483,18 @@
     const minutes = Number.isFinite(current) ? current : Number(drop.self?.currentMinutesWatched) || 0;
     if (!drop.name && !required && !dropId) return null;
     return {
+      id: drop.id || dropId || "",
+      isClaimed: Boolean(drop.self?.isClaimed),
       name: drop.name || drop.benefitEdges?.[0]?.benefit?.name || "Current drop",
       game: campaign?.game?.displayName || campaign?.game?.name || drop.game?.displayName || drop.game?.name || session.game?.displayName || session.game?.name || "",
+      gameSlug: campaign?.game?.slug || campaign?.game?.name || "",
+      campaignId: campaign?.id || "",
+      campaignKey: campaign ? campaignKey(campaign) : "",
       campaign: campaign?.name || "",
+      campaignStartAt: campaign?.startAt || "",
+      campaignEndAt: campaign?.endAt || drop.endAt || "",
+      dropStartAt: drop.startAt || "",
+      dropEndAt: drop.endAt || "",
       percent: required ? Math.min(100, Math.round((minutes / required) * 100)) : 0,
       currentMinutes: minutes,
       requiredMinutes: required,
@@ -1280,6 +1525,7 @@
       lastGqlError = "";
       const inventoryCampaigns = first[0]?.data?.currentUser?.inventory?.dropCampaignsInProgress || [];
       lastInventoryCampaigns = inventoryCampaigns;
+      if (maybeAdvanceExpiredCampaign(inventoryCampaigns)) return;
       if (continueToNextGame(inventoryCampaigns)) return;
       const stream = first[1]?.data?.user;
       const channelId = stream?.id ? String(stream.id) : "";
@@ -1470,20 +1716,33 @@
         scheduleNextGameAfterClaim(drop);
         return true;
       }
-    } catch (_) {
+    } catch (error) {
+      logActivity("claim-error", "GQL claim attempt failed", {
+        drop: drop?.name || null,
+        game: drop?.game || null,
+        message: error?.message || String(error),
+      });
       // DOM claim remains the fallback.
     }
     return false;
   }
 
   function maybeClaimCurrentDrop(drop) {
-    if (!drop?.dropInstanceID || Date.now() - lastDropAt < 1200) return;
+    const now = Date.now();
+    if (!drop?.dropInstanceID || now - lastDropAt < 1200) return;
     if ((drop.currentMinutes || 0) < (drop.requiredMinutes || Infinity)) return;
+
+    const expiry = campaignExpirySnapshot(lastInventoryCampaigns, drop, now);
+    if (expiry?.overdue) return;
+    if (now - lastClaimAttemptAt < CLAIM_RETRY_INTERVAL_MS) return;
+
+    lastClaimAttemptAt = now;
     claimDropViaGql(drop);
   }
 
   function claimDropButtons(root = document) {
     if (!settings.claimDrops) return 0;
+    if (campaignExpirySnapshot(lastInventoryCampaigns, currentDrop)?.overdue) return 0;
     if (Date.now() - lastDropAt < 1200) return 0;
     let claimed = 0;
     root.querySelectorAll(DROP_CLAIM_SELECTOR).forEach((node) => {
@@ -2656,6 +2915,21 @@
         requestBudgetPerHour: circuit.budget,
         consecutiveFailures: circuit.consecutiveFailures,
       },
+      campaignExpiry: (() => {
+        const expiry = campaignExpirySnapshot(lastInventoryCampaigns, currentDrop, now);
+        return expiry ? {
+          campaign: expiry.campaignName,
+          game: expiry.game,
+          endAt: expiry.endAt || null,
+          ended: expiry.ended,
+          overdue: expiry.overdue,
+          hasUnclaimed: expiry.hasUnclaimed,
+          graceRemainingSeconds: Math.ceil(expiry.graceRemainingMs / 1000),
+          graceSeconds: Math.round(CAMPAIGN_EXPIRY_GRACE_MS / 1000),
+          lastClaimAttemptAt: lastClaimAttemptAt ? new Date(lastClaimAttemptAt).toISOString() : null,
+          claimRetryIntervalSeconds: Math.round(CLAIM_RETRY_INTERVAL_MS / 1000),
+        } : null;
+      })(),
       handoff: handoff ? {
         state: normalizedHandoffState(handoff),
         targetGame: handoff.targetGame || null,
