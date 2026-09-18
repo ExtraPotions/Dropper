@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.5.0
+// @version      2.5.1
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,9 +27,10 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.5.0";
+  const APP_VERSION = "2.5.1";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
+  const NEXT_GAME_KEY = "dropper-next-game-after-claim";
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const DEFAULTS = {
     claimBonus: true,
@@ -111,6 +112,7 @@
   let autoHideTimer = null;
   let updateNoticeState = null;
   let pauseAutoSwitchUntil = 0;
+  let lastInventoryCampaigns = [];
 
   hookAuth(page);
   if (settings.keepTabActive) installKeepTabActive(page);
@@ -302,6 +304,8 @@
           isClaimed: Boolean(self.isClaimed),
           name: drop.name || drop.benefitEdges?.[0]?.benefit?.name || "Drop",
           game,
+          gameSlug: campaign.game?.slug || campaign.game?.name || "",
+          gameId: campaign.game?.id || "",
           campaign: campaign.name || game,
           percent: Math.min(100, Math.round((current / required) * 100)),
           currentMinutes: current,
@@ -320,6 +324,131 @@
       return a.remainingMinutes - b.remainingMinutes;
     });
     return pool[0];
+  }
+
+  function pickNextGameDrop(campaigns, completedGame) {
+    const previous = cleanText(completedGame).toLowerCase();
+    const next = [];
+    const now = Date.now();
+
+    for (const campaign of campaigns || []) {
+      const game = campaign.game?.displayName || campaign.game?.name || campaign.name || "";
+      if (!game || game.toLowerCase() === previous) continue;
+
+      const drops = campaign.timeBasedDrops || campaign.drops || [];
+      for (const drop of drops) {
+        const self = drop.self || {};
+        if (self.isClaimed) continue;
+        const required = Number(drop.requiredMinutesWatched) || 0;
+        const current = Number(self.currentMinutesWatched) || 0;
+        if (required <= 0) continue;
+        if (drop.startAt && Date.parse(drop.startAt) > now) continue;
+        if (drop.endAt && Date.parse(drop.endAt) <= now) continue;
+
+        const preconditionsMet = (drop.preconditionDrops || []).every((item) => {
+          const other = drops.find((candidate) => candidate.id === item.id);
+          return other?.self?.isClaimed;
+        });
+        if (!preconditionsMet) continue;
+
+        next.push({
+          id: drop.id || "",
+          name: drop.name || drop.benefitEdges?.[0]?.benefit?.name || "Drop",
+          game,
+          gameSlug: campaign.game?.slug || campaign.game?.name || "",
+          gameId: campaign.game?.id || "",
+          campaign: campaign.name || game,
+          currentMinutes: current,
+          requiredMinutes: required,
+          remainingMinutes: Math.max(0, required - current),
+        });
+      }
+    }
+
+    next.sort((a, b) => {
+      if ((b.currentMinutes > 0) !== (a.currentMinutes > 0)) return (b.currentMinutes > 0) - (a.currentMinutes > 0);
+      return a.remainingMinutes - b.remainingMinutes;
+    });
+    return next[0] || null;
+  }
+
+  function scheduleNextGameAfterClaim(drop) {
+    const game = cleanText(drop?.game);
+    if (!settings.queueEnabled || !settings.findNextStream || !game) return;
+    writeSession(NEXT_GAME_KEY, {
+      completedGame: game,
+      completedDrop: drop?.name || "Drop",
+      startedAt: Date.now(),
+    });
+    setStatus(`${game} Complete · Finding Next Game`);
+    notifyUser(`${game} Drop Complete · Finding Next Game`);
+    setTimeout(() => {
+      if (!isInventory()) location.href = INVENTORY_URL;
+      else pollGqlDrops();
+    }, 1400);
+  }
+
+  function findInventoryStreamForGame(gameName) {
+    const wanted = cleanText(gameName).toLowerCase();
+    if (!wanted) return "";
+    const cards = [
+      ...document.querySelectorAll(".inventory-max-width > div:not(:first-child)"),
+      ...document.querySelectorAll("[data-test-selector*='DropsCampaign']"),
+      ...document.querySelectorAll("[class*='drops-campaign']"),
+    ];
+
+    for (const card of cards) {
+      if (!cleanText(card.textContent).toLowerCase().includes(wanted)) continue;
+      for (const link of card.querySelectorAll("a[href]")) {
+        if (!isTrustedTwitchUrl(link.href)) continue;
+        try {
+          const parsed = new URL(link.href, location.href);
+          const login = parsed.pathname.split("/").filter(Boolean)[0]?.toLowerCase() || "";
+          if (login && !RESERVED.has(login)) return parsed.href;
+        } catch (_) {
+          /* ignore */
+        }
+      }
+    }
+    return "";
+  }
+
+  function continueToNextGame(campaigns) {
+    const pending = readSession(NEXT_GAME_KEY, null);
+    if (!pending) return false;
+
+    if (!pending.startedAt || Date.now() - pending.startedAt > 15 * 60 * 1000) {
+      writeSession(NEXT_GAME_KEY, null);
+      return false;
+    }
+
+    const next = pickNextGameDrop(campaigns, pending.completedGame);
+    if (!next) {
+      writeSession(NEXT_GAME_KEY, null);
+      setStatus("No More Eligible Games");
+      notifyUser("All Eligible Drops Complete");
+      return false;
+    }
+
+    if (!isInventory()) {
+      location.href = INVENTORY_URL;
+      return true;
+    }
+
+    const href = findInventoryStreamForGame(next.game);
+    if (!href) {
+      setStatus(`Next Game: ${next.game} · Waiting For Eligible Stream`);
+      return true;
+    }
+
+    writeSession(NEXT_GAME_KEY, null);
+    lastStreamSwitch = Date.now();
+    lastProgressAt = Date.now();
+    writeSession("tdh-progress-at", lastProgressAt);
+    setStatus(`Moving To ${next.game}`);
+    notifyUser(`Moving To Next Game: ${next.game}`);
+    location.href = href;
+    return true;
   }
 
   function parseSessionDrop(result, campaigns) {
@@ -383,6 +512,8 @@
       if (login) requests.push({ op: "streamInfo", variables: { channel: login } });
       const first = await gql(requests);
       const inventoryCampaigns = first[0]?.data?.currentUser?.inventory?.dropCampaignsInProgress || [];
+      lastInventoryCampaigns = inventoryCampaigns;
+      if (continueToNextGame(inventoryCampaigns)) return;
       const stream = first[1]?.data?.user;
       const channelId = stream?.id ? String(stream.id) : "";
       const gameName = stream?.stream?.game?.name || stream?.stream?.game?.displayName || "";
@@ -555,6 +686,7 @@
       if (/ELIGIBLE_FOR_ALL|DROP_INSTANCE_ALREADY_CLAIMED/i.test(status)) {
         lastDropAt = Date.now();
         setStatus(status === "DROP_INSTANCE_ALREADY_CLAIMED" ? "Drop already claimed" : `Claimed ${drop.name || "drop"}`);
+        scheduleNextGameAfterClaim(drop);
         setTimeout(pollGqlDrops, 1200);
         return true;
       }
@@ -593,6 +725,7 @@
       lastDropAt = Date.now();
       setStatus(`Claimed ${claimed} Drop${claimed === 1 ? "" : "s"}`);
       notifyUser(`Claimed ${claimed} Drop${claimed === 1 ? "" : "s"}`);
+      if (currentDrop?.percent >= 100) scheduleNextGameAfterClaim(currentDrop);
     }
     return claimed;
   }
