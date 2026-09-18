@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.3
+// @version      2.6.4
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,7 +27,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.3";
+  const APP_VERSION = "2.6.4";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
@@ -49,6 +49,7 @@
   const HANDOFF_VERIFY_TIMEOUT_MS = 90 * 1000;
   const CAMPAIGN_EXPIRY_GRACE_MS = 60 * 1000;
   const CLAIM_RETRY_INTERVAL_MS = 30 * 1000;
+  const CLAIM_READY_GRACE_MS = 60 * 1000;
   const CATEGORY_MISMATCH_GRACE_MS = 15 * 1000;
   const CATEGORY_SLUG_CACHE_KEY = "dropper-category-slugs";
   const CATEGORY_SLUG_ALIASES = Object.freeze({
@@ -65,6 +66,12 @@
   });
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const RELEASE_NOTES = {
+    "2.6.4": [
+      "Fixes false 100% progress caused by mixing Twitch session counters with inventory watch minutes.",
+      "Preserves Drop instance IDs and claim state when session and inventory data are merged.",
+      "Prefers incomplete watch-time rewards over completed-but-unclaimed rewards in the progress card.",
+      "Adds a 60-second Claim Ready escape hatch when Twitch never exposes a usable claim action.",
+    ],
     "2.6.3": [
       "Fixes Twitch category routing when a display name does not match its real category slug.",
       "Learns canonical category slugs from Twitch's own category links and reuses them during recovery.",
@@ -177,6 +184,9 @@
   let lastBonusAt = 0;
   let lastDropAt = 0;
   let lastClaimAttemptAt = 0;
+  let claimReadySince = 0;
+  let claimReadySignature = "";
+  let lastProgressReconcile = null;
   let lastStreamSwitch = 0;
   let categoryMismatchSince = 0;
   let categoryMismatchSignature = "";
@@ -339,6 +349,7 @@
     }
 
     if (maybeAdvanceExpiredCampaign(lastInventoryCampaigns)) return;
+    if (maybeAdvanceStuckClaim(lastInventoryCampaigns)) return;
     if (maybeRecoverCategoryMismatch()) return;
 
     if (settings.claimDrops) scanDrops();
@@ -947,11 +958,13 @@
       ? options.filter((item) => item.game.toLowerCase() === wantedGame || item.campaign.toLowerCase().includes(wantedGame))
       : options;
     const pool = matching.length ? matching : options;
-    pool.sort((a, b) => {
+    const earning = pool.filter((item) => Number(item.percent || 0) < 100);
+    const preferred = earning.length ? earning : pool;
+    preferred.sort((a, b) => {
       if ((b.currentMinutes > 0) - (a.currentMinutes > 0)) return (b.currentMinutes > 0) - (a.currentMinutes > 0);
       return a.remainingMinutes - b.remainingMinutes;
     });
-    return pool[0];
+    return preferred[0];
   }
 
   function pickRemainingGameDrop(campaigns, gameName, completedDropId = "", completedDropName = "") {
@@ -1778,7 +1791,12 @@
       currentMinutes: minutes,
       requiredMinutes: required,
       remainingMinutes: Math.max(0, required - minutes),
-      dropInstanceID: drop.self?.dropInstanceID || "",
+      dropInstanceID:
+        drop.self?.dropInstanceID ||
+        drop.dropInstanceID ||
+        node.dropInstanceID ||
+        session.dropInstanceID ||
+        "",
       session: true,
     };
   }
@@ -1786,6 +1804,138 @@
   function parseAvailableCampaigns(result) {
     const channel = result?.data?.channel || result?.data?.user || {};
     return channel.viewerDropCampaigns || channel.dropCampaigns || [];
+  }
+
+  function reconcileDropProgress(sessionDrop, inventoryDrop) {
+    const required = Number(inventoryDrop?.requiredMinutes || sessionDrop?.requiredMinutes || 0);
+    const inventoryMinutes = Number(inventoryDrop?.currentMinutes);
+    const sessionMinutes = Number(sessionDrop?.currentMinutes);
+    const inventoryValid = Number.isFinite(inventoryMinutes) && inventoryMinutes >= 0;
+    const sessionValid = Number.isFinite(sessionMinutes) && sessionMinutes >= 0;
+
+    let chosen = 0;
+    let source = "none";
+
+    if (inventoryValid) {
+      // Inventory is Twitch's canonical Drop watch-minute counter. Session values
+      // can represent a different elapsed counter and must not overwrite it when
+      // they are wildly outside the Drop's required-minute range.
+      chosen = inventoryMinutes;
+      source = "inventory";
+      if (
+        sessionValid &&
+        (!required || sessionMinutes <= required + 2) &&
+        sessionMinutes >= inventoryMinutes
+      ) {
+        chosen = sessionMinutes;
+        source = "session-confirmed";
+      }
+    } else if (sessionValid) {
+      if (required && sessionMinutes > required + 2) {
+        chosen = 0;
+        source = "session-rejected-implausible";
+      } else {
+        chosen = sessionMinutes;
+        source = "session";
+      }
+    }
+
+    if (required > 0) chosen = Math.min(required, Math.max(0, chosen));
+
+    lastProgressReconcile = {
+      at: Date.now(),
+      requiredMinutes: required,
+      inventoryMinutes: inventoryValid ? inventoryMinutes : null,
+      sessionMinutes: sessionValid ? sessionMinutes : null,
+      chosenMinutes: chosen,
+      source,
+    };
+    return chosen;
+  }
+
+  function resetClaimReadyTimer() {
+    claimReadySince = 0;
+    claimReadySignature = "";
+  }
+
+  function maybeAdvanceStuckClaim(campaigns = lastInventoryCampaigns) {
+    if (!settings.findNextStream || !currentDrop || currentDrop.isClaimed || Number(currentDrop.percent || 0) < 100) {
+      resetClaimReadyTimer();
+      return false;
+    }
+
+    const signature = [
+      currentDrop.campaignKey || currentDrop.campaignId || currentDrop.campaign || "",
+      currentDrop.id || currentDrop.name || "",
+    ].join("|");
+
+    const now = Date.now();
+    if (claimReadySignature !== signature) {
+      claimReadySignature = signature;
+      claimReadySince = now;
+      logActivity("claim-ready", "Completed Drop is waiting to be claimed", {
+        drop: currentDrop.name || null,
+        game: currentDrop.game || null,
+        campaign: currentDrop.campaign || null,
+        dropInstanceIdAvailable: Boolean(currentDrop.dropInstanceID),
+      });
+    }
+
+    const age = now - claimReadySince;
+    if (age < CLAIM_READY_GRACE_MS) {
+      setStatus(`Claim Ready · Waiting For Twitch ${Math.ceil((CLAIM_READY_GRACE_MS - age) / 1000)}s`);
+      return false;
+    }
+
+    const pending = getHandoffState();
+    const state = normalizedHandoffState(pending);
+    if (pending && [
+      HANDOFF_STATES.SELECTING_GAME,
+      HANDOFF_STATES.FINDING_STREAM,
+      HANDOFF_STATES.SWITCHING,
+      HANDOFF_STATES.VERIFYING,
+    ].includes(state)) {
+      return true;
+    }
+
+    const campaign = findCampaignForDrop(campaigns, currentDrop);
+    const expiredKey = campaign
+      ? campaignKey(campaign)
+      : currentDrop.campaignKey || currentDrop.campaignId || "";
+
+    transitionHandoff(
+      HANDOFF_STATES.SELECTING_GAME,
+      {
+        completedGame: currentDrop.game || "",
+        completedDrop: currentDrop.name || "Drop",
+        completedDropId: currentDrop.id || "",
+        targetGame: "",
+        targetSlug: "",
+        targetStream: "",
+        skippedGames: pending?.skippedGames || [],
+        forceOpenCampaign: true,
+        claimReadyFallback: true,
+        excludedCampaignKeys: [...new Set([
+          ...(pending?.excludedCampaignKeys || []),
+          expiredKey,
+        ].filter(Boolean))],
+        startedAt: pending?.startedAt || now,
+      },
+      `${currentDrop.name || "Completed Drop"} remained unclaimed for 60s · selecting next open campaign`,
+    );
+
+    logActivity("claim-ready-timeout", "Claim Ready grace expired · advancing", {
+      drop: currentDrop.name || null,
+      game: currentDrop.game || null,
+      campaign: currentDrop.campaign || null,
+      dropInstanceIdAvailable: Boolean(currentDrop.dropInstanceID),
+      graceSeconds: Math.round(CLAIM_READY_GRACE_MS / 1000),
+    });
+
+    setStatus("Claim Stuck · Finding Next Open Drops Campaign");
+    notifyUser("Claim Did Not Complete · Moving To Next Open Drops Campaign");
+    resetClaimReadyTimer();
+    return continueToNextGame(campaigns);
   }
 
   async function pollGqlDrops() {
@@ -1805,6 +1955,7 @@
       const inventoryCampaigns = first[0]?.data?.currentUser?.inventory?.dropCampaignsInProgress || [];
       lastInventoryCampaigns = inventoryCampaigns;
       if (maybeAdvanceExpiredCampaign(inventoryCampaigns)) return;
+      if (maybeAdvanceStuckClaim(inventoryCampaigns)) return;
       if (continueToNextGame(inventoryCampaigns)) return;
       const stream = first[1]?.data?.user;
       const channelId = stream?.id ? String(stream.id) : "";
@@ -1829,19 +1980,31 @@
       const fromInventory = pickTimedDrop(inventoryCampaigns, gameName) || pickTimedDrop(inventoryCampaigns, "");
       let drop = sessionDrop || fromInventory || fromAvailable;
       if (sessionDrop && fromInventory) {
-        const minutes = Math.max(sessionDrop.currentMinutes || 0, fromInventory.currentMinutes || 0);
+        const minutes = reconcileDropProgress(sessionDrop, fromInventory);
+        const requiredMinutes = fromInventory.requiredMinutes || sessionDrop.requiredMinutes || 0;
         drop = {
           ...fromInventory,
           ...sessionDrop,
+          id: fromInventory.id || sessionDrop.id || "",
           name: fromInventory.name || sessionDrop.name,
           game: fromInventory.game || sessionDrop.game || gameName,
-          requiredMinutes: fromInventory.requiredMinutes || sessionDrop.requiredMinutes,
+          gameSlug: fromInventory.gameSlug || sessionDrop.gameSlug || "",
+          campaignId: fromInventory.campaignId || sessionDrop.campaignId || "",
+          campaignKey: fromInventory.campaignKey || sessionDrop.campaignKey || "",
+          campaign: fromInventory.campaign || sessionDrop.campaign || "",
+          campaignStartAt: fromInventory.campaignStartAt || sessionDrop.campaignStartAt || "",
+          campaignEndAt: fromInventory.campaignEndAt || sessionDrop.campaignEndAt || "",
+          dropStartAt: fromInventory.dropStartAt || sessionDrop.dropStartAt || "",
+          dropEndAt: fromInventory.dropEndAt || sessionDrop.dropEndAt || "",
+          requiredMinutes,
           currentMinutes: minutes,
+          dropInstanceID: sessionDrop.dropInstanceID || fromInventory.dropInstanceID || "",
+          isClaimed: Boolean(sessionDrop.isClaimed || fromInventory.isClaimed),
         };
-        drop.percent = drop.requiredMinutes
-          ? Math.min(100, Math.round((drop.currentMinutes / drop.requiredMinutes) * 100))
+        drop.percent = requiredMinutes
+          ? Math.min(100, Math.round((minutes / requiredMinutes) * 100))
           : drop.percent || 0;
-        drop.remainingMinutes = Math.max(0, (drop.requiredMinutes || 0) - drop.currentMinutes);
+        drop.remainingMinutes = Math.max(0, requiredMinutes - minutes);
       }
       if (drop) {
         applyDrop(drop);
@@ -1880,6 +2043,7 @@
     const previousDrop = currentDrop;
     const percent = drop.percent ?? (drop.requiredMinutes ? Math.round((drop.currentMinutes / drop.requiredMinutes) * 100) : 0);
     currentDrop = { ...drop, percent };
+    if (currentDrop.isClaimed || Number(percent) < 100) resetClaimReadyTimer();
     const resolvedGameSlug = resolveCategorySlug(currentDrop);
     if (resolvedGameSlug) currentDrop.gameSlug = resolvedGameSlug;
     const changedDrop = previousDrop?.id !== currentDrop.id || previousDrop?.name !== currentDrop.name;
@@ -1992,6 +2156,7 @@
       const status = result[0]?.data?.claimDropRewards?.status || "";
       if (/ELIGIBLE_FOR_ALL|DROP_INSTANCE_ALREADY_CLAIMED/i.test(status)) {
         lastDropAt = Date.now();
+        resetClaimReadyTimer();
         logActivity("claim", status === "DROP_INSTANCE_ALREADY_CLAIMED" ? "Drop already claimed" : `Claimed ${drop.name || "drop"}`, { game: drop.game || null });
         setStatus(status === "DROP_INSTANCE_ALREADY_CLAIMED" ? "Drop already claimed" : `Claimed ${drop.name || "drop"}`);
         scheduleNextGameAfterClaim(drop);
@@ -2043,6 +2208,7 @@
     }
     if (claimed) {
       lastDropAt = Date.now();
+      resetClaimReadyTimer();
       logActivity("claim", `Claimed ${claimed} Drop${claimed === 1 ? "" : "s"} via page controls`, { game: currentDrop?.game || null });
       setStatus(`Claimed ${claimed} Drop${claimed === 1 ? "" : "s"}`);
       notifyUser(`Claimed ${claimed} Drop${claimed === 1 ? "" : "s"}`);
@@ -3171,6 +3337,17 @@
       deviceCaptured: Boolean(capturedDevice || cookie("unique_id")),
       watchingLogin: watchingLogin(),
       currentDrop,
+      progressReconciliation: lastProgressReconcile ? {
+        ...lastProgressReconcile,
+        at: new Date(lastProgressReconcile.at).toISOString(),
+      } : null,
+      claimReadyFallback: {
+        active: Boolean(claimReadySince),
+        ageSeconds: claimReadySince ? Math.floor((now - claimReadySince) / 1000) : 0,
+        graceSeconds: Math.round(CLAIM_READY_GRACE_MS / 1000),
+        signature: claimReadySignature || null,
+        dropInstanceIdAvailable: Boolean(currentDrop?.dropInstanceID),
+      },
       progressAgeSeconds: Math.max(0, Math.floor((now - lastProgressAt) / 1000)),
       lastProgress,
       lastProgressAt: new Date(lastProgressAt).toISOString(),
