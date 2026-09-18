@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.12
+// @version      2.6.13
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.12";
+  const APP_VERSION = "2.6.13";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -74,6 +74,12 @@
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const RELEASE_NOTES = {
+    "2.6.13": [
+      "Makes the changelog/update card fully opaque.",
+      "Makes Twitch Inventory the authoritative Drop watch-minute source whenever Inventory data is available.",
+      "Updates the Working Toward card immediately when Dropper commits to a new campaign.",
+      "Prefers incomplete earnable Drops over completed-but-unclaimed rewards when choosing the next campaign.",
+    ],
     "2.6.12": [
       "Removes the hard hourly request cutoff that could pause progress tracking on a compatible stream.",
       "Keeps the request count as a soft diagnostic warning instead of opening the circuit breaker.",
@@ -1092,12 +1098,14 @@
       }
     }
 
-    candidates.sort((a, b) => {
+    const incomplete = candidates.filter((item) => Number(item.percent || 0) < 100);
+    const pool = incomplete.length ? incomplete : candidates;
+    pool.sort((a, b) => {
       if ((b.currentMinutes > 0) !== (a.currentMinutes > 0)) return (b.currentMinutes > 0) - (a.currentMinutes > 0);
       if (a.endMs !== b.endMs) return a.endMs - b.endMs;
       return a.remainingMinutes - b.remainingMinutes;
     });
-    return candidates[0] || null;
+    return pool[0] || null;
   }
 
   function pickTimedDrop(campaigns, gameName) {
@@ -2052,6 +2060,56 @@
     return false;
   }
 
+  function adoptSelectedTargetDrop(next, reason = "target-selected") {
+    if (!next) return false;
+
+    const previous = currentDrop;
+    const required = Number(next.requiredMinutes || 0);
+    const current = Math.max(0, Number(next.currentMinutes || 0));
+    const percent = Number.isFinite(Number(next.percent))
+      ? Math.max(0, Math.min(100, Number(next.percent)))
+      : required
+        ? Math.max(0, Math.min(100, Math.round((current / required) * 100)))
+        : 0;
+
+    currentDrop = {
+      ...next,
+      isClaimed: Boolean(next.isClaimed),
+      percent,
+      currentMinutes: current,
+      requiredMinutes: required,
+      remainingMinutes: Math.max(0, required - current),
+    };
+
+    const resolvedSlug = resolveCategorySlug(currentDrop);
+    if (resolvedSlug) currentDrop.gameSlug = resolvedSlug;
+
+    progressLabel = `${percent}%`;
+    lastProgress = percent;
+    lastProgressAt = Date.now();
+
+    writeSession("tdh-drop", currentDrop);
+    writeSession("tdh-progress", percent);
+    writeSession("tdh-progress-at", lastProgressAt);
+
+    resetClaimReadyTimer();
+    logActivity("target-drop", `Working Toward changed to ${currentDrop.name || "next Drop"}`, {
+      reason,
+      fromDrop: previous?.name || null,
+      fromGame: previous?.game || null,
+      toDrop: currentDrop.name || null,
+      toGame: currentDrop.game || null,
+      campaign: currentDrop.campaign || null,
+      percent,
+      currentMinutes: current,
+      requiredMinutes: required,
+    });
+
+    refreshDropCard();
+    layoutChrome();
+    return true;
+  }
+
   function continueToNextGame(campaigns) {
     const pending = getHandoffState();
     if (!pending) return false;
@@ -2187,6 +2245,13 @@
       return false;
     }
 
+    adoptSelectedTargetDrop(
+      next,
+      current.claimReadyFallback ? "claim-ready-fallback" :
+      current.forceOpenCampaign ? "next-open-campaign" :
+      "next-game",
+    );
+
     if (isInventory()) {
       const inventoryHref = findInventoryStreamForGame(next.game);
       if (inventoryHref) {
@@ -2200,8 +2265,8 @@
             targetCampaign: next.campaign || "",
             targetCampaignKey: next.campaignKey || "",
             switchStartedAt: Date.now(),
-            verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
-            verifyBaselinePercent: Number(currentDrop?.percent || 0),
+            verifyBaselineMinutes: Number(next.currentMinutes || 0),
+            verifyBaselinePercent: Number(next.percent || 0),
           },
           `Switching directly to ${targetStream || "eligible stream"} for ${next.game}`,
         );
@@ -2317,26 +2382,18 @@
     let source = "none";
 
     if (inventoryValid) {
-      // Inventory is Twitch's canonical Drop watch-minute counter. Session values
-      // can represent a different elapsed counter and must not overwrite it when
-      // they are wildly outside the Drop's required-minute range.
+      // Twitch Inventory is the canonical Drop-progress source. Session counters
+      // have repeatedly represented unrelated watch/session elapsed values, so
+      // they must never override a valid Inventory watch-minute value.
       chosen = inventoryMinutes;
-      source = "inventory";
-      if (
-        sessionValid &&
-        (!required || sessionMinutes <= required + 2) &&
-        sessionMinutes >= inventoryMinutes
-      ) {
-        chosen = sessionMinutes;
-        source = "session-confirmed";
-      }
+      source = "inventory-authoritative";
     } else if (sessionValid) {
-      if (required && sessionMinutes > required + 2) {
+      if (required && sessionMinutes > required) {
         chosen = 0;
         source = "session-rejected-implausible";
       } else {
         chosen = sessionMinutes;
-        source = "session";
+        source = "session-fallback";
       }
     }
 
@@ -2586,14 +2643,12 @@
       });
     }
     writeSession("tdh-drop", currentDrop);
-    if (percent) {
-      progressLabel = `${percent}%`;
-      if (percent !== lastProgress) {
-        lastProgress = percent;
-        lastProgressAt = Date.now();
-        writeSession("tdh-progress", percent);
-        writeSession("tdh-progress-at", lastProgressAt);
-      }
+    progressLabel = `${percent}%`;
+    if (percent !== lastProgress) {
+      lastProgress = percent;
+      lastProgressAt = Date.now();
+      writeSession("tdh-progress", percent);
+      writeSession("tdh-progress-at", lastProgressAt);
     }
     verifyHandoffWithCreditedProgress(currentDrop, previousDrop);
     refreshDropCard();
@@ -3329,8 +3384,8 @@
       .header-divider { height:1px; width:100%; margin:7px 0; background:linear-gradient(90deg,transparent,#9147ff88 50%,transparent); }
       .update-notice {
         position:relative; order:-3; display:block; width:100%; margin:0 0 8px; padding:10px;
-        border:1px solid #9147ff70; border-radius:10px;
-        background:linear-gradient(180deg,#9147ff26,#18181d 70%);
+        border:1px solid #6f42b4; border-radius:10px;
+        background:linear-gradient(180deg,#251a35,#18181d 70%);
         box-shadow:0 10px 28px #0008; z-index:12;
       }
       .update-notice[hidden] { display:none; }
