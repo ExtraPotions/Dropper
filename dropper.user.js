@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.11
+// @version      2.6.12
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.11";
+  const APP_VERSION = "2.6.12";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -47,7 +47,7 @@
   const STANDBY_CACHE_TTL_MS = 30 * 60 * 1000;
   const ACTIVITY_LOG_LIMIT = 40;
   const NETWORK_WINDOW_MS = 60 * 60 * 1000;
-  const NETWORK_REQUEST_BUDGET = 140;
+  const NETWORK_REQUEST_SOFT_BUDGET = 180;
   const NETWORK_FAILURE_THRESHOLD = 3;
   const CIRCUIT_ERROR_COOLDOWN_MS = 5 * 60 * 1000;
   const CIRCUIT_RATE_COOLDOWN_MS = 15 * 60 * 1000;
@@ -74,6 +74,12 @@
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const RELEASE_NOTES = {
+    "2.6.12": [
+      "Removes the hard hourly request cutoff that could pause progress tracking on a compatible stream.",
+      "Keeps the request count as a soft diagnostic warning instead of opening the circuit breaker.",
+      "Reserves the circuit breaker for actual rate limits, authorization failures, and repeated network errors.",
+      "Avoids 30-second recovery polling when the current live stream already matches the active Drop game.",
+    ],
     "2.6.11": [
       "Removes the redundant Got It button from completed-update changelog notices.",
       "Keeps the close button as the single dismiss control.",
@@ -276,6 +282,7 @@
     openUntil: 0,
     reason: "",
     lastOpenedAt: 0,
+    softBudgetWarnedAt: 0,
   });
 
   hookAuth(page);
@@ -340,9 +347,27 @@
         GQL_MAX_BACKOFF_MS,
       );
     }
+
     const handoff = readSession(NEXT_GAME_KEY, null);
+    if (handoff || !currentDrop) return GQL_RECOVERY_INTERVAL_MS;
+
+    const login = watchingLogin();
+    if (login) {
+      const info = readStreamInfo();
+      const compatibleLooking = Boolean(
+        info.live &&
+        info.game &&
+        currentDrop.game &&
+        gameNamesMatch(currentDrop.game, info.game)
+      );
+
+      // A matching live stream does not need aggressive recovery polling just
+      // because Twitch has not credited a new minute recently.
+      if (compatibleLooking) return GQL_POLL_INTERVAL_MS;
+    }
+
     const progressAge = Date.now() - lastProgressAt;
-    if (handoff || !currentDrop || progressAge > 90 * 1000) return GQL_RECOVERY_INTERVAL_MS;
+    if (progressAge > 90 * 1000) return GQL_RECOVERY_INTERVAL_MS;
     return GQL_POLL_INTERVAL_MS;
   }
 
@@ -618,6 +643,18 @@
 
   function networkCircuitSnapshot(now = Date.now()) {
     cleanupNetworkWindow(now);
+
+    // 2.6.11 and earlier could open the circuit merely because a local request
+    // counter reached 140. That was too aggressive and could pause valid earning.
+    if (networkState.reason === "hourly request budget reached") {
+      const previousReason = networkState.reason;
+      networkState.openUntil = 0;
+      networkState.reason = "";
+      networkState.consecutiveFailures = 0;
+      persistNetworkState();
+      logActivity("network", "Cleared legacy hourly request pause", { previousReason });
+    }
+
     if (Number(networkState.openUntil || 0) && now >= Number(networkState.openUntil)) {
       const previousReason = networkState.reason;
       networkState.openUntil = 0;
@@ -626,15 +663,14 @@
       persistNetworkState();
       logActivity("network", "Circuit breaker closed", { previousReason });
     }
-    if (networkState.requestTimes.length >= NETWORK_REQUEST_BUDGET && !networkState.openUntil) {
-      openNetworkCircuit("hourly request budget reached", CIRCUIT_RATE_COOLDOWN_MS);
-    }
+
     return {
       open: Number(networkState.openUntil || 0) > now,
       openUntil: Number(networkState.openUntil || 0),
       reason: networkState.reason || "",
       requestsLastHour: networkState.requestTimes.length,
-      budget: NETWORK_REQUEST_BUDGET,
+      softBudget: NETWORK_REQUEST_SOFT_BUDGET,
+      softBudgetExceeded: networkState.requestTimes.length >= NETWORK_REQUEST_SOFT_BUDGET,
       consecutiveFailures: Number(networkState.consecutiveFailures || 0),
     };
   }
@@ -646,7 +682,22 @@
       error.circuitOpen = true;
       throw error;
     }
-    networkState.requestTimes.push(Date.now());
+
+    const now = Date.now();
+    networkState.requestTimes.push(now);
+    cleanupNetworkWindow(now);
+
+    if (
+      networkState.requestTimes.length >= NETWORK_REQUEST_SOFT_BUDGET &&
+      now - Number(networkState.softBudgetWarnedAt || 0) >= NETWORK_WINDOW_MS
+    ) {
+      networkState.softBudgetWarnedAt = now;
+      logActivity("network-budget", "High Dropper GQL request volume", {
+        requestsLastHour: networkState.requestTimes.length,
+        softBudget: NETWORK_REQUEST_SOFT_BUDGET,
+      });
+    }
+
     persistNetworkState();
   }
 
@@ -4197,7 +4248,9 @@
         circuitReason: circuit.reason || null,
         circuitOpenUntil: circuit.openUntil ? new Date(circuit.openUntil).toISOString() : null,
         requestsLastHour: circuit.requestsLastHour,
-        requestBudgetPerHour: circuit.budget,
+        softRequestBudgetPerHour: circuit.softBudget,
+        softBudgetExceeded: circuit.softBudgetExceeded,
+        circuitTriggers: ["429/rate limit", "authorization failures", "repeated GQL failures"],
         consecutiveFailures: circuit.consecutiveFailures,
       },
       streamVerification: {
