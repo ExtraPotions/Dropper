@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.17
+// @version      2.6.18
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.17";
+  const APP_VERSION = "2.6.18";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -63,6 +63,9 @@
   const CLAIM_RETRY_INTERVAL_MS = 30 * 1000;
   const CLAIM_READY_GRACE_MS = 60 * 1000;
   const CATEGORY_MISMATCH_GRACE_MS = 15 * 1000;
+  const HEALTHY_STREAM_DELAYED_MS = 5 * 60 * 1000;
+  const HEALTHY_STREAM_STALLED_MS = 6 * 60 * 1000;
+  const UNHEALTHY_STREAM_DELAYED_MS = 90 * 1000;
   const CATEGORY_SLUG_CACHE_KEY = "dropper-category-slugs";
   const CATEGORY_SLUG_ALIASES = Object.freeze({
     "the blood of dawnwalker": "dawnwalker",
@@ -80,6 +83,12 @@
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const RELEASE_NOTES = {
+    "2.6.18": [
+      "Stops healthy matching streams from being labeled Delayed after only 90 seconds.",
+      "Keeps the progress card in Earning while the live player is active and on the correct game.",
+      "Uses a 5-minute Delayed and 6-minute Stalled threshold for otherwise healthy streams.",
+      "Aligns the progress-card warning state with Dropper's actual stream-switch threshold.",
+    ],
     "2.6.17": [
       "Stops channel/category reload loops caused by stale finding-stream handoff state.",
       "Recognizes a matching channel page as a verification target instead of bouncing back to the category.",
@@ -4199,6 +4208,49 @@
     if (ring) ring.style.stroke = main;
   }
 
+  function streamEarningHealthSnapshot() {
+    const login = watchingLogin();
+    const video = document.querySelector("video");
+    const info = login ? readStreamInfo() : {
+      live: false,
+      game: "",
+      dropsEnabled: false,
+    };
+
+    const videoPlaying = Boolean(
+      video &&
+      !video.paused &&
+      !video.ended &&
+      video.readyState > 1
+    );
+
+    const gameMatches = Boolean(
+      currentDrop?.game &&
+      info.game &&
+      gameNamesMatch(currentDrop.game, info.game)
+    );
+
+    const healthy = Boolean(
+      login &&
+      currentDrop &&
+      info.live &&
+      videoPlaying &&
+      gameMatches
+    );
+
+    return {
+      login: login || null,
+      live: Boolean(info.live),
+      videoPlaying,
+      expectedGame: currentDrop?.game || null,
+      streamGame: info.game || null,
+      gameMatches,
+      dropsTagVisible: Boolean(info.dropsEnabled),
+      healthy,
+      progressAgeMs: Math.max(0, Date.now() - lastProgressAt),
+    };
+  }
+
   function syncCompactState() {
     if (!ui) return;
     const reward = ui.shadow.getElementById("tdh-compact-reward");
@@ -4206,27 +4258,80 @@
     const state = ui.shadow.getElementById("tdh-compact-state");
     const detail = ui.shadow.getElementById("tdh-drop-state");
     const updated = ui.shadow.getElementById("tdh-updated-ago");
-    const staleMs = Date.now() - lastProgressAt;
+    const health = streamEarningHealthSnapshot();
+    const staleMs = health.progressAgeMs;
+
     let label = "Idle", cls = "state-pill";
-    if (!getToken()) { label = "Login Required"; cls += " warn"; }
-    else if (currentDrop?.percent >= 100) { label = currentDrop.isClaimed ? "Claimed ✓" : "Claim Ready"; cls += " good"; }
-    else if (currentDrop && staleMs > 5 * 60 * 1000) { label = "Stalled"; cls += " bad"; }
-    else if (currentDrop && staleMs > 90 * 1000) { label = "Delayed"; cls += " warn"; }
-    else if (currentDrop && settings.backgroundEarning) { label = "BG Earning"; cls += " good"; }
-    else if (currentDrop) { label = "Earning"; cls += " good"; }
-    if (reward) reward.textContent = currentDrop?.name || "Waiting For Drop";
-    if (extra) extra.textContent = currentDrop ? `${currentDrop.percent || 0}% · ${Math.max(0, currentDrop.remainingMinutes || 0)}m` : "";
-    if (state) { state.textContent = label; state.className = cls; }
-    if (detail) { detail.textContent = label; detail.className = cls; }
-    if (updated) {
-      updated.textContent = currentDrop ? `Updated ${Math.max(0, Math.floor(staleMs / 1000))}s Ago` : "";
-      updated.className = "progress-age";
-      if (currentDrop && staleMs > 5 * 60 * 1000) updated.classList.add("bad");
-      else if (currentDrop && staleMs > 90 * 1000) updated.classList.add("warn");
+    let ageClass = "";
+
+    if (!getToken()) {
+      label = "Login Required";
+      cls += " warn";
+    } else if (currentDrop?.percent >= 100) {
+      label = currentDrop.isClaimed ? "Claimed ✓" : "Claim Ready";
+      cls += " good";
+    } else if (currentDrop && health.healthy) {
+      if (staleMs >= HEALTHY_STREAM_STALLED_MS) {
+        label = "Stalled";
+        cls += " bad";
+        ageClass = "bad";
+      } else if (staleMs >= HEALTHY_STREAM_DELAYED_MS) {
+        label = "Delayed";
+        cls += " warn";
+        ageClass = "warn";
+      } else if (settings.backgroundEarning) {
+        label = "BG Earning";
+        cls += " good";
+      } else {
+        label = "Earning";
+        cls += " good";
+      }
+    } else if (currentDrop && staleMs >= HEALTHY_STREAM_STALLED_MS) {
+      label = "Stalled";
+      cls += " bad";
+      ageClass = "bad";
+    } else if (currentDrop && staleMs >= UNHEALTHY_STREAM_DELAYED_MS) {
+      label = "Delayed";
+      cls += " warn";
+      ageClass = "warn";
+    } else if (currentDrop && settings.backgroundEarning) {
+      label = "BG Earning";
+      cls += " good";
+    } else if (currentDrop) {
+      label = "Earning";
+      cls += " good";
     }
+
+    if (reward) reward.textContent = currentDrop?.name || "Waiting For Drop";
+    if (extra) extra.textContent = currentDrop
+      ? `${currentDrop.percent || 0}% · ${Math.max(0, currentDrop.remainingMinutes || 0)}m`
+      : "";
+
+    if (state) {
+      state.textContent = label;
+      state.className = cls;
+    }
+    if (detail) {
+      detail.textContent = label;
+      detail.className = cls;
+    }
+
+    if (updated) {
+      const ageSeconds = Math.max(0, Math.floor(staleMs / 1000));
+      updated.textContent = currentDrop
+        ? `Updated ${ageSeconds}s Ago`
+        : "";
+      updated.className = "progress-age";
+      if (ageClass) updated.classList.add(ageClass);
+    }
+
     const dot = ui.shadow.getElementById("tdh-compact-dot");
     if (dot) {
-      dot.style.background = label === "Stalled" ? "#ef4444" : label === "Delayed" ? "#f59e0b" : label.includes("Earning") || label.includes("Claim") ? "#22c55e" : "#9147ff";
+      dot.style.background =
+        label === "Stalled" ? "#ef4444" :
+        label === "Delayed" ? "#f59e0b" :
+        label.includes("Earning") || label.includes("Claim") ? "#22c55e" :
+        "#9147ff";
     }
   }
 
@@ -4751,6 +4856,24 @@
         learnedSlug: currentDrop?.game ? categorySlugCache[normalizeGameName(currentDrop.game)] || null : null,
         canonicalAlias: currentDrop?.game ? CATEGORY_SLUG_ALIASES[normalizeGameName(currentDrop.game)] || null : null,
       },
+      earningHealth: (() => {
+        const health = streamEarningHealthSnapshot();
+        return {
+          login: health.login,
+          live: health.live,
+          videoPlaying: health.videoPlaying,
+          expectedGame: health.expectedGame,
+          streamGame: health.streamGame,
+          gameMatches: health.gameMatches,
+          dropsTagVisible: health.dropsTagVisible,
+          healthy: health.healthy,
+          progressAgeSeconds: Math.floor(health.progressAgeMs / 1000),
+          delayedAfterSeconds: Math.round(
+            (health.healthy ? HEALTHY_STREAM_DELAYED_MS : UNHEALTHY_STREAM_DELAYED_MS) / 1000
+          ),
+          stalledAfterSeconds: Math.round(HEALTHY_STREAM_STALLED_MS / 1000),
+        };
+      })(),
       categoryMatch: (() => {
         const info = readStreamInfo();
         const expectedGame = currentDrop?.game || "";
