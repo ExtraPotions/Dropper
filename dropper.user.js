@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.19
+// @version      2.6.20
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.19";
+  const APP_VERSION = "2.6.20";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -83,6 +83,11 @@
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const RELEASE_NOTES = {
+    "2.6.20": [
+      "Hides the visible Settings menu scrollbar while preserving scrolling.",
+      "Keeps mouse-wheel, trackpad, touch, and keyboard scrolling available.",
+      "Removes the scrollbar gutter so the menu keeps its full usable width.",
+    ],
     "2.6.19": [
       "Adds the current Dropper version number to the Settings header.",
       "Makes the version badge clickable to reopen the current version changelog.",
@@ -3785,7 +3790,9 @@
       #tdh-tools-dock {
         display:none; width:min(var(--dropper-width, 312px), calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:min(72vh,560px); overflow:auto;
         padding:9px 9px 0; background:#111114; border:1px solid #2f2f35; border-radius:14px; box-shadow:0 18px 50px #0008; color-scheme:dark;
+        scrollbar-width:none; -ms-overflow-style:none;
       }
+      #tdh-tools-dock::-webkit-scrollbar { width:0; height:0; display:none; }
       #tdh-tools-dock.fl-rail-open { display:block; }
       .menu-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
       .header-brand { display:flex; align-items:center; gap:9px; min-width:0; }
