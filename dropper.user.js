@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.10
+// @version      2.6.11
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.10";
+  const APP_VERSION = "2.6.11";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -74,6 +74,11 @@
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const RELEASE_NOTES = {
+    "2.6.11": [
+      "Removes the redundant Got It button from completed-update changelog notices.",
+      "Keeps the close button as the single dismiss control.",
+      "Preserves GitHub Release and Install Update actions where they provide distinct functionality.",
+    ],
     "2.6.10": [
       "Keeps update and changelog messages fully visible for 30 seconds.",
       "Removes the transparency fade effect from update notices.",
@@ -3289,6 +3294,7 @@
       .update-footer { display:flex; justify-content:flex-end; gap:6px; margin-top:8px; padding-top:7px; border-top:1px solid #ffffff12; }
       .update-action, .update-release, .update-dismiss, .life-btn { border:1px solid #34343b; border-radius:7px; background:#18181b; color:#efeff1; cursor:pointer; }
       .update-action, .update-release { min-height:27px; padding:0 10px; font-size:9px; font-weight:800; }
+      .update-action[hidden], .update-release[hidden] { display:none; }
       .update-action { border-color:#9147ff; background:#772ce8; }
       .update-release { border-color:#4b4b55; background:#202026; }
       .update-dismiss { position:absolute; top:7px; right:7px; width:23px; height:23px; padding:0; border-color:transparent; background:transparent; color:#adadb8; font-size:15px; line-height:1; }
@@ -3894,8 +3900,10 @@
       : null;
 
     const button = ui.shadow.getElementById("tdh-update-action");
+    const hasDistinctAction = Boolean(action && action !== hideUpdateNotice);
+    button.hidden = !hasDistinctAction;
     button.textContent = actionText;
-    button.onclick = action || hideUpdateNotice;
+    button.onclick = hasDistinctAction ? action : null;
 
     notice.hidden = false;
     updateNoticeState = state;
@@ -3997,8 +4005,8 @@
       showUpdateNotice(
         "Dropper Updated",
         `Updated from v${previous} to v${APP_VERSION}.`,
-        "Got It",
-        hideUpdateNotice,
+        "",
+        null,
         { kicker: "Update Complete", version: APP_VERSION, details: RELEASE_NOTES[APP_VERSION] || [] },
       );
     }
