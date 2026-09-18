@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.13
+// @version      2.6.14
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.13";
+  const APP_VERSION = "2.6.14";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -37,6 +37,7 @@
   const PROGRESS_CARD_STATE_KEY = "dropper-progress-card-collapsed";
   const HANDOFF_STAGE_TIMEOUT_MS = 45 * 1000;
   const HEARTBEAT_INTERVAL_MS = 5000;
+  const STARTUP_NETWORK_QUIET_MS = 12 * 1000;
   const GQL_POLL_INTERVAL_MS = 60 * 1000;
   const GQL_RECOVERY_INTERVAL_MS = 30 * 1000;
   const GQL_MIN_GAP_MS = 15 * 1000;
@@ -74,6 +75,12 @@
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const RELEASE_NOTES = {
+    "2.6.14": [
+      "Reduces Twitch page-load contention during stream reloads.",
+      "Waits 12 seconds before Dropper starts its own automatic GQL polling after a fresh page load.",
+      "Stops cloning and parsing unrelated Twitch GraphQL responses.",
+      "Keeps passive Drop updates by inspecting only Drop- and Inventory-related Twitch operations.",
+    ],
     "2.6.13": [
       "Makes the changelog/update card fully opaque.",
       "Makes Twitch Inventory the authoritative Drop watch-minute source whenever Inventory data is available.",
@@ -275,6 +282,7 @@
   let lastTwitchGqlAt = 0;
   let heartbeatTimer = null;
   let lastHeartbeatAt = 0;
+  let startupNetworkReadyAt = 0;
   let nextGqlPollAt = 0;
   let gqlPollInFlight = false;
   let gqlErrorStreak = 0;
@@ -335,13 +343,19 @@
 
   function startHeartbeat() {
     if (heartbeatTimer) clearInterval(heartbeatTimer);
-    nextGqlPollAt = Date.now();
+    const now = Date.now();
+    lastPath = location.pathname;
+    startupNetworkReadyAt = now + STARTUP_NETWORK_QUIET_MS;
+    nextGqlPollAt = startupNetworkReadyAt;
     heartbeat();
     heartbeatTimer = setInterval(heartbeat, HEARTBEAT_INTERVAL_MS);
   }
 
   function queueGqlPollSoon(reason = "heartbeat", delayMs = HEARTBEAT_INTERVAL_MS) {
-    const dueAt = Date.now() + Math.max(0, Number(delayMs) || 0);
+    const requestedAt = Date.now() + Math.max(0, Number(delayMs) || 0);
+    const dueAt = startupNetworkReadyAt
+      ? Math.max(requestedAt, startupNetworkReadyAt)
+      : requestedAt;
     if (!nextGqlPollAt || dueAt < nextGqlPollAt) nextGqlPollAt = dueAt;
     pendingGqlReason = reason;
   }
@@ -380,6 +394,11 @@
   async function requestGqlPoll(reason = "heartbeat", urgent = false) {
     const now = Date.now();
     if (gqlPollInFlight) return false;
+
+    if (!urgent && startupNetworkReadyAt && now < startupNetworkReadyAt) {
+      nextGqlPollAt = Math.max(nextGqlPollAt || 0, startupNetworkReadyAt);
+      return false;
+    }
 
     const circuit = networkCircuitSnapshot(now);
     if (circuit.open) {
@@ -779,14 +798,57 @@
     writeSession(NEXT_GAME_KEY, null);
   }
 
+  const PASSIVE_GQL_OPERATIONS = new Set([
+    GQL_OPS.inventory.name,
+    GQL_OPS.currentDrop.name,
+    GQL_OPS.availableDrops.name,
+    GQL_OPS.claimDrop.name,
+  ]);
+
+  function twitchGqlOperationNames(input, init) {
+    try {
+      const raw = typeof init?.body === "string"
+        ? init.body
+        : typeof input?.body === "string"
+          ? input.body
+          : "";
+      if (!raw) return [];
+
+      const parsed = JSON.parse(raw);
+      const rows = Array.isArray(parsed) ? parsed : [parsed];
+      return rows
+        .map((row) => cleanText(row?.operationName || ""))
+        .filter(Boolean);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function shouldInspectTwitchGql(input, init) {
+    try {
+      const requestUrl = typeof input === "string" ? input : input?.url || "";
+      const parsed = new URL(requestUrl, location.href);
+      if (parsed.hostname.toLowerCase() !== "gql.twitch.tv") return false;
+
+      const operations = twitchGqlOperationNames(input, init);
+      if (!operations.length) return false;
+      return operations.some((name) => PASSIVE_GQL_OPERATIONS.has(name));
+    } catch (_) {
+      return false;
+    }
+  }
+
   function hookAuth(uw) {
     const origFetch = uw.fetch.bind(uw);
     uw.fetch = function hookedFetch(input, init) {
       captureAuth(input, init);
+      const inspect = shouldInspectTwitchGql(input, init);
       const responsePromise = origFetch.apply(this, arguments);
-      Promise.resolve(responsePromise)
-        .then((response) => captureTwitchGqlResponse(input, response))
-        .catch(() => {});
+      if (inspect) {
+        Promise.resolve(responsePromise)
+          .then((response) => captureTwitchGqlResponse(input, response))
+          .catch(() => {});
+      }
       return responsePromise;
     };
   }
@@ -4270,6 +4332,8 @@
       heartbeat: {
         intervalMs: HEARTBEAT_INTERVAL_MS,
         lastAt: lastHeartbeatAt ? new Date(lastHeartbeatAt).toISOString() : null,
+        startupNetworkQuietMs: STARTUP_NETWORK_QUIET_MS,
+        startupNetworkReadyAt: startupNetworkReadyAt ? new Date(startupNetworkReadyAt).toISOString() : null,
       },
       gql: {
         normalIntervalMs: GQL_POLL_INTERVAL_MS,
