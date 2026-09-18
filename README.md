@@ -14,6 +14,10 @@
   <img alt="Version 2.5.0" src="https://img.shields.io/badge/version-2.5.0-9147FF?style=flat-square">
   <img alt="Twitch Drops" src="https://img.shields.io/badge/Twitch-Drops-9147FF?style=flat-square&logo=twitch&logoColor=white">
   <img alt="JavaScript Userscript" src="https://img.shields.io/badge/JavaScript-Userscript-F7DF1E?style=flat-square&logo=javascript&logoColor=000000">
+  <img alt="Violentmonkey Supported" src="https://img.shields.io/badge/Violentmonkey-Supported-4C8BF5?style=flat-square">
+  <img alt="Tampermonkey Supported" src="https://img.shields.io/badge/Tampermonkey-Supported-111111?style=flat-square">
+  <img alt="Chrome Supported" src="https://img.shields.io/badge/Chrome-Supported-4285F4?style=flat-square&logo=googlechrome&logoColor=white">
+  <img alt="Firefox Supported" src="https://img.shields.io/badge/Firefox-Supported-FF7139?style=flat-square&logo=firefoxbrowser&logoColor=white">
   <img alt="PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/Code-PolyForm%20NC%201.0.0-6B7280?style=flat-square">
   <img alt="CC BY-NC-SA 4.0" src="https://img.shields.io/badge/Assets-CC%20BY--NC--SA%204.0-1769AA?style=flat-square">
 </p>
