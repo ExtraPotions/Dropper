@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.5.7
+// @version      2.5.8
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,16 +27,16 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.5.7";
+  const APP_VERSION = "2.5.8";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const CURRENT_CHANGELOG = [
-    "Moves the expand/collapse control below the progress card so it never covers Drop information.",
-    "Keeps the control state synchronized when Auto-Hide collapses the card.",
-    "Automatically routes to the next eligible game and Drops-enabled stream.",
-    "Refreshes credited Drop progress without requiring a page reload.",
+    "Collapsed progress cards now show full Drop details in a hover preview.",
+    "Hovering no longer changes the card's expanded or collapsed state.",
+    "Keeps the expand/collapse control separate from important Drop information.",
+    "Maintains live progress and automatic next-game handoff behavior.",
   ];
   const DEFAULTS = {
     claimBonus: true,
@@ -1440,10 +1440,24 @@
         background:#18181b; border:1px solid #9147ff66; border-right:0;
         border-radius:12px 0 0 12px; box-shadow:0 8px 30px #0007; overflow:hidden;
       }
-      #tdh-drop-card.collapsed { width:auto; }
-      #tdh-drop-card.collapsed .expanded-content { display:none; }
+      #tdh-drop-card.collapsed { width:auto; overflow:visible; }
+      #tdh-drop-card.collapsed .expanded-content {
+        display:block; position:absolute; left:0; bottom:calc(100% + 8px); width:100%; min-width:240px;
+        background:#18181b; border:1px solid #9147ff66; border-radius:12px; box-shadow:0 14px 36px #000a;
+        overflow:hidden; opacity:0; visibility:hidden; transform:translateY(4px); pointer-events:none;
+        transition:.12s opacity,.12s transform,.12s visibility; z-index:8;
+      }
+      #tdh-drop-card.collapsed:hover .expanded-content,
+      #tdh-drop-card.collapsed:focus-within .expanded-content {
+        opacity:1; visibility:visible; transform:translateY(0);
+      }
+      #tdh-drop-card.collapsed .expanded-content::after {
+        content:""; position:absolute; left:50%; bottom:-6px; width:10px; height:10px;
+        background:#18181b; border-right:1px solid #9147ff66; border-bottom:1px solid #9147ff66;
+        transform:translateX(-50%) rotate(45deg);
+      }
       #tdh-drop-card:not(.collapsed) .compact-line { display:none; }
-      .compact-line { min-height:48px; padding:0 10px; display:grid; grid-template-columns:6px minmax(0,1fr) auto auto; gap:7px; align-items:center; }
+      .compact-line { min-height:48px; padding:0 10px; display:grid; grid-template-columns:6px minmax(0,1fr) auto auto; gap:7px; align-items:center; cursor:help; }
       .compact-dot { width:6px; height:6px; border-radius:50%; background:#9147ff; }
       .compact-reward { font-size:10px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .compact-extra { font-size:9px; color:#b8b8c0; white-space:nowrap; }
