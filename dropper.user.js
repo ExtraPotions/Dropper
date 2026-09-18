@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.20
+// @version      2.6.21
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.20";
+  const APP_VERSION = "2.6.21";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -83,6 +83,12 @@
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const RELEASE_NOTES = {
+    "2.6.21": [
+      "Shrinks the Settings header icon to recover more vertical menu space.",
+      "Tightens header spacing so more controls fit without scrolling.",
+      "Opens the version-click changelog directly above the Settings menu.",
+      "Keeps automatic update notices attached to the progress area.",
+    ],
     "2.6.20": [
       "Hides the visible Settings menu scrollbar while preserving scrolling.",
       "Keeps mouse-wheel, trackpad, touch, and keyboard scrolling available.",
@@ -3795,9 +3801,9 @@
       #tdh-tools-dock::-webkit-scrollbar { width:0; height:0; display:none; }
       #tdh-tools-dock.fl-rail-open { display:block; }
       .menu-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
-      .header-brand { display:flex; align-items:center; gap:9px; min-width:0; }
-      .header-icon { width:48px; height:48px; flex:0 0 48px; }
-      .header-icon svg { width:48px; height:48px; display:block; }
+      .header-brand { display:flex; align-items:center; gap:8px; min-width:0; }
+      .header-icon { width:38px; height:38px; flex:0 0 38px; }
+      .header-icon svg { width:38px; height:38px; display:block; }
       .header-copy { min-width:0; }
       .header-title-row { display:flex; align-items:center; gap:6px; min-width:0; }
       #tdh-rail-title { margin:0; font-size:15px; font-weight:800; line-height:1.1; }
@@ -3812,9 +3818,9 @@
       #tdh-rail-subtitle { margin-top:2px; font-size:9px; color:#adadb8; white-space:nowrap; }
       #tdh-rail-close { width:30px; height:30px; border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0; cursor:pointer; font:18px/1 Arial,sans-serif; }
       #tdh-rail-close:hover { border-color:#9147ff; color:#fff; background:#211b2b; }
-      .header-divider { height:1px; width:100%; margin:7px 0; background:linear-gradient(90deg,transparent,#9147ff88 50%,transparent); }
+      .header-divider { height:1px; width:100%; margin:5px 0; background:linear-gradient(90deg,transparent,#9147ff88 50%,transparent); }
       .update-notice {
-        position:relative; order:-3; display:block; width:100%; margin:0 0 8px; padding:10px;
+        position:relative; display:block; width:100%; margin:0 0 8px; padding:10px;
         border:1px solid #6f42b4; border-radius:10px;
         background:linear-gradient(180deg,#251a35,#18181d 70%);
         box-shadow:0 10px 28px #0008; z-index:12;
@@ -4003,6 +4009,7 @@
     ui.launcher.addEventListener("click", () => setRailOpen(!railOpen));
     shadow.getElementById("tdh-header-version")?.addEventListener("click", (event) => {
       event.stopPropagation();
+      if (!railOpen) setRailOpen(true);
       showCurrentChangelog();
     });
     shadow.getElementById("tdh-rail-close").addEventListener("click", () => setRailOpen(false));
@@ -4518,8 +4525,42 @@
         version: APP_VERSION,
         details: RELEASE_NOTES[APP_VERSION] || [],
         releaseUrl: RELEASES_URL,
+        placement: "menu",
       },
     );
+  }
+
+  function placeUpdateNotice(placement = "progress") {
+    if (!ui) return;
+    const notice = ui.shadow.getElementById("tdh-update-notice");
+    const progressStack = ui.shadow.querySelector(".progress-stack");
+    if (!notice || !progressStack) return;
+
+    notice.dataset.placement = placement === "menu" ? "menu" : "progress";
+    if (notice.dataset.placement === "progress") {
+      progressStack.prepend(notice);
+    } else if (notice.parentElement !== ui.cluster) {
+      ui.cluster.appendChild(notice);
+    }
+  }
+
+  function positionMenuUpdateNotice(openUp) {
+    if (!ui) return;
+    const notice = ui.shadow.getElementById("tdh-update-notice");
+    const progressStack = ui.shadow.querySelector(".progress-stack");
+    if (
+      !notice ||
+      !progressStack ||
+      notice.hidden ||
+      notice.dataset.placement !== "menu" ||
+      notice.parentElement !== ui.cluster
+    ) return;
+
+    if (openUp) {
+      ui.cluster.insertBefore(notice, ui.dock);
+    } else {
+      ui.cluster.insertBefore(notice, progressStack);
+    }
   }
 
   function showUpdateNotice(title, text, actionText = "View Update", action = null, options = {}) {
@@ -4533,10 +4574,12 @@
       version: options.version || APP_VERSION,
       details,
       releaseUrl: options.releaseUrl || RELEASES_URL,
+      placement: options.placement === "menu" ? "menu" : "progress",
     };
     if (!ui) { updateNoticeState = state; return; }
 
     clearTimeout(updateNoticeTimer);
+    placeUpdateNotice(state.placement);
     const notice = ui.shadow.getElementById("tdh-update-notice");
     const list = ui.shadow.getElementById("tdh-update-list");
     ui.shadow.getElementById("tdh-update-kicker").textContent = state.kicker;
@@ -4802,6 +4845,7 @@
     return {
       version: APP_VERSION,
       headerVersionControl: Boolean(ui?.shadow?.getElementById("tdh-header-version")),
+      updateNoticePlacement: ui?.shadow?.getElementById("tdh-update-notice")?.dataset?.placement || null,
       generatedAt: new Date(now).toISOString(),
       tokenCaptured: Boolean(getToken()),
       deviceCaptured: Boolean(capturedDevice || cookie("unique_id")),
@@ -4998,16 +5042,39 @@
   function layoutChrome() {
     if (!ui?.cluster) return;
     syncDropperWidthToChat();
-    const row = ui.cluster.querySelector(".progress-stack") || ui.cluster.querySelector(".badge-row");
+
+    const row = ui.shadow.querySelector(".progress-stack") || ui.shadow.querySelector(".badge-row");
     const rowHeight = row?.offsetHeight || 56;
+    const notice = ui.shadow.getElementById("tdh-update-notice");
+    const menuNoticeVisible = Boolean(
+      notice &&
+      !notice.hidden &&
+      notice.dataset.placement === "menu"
+    );
+    const noticeHeight = menuNoticeVisible ? notice.offsetHeight || notice.scrollHeight || 0 : 0;
+    const noticeGap = menuNoticeVisible && noticeHeight ? 8 : 0;
+
     const menuHeight = railOpen ? ui.dock.scrollHeight || ui.dock.offsetHeight || 280 : 0;
     const gap = railOpen ? 8 : 0;
+    const menuBlockHeight = menuHeight + noticeHeight + noticeGap;
     const spaceBelow = window.innerHeight - clusterTop - rowHeight - 8;
     const spaceAbove = clusterTop - 8;
-    const openUp = railOpen && menuHeight > 0 && spaceBelow < menuHeight + 12 && spaceAbove >= spaceBelow;
+    const openUp = railOpen && menuHeight > 0 && spaceBelow < menuBlockHeight + 12 && spaceAbove >= spaceBelow;
+
     ui.cluster.classList.toggle("open-up", openUp);
-    const clusterHeight = rowHeight + gap + (railOpen ? menuHeight : 0);
-    let top = openUp ? clusterTop - menuHeight - gap : clusterTop;
+    positionMenuUpdateNotice(openUp);
+
+    const clusterHeight =
+      rowHeight +
+      gap +
+      (railOpen ? menuHeight : 0) +
+      noticeHeight +
+      noticeGap;
+
+    let top = openUp
+      ? clusterTop - menuHeight - gap - noticeHeight - noticeGap
+      : clusterTop;
+
     top = Math.max(8, Math.min(window.innerHeight - clusterHeight - 8, top));
     ui.cluster.style.top = `${top}px`;
     ui.cluster.style.right = "12px";
