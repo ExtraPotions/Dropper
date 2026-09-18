@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.6
+// @version      2.6.7
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.6";
+  const APP_VERSION = "2.6.7";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -70,6 +70,12 @@
   });
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const RELEASE_NOTES = {
+    "2.6.7": [
+      "Moves the progress expand/collapse tab to the top or bottom based on the card's screen position.",
+      "Keeps the toggle on the inward-facing edge so it stays comfortably inside the viewport.",
+      "Flips the chevron direction automatically when the toggle changes sides.",
+      "Updates toggle placement live while dragging or resizing Twitch.",
+    ],
     "2.6.6": [
       "Adds native Tampermonkey/Violentmonkey update metadata.",
       "Checks for updates per installed Dropper version instead of sharing one stale 6-hour timer.",
@@ -2993,12 +2999,27 @@
       .state-pill.warn { color:#ffe5a8; border-color:#f59e0b66; background:#f59e0b18; }
       .state-pill.bad { color:#ffd1d1; border-color:#ef444466; background:#ef444418; }
       .card-collapse {
-        align-self:center; position:relative; left:-24px; width:38px; height:15px; margin-top:-1px; padding:0;
-        display:grid; place-items:center; border:1px solid #9147ff66; border-top-color:#18181b;
-        border-radius:0 0 8px 8px; background:#18181b; color:#adadb8; cursor:pointer;
-        font:700 10px/1 ui-sans-serif,system-ui,sans-serif; box-shadow:0 5px 12px #0005; z-index:2;
+        align-self:center; position:relative; left:-24px; width:38px; height:15px; padding:0;
+        display:grid; place-items:center; border:1px solid #9147ff66;
+        background:#18181b; color:#adadb8; cursor:pointer;
+        font:700 10px/1 ui-sans-serif,system-ui,sans-serif; z-index:2;
       }
-      .card-collapse:hover, .card-collapse:focus-visible { border-color:#9147ff; border-top-color:#18181b; color:#fff; background:#201b28; outline:none; }
+      .progress-stack.toggle-bottom .card-collapse {
+        order:2; margin-top:-1px; margin-bottom:0; border-top-color:#18181b;
+        border-radius:0 0 8px 8px; box-shadow:0 5px 12px #0005;
+      }
+      .progress-stack.toggle-top .card-collapse {
+        order:-1; margin-top:0; margin-bottom:-1px; border-bottom-color:#18181b;
+        border-radius:8px 8px 0 0; box-shadow:0 -5px 12px #0005;
+      }
+      .progress-stack.toggle-bottom .card-collapse:hover,
+      .progress-stack.toggle-bottom .card-collapse:focus-visible {
+        border-color:#9147ff; border-top-color:#18181b; color:#fff; background:#201b28; outline:none;
+      }
+      .progress-stack.toggle-top .card-collapse:hover,
+      .progress-stack.toggle-top .card-collapse:focus-visible {
+        border-color:#9147ff; border-bottom-color:#18181b; color:#fff; background:#201b28; outline:none;
+      }
       .stream-info { padding:7px 9px 6px; display:grid; grid-template-columns:32px minmax(0,1fr); gap:7px; align-items:center; }
       .stream-info-hidden { display:none; }
       .stream-avatar { width:32px; height:32px; border-radius:50%; object-fit:cover; grid-row:1 / span 2; }
@@ -3192,7 +3213,7 @@
             <div class="diag" id="tdh-diagnostics"></div>
           </div></section>
         </aside>
-        <div class="progress-stack">
+        <div class="progress-stack toggle-bottom">
           <div class="badge-row">
           <section id="tdh-drop-card" aria-live="polite">
             <div class="compact-line" id="tdh-compact-line"><span class="compact-dot" id="tdh-compact-dot"></span><span class="compact-reward" id="tdh-compact-reward">Waiting For Drop</span><span class="compact-extra" id="tdh-compact-extra"></span><span class="state-pill" id="tdh-compact-state">Idle</span></div>
@@ -3385,18 +3406,51 @@
     ui?.cluster?.classList.toggle("reduce-motion", Boolean(settings.reduceMotion));
   }
 
-  function setProgressCardCollapsed(collapsed, persist = false) {
+  function updateProgressToggleIcon() {
     if (!ui) return;
+    const stack = ui.shadow.querySelector(".progress-stack");
     const card = ui.shadow.getElementById("tdh-drop-card");
     const control = ui.shadow.getElementById("tdh-card-collapse");
-    if (!card || !control) return;
+    if (!stack || !card || !control) return;
 
-    card.classList.toggle("collapsed", Boolean(collapsed));
+    const collapsed = card.classList.contains("collapsed");
+    const atTop = stack.classList.contains("toggle-top");
+
+    // The arrow points away from the card when expanding and toward the card
+    // when collapsing, regardless of which edge the control is attached to.
+    if (atTop) control.textContent = collapsed ? "▴" : "▾";
+    else control.textContent = collapsed ? "▾" : "▴";
+
     const expanded = !collapsed;
-    control.textContent = expanded ? "▴" : "▾";
     control.setAttribute("aria-expanded", String(expanded));
     control.setAttribute("aria-label", expanded ? "Collapse Progress Card" : "Expand Progress Card");
     control.title = expanded ? "Collapse Progress Card" : "Expand Progress Card";
+  }
+
+  function positionProgressToggle() {
+    if (!ui) return;
+    const stack = ui.shadow.querySelector(".progress-stack");
+    const row = ui.shadow.querySelector(".badge-row");
+    if (!stack || !row) return;
+
+    const rect = row.getBoundingClientRect();
+    if (!rect.height) return;
+
+    const centerY = rect.top + rect.height / 2;
+    const shouldUseTop = centerY > window.innerHeight / 2;
+
+    stack.classList.toggle("toggle-top", shouldUseTop);
+    stack.classList.toggle("toggle-bottom", !shouldUseTop);
+    updateProgressToggleIcon();
+  }
+
+  function setProgressCardCollapsed(collapsed, persist = false) {
+    if (!ui) return;
+    const card = ui.shadow.getElementById("tdh-drop-card");
+    if (!card) return;
+
+    card.classList.toggle("collapsed", Boolean(collapsed));
+    updateProgressToggleIcon();
     if (persist) localStorage.setItem(PROGRESS_CARD_STATE_KEY, String(Boolean(collapsed)));
     requestAnimationFrame(layoutChrome);
   }
@@ -3866,6 +3920,7 @@
       queueCandidates: discoverQueueCandidates().map((item) => item.login),
       autoSwitchPaused: isAutoSwitchPaused(),
       progressCardCollapsed: Boolean(card?.classList.contains("collapsed")),
+      progressTogglePosition: ui?.shadow?.querySelector(".progress-stack")?.classList.contains("toggle-top") ? "top" : "bottom",
       chatWidth: chat ? Math.round(chat.getBoundingClientRect().width) : null,
       recentActivity: (Array.isArray(activityLog) ? activityLog : []).slice(-20).map((entry) => ({
         at: new Date(entry.at).toISOString(),
@@ -3893,6 +3948,7 @@
     top = Math.max(8, Math.min(window.innerHeight - clusterHeight - 8, top));
     ui.cluster.style.top = `${top}px`;
     ui.cluster.style.right = "12px";
+    positionProgressToggle();
   }
 
   function bindDrag() {
