@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.2
+// @version      2.6.3
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,7 +27,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.2";
+  const APP_VERSION = "2.6.3";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
@@ -50,6 +50,10 @@
   const CAMPAIGN_EXPIRY_GRACE_MS = 60 * 1000;
   const CLAIM_RETRY_INTERVAL_MS = 30 * 1000;
   const CATEGORY_MISMATCH_GRACE_MS = 15 * 1000;
+  const CATEGORY_SLUG_CACHE_KEY = "dropper-category-slugs";
+  const CATEGORY_SLUG_ALIASES = Object.freeze({
+    "the blood of dawnwalker": "dawnwalker",
+  });
   const HANDOFF_STATES = Object.freeze({
     CHECKING_GAME: "checking-game",
     SELECTING_GAME: "selecting-game",
@@ -61,6 +65,12 @@
   });
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const RELEASE_NOTES = {
+    "2.6.3": [
+      "Fixes Twitch category routing when a display name does not match its real category slug.",
+      "Learns canonical category slugs from Twitch's own category links and reuses them during recovery.",
+      "Stops treating campaign game names as if they were guaranteed URL slugs.",
+      "Adds a canonical Dawnwalker mapping so The Blood of Dawnwalker routes to /directory/category/dawnwalker.",
+    ],
     "2.6.2": [
       "Detects when a live channel changes away from the active Drop campaign's game.",
       "After a 15-second category-change grace period, finds a replacement Drops stream for the same campaign.",
@@ -170,6 +180,7 @@
   let lastStreamSwitch = 0;
   let categoryMismatchSince = 0;
   let categoryMismatchSignature = "";
+  let categorySlugCache = loadCategorySlugCache();
   let lastProgress = readSession("tdh-progress", 0);
   let lastProgressAt = readSession("tdh-progress-at", Date.now());
   let currentDrop = readSession("tdh-drop", null);
@@ -864,7 +875,7 @@
           dropInstanceID: self.dropInstanceID || "",
           name: drop.name || drop.benefitEdges?.[0]?.benefit?.name || "Drop",
           game,
-          gameSlug: campaign.game?.slug || campaign.game?.name || "",
+          gameSlug: campaign.game?.slug || "",
           gameId: campaign.game?.id || "",
           campaignId: campaign.id || "",
           campaignKey: key,
@@ -915,7 +926,7 @@
           isClaimed: Boolean(self.isClaimed),
           name: drop.name || drop.benefitEdges?.[0]?.benefit?.name || "Drop",
           game,
-          gameSlug: campaign.game?.slug || campaign.game?.name || "",
+          gameSlug: campaign.game?.slug || "",
           gameId: campaign.game?.id || "",
           campaignId: campaign.id || "",
           campaignKey: campaignKey(campaign),
@@ -1021,7 +1032,7 @@
           id: drop.id || "",
           name: drop.name || drop.benefitEdges?.[0]?.benefit?.name || "Drop",
           game,
-          gameSlug: campaign.game?.slug || campaign.game?.name || "",
+          gameSlug: campaign.game?.slug || "",
           gameId: campaign.game?.id || "",
           campaignId: campaign.id || "",
           campaignKey: campaignKey(campaign),
@@ -1205,7 +1216,7 @@
         completedDrop: currentDrop.name || "Drop",
         completedDropId: currentDrop.id || "",
         targetGame: expectedGame,
-        targetSlug: currentDrop.gameSlug || "",
+        targetSlug: resolveCategorySlug(currentDrop),
         targetStream: "",
         targetCampaign: currentDrop.campaign || "",
         targetCampaignKey: currentDrop.campaignKey || "",
@@ -1239,13 +1250,124 @@
     return true;
   }
 
+  function loadCategorySlugCache() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(CATEGORY_SLUG_CACHE_KEY) || "{}");
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function saveCategorySlugCache() {
+    try {
+      localStorage.setItem(CATEGORY_SLUG_CACHE_KEY, JSON.stringify(categorySlugCache));
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  function categorySlugFromUrl(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      const host = parsed.hostname.toLowerCase();
+      if (
+        parsed.protocol !== "https:" ||
+        !(host === "twitch.tv" || host === "www.twitch.tv" || host.endsWith(".twitch.tv"))
+      ) return "";
+      const match = parsed.pathname.match(/^\/directory\/category\/([^/?#]+)/i);
+      return match ? decodeURIComponent(match[1]).toLowerCase() : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function rememberCategorySlug(gameName, slugOrUrl, source = "observed") {
+    const gameKey = normalizeGameName(gameName);
+    const slug = categorySlugFromUrl(slugOrUrl) || normalizedGameSlug(slugOrUrl);
+    if (!gameKey || !slug) return "";
+
+    if (categorySlugCache[gameKey] !== slug) {
+      categorySlugCache[gameKey] = slug;
+      saveCategorySlugCache();
+      logActivity("category-route", `Learned category slug for ${gameName}`, {
+        game: gameName,
+        slug,
+        source,
+      });
+    }
+    return slug;
+  }
+
+  function findObservedCategorySlug(gameName) {
+    const wanted = normalizeGameName(gameName);
+    if (!wanted) return "";
+
+    const links = [
+      document.querySelector('[data-a-target="stream-game-link"]'),
+      ...document.querySelectorAll('a[href*="/directory/category/"]'),
+    ].filter(Boolean);
+
+    for (const link of links) {
+      const text = cleanText(
+        link.textContent ||
+        link.getAttribute?.("aria-label") ||
+        link.getAttribute?.("title") ||
+        "",
+      );
+      if (text && !gameNamesMatch(gameName, text)) continue;
+
+      const slug = categorySlugFromUrl(link.href);
+      if (slug) return rememberCategorySlug(gameName, slug, "twitch-link");
+    }
+    return "";
+  }
+
+  function resolveCategorySlug(dropOrGame) {
+    const gameName = typeof dropOrGame === "string"
+      ? cleanText(dropOrGame)
+      : cleanText(dropOrGame?.game || "");
+
+    if (!gameName) return "";
+
+    const gameKey = normalizeGameName(gameName);
+
+    const observed = findObservedCategorySlug(gameName);
+    if (observed) return observed;
+
+    const cached = cleanText(categorySlugCache[gameKey] || "");
+    if (cached) return normalizedGameSlug(cached);
+
+    const alias = cleanText(CATEGORY_SLUG_ALIASES[gameKey] || "");
+    if (alias) {
+      rememberCategorySlug(gameName, alias, "canonical-alias");
+      return normalizedGameSlug(alias);
+    }
+
+    const supplied = typeof dropOrGame === "object"
+      ? cleanText(dropOrGame?.gameSlug || "")
+      : "";
+    if (supplied) {
+      const resolved = normalizedGameSlug(supplied);
+      if (resolved) rememberCategorySlug(gameName, resolved, "twitch-gql");
+      return resolved;
+    }
+
+    // Conservative last resort for games whose Twitch category slug follows
+    // the ordinary lowercase/hyphen convention. Learned/aliased slugs always win.
+    return normalizedGameSlug(gameName);
+  }
+
   function gameDirectoryUrl(drop) {
-    const rawSlug = cleanText(drop?.gameSlug || "");
-    const slug = rawSlug || cleanText(drop?.game || "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-    return slug ? `https://www.twitch.tv/directory/category/${encodeURIComponent(slug)}` : "";
+    const slug = resolveCategorySlug(drop);
+    if (!slug) {
+      logActivity("category-route", "Could not resolve Twitch category slug", {
+        game: drop?.game || null,
+        campaign: drop?.campaign || null,
+      });
+      return "";
+    }
+    return `https://www.twitch.tv/directory/category/${encodeURIComponent(slug)}`;
   }
 
   function twitchChannelHref(url) {
@@ -1287,7 +1409,7 @@
 
   function findEligibleDirectoryStream(gameName, gameSlug = "") {
     const wantedGame = normalizeGameName(gameName);
-    const wantedSlug = normalizedGameSlug(gameSlug || gameName);
+    const wantedSlug = resolveCategorySlug({ game: gameName, gameSlug });
     const pageSlug = currentDirectorySlug();
     const pageIsTargetCategory = Boolean(
       isDirectoryCategoryPage() &&
@@ -1644,7 +1766,7 @@
       isClaimed: Boolean(drop.self?.isClaimed),
       name: drop.name || drop.benefitEdges?.[0]?.benefit?.name || "Current drop",
       game: campaign?.game?.displayName || campaign?.game?.name || drop.game?.displayName || drop.game?.name || session.game?.displayName || session.game?.name || "",
-      gameSlug: campaign?.game?.slug || campaign?.game?.name || "",
+      gameSlug: campaign?.game?.slug || "",
       campaignId: campaign?.id || "",
       campaignKey: campaign ? campaignKey(campaign) : "",
       campaign: campaign?.name || "",
@@ -1758,6 +1880,8 @@
     const previousDrop = currentDrop;
     const percent = drop.percent ?? (drop.requiredMinutes ? Math.round((drop.currentMinutes / drop.requiredMinutes) * 100) : 0);
     currentDrop = { ...drop, percent };
+    const resolvedGameSlug = resolveCategorySlug(currentDrop);
+    if (resolvedGameSlug) currentDrop.gameSlug = resolvedGameSlug;
     const changedDrop = previousDrop?.id !== currentDrop.id || previousDrop?.name !== currentDrop.name;
     const changedPercent = Number(previousDrop?.percent ?? -1) !== Number(percent);
     if (changedDrop || changedPercent) {
@@ -2042,12 +2166,16 @@
     const channelName = cleanText(root.querySelector("h1.tw-title, h1")?.textContent) || watchingLogin();
     const avatar = root.querySelector("img.tw-image-avatar, img[alt]")?.src || "";
     const title = cleanText(document.querySelector('[data-a-target="stream-title"]')?.textContent);
-    const game = cleanText(document.querySelector('[data-a-target="stream-game-link"]')?.textContent);
+    const gameLink = document.querySelector('[data-a-target="stream-game-link"]');
+    const game = cleanText(gameLink?.textContent);
+    const gameCategoryUrl = gameLink?.href || "";
+    const gameSlug = categorySlugFromUrl(gameCategoryUrl);
+    if (game && gameSlug) rememberCategorySlug(game, gameSlug, "active-stream");
     const viewers = cleanText(document.querySelector('[data-a-target="animated-channel-viewers-count"]')?.textContent);
     const uptime = cleanText(document.querySelector('.live-time span[aria-hidden="true"]')?.textContent);
     const dropsEnabled = Boolean(document.querySelector('[data-a-target="DropsEnabled"], a[href*="/tags/DropsEnabled"]'));
     const live = Boolean(root.querySelector('.tw-channel-status-text-indicator, [class*="ChannelStatusTextIndicator"]')) || /\bLIVE\b/i.test(root.textContent || "");
-    return { channelName, avatar, title, game, viewers, uptime, dropsEnabled, live };
+    return { channelName, avatar, title, game, gameSlug, gameCategoryUrl, viewers, uptime, dropsEnabled, live };
   }
 
   function refreshStreamInfo() {
@@ -3071,6 +3199,15 @@
         requestsLastHour: circuit.requestsLastHour,
         requestBudgetPerHour: circuit.budget,
         consecutiveFailures: circuit.consecutiveFailures,
+      },
+      categoryRouting: {
+        activeGame: currentDrop?.game || null,
+        suppliedSlug: currentDrop?.gameSlug || null,
+        resolvedSlug: currentDrop?.game ? resolveCategorySlug(currentDrop) : null,
+        resolvedUrl: currentDrop?.game ? gameDirectoryUrl(currentDrop) : null,
+        learnedSlugCount: Object.keys(categorySlugCache || {}).length,
+        learnedSlug: currentDrop?.game ? categorySlugCache[normalizeGameName(currentDrop.game)] || null : null,
+        canonicalAlias: currentDrop?.game ? CATEGORY_SLUG_ALIASES[normalizeGameName(currentDrop.game)] || null : null,
       },
       categoryMatch: (() => {
         const info = readStreamInfo();
