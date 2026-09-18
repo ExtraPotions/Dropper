@@ -43,45 +43,6 @@ Install a userscript manager, then click either button above. Both buttons open 
 - Includes minimized progress, background earning status, diagnostics, notifications, and update/changelog notices.
 - Uses a Twitch-themed interface with dedicated full-size and launcher icon assets.
 
-## Stream Queue
-
-Dropper can keep a short list of eligible standby channels without opening a pile of tabs. The active stream remains the earning stream, while standby channels are available for failover when the current channel stops earning or goes offline.
-
-Queue behavior can be configured from the **Stream Queue** menu.
-
-## Background Earning
-
-Background Earning monitors Twitch-credited minutes while the stream is not the active tab. Dropper watches for stalled credit and surfaces a warning when the stream needs attention.
-
-Twitch remains the authority on whether watch time is credited.
-
-## Privacy And Network Access
-
-Dropper runs on Twitch pages and communicates with:
-
-- `gql.twitch.tv` for Drop progress, inventory, eligibility, and claim operations.
-- `raw.githubusercontent.com` for Dropper update checks.
-
-Authentication credentials are not written to Dropper's local settings storage.
-
-## Current Release
-
-**Dropper 2.5.0** is the current standalone live-test build.
-
-The standalone version is intentionally independent of ExtraPotions V3 for now. Compatibility work can be added once the V3 integration layer is finalized.
-
-## Project Files
-
-| File | Purpose |
-| --- | --- |
-| `dropper.user.js` | Installable userscript |
-| `assets/dropper-icon-1024.png` | 1024px primary icon |
-| `assets/dropper-icon.svg` | Primary vector icon |
-| `assets/dropper-launcher.svg` | Compact launcher mark |
-| `preview/index.html` | Interactive UI preview |
-| `LICENSE-CODE.md` | Software license |
-| `LICENSE-ASSETS.md` | Artwork and documentation license |
-
 ## License
 
 **Code:** [PolyForm Noncommercial License 1.0.0](LICENSE-CODE.md)  
