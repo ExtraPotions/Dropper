@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.5.6
+// @version      2.5.7
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,16 +27,16 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.5.6";
+  const APP_VERSION = "2.5.7";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const CURRENT_CHANGELOG = [
+    "Moves the expand/collapse control below the progress card so it never covers Drop information.",
+    "Keeps the control state synchronized when Auto-Hide collapses the card.",
     "Automatically routes to the next eligible game and Drops-enabled stream.",
     "Refreshes credited Drop progress without requiring a page reload.",
-    "Collapsed progress cards no longer expand on hover.",
-    "Keeps same-game Drops together before advancing to the next game.",
   ];
   const DEFAULTS = {
     claimBonus: true,
@@ -1433,7 +1433,8 @@
         font: 13px/1.42 ui-sans-serif, system-ui, "Segoe UI", sans-serif; color: #efeff1;
       }
       .cluster.open-up { flex-direction: column; }
-      .badge-row { display:flex; align-items:stretch; width:min(340px, calc(100vw - 24px)); }
+      .progress-stack { width:min(340px, calc(100vw - 24px)); display:flex; flex-direction:column; align-items:stretch; }
+      .badge-row { display:flex; align-items:stretch; width:100%; }
       #tdh-drop-card {
         position: relative; flex:1 1 auto; width:auto; min-width:0; max-width:none;
         background:#18181b; border:1px solid #9147ff66; border-right:0;
@@ -1450,8 +1451,13 @@
       .state-pill.good { color:#c8ffd7; border-color:#22c55e66; background:#22c55e18; }
       .state-pill.warn { color:#ffe5a8; border-color:#f59e0b66; background:#f59e0b18; }
       .state-pill.bad { color:#ffd1d1; border-color:#ef444466; background:#ef444418; }
-      .card-collapse { position:absolute; top:4px; right:5px; width:22px; height:22px; border:1px solid #34343b; border-radius:6px; background:#151519; color:#adadb8; cursor:pointer; z-index:3; }
-      .card-collapse:hover { border-color:#9147ff; color:#fff; }
+      .card-collapse {
+        align-self:center; position:relative; left:-24px; width:38px; height:15px; margin-top:-1px; padding:0;
+        display:grid; place-items:center; border:1px solid #9147ff66; border-top-color:#18181b;
+        border-radius:0 0 8px 8px; background:#18181b; color:#adadb8; cursor:pointer;
+        font:700 10px/1 ui-sans-serif,system-ui,sans-serif; box-shadow:0 5px 12px #0005; z-index:2;
+      }
+      .card-collapse:hover, .card-collapse:focus-visible { border-color:#9147ff; border-top-color:#18181b; color:#fff; background:#201b28; outline:none; }
       .stream-info { padding:7px 9px 6px; display:grid; grid-template-columns:32px minmax(0,1fr); gap:7px; align-items:center; }
       .stream-info-hidden { display:none; }
       .stream-avatar { width:32px; height:32px; border-radius:50%; object-fit:cover; grid-row:1 / span 2; }
@@ -1554,7 +1560,8 @@
       .has-tooltip:hover::after, .has-tooltip:focus-visible::after { opacity:1; transform:translateY(0); }
       .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation:none !important; transition:none !important; }
       @media (max-width:700px) {
-        #tdh-tools-dock, .badge-row { width:min(340px,calc(100vw - 24px)); }
+        #tdh-tools-dock, .progress-stack { width:min(340px,calc(100vw - 24px)); }
+        .badge-row { width:100%; }
         #tdh-drop-card { flex:1 1 auto; width:auto; min-width:0; max-width:none; }
       }
     `;
@@ -1631,9 +1638,9 @@
             <button type="button" class="life-btn" id="tdh-diagnostics-toggle">Show Diagnostics</button><div class="diag" id="tdh-diagnostics"></div>
           </div></section>
         </aside>
-        <div class="badge-row">
+        <div class="progress-stack">
+          <div class="badge-row">
           <section id="tdh-drop-card" aria-live="polite">
-            <button type="button" class="card-collapse" id="tdh-card-collapse" aria-label="Collapse Progress Card">−</button>
             <div class="compact-line" id="tdh-compact-line"><span class="compact-dot" id="tdh-compact-dot"></span><span class="compact-reward" id="tdh-compact-reward">Waiting For Drop</span><span class="compact-extra" id="tdh-compact-extra"></span><span class="state-pill" id="tdh-compact-state">Idle</span></div>
             <div class="expanded-content">
               <div class="stream-info stream-info-hidden" id="tdh-stream-info"><img class="stream-avatar" id="tdh-stream-avatar" alt="" hidden><div><div class="stream-head"><div class="stream-channel" id="tdh-stream-channel"></div><span class="stream-live" id="tdh-stream-live" hidden>LIVE</span></div><div class="stream-game" id="tdh-stream-game" hidden></div><div class="stream-badges" id="tdh-stream-badges"></div></div><div class="stream-title" id="tdh-stream-title" hidden></div></div>
@@ -1644,6 +1651,8 @@
             <svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle class="track" cx="18" cy="18" r="15"></circle><circle class="fill" id="tdh-ring" cx="18" cy="18" r="15" pathLength="100" stroke-dasharray="0 100"></circle></svg>
             <svg class="icon" viewBox="0 0 1024 1024" aria-hidden="true"><polygon points="494,210 285,500 430,590" fill="#D9B5FF"/><polygon points="494,210 430,590 494,470" fill="#9B5AF9"/><polygon points="285,500 285,685 430,590" fill="#8C39F2"/><polygon points="285,685 494,842 430,590" fill="#5417B3"/><polygon points="430,590 494,470 494,842" fill="#7428E8"/><polygon points="530,210 739,500 594,590" fill="#AEB0C2"/><polygon points="530,210 594,590 530,470" fill="#6A6E87"/><polygon points="739,500 739,685 594,590" fill="#4E5268"/><polygon points="739,685 530,842 594,590" fill="#242633"/><polygon points="594,590 530,470 530,842" fill="#3F4254"/><rect x="502" y="205" width="20" height="650" rx="10" fill="#101017"/></svg>
           </button>
+          </div>
+          <button type="button" class="card-collapse" id="tdh-card-collapse" aria-label="Collapse Progress Card" aria-expanded="true" aria-controls="tdh-drop-card" title="Collapse Progress Card">▴</button>
         </div>
       </div>`;
     document.documentElement.appendChild(host);
@@ -1806,10 +1815,25 @@
     ui?.cluster?.classList.toggle("reduce-motion", Boolean(settings.reduceMotion));
   }
 
+  function setProgressCardCollapsed(collapsed) {
+    if (!ui) return;
+    const card = ui.shadow.getElementById("tdh-drop-card");
+    const control = ui.shadow.getElementById("tdh-card-collapse");
+    if (!card || !control) return;
+
+    card.classList.toggle("collapsed", Boolean(collapsed));
+    const expanded = !collapsed;
+    control.textContent = expanded ? "▴" : "▾";
+    control.setAttribute("aria-expanded", String(expanded));
+    control.setAttribute("aria-label", expanded ? "Collapse Progress Card" : "Expand Progress Card");
+    control.title = expanded ? "Collapse Progress Card" : "Expand Progress Card";
+    requestAnimationFrame(layoutChrome);
+  }
+
   function scheduleAutoHide() {
     clearTimeout(autoHideTimer);
     if (!settings.autoHideCard || !ui) return;
-    autoHideTimer = setTimeout(() => ui.shadow.getElementById("tdh-drop-card")?.classList.add("collapsed"), 6000);
+    autoHideTimer = setTimeout(() => setProgressCardCollapsed(true), 6000);
   }
 
   function isAutoSwitchPaused() { return pauseAutoSwitchUntil > Date.now(); }
@@ -1825,9 +1849,7 @@
     });
     s.getElementById("tdh-card-collapse")?.addEventListener("click", () => {
       const card = s.getElementById("tdh-drop-card");
-      const collapsed = card.classList.toggle("collapsed");
-      s.getElementById("tdh-card-collapse").textContent = collapsed ? "+" : "−";
-      requestAnimationFrame(layoutChrome);
+      setProgressCardCollapsed(!card.classList.contains("collapsed"));
     });
     s.getElementById("tdh-refresh-now")?.addEventListener("click", () => pollGqlDrops());
     const diag = s.getElementById("tdh-diagnostics");
@@ -1950,7 +1972,7 @@
 
   function layoutChrome() {
     if (!ui?.cluster) return;
-    const row = ui.cluster.querySelector(".badge-row");
+    const row = ui.cluster.querySelector(".progress-stack") || ui.cluster.querySelector(".badge-row");
     const rowHeight = row?.offsetHeight || 56;
     const menuHeight = railOpen ? ui.dock.scrollHeight || ui.dock.offsetHeight || 280 : 0;
     const gap = railOpen ? 8 : 0;
