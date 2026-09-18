@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.1
+// @version      2.6.2
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,7 +27,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.1";
+  const APP_VERSION = "2.6.2";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
@@ -49,6 +49,7 @@
   const HANDOFF_VERIFY_TIMEOUT_MS = 90 * 1000;
   const CAMPAIGN_EXPIRY_GRACE_MS = 60 * 1000;
   const CLAIM_RETRY_INTERVAL_MS = 30 * 1000;
+  const CATEGORY_MISMATCH_GRACE_MS = 15 * 1000;
   const HANDOFF_STATES = Object.freeze({
     CHECKING_GAME: "checking-game",
     SELECTING_GAME: "selecting-game",
@@ -60,6 +61,12 @@
   });
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const RELEASE_NOTES = {
+    "2.6.2": [
+      "Detects when a live channel changes away from the active Drop campaign's game.",
+      "After a 15-second category-change grace period, finds a replacement Drops stream for the same campaign.",
+      "Improves category-directory stream discovery so cards do not need to repeat the game name.",
+      "Adds category-mismatch state to Diagnostics and the activity log.",
+    ],
     "2.6.1": [
       "Adds a 60-second campaign-expiry escape hatch when Twitch leaves rewards stuck on Claim Ready.",
       "Moves to the next open eligible watch-time campaign even when the previous campaign never finishes claiming.",
@@ -161,6 +168,8 @@
   let lastDropAt = 0;
   let lastClaimAttemptAt = 0;
   let lastStreamSwitch = 0;
+  let categoryMismatchSince = 0;
+  let categoryMismatchSignature = "";
   let lastProgress = readSession("tdh-progress", 0);
   let lastProgressAt = readSession("tdh-progress-at", Date.now());
   let currentDrop = readSession("tdh-drop", null);
@@ -319,13 +328,14 @@
     }
 
     if (maybeAdvanceExpiredCampaign(lastInventoryCampaigns)) return;
+    if (maybeRecoverCategoryMismatch()) return;
 
     if (settings.claimDrops) scanDrops();
     else refreshDropCard();
 
     refreshQueueList();
 
-    if (settings.queueEnabled && settings.queueOnOffline && watchingLogin() && document.readyState === "complete") {
+    if (settings.queueEnabled && settings.queueOnOffline && watchingLogin() && document.readyState === "complete" && !getHandoffState()) {
       const info = readStreamInfo();
       if (!info.live && now - lastStreamSwitch > 60000 && !isAutoSwitchPaused()) findNextStream();
     }
@@ -1113,6 +1123,122 @@
     return location.pathname.toLowerCase().startsWith("/directory/category/");
   }
 
+  function normalizeGameName(value) {
+    return cleanText(value)
+      .toLowerCase()
+      .replace(/&/g, "and")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+      .replace(/\s+/g, " ");
+  }
+
+  function gameNamesMatch(a, b) {
+    const left = normalizeGameName(a);
+    const right = normalizeGameName(b);
+    if (!left || !right) return true;
+    if (left === right) return true;
+    if (left.length >= 6 && right.includes(left)) return true;
+    if (right.length >= 6 && left.includes(right)) return true;
+    return false;
+  }
+
+  function resetCategoryMismatch() {
+    categoryMismatchSince = 0;
+    categoryMismatchSignature = "";
+  }
+
+  function maybeRecoverCategoryMismatch() {
+    if (!settings.findNextStream || !currentDrop || currentDrop.percent >= 100) {
+      resetCategoryMismatch();
+      return false;
+    }
+
+    const login = watchingLogin();
+    if (!login) {
+      resetCategoryMismatch();
+      return false;
+    }
+
+    const info = readStreamInfo();
+    const expectedGame = cleanText(currentDrop.game);
+    const actualGame = cleanText(info.game);
+
+    if (!info.live || !expectedGame || !actualGame || gameNamesMatch(expectedGame, actualGame)) {
+      resetCategoryMismatch();
+      return false;
+    }
+
+    const signature = `${login}|${normalizeGameName(expectedGame)}|${normalizeGameName(actualGame)}`;
+    const now = Date.now();
+    if (categoryMismatchSignature !== signature) {
+      categoryMismatchSignature = signature;
+      categoryMismatchSince = now;
+      logActivity("category-mismatch", "Live channel changed away from active Drop game", {
+        channel: login,
+        expectedGame,
+        actualGame,
+        campaign: currentDrop.campaign || null,
+      });
+    }
+
+    const age = now - categoryMismatchSince;
+    if (age < CATEGORY_MISMATCH_GRACE_MS) {
+      const secondsLeft = Math.max(1, Math.ceil((CATEGORY_MISMATCH_GRACE_MS - age) / 1000));
+      setStatus(`Category Changed To ${actualGame} · Replacing Stream In ${secondsLeft}s`);
+      return false;
+    }
+
+    const pending = getHandoffState();
+    const pendingState = normalizedHandoffState(pending);
+    if (pending && [
+      HANDOFF_STATES.FINDING_STREAM,
+      HANDOFF_STATES.SWITCHING,
+      HANDOFF_STATES.VERIFYING,
+    ].includes(pendingState)) {
+      return true;
+    }
+
+    transitionHandoff(
+      HANDOFF_STATES.FINDING_STREAM,
+      {
+        completedGame: expectedGame,
+        completedDrop: currentDrop.name || "Drop",
+        completedDropId: currentDrop.id || "",
+        targetGame: expectedGame,
+        targetSlug: currentDrop.gameSlug || "",
+        targetStream: "",
+        targetCampaign: currentDrop.campaign || "",
+        targetCampaignKey: currentDrop.campaignKey || "",
+        recoveryReason: "category-mismatch",
+        previousStream: login,
+        previousStreamGame: actualGame,
+        skippedGames: pending?.skippedGames || [],
+        startedAt: pending?.startedAt || now,
+      },
+      `${login} changed from ${expectedGame} to ${actualGame} · finding replacement stream`,
+    );
+
+    logActivity("stream-recovery", "Finding replacement stream for active campaign", {
+      previousChannel: login,
+      expectedGame,
+      actualGame,
+      campaign: currentDrop.campaign || null,
+    });
+
+    setStatus(`Category Changed · Finding Another ${expectedGame} Drops Stream`);
+    notifyUser(`Channel Changed Category · Finding Another ${expectedGame} Stream`);
+    resetCategoryMismatch();
+
+    const directoryUrl = gameDirectoryUrl(currentDrop);
+    if (directoryUrl) {
+      location.href = directoryUrl;
+      return true;
+    }
+
+    location.href = INVENTORY_URL;
+    return true;
+  }
+
   function gameDirectoryUrl(drop) {
     const rawSlug = cleanText(drop?.gameSlug || "");
     const slug = rawSlug || cleanText(drop?.game || "")
@@ -1146,8 +1272,29 @@
     }
   }
 
-  function findEligibleDirectoryStream(gameName) {
-    const wantedGame = cleanText(gameName).toLowerCase();
+  function currentDirectorySlug() {
+    const match = location.pathname.match(/^\/directory\/category\/([^/?#]+)/i);
+    return match ? decodeURIComponent(match[1]).toLowerCase() : "";
+  }
+
+  function normalizedGameSlug(value) {
+    return cleanText(value)
+      .toLowerCase()
+      .replace(/&/g, "and")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
+  function findEligibleDirectoryStream(gameName, gameSlug = "") {
+    const wantedGame = normalizeGameName(gameName);
+    const wantedSlug = normalizedGameSlug(gameSlug || gameName);
+    const pageSlug = currentDirectorySlug();
+    const pageIsTargetCategory = Boolean(
+      isDirectoryCategoryPage() &&
+      wantedSlug &&
+      (pageSlug === wantedSlug || pageSlug.includes(wantedSlug) || wantedSlug.includes(pageSlug))
+    );
+
     const links = [
       ...document.querySelectorAll(
         'a[data-a-target="preview-card-channel-link"], a[data-test-selector*="channel-link"], a[href]',
@@ -1165,12 +1312,22 @@
         link.parentElement?.parentElement?.parentElement ||
         link.parentElement;
 
-      const text = cleanText(card?.textContent).toLowerCase();
+      const text = cleanText(card?.textContent);
+      const normalizedText = normalizeGameName(text);
       const hasDropsTag = Boolean(
-        card?.querySelector?.('a[href*="/tags/DropsEnabled"], a[href*="DropsEnabled"]'),
-      ) || /\bdrops enabled\b/i.test(text);
+        card?.querySelector?.(
+          'a[href*="DropsEnabled"], [data-a-target*="Drops"], [data-test-selector*="Drops"], [aria-label*="Drops"]',
+        ),
+      ) || /\bdrops\s*enabled\b/i.test(text);
 
-      const gameMatches = !wantedGame || !text || text.includes(wantedGame);
+      // On the requested Twitch category page, the page itself establishes the
+      // game. Stream cards do not consistently repeat the category name.
+      const gameMatches =
+        pageIsTargetCategory ||
+        !wantedGame ||
+        !normalizedText ||
+        normalizedText.includes(wantedGame);
+
       if (hasDropsTag && gameMatches) return href;
     }
     return "";
@@ -1200,7 +1357,7 @@
       return true;
     }
 
-    const href = findEligibleDirectoryStream(pending.targetGame || "");
+    const href = findEligibleDirectoryStream(pending.targetGame || "", pending.targetSlug || "");
     if (!href) {
       const secondsLeft = Math.max(0, Math.ceil((HANDOFF_STAGE_TIMEOUT_MS - stageAge) / 1000));
       setStatus(`Finding A Drops Stream For ${pending.targetGame || "Next Game"} · ${secondsLeft}s`);
@@ -1569,7 +1726,7 @@
         verifyHandoffWithDrop(drop);
         const channelNote = login ? ` on ${login}` : "";
         setStatus(`Working toward ${drop.name}${channelNote}`);
-        if (settings.findNextStream && Date.now() - lastProgressAt > 6 * 60 * 1000 && !isAutoSwitchPaused()) {
+        if (settings.findNextStream && !getHandoffState() && Date.now() - lastProgressAt > 6 * 60 * 1000 && !isAutoSwitchPaused()) {
           if (!settings.queueEnabled || settings.queueOnStall) findNextStream();
         }
       } else if (login) {
@@ -2915,6 +3072,19 @@
         requestBudgetPerHour: circuit.budget,
         consecutiveFailures: circuit.consecutiveFailures,
       },
+      categoryMatch: (() => {
+        const info = readStreamInfo();
+        const expectedGame = currentDrop?.game || "";
+        const actualGame = info.game || "";
+        return {
+          expectedGame: expectedGame || null,
+          streamGame: actualGame || null,
+          matches: expectedGame && actualGame ? gameNamesMatch(expectedGame, actualGame) : null,
+          mismatchActive: Boolean(categoryMismatchSince),
+          mismatchAgeSeconds: categoryMismatchSince ? Math.floor((now - categoryMismatchSince) / 1000) : 0,
+          graceSeconds: Math.round(CATEGORY_MISMATCH_GRACE_MS / 1000),
+        };
+      })(),
       campaignExpiry: (() => {
         const expiry = campaignExpirySnapshot(lastInventoryCampaigns, currentDrop, now);
         return expiry ? {
