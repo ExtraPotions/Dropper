@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.5.8
+// @version      2.5.9
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,16 +27,16 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.5.8";
+  const APP_VERSION = "2.5.9";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const CURRENT_CHANGELOG = [
-    "Collapsed progress cards now show full Drop details in a hover preview.",
-    "Hovering no longer changes the card's expanded or collapsed state.",
-    "Keeps the expand/collapse control separate from important Drop information.",
-    "Maintains live progress and automatic next-game handoff behavior.",
+    "Matches Dropper's width to Twitch's visible chat/right column.",
+    "Automatically adapts when the Twitch chat panel is resized.",
+    "Collapsed progress cards still show full details on hover.",
+    "Keeps the menu and progress stack at the same compact width.",
   ];
   const DEFAULTS = {
     claimBonus: true,
@@ -119,6 +119,8 @@
   let updateNoticeState = null;
   let pauseAutoSwitchUntil = 0;
   let lastInventoryCampaigns = [];
+  let chatWidthObserver = null;
+  let chatDomObserver = null;
 
   hookAuth(page);
   if (settings.keepTabActive) installKeepTabActive(page);
@@ -171,7 +173,61 @@
       noteWatching();
       refreshDropCard();
     }, 1000);
-    window.addEventListener("resize", layoutChrome, { passive: true });
+    window.addEventListener("resize", () => {
+      syncDropperWidthToChat();
+      layoutChrome();
+    }, { passive: true });
+  }
+
+  function findTwitchChatColumn() {
+    const selectors = [
+      '[data-a-target="right-column"]',
+      '[data-test-selector="chat-room-component-layout"]',
+      '.right-column',
+      '.chat-shell',
+    ];
+    for (const selector of selectors) {
+      const node = document.querySelector(selector);
+      if (!node) continue;
+      const rect = node.getBoundingClientRect();
+      if (rect.width >= 260 && rect.height >= 120) return node;
+    }
+    return null;
+  }
+
+  function syncDropperWidthToChat() {
+    if (!ui?.cluster) return;
+    const chat = findTwitchChatColumn();
+    const measured = chat ? Math.round(chat.getBoundingClientRect().width) : 312;
+    const width = Math.max(280, Math.min(measured || 312, 340));
+    ui.cluster.style.setProperty("--dropper-width", `${width}px`);
+  }
+
+  function watchChatWidth() {
+    if (!ui?.cluster) return;
+    const attach = () => {
+      syncDropperWidthToChat();
+      const chat = findTwitchChatColumn();
+      if (!chat || typeof ResizeObserver !== "function") return;
+      chatWidthObserver?.disconnect();
+      chatWidthObserver = new ResizeObserver(() => {
+        syncDropperWidthToChat();
+        layoutChrome();
+      });
+      chatWidthObserver.observe(chat);
+    };
+
+    attach();
+    if (chatDomObserver || typeof MutationObserver !== "function") return;
+    chatDomObserver = new MutationObserver(() => {
+      const chat = findTwitchChatColumn();
+      if (!chat) {
+        syncDropperWidthToChat();
+        return;
+      }
+      if (!chatWidthObserver) attach();
+    });
+    chatDomObserver.observe(document.documentElement, { childList: true, subtree: true });
   }
 
   function hookAuth(uw) {
@@ -1433,7 +1489,7 @@
         font: 13px/1.42 ui-sans-serif, system-ui, "Segoe UI", sans-serif; color: #efeff1;
       }
       .cluster.open-up { flex-direction: column; }
-      .progress-stack { width:min(340px, calc(100vw - 24px)); display:flex; flex-direction:column; align-items:stretch; }
+      .progress-stack { width:min(var(--dropper-width, 312px), calc(100vw - 24px)); display:flex; flex-direction:column; align-items:stretch; }
       .badge-row { display:flex; align-items:stretch; width:100%; }
       #tdh-drop-card {
         position: relative; flex:1 1 auto; width:auto; min-width:0; max-width:none;
@@ -1506,7 +1562,7 @@
       .fill { fill:none; stroke:#9147ff; stroke-width:3; stroke-linecap:round; transform:rotate(-90deg); transform-origin:18px 18px; transition:.2s stroke; }
       #tdh-settings-launcher .icon { width:22px; height:22px; pointer-events:none; position:relative; z-index:1; }
       #tdh-tools-dock {
-        display:none; width:min(340px, calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:min(72vh,560px); overflow:auto;
+        display:none; width:min(var(--dropper-width, 312px), calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:min(72vh,560px); overflow:auto;
         padding:9px 9px 0; background:#111114; border:1px solid #2f2f35; border-radius:14px; box-shadow:0 18px 50px #0008; color-scheme:dark;
       }
       #tdh-tools-dock.fl-rail-open { display:block; }
@@ -1574,7 +1630,7 @@
       .has-tooltip:hover::after, .has-tooltip:focus-visible::after { opacity:1; transform:translateY(0); }
       .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation:none !important; transition:none !important; }
       @media (max-width:700px) {
-        #tdh-tools-dock, .progress-stack { width:min(340px,calc(100vw - 24px)); }
+        #tdh-tools-dock, .progress-stack { width:min(var(--dropper-width,312px),calc(100vw - 24px)); }
         .badge-row { width:100%; }
         #tdh-drop-card { flex:1 1 auto; width:auto; min-width:0; max-width:none; }
       }
@@ -1680,6 +1736,8 @@
     applyMotionSetting();
     refreshDropCard();
     refreshQueueList();
+    watchChatWidth();
+    syncDropperWidthToChat();
     layoutChrome();
     ui.launcher.addEventListener("click", () => setRailOpen(!railOpen));
     shadow.getElementById("tdh-rail-close").addEventListener("click", () => setRailOpen(false));
@@ -1986,6 +2044,7 @@
 
   function layoutChrome() {
     if (!ui?.cluster) return;
+    syncDropperWidthToChat();
     const row = ui.cluster.querySelector(".progress-stack") || ui.cluster.querySelector(".badge-row");
     const rowHeight = row?.offsetHeight || 56;
     const menuHeight = railOpen ? ui.dock.scrollHeight || ui.dock.offsetHeight || 280 : 0;
