@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.5.4
+// @version      2.5.5
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,16 +27,16 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.5.4";
+  const APP_VERSION = "2.5.5";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const CURRENT_CHANGELOG = [
+    "Matches the settings menu width to the progress card and launcher row.",
+    "Removes unused space from the bottom of the settings menu.",
     "Finishes all watch-time Drops for a game before switching games.",
     "Skips subscription-only Drops when deciding what to earn next.",
-    "Improves Stream Queue handoff between completed games.",
-    "Expands update notices with a concise, readable changelog.",
   ];
   const DEFAULTS = {
     claimBonus: true,
@@ -1271,13 +1271,13 @@
         font: 13px/1.42 ui-sans-serif, system-ui, "Segoe UI", sans-serif; color: #efeff1;
       }
       .cluster.open-up { flex-direction: column; }
-      .badge-row { display:flex; align-items:stretch; width:max-content; }
+      .badge-row { display:flex; align-items:stretch; width:min(340px, calc(100vw - 24px)); }
       #tdh-drop-card {
-        position: relative; width: 292px; max-width: min(292px, calc(100vw - 76px));
+        position: relative; flex:1 1 auto; width:auto; min-width:0; max-width:none;
         background:#18181b; border:1px solid #9147ff66; border-right:0;
         border-radius:12px 0 0 12px; box-shadow:0 8px 30px #0007; overflow:hidden;
       }
-      #tdh-drop-card.collapsed { width: 270px; }
+      #tdh-drop-card.collapsed { width:auto; }
       #tdh-drop-card.collapsed .expanded-content { display:none; }
       #tdh-drop-card:not(.collapsed) .compact-line { display:none; }
       .compact-line { min-height:48px; padding:0 10px; display:grid; grid-template-columns:6px minmax(0,1fr) auto auto; gap:7px; align-items:center; }
@@ -1324,8 +1324,8 @@
       .fill { fill:none; stroke:#9147ff; stroke-width:3; stroke-linecap:round; transform:rotate(-90deg); transform-origin:18px 18px; transition:.2s stroke; }
       #tdh-settings-launcher .icon { width:22px; height:22px; pointer-events:none; position:relative; z-index:1; }
       #tdh-tools-dock {
-        display:none; width:292px; max-width:calc(100vw - 24px); max-height:min(72vh,560px); overflow:auto;
-        padding:9px; background:#111114; border:1px solid #2f2f35; border-radius:14px; box-shadow:0 18px 50px #0008; color-scheme:dark;
+        display:none; width:min(340px, calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:min(72vh,560px); overflow:auto;
+        padding:9px 9px 0; background:#111114; border:1px solid #2f2f35; border-radius:14px; box-shadow:0 18px 50px #0008; color-scheme:dark;
       }
       #tdh-tools-dock.fl-rail-open { display:block; }
       .menu-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
@@ -1391,7 +1391,10 @@
       .has-tooltip::after { content:attr(data-tip); position:absolute; left:0; top:calc(100% + 4px); width:190px; padding:6px 8px; border:1px solid #3b3b44; border-radius:7px; background:#0e0e10; color:#efeff1; box-shadow:0 6px 18px #0007; font-size:10px; line-height:1.35; opacity:0; pointer-events:none; z-index:999; transform:translateY(-2px); transition:.12s opacity,.12s transform; }
       .has-tooltip:hover::after, .has-tooltip:focus-visible::after { opacity:1; transform:translateY(0); }
       .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation:none !important; transition:none !important; }
-      @media (max-width:700px) { #tdh-tools-dock { width:min(292px,calc(100vw - 24px)); } #tdh-drop-card { width:min(292px,calc(100vw - 76px)); } }
+      @media (max-width:700px) {
+        #tdh-tools-dock, .badge-row { width:min(340px,calc(100vw - 24px)); }
+        #tdh-drop-card { flex:1 1 auto; width:auto; min-width:0; max-width:none; }
+      }
     `;
   }
 
