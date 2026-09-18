@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.5.5
+// @version      2.5.6
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,16 +27,16 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.5.5";
+  const APP_VERSION = "2.5.6";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const CURRENT_CHANGELOG = [
-    "Matches the settings menu width to the progress card and launcher row.",
-    "Removes unused space from the bottom of the settings menu.",
-    "Finishes all watch-time Drops for a game before switching games.",
-    "Skips subscription-only Drops when deciding what to earn next.",
+    "Automatically routes to the next eligible game and Drops-enabled stream.",
+    "Refreshes credited Drop progress without requiring a page reload.",
+    "Collapsed progress cards no longer expand on hover.",
+    "Keeps same-game Drops together before advancing to the next game.",
   ];
   const DEFAULTS = {
     claimBonus: true,
@@ -139,12 +139,19 @@
     scheduleUpdateCheck();
     pollGqlDrops();
     setTimeout(pollGqlDrops, 2500);
-    setTimeout(pollGqlDrops, 8000);
+    setTimeout(pollGqlDrops, 7000);
+    setInterval(pollGqlDrops, 10000);
+    watchDirectoryHandoff();
     setInterval(() => {
-      const credited = currentDrop?.currentMinutes || 0;
-      if (credited === 0) pollGqlDrops();
-    }, 8000);
-    setInterval(pollGqlDrops, 20000);
+      if (isDirectoryCategoryPage() && readSession(NEXT_GAME_KEY, null)) {
+        continueDirectoryHandoffFromDom();
+      }
+    }, 1500);
+    window.addEventListener("focus", () => pollGqlDrops(), { passive: true });
+    window.addEventListener("pageshow", () => pollGqlDrops(), { passive: true });
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) pollGqlDrops();
+    });
     setInterval(() => {
       noteWatching();
       if (location.pathname !== lastPath) {
@@ -171,8 +178,46 @@
     const origFetch = uw.fetch.bind(uw);
     uw.fetch = function hookedFetch(input, init) {
       captureAuth(input, init);
-      return origFetch.apply(this, arguments);
+      const responsePromise = origFetch.apply(this, arguments);
+      Promise.resolve(responsePromise)
+        .then((response) => captureTwitchGqlResponse(input, response))
+        .catch(() => {});
+      return responsePromise;
     };
+  }
+
+  function captureTwitchGqlResponse(input, response) {
+    try {
+      const requestUrl = typeof input === "string" ? input : input?.url || "";
+      const parsed = new URL(requestUrl, location.href);
+      if (parsed.hostname.toLowerCase() !== "gql.twitch.tv" || !response?.clone) return;
+      response.clone().json().then(ingestTwitchGqlPayload).catch(() => {});
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  function ingestTwitchGqlPayload(payload) {
+    const rows = Array.isArray(payload) ? payload : [payload];
+    let inventoryCampaigns = null;
+
+    for (const row of rows) {
+      const campaigns = row?.data?.currentUser?.inventory?.dropCampaignsInProgress;
+      if (Array.isArray(campaigns)) {
+        inventoryCampaigns = campaigns;
+        lastInventoryCampaigns = campaigns;
+      }
+
+      const sessionDrop = parseSessionDrop(row, inventoryCampaigns || lastInventoryCampaigns);
+      if (sessionDrop) applyDrop(sessionDrop);
+    }
+
+    if (!inventoryCampaigns?.length) return;
+    const preferredGame = cleanText(currentDrop?.game).toLowerCase();
+    const candidate = pickTimedDrop(inventoryCampaigns, currentDrop?.game || "");
+    if (!candidate) return;
+    if (preferredGame && cleanText(candidate.game).toLowerCase() !== preferredGame) return;
+    applyDrop(candidate);
   }
 
   function captureAuth(input, init) {
@@ -452,6 +497,94 @@
     setTimeout(pollGqlDrops, 1400);
   }
 
+  function isDirectoryCategoryPage() {
+    return location.pathname.toLowerCase().startsWith("/directory/category/");
+  }
+
+  function gameDirectoryUrl(drop) {
+    const rawSlug = cleanText(drop?.gameSlug || "");
+    const slug = rawSlug || cleanText(drop?.game || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return slug ? `https://www.twitch.tv/directory/category/${encodeURIComponent(slug)}` : "";
+  }
+
+  function twitchChannelHref(url) {
+    if (!isTrustedTwitchUrl(url)) return "";
+    try {
+      const parsed = new URL(url, location.href);
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      if (parts.length !== 1) return "";
+      const login = parts[0].toLowerCase();
+      if (!login || RESERVED.has(login)) return "";
+      return parsed.href;
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function findEligibleDirectoryStream(gameName) {
+    const wantedGame = cleanText(gameName).toLowerCase();
+    const links = [
+      ...document.querySelectorAll(
+        'a[data-a-target="preview-card-channel-link"], a[data-test-selector*="channel-link"], a[href]',
+      ),
+    ];
+
+    for (const link of links) {
+      const href = twitchChannelHref(link.href);
+      if (!href) continue;
+
+      const card =
+        link.closest(
+          'article, [data-a-target="preview-card"], [data-test-selector*="preview-card"], [class*="preview-card"]',
+        ) ||
+        link.parentElement?.parentElement?.parentElement ||
+        link.parentElement;
+
+      const text = cleanText(card?.textContent).toLowerCase();
+      const hasDropsTag = Boolean(
+        card?.querySelector?.('a[href*="/tags/DropsEnabled"], a[href*="DropsEnabled"]'),
+      ) || /\bdrops enabled\b/i.test(text);
+
+      const gameMatches = !wantedGame || !text || text.includes(wantedGame);
+      if (hasDropsTag && gameMatches) return href;
+    }
+    return "";
+  }
+
+  function continueDirectoryHandoffFromDom() {
+    const pending = readSession(NEXT_GAME_KEY, null);
+    if (!pending || pending.stage !== "directory" || !isDirectoryCategoryPage()) return false;
+
+    const href = findEligibleDirectoryStream(pending.targetGame || "");
+    if (!href) {
+      setStatus(`Finding A Drops Stream For ${pending.targetGame || "Next Game"}`);
+      return false;
+    }
+
+    writeSession(NEXT_GAME_KEY, null);
+    lastStreamSwitch = Date.now();
+    lastProgressAt = Date.now();
+    writeSession("tdh-progress-at", lastProgressAt);
+    setStatus(`Opening ${pending.targetGame || "Next Game"} Drops Stream`);
+    notifyUser(`Moving To ${pending.targetGame || "Next Game"}`);
+    location.href = href;
+    return true;
+  }
+
+  function watchDirectoryHandoff() {
+    if (!isDirectoryCategoryPage()) return;
+    let timer = null;
+    const scan = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => continueDirectoryHandoffFromDom(), 180);
+    };
+    new MutationObserver(scan).observe(document.documentElement, { childList: true, subtree: true });
+    scan();
+  }
+
   function findInventoryStreamForGame(gameName) {
     const wanted = cleanText(gameName).toLowerCase();
     if (!wanted) return "";
@@ -486,6 +619,21 @@
       return false;
     }
 
+    if (pending.stage === "directory") {
+      if (isDirectoryCategoryPage()) {
+        continueDirectoryHandoffFromDom();
+        return true;
+      }
+      const targetUrl = gameDirectoryUrl({
+        game: pending.targetGame,
+        gameSlug: pending.targetSlug,
+      });
+      if (targetUrl) {
+        location.href = targetUrl;
+        return true;
+      }
+    }
+
     // Stay on the current game until every non-subscription watch-time Drop is done.
     const remainingCurrentGameDrop = pickRemainingGameDrop(
       campaigns,
@@ -500,8 +648,6 @@
       return false;
     }
 
-    // No normal watch-time Drops remain for this game. Subscription-only leftovers
-    // are intentionally ignored, so it is safe to advance to the next game.
     const next = pickNextGameDrop(campaigns, pending.completedGame);
     if (!next) {
       writeSession(NEXT_GAME_KEY, null);
@@ -510,25 +656,41 @@
       return false;
     }
 
+    if (isInventory()) {
+      const inventoryHref = findInventoryStreamForGame(next.game);
+      if (inventoryHref) {
+        writeSession(NEXT_GAME_KEY, null);
+        lastStreamSwitch = Date.now();
+        lastProgressAt = Date.now();
+        writeSession("tdh-progress-at", lastProgressAt);
+        setStatus(`Moving To ${next.game}`);
+        notifyUser(`${pending.completedGame} Complete · Moving To ${next.game}`);
+        location.href = inventoryHref;
+        return true;
+      }
+    }
+
+    const directoryUrl = gameDirectoryUrl(next);
+    if (directoryUrl) {
+      writeSession(NEXT_GAME_KEY, {
+        ...pending,
+        stage: "directory",
+        targetGame: next.game,
+        targetSlug: next.gameSlug || "",
+        startedAt: pending.startedAt || Date.now(),
+      });
+      setStatus(`${pending.completedGame} Complete · Finding ${next.game} Stream`);
+      location.href = directoryUrl;
+      return true;
+    }
+
     if (!isInventory()) {
-      setStatus(`${pending.completedGame} Complete · Moving To Next Game`);
+      setStatus(`${pending.completedGame} Complete · Checking Drops Inventory`);
       location.href = INVENTORY_URL;
       return true;
     }
 
-    const href = findInventoryStreamForGame(next.game);
-    if (!href) {
-      setStatus(`Next Game: ${next.game} · Waiting For Eligible Stream`);
-      return true;
-    }
-
-    writeSession(NEXT_GAME_KEY, null);
-    lastStreamSwitch = Date.now();
-    lastProgressAt = Date.now();
-    writeSession("tdh-progress-at", lastProgressAt);
-    setStatus(`Moving To ${next.game}`);
-    notifyUser(`${pending.completedGame} Complete · Moving To ${next.game}`);
-    location.href = href;
+    setStatus(`Next Game: ${next.game} · Waiting For Eligible Stream`);
     return true;
   }
 
@@ -1678,7 +1840,9 @@
     const queueCount = s.getElementById("tdh-queue-count"); queueCount.value = String(settings.queueCount); queueCount.addEventListener("change", () => { settings.queueCount = Number(queueCount.value); saveSettings(); refreshQueueList(); });
     const pref = s.getElementById("tdh-queue-preference"); pref.value = settings.queuePreference; pref.addEventListener("change", () => { settings.queuePreference = pref.value; saveSettings(); refreshQueueList(); });
     const pause = s.getElementById("tdh-pause-switch"); pause.value = String(settings.pauseAutoSwitchMinutes || 0); pause.addEventListener("change", () => { settings.pauseAutoSwitchMinutes = Number(pause.value); pauseAutoSwitchUntil = settings.pauseAutoSwitchMinutes ? Date.now() + settings.pauseAutoSwitchMinutes * 60000 : 0; saveSettings(); });
-    const card = s.getElementById("tdh-drop-card"); card.addEventListener("mouseenter", () => { if (settings.autoHideCard) card.classList.remove("collapsed"); clearTimeout(autoHideTimer); }); card.addEventListener("mouseleave", scheduleAutoHide);
+    const card = s.getElementById("tdh-drop-card");
+    card.addEventListener("mouseenter", () => clearTimeout(autoHideTimer));
+    card.addEventListener("mouseleave", scheduleAutoHide);
     s.getElementById("tdh-update-dismiss")?.addEventListener("click", hideUpdateNotice);
   }
 
