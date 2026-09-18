@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.24
+// @version      2.6.25
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.24";
+  const APP_VERSION = "2.6.25";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -85,6 +85,12 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.25": [
+      "Makes the collapsed progress panel itself the expand control.",
+      "Removes the dedicated progress expand/collapse chevron button.",
+      "Adds a new Appearance menu for visual preferences.",
+      "Adds Full, Compact, and Narrow collapsed-panel width options, defaulting to Compact.",
+    ],
     "2.6.24": [
       "Reduces GitHub update checks from 60 minutes to 15 minutes.",
       "Keeps Twitch GQL polling cadence unchanged.",
@@ -259,8 +265,8 @@
     findNextStream: true,
     muteRestarted: true,
     backgroundEarning: false,
-    autoHideCard: false,
     reduceMotion: false,
+    collapsedPanelWidth: "compact",
     notifications: true,
     hideTwitchSubscriptionPromos: true,
     pauseAutoSwitchMinutes: 0,
@@ -338,7 +344,6 @@
   let ui = null;
   let railOpen = false;
   let clusterTop = Number(localStorage.getItem(LAUNCHER_TOP_KEY) || 0);
-  let autoHideTimer = null;
   let progressExpandTimer = null;
   let progressCollapseAt = 0;
   let menuDismissTimer = null;
@@ -3108,6 +3113,7 @@
         stored.hideTwitchSubscriptionPromos = Boolean(stored.hideChatSubscriptionPromos);
       }
       delete stored.hideChatSubscriptionPromos;
+      delete stored.autoHideCard;
       return { ...DEFAULTS, ...stored };
     } catch (_) {
       return { ...DEFAULTS };
@@ -3458,7 +3464,6 @@
     applyProgressColor(percent);
     syncCompactState();
     renderCompactInventory();
-    scheduleAutoHide();
   }
 
   function updateTitle() {
@@ -3717,14 +3722,21 @@
         font: 13px/1.42 ui-sans-serif, system-ui, "Segoe UI", sans-serif; color: #efeff1;
       }
       .cluster.open-up { flex-direction: column; }
-      .progress-stack { width:min(var(--dropper-width, 312px), calc(100vw - 24px)); display:flex; flex-direction:column; align-items:stretch; }
+      .progress-stack {
+        width:min(var(--dropper-width, 312px), calc(100vw - 24px));
+        display:flex; flex-direction:column; align-items:stretch;
+        transition:.15s width;
+      }
+      .progress-stack.is-collapsed[data-collapsed-width="compact"] { width:min(260px, calc(100vw - 24px)); }
+      .progress-stack.is-collapsed[data-collapsed-width="narrow"] { width:min(220px, calc(100vw - 24px)); }
       .badge-row { display:flex; align-items:stretch; width:100%; }
       #tdh-drop-card {
         position: relative; flex:1 1 auto; width:auto; min-width:0; max-width:none;
         background:#18181b; border:1px solid #9147ff66; border-right:0;
         border-radius:12px 0 0 12px; box-shadow:0 8px 30px #0007; overflow:hidden;
       }
-      #tdh-drop-card.collapsed { width:auto; overflow:visible; }
+      #tdh-drop-card.collapsed { width:auto; overflow:visible; cursor:pointer; }
+      #tdh-drop-card.collapsed:focus-visible { outline:2px solid #9147ff; outline-offset:2px; }
       #tdh-drop-card.collapsed .expanded-content {
         display:block; position:absolute; left:0; bottom:calc(100% + 8px); width:100%; min-width:240px;
         background:#18181b; border:1px solid #9147ff66; border-radius:12px; box-shadow:0 14px 36px #000a;
@@ -3745,7 +3757,7 @@
         top:-6px; bottom:auto; border:0; border-left:1px solid #9147ff66; border-top:1px solid #9147ff66;
       }
       #tdh-drop-card:not(.collapsed) .compact-line { display:none; }
-      .compact-line { min-height:48px; padding:0 10px; display:grid; grid-template-columns:6px minmax(0,1fr) auto auto; gap:7px; align-items:center; cursor:help; }
+      .compact-line { min-height:48px; padding:0 10px; display:grid; grid-template-columns:6px minmax(0,1fr) auto auto; gap:7px; align-items:center; cursor:pointer; }
       .compact-dot { width:6px; height:6px; border-radius:50%; background:#9147ff; }
       .compact-reward { font-size:10px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .compact-extra { font-size:9px; color:#b8b8c0; white-space:nowrap; }
@@ -3753,28 +3765,6 @@
       .state-pill.good { color:#c8ffd7; border-color:#22c55e66; background:#22c55e18; }
       .state-pill.warn { color:#ffe5a8; border-color:#f59e0b66; background:#f59e0b18; }
       .state-pill.bad { color:#ffd1d1; border-color:#ef444466; background:#ef444418; }
-      .card-collapse {
-        align-self:center; position:relative; left:-24px; width:38px; height:15px; padding:0;
-        display:grid; place-items:center; border:1px solid #9147ff66;
-        background:#18181b; color:#adadb8; cursor:pointer;
-        font:700 10px/1 ui-sans-serif,system-ui,sans-serif; z-index:2;
-      }
-      .progress-stack.toggle-bottom .card-collapse {
-        order:2; margin-top:-1px; margin-bottom:0; border-top-color:#18181b;
-        border-radius:0 0 8px 8px; box-shadow:0 5px 12px #0005;
-      }
-      .progress-stack.toggle-top .card-collapse {
-        order:-1; margin-top:0; margin-bottom:-1px; border-bottom-color:#18181b;
-        border-radius:8px 8px 0 0; box-shadow:0 -5px 12px #0005;
-      }
-      .progress-stack.toggle-bottom .card-collapse:hover,
-      .progress-stack.toggle-bottom .card-collapse:focus-visible {
-        border-color:#9147ff; border-top-color:#18181b; color:#fff; background:#201b28; outline:none;
-      }
-      .progress-stack.toggle-top .card-collapse:hover,
-      .progress-stack.toggle-top .card-collapse:focus-visible {
-        border-color:#9147ff; border-bottom-color:#18181b; color:#fff; background:#201b28; outline:none;
-      }
       .stream-info { padding:7px 9px 6px; display:grid; grid-template-columns:32px minmax(0,1fr); gap:7px; align-items:center; }
       .stream-info-hidden { display:none; }
       .stream-avatar { width:32px; height:32px; border-radius:50%; object-fit:cover; grid-row:1 / span 2; }
@@ -3966,11 +3956,15 @@
             ${switchHtml("tdh-claim-drops", "Auto-Claim Drops", "Claims Completed Twitch Drops When Twitch Reports Them As Claimable.", settings.claimDrops)}
           </div></section>
           <section class="fl-tool-panel"><div class="fl-tool-header has-tooltip" data-tip="Optional Progress And Inventory Tools." data-panel="tdh-drops-body"><span class="fl-tool-title">Drops Extras</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-drops-body">
-            ${switchHtml("tdh-progress-title", "Show Progress In Tab", "Shows Current Drop Progress In The Browser Tab Title.", settings.progressInTitle)}
             ${switchHtml("tdh-find-next", "Find Next Drops Stream", "Switches To Another Eligible Stream If Progress Stalls.", settings.findNextStream)}
             ${switchHtml("tdh-mute-next", "Mute Opened Streams", "Mutes Any Separate Stream Window Opened By Dropper.", settings.muteRestarted)}
             <button type="button" class="life-btn" id="tdh-toggle-inventory">Show Drops Inventory</button>
             <div class="compact-inventory" id="tdh-compact-inventory"><div class="inventory-head"><div><strong>Campaign Drops</strong><span id="tdh-inventory-game"></span></div></div><div class="inventory-list" id="tdh-inventory-list"></div></div>
+          </div></section>
+          <section class="fl-tool-panel"><div class="fl-tool-header has-tooltip" data-tip="Progress Panel Size And Visual Preferences." data-panel="tdh-appearance-body"><span class="fl-tool-title">Appearance</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-appearance-body">
+            ${switchHtml("tdh-progress-title", "Show Progress In Tab", "Shows Current Drop Progress In The Browser Tab Title.", settings.progressInTitle)}
+            ${switchHtml("tdh-reduce-motion", "Reduce Motion", "Disables Dropper Interface Animations.", settings.reduceMotion)}
+            <div class="mini-row"><span>Collapsed Panel Width</span><select class="select-lite" id="tdh-collapsed-width"><option value="full">Full</option><option value="compact">Compact</option><option value="narrow">Narrow</option></select></div>
           </div></section>
           <section class="fl-tool-panel"><div class="fl-tool-header has-tooltip" data-tip="Maintain Backup Drops Channels Without Opening Extra Tabs." data-panel="tdh-queue-body"><span class="fl-tool-title">Stream Queue</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-queue-body">
             ${switchHtml("tdh-queue-enabled", "Maintain Backup Streams", "Keeps A Short List Of Eligible Backup Drops Channels Ready.", settings.queueEnabled)}
@@ -3982,8 +3976,6 @@
           </div></section>
           <section class="fl-tool-panel"><div class="fl-tool-header has-tooltip" data-tip="Background Earning, Interface Preferences, Notifications, Diagnostics, And Shortcuts." data-panel="tdh-advanced-body"><span class="fl-tool-title">Advanced</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-advanced-body">
             ${switchHtml("tdh-background-earning", "Background Earning Mode", "Monitors Twitch-Credited Minutes While The Stream Is In The Background.", settings.backgroundEarning)}
-            ${switchHtml("tdh-auto-hide", "Auto-Hide Card", "Collapses The Progress Card After A Short Delay.", settings.autoHideCard)}
-            ${switchHtml("tdh-reduce-motion", "Reduce Motion", "Disables Dropper Interface Animations.", settings.reduceMotion)}
             ${switchHtml("tdh-notifications", "Notifications", "Shows Brief Dropper Notices For Important State Changes.", settings.notifications)}
             ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "Hides Channel Subscribe And Gift-A-Sub Upsells In Chat And Around The Stream Player.", settings.hideTwitchSubscriptionPromos)}
             <div class="mini-row"><span>Pause Auto-Switch</span><select class="select-lite" id="tdh-pause-switch"><option value="0">Off</option><option value="30">30 Min</option><option value="60">1 Hour</option></select></div>
@@ -3995,7 +3987,7 @@
             <div class="diag" id="tdh-diagnostics"></div>
           </div></section>
         </aside>
-        <div class="progress-stack toggle-bottom">
+        <div class="progress-stack">
           <div class="badge-row">
           <section id="tdh-drop-card" aria-live="polite">
             <div class="compact-line" id="tdh-compact-line"><span class="compact-dot" id="tdh-compact-dot"></span><span class="compact-reward" id="tdh-compact-reward">Waiting For Drop</span><span class="compact-extra" id="tdh-compact-extra"></span><span class="state-pill" id="tdh-compact-state">Idle</span></div>
@@ -4009,7 +4001,6 @@
             <svg class="icon" viewBox="0 0 1024 1024" aria-hidden="true"><polygon points="494,210 285,500 430,590" fill="#D9B5FF"/><polygon points="494,210 430,590 494,470" fill="#9B5AF9"/><polygon points="285,500 285,685 430,590" fill="#8C39F2"/><polygon points="285,685 494,842 430,590" fill="#5417B3"/><polygon points="430,590 494,470 494,842" fill="#7428E8"/><polygon points="530,210 739,500 594,590" fill="#AEB0C2"/><polygon points="530,210 594,590 530,470" fill="#6A6E87"/><polygon points="739,500 739,685 594,590" fill="#4E5268"/><polygon points="739,685 530,842 594,590" fill="#242633"/><polygon points="594,590 530,470 530,842" fill="#3F4254"/><rect x="502" y="205" width="20" height="650" rx="10" fill="#101017"/></svg>
           </button>
           </div>
-          <button type="button" class="card-collapse" id="tdh-card-collapse" aria-label="Collapse Progress Card" aria-expanded="true" aria-controls="tdh-drop-card" title="Collapse Progress Card">▴</button>
         </div>
       </div>`;
     document.documentElement.appendChild(host);
@@ -4026,6 +4017,7 @@
     setProgressCardCollapsed(localStorage.getItem(PROGRESS_CARD_STATE_KEY) === "true", false);
     renderSwitches();
     applyMotionSetting();
+    applyAppearanceSettings();
     refreshDropCard();
     refreshQueueList();
     watchChatWidth();
@@ -4403,42 +4395,20 @@
     ui?.cluster?.classList.toggle("reduce-motion", Boolean(settings.reduceMotion));
   }
 
-  function updateProgressToggleIcon() {
-    if (!ui) return;
-    const stack = ui.shadow.querySelector(".progress-stack");
-    const card = ui.shadow.getElementById("tdh-drop-card");
-    const control = ui.shadow.getElementById("tdh-card-collapse");
-    if (!stack || !card || !control) return;
-
-    const collapsed = card.classList.contains("collapsed");
-    const atTop = stack.classList.contains("toggle-top");
-
-    // The arrow points away from the card when expanding and toward the card
-    // when collapsing, regardless of which edge the control is attached to.
-    if (atTop) control.textContent = collapsed ? "▴" : "▾";
-    else control.textContent = collapsed ? "▾" : "▴";
-
-    const expanded = !collapsed;
-    control.setAttribute("aria-expanded", String(expanded));
-    control.setAttribute("aria-label", expanded ? "Collapse Progress Card" : "Expand Progress Card");
-    control.title = expanded ? "Collapse Progress Card" : "Expand Progress Card";
+  function normalizedCollapsedPanelWidth(value = settings.collapsedPanelWidth) {
+    const normalized = cleanText(value).toLowerCase();
+    return ["full", "compact", "narrow"].includes(normalized) ? normalized : "compact";
   }
 
-  function positionProgressToggle() {
+  function applyAppearanceSettings() {
     if (!ui) return;
     const stack = ui.shadow.querySelector(".progress-stack");
-    const row = ui.shadow.querySelector(".badge-row");
-    if (!stack || !row) return;
-
-    const rect = row.getBoundingClientRect();
-    if (!rect.height) return;
-
-    const centerY = rect.top + rect.height / 2;
-    const shouldUseTop = centerY > window.innerHeight / 2;
-
-    stack.classList.toggle("toggle-top", shouldUseTop);
-    stack.classList.toggle("toggle-bottom", !shouldUseTop);
-    updateProgressToggleIcon();
+    if (!stack) return;
+    const width = normalizedCollapsedPanelWidth();
+    stack.dataset.collapsedWidth = width;
+    const select = ui.shadow.getElementById("tdh-collapsed-width");
+    if (select && select.value !== width) select.value = width;
+    requestAnimationFrame(layoutChrome);
   }
 
   function clearProgressExpandTimer() {
@@ -4467,14 +4437,19 @@
   function setProgressCardCollapsed(collapsed, persist = false) {
     if (!ui) return;
     const card = ui.shadow.getElementById("tdh-drop-card");
-    if (!card) return;
-
-    card.classList.toggle("collapsed", Boolean(collapsed));
-    if (collapsed) clearProgressExpandTimer();
+    const stack = ui.shadow.querySelector(".progress-stack");
+    if (!card || !stack) return;
+    const isCollapsed = Boolean(collapsed);
+    card.classList.toggle("collapsed", isCollapsed);
+    stack.classList.toggle("is-collapsed", isCollapsed);
+    stack.dataset.collapsedWidth = normalizedCollapsedPanelWidth();
+    card.setAttribute("aria-expanded", String(!isCollapsed));
+    card.setAttribute("aria-label", isCollapsed ? "Expand Dropper Progress Panel" : "Dropper Progress Panel");
+    card.tabIndex = isCollapsed ? 0 : -1;
+    card.title = isCollapsed ? "Click To Expand Progress" : "";
+    if (isCollapsed) clearProgressExpandTimer();
     else scheduleProgressExpandCollapse();
-
-    updateProgressToggleIcon();
-    if (persist) localStorage.setItem(PROGRESS_CARD_STATE_KEY, String(Boolean(collapsed)));
+    if (persist) localStorage.setItem(PROGRESS_CARD_STATE_KEY, String(isCollapsed));
     requestAnimationFrame(layoutChrome);
   }
 
@@ -4490,12 +4465,6 @@
     card.classList.toggle("preview-below", spaceAbove < previewHeight + 12 && spaceBelow > spaceAbove);
   }
 
-  function scheduleAutoHide() {
-    clearTimeout(autoHideTimer);
-    if (!settings.autoHideCard || !ui) return;
-    autoHideTimer = setTimeout(() => setProgressCardCollapsed(true), 6000);
-  }
-
   function isAutoSwitchPaused() { return pauseAutoSwitchUntil > Date.now(); }
 
   function bindDropperControls() {
@@ -4507,9 +4476,18 @@
       renderCompactInventory();
       requestAnimationFrame(layoutChrome);
     });
-    s.getElementById("tdh-card-collapse")?.addEventListener("click", () => {
-      const card = s.getElementById("tdh-drop-card");
-      setProgressCardCollapsed(!card.classList.contains("collapsed"), true);
+    const progressCard = s.getElementById("tdh-drop-card");
+    const expandCollapsedCard = () => {
+      if (!progressCard?.classList.contains("collapsed")) return false;
+      setProgressCardCollapsed(false, true);
+      return true;
+    };
+    progressCard?.addEventListener("click", () => expandCollapsedCard());
+    progressCard?.addEventListener("keydown", (event) => {
+      if (!progressCard.classList.contains("collapsed")) return;
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      expandCollapsedCard();
     });
     s.getElementById("tdh-refresh-now")?.addEventListener("click", () => requestGqlPoll("manual-refresh", true));
     const diag = s.getElementById("tdh-diagnostics");
@@ -4545,13 +4523,16 @@
     const queueCount = s.getElementById("tdh-queue-count"); queueCount.value = String(settings.queueCount); queueCount.addEventListener("change", () => { settings.queueCount = Number(queueCount.value); saveSettings(); refreshQueueList(); });
     const pref = s.getElementById("tdh-queue-preference"); pref.value = settings.queuePreference; pref.addEventListener("change", () => { settings.queuePreference = pref.value; saveSettings(); refreshQueueList(); });
     const pause = s.getElementById("tdh-pause-switch"); pause.value = String(settings.pauseAutoSwitchMinutes || 0); pause.addEventListener("change", () => { settings.pauseAutoSwitchMinutes = Number(pause.value); pauseAutoSwitchUntil = settings.pauseAutoSwitchMinutes ? Date.now() + settings.pauseAutoSwitchMinutes * 60000 : 0; saveSettings(); });
-    const card = s.getElementById("tdh-drop-card");
-    card.addEventListener("mouseenter", () => {
-      clearTimeout(autoHideTimer);
-      positionCollapsedPreview();
+    const collapsedWidth = s.getElementById("tdh-collapsed-width");
+    collapsedWidth.value = normalizedCollapsedPanelWidth();
+    collapsedWidth.addEventListener("change", () => {
+      settings.collapsedPanelWidth = normalizedCollapsedPanelWidth(collapsedWidth.value);
+      saveSettings();
+      applyAppearanceSettings();
     });
+    const card = s.getElementById("tdh-drop-card");
+    card.addEventListener("mouseenter", positionCollapsedPreview);
     card.addEventListener("focusin", positionCollapsedPreview);
-    card.addEventListener("mouseleave", scheduleAutoHide);
     s.getElementById("tdh-update-dismiss")?.addEventListener("click", hideUpdateNotice);
   }
 
@@ -5089,7 +5070,7 @@
       queueCandidates: discoverQueueCandidates().map((item) => item.login),
       autoSwitchPaused: isAutoSwitchPaused(),
       progressCardCollapsed: Boolean(card?.classList.contains("collapsed")),
-      progressTogglePosition: ui?.shadow?.querySelector(".progress-stack")?.classList.contains("toggle-top") ? "top" : "bottom",
+      collapsedPanelWidth: normalizedCollapsedPanelWidth(),
       chatWidth: chat ? Math.round(chat.getBoundingClientRect().width) : null,
       recentActivity: (Array.isArray(activityLog) ? activityLog : []).slice(-20).map((entry) => ({
         at: new Date(entry.at).toISOString(),
@@ -5140,7 +5121,6 @@
     top = Math.max(8, Math.min(window.innerHeight - clusterHeight - 8, top));
     ui.cluster.style.top = `${top}px`;
     ui.cluster.style.right = "12px";
-    positionProgressToggle();
   }
 
   function bindDrag() {
@@ -5264,7 +5244,7 @@
     const map = {
       "tdh-claim-bonus": "claimBonus", "tdh-keep-tab": "keepTabActive", "tdh-claim-drops": "claimDrops",
       "tdh-progress-title": "progressInTitle", "tdh-find-next": "findNextStream", "tdh-mute-next": "muteRestarted",
-      "tdh-background-earning": "backgroundEarning", "tdh-auto-hide": "autoHideCard", "tdh-reduce-motion": "reduceMotion", "tdh-notifications": "notifications",
+      "tdh-background-earning": "backgroundEarning", "tdh-reduce-motion": "reduceMotion", "tdh-notifications": "notifications",
       "tdh-hide-sub-promos": "hideTwitchSubscriptionPromos",
       "tdh-queue-enabled": "queueEnabled", "tdh-queue-stall": "queueOnStall", "tdh-queue-offline": "queueOnOffline",
     };
@@ -5280,7 +5260,6 @@
           notifyUser("Keep Tab Active Enabled. Reload Twitch To Apply Background Earning.");
         }
         if (key === "reduceMotion") applyMotionSetting();
-        if (key === "autoHideCard") scheduleAutoHide();
         if (key === "hideTwitchSubscriptionPromos") {
           if (settings.hideTwitchSubscriptionPromos) suppressTwitchSubscriptionPromos();
           else restoreTwitchSubscriptionPromos();
@@ -5296,7 +5275,7 @@
     const map = {
       "tdh-claim-bonus": settings.claimBonus, "tdh-keep-tab": settings.keepTabActive, "tdh-claim-drops": settings.claimDrops,
       "tdh-progress-title": settings.progressInTitle, "tdh-find-next": settings.findNextStream, "tdh-mute-next": settings.muteRestarted,
-      "tdh-background-earning": settings.backgroundEarning, "tdh-auto-hide": settings.autoHideCard, "tdh-reduce-motion": settings.reduceMotion, "tdh-notifications": settings.notifications,
+      "tdh-background-earning": settings.backgroundEarning, "tdh-reduce-motion": settings.reduceMotion, "tdh-notifications": settings.notifications,
       "tdh-hide-sub-promos": settings.hideTwitchSubscriptionPromos,
       "tdh-queue-enabled": settings.queueEnabled, "tdh-queue-stall": settings.queueOnStall, "tdh-queue-offline": settings.queueOnOffline,
     };
