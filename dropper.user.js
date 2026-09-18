@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.9
+// @version      2.6.10
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.9";
+  const APP_VERSION = "2.6.10";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -74,6 +74,11 @@
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const RELEASE_NOTES = {
+    "2.6.10": [
+      "Keeps update and changelog messages fully visible for 30 seconds.",
+      "Removes the transparency fade effect from update notices.",
+      "Automatically dismisses the notice after the 30-second display period.",
+    ],
     "2.6.9": [
       "Caches compatible category stream candidates so Standby Streams survive navigation to the active channel.",
       "Expands standby discovery across Twitch category cards and filters the active or failed channels.",
@@ -3270,10 +3275,8 @@
         position:relative; order:-3; display:block; width:100%; margin:0 0 8px; padding:10px;
         border:1px solid #9147ff70; border-radius:10px;
         background:linear-gradient(180deg,#9147ff26,#18181d 70%);
-        box-shadow:0 10px 28px #0008; opacity:1; transform:translateY(0);
-        transition:.4s opacity,.4s transform; z-index:12;
+        box-shadow:0 10px 28px #0008; z-index:12;
       }
-      .update-notice.fading { opacity:0; transform:translateY(6px); pointer-events:none; }
       .update-notice[hidden] { display:none; }
       .update-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding-right:22px; }
       .update-heading { min-width:0; }
@@ -3871,7 +3874,6 @@
     clearTimeout(updateNoticeTimer);
     const notice = ui.shadow.getElementById("tdh-update-notice");
     const list = ui.shadow.getElementById("tdh-update-list");
-    notice.classList.remove("fading");
     ui.shadow.getElementById("tdh-update-kicker").textContent = state.kicker;
     ui.shadow.getElementById("tdh-update-title").textContent = title;
     ui.shadow.getElementById("tdh-update-version").textContent = state.version ? `v${state.version}` : "";
@@ -3900,12 +3902,7 @@
     requestAnimationFrame(layoutChrome);
 
     updateNoticeTimer = setTimeout(() => {
-      if (!notice.hidden) {
-        notice.classList.add("fading");
-        setTimeout(() => {
-          if (notice.classList.contains("fading")) hideUpdateNotice();
-        }, settings.reduceMotion ? 0 : 420);
-      }
+      if (!notice.hidden) hideUpdateNotice();
     }, UPDATE_NOTICE_DURATION_MS);
   }
 
@@ -3913,10 +3910,7 @@
     clearTimeout(updateNoticeTimer);
     updateNoticeTimer = null;
     const notice = ui?.shadow?.getElementById("tdh-update-notice");
-    if (notice) {
-      notice.hidden = true;
-      notice.classList.remove("fading");
-    }
+    if (notice) notice.hidden = true;
     updateNoticeState = null;
     requestAnimationFrame(layoutChrome);
   }
