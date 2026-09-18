@@ -22,10 +22,10 @@
 
 <p>
   <a href="https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js">
-    <img alt="Download Dropper" src="https://img.shields.io/badge/Download-Dropper-9147FF?style=for-the-badge&logo=twitch&logoColor=white">
+    <img alt="Install Dropper" src="https://img.shields.io/badge/Install-Dropper-9147FF?style=flat-square&logo=twitch&logoColor=white">
   </a>
-  <a href="https://github.com/ExtraPotions/Dropper/stargazers">
-    <img alt="GitHub Stars" src="https://img.shields.io/github/stars/ExtraPotions/Dropper?style=for-the-badge&logo=github&label=Stars">
+  <a href="https://github.com/ExtraPotions/Dropper/releases">
+    <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/ExtraPotions/Dropper/total?style=flat-square&label=Downloads">
   </a>
 </p>
 
