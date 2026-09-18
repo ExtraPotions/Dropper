@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.5.1
+// @version      2.5.2
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,7 +27,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.5.1";
+  const APP_VERSION = "2.5.2";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
@@ -278,6 +278,18 @@
     }
   }
 
+  function requiresSubscription(drop) {
+    if (!drop) return false;
+    const requiredSubs = Number(
+      drop.requiredSubs ??
+      drop.requiredSubscriptions ??
+      drop.requiredSubscriptionCount ??
+      drop.subscriptionRequirement?.requiredSubs ??
+      0,
+    ) || 0;
+    return requiredSubs > 0;
+  }
+
   function pickTimedDrop(campaigns, gameName) {
     const now = Date.now();
     const wantedGame = (gameName || "").toLowerCase();
@@ -287,7 +299,7 @@
       const drops = campaign.timeBasedDrops || campaign.drops || [];
       for (const drop of drops) {
         const self = drop.self || {};
-        if (self.isClaimed) continue;
+        if (self.isClaimed || requiresSubscription(drop)) continue;
         const required = Number(drop.requiredMinutesWatched) || 0;
         const current = Number(self.currentMinutesWatched) || 0;
         if (required <= 0) continue;
@@ -338,7 +350,7 @@
       const drops = campaign.timeBasedDrops || campaign.drops || [];
       for (const drop of drops) {
         const self = drop.self || {};
-        if (self.isClaimed) continue;
+        if (self.isClaimed || requiresSubscription(drop)) continue;
         const required = Number(drop.requiredMinutesWatched) || 0;
         const current = Number(self.currentMinutesWatched) || 0;
         if (required <= 0) continue;
@@ -475,6 +487,7 @@
     }
     const drop = matched?.drop || dropNode;
     const campaign = matched?.campaign;
+    if (requiresSubscription(drop)) return null;
     const required = Number(
       drop.requiredMinutesWatched ??
       node.requiredMinutesWatched ??
