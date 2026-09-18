@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.4
+// @version      2.6.5
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
@@ -27,7 +27,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.4";
+  const APP_VERSION = "2.6.5";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_CHECK_KEY = "dropper-update-check-at";
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
@@ -47,6 +47,7 @@
   const CIRCUIT_ERROR_COOLDOWN_MS = 5 * 60 * 1000;
   const CIRCUIT_RATE_COOLDOWN_MS = 15 * 60 * 1000;
   const HANDOFF_VERIFY_TIMEOUT_MS = 90 * 1000;
+  const ACTIVE_STREAM_VERIFY_TIMEOUT_MS = 45 * 1000;
   const CAMPAIGN_EXPIRY_GRACE_MS = 60 * 1000;
   const CLAIM_RETRY_INTERVAL_MS = 30 * 1000;
   const CLAIM_READY_GRACE_MS = 60 * 1000;
@@ -66,6 +67,12 @@
   });
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const RELEASE_NOTES = {
+    "2.6.5": [
+      "Locks routing to the unfinished active campaign instead of cycling unrelated games.",
+      "Automatically resumes an unfinished campaign when Twitch is opened on Inventory, Directory, or another non-stream page.",
+      "Tries category-page stream candidates even when Twitch does not show a Drops tag on each card, then verifies compatibility after switching.",
+      "Prevents mismatched stream-session data from replacing the active campaign's inventory progress.",
+    ],
     "2.6.4": [
       "Fixes false 100% progress caused by mixing Twitch session counters with inventory watch minutes.",
       "Preserves Drop instance IDs and claim state when session and inventory data are merged.",
@@ -333,6 +340,83 @@
     return true;
   }
 
+  function activeDropNeedsStream() {
+    if (!settings.findNextStream || !currentDrop || currentDrop.isClaimed) return false;
+    if (Number(currentDrop.percent || 0) >= 100) return false;
+    const expiry = campaignExpirySnapshot(lastInventoryCampaigns, currentDrop);
+    return !expiry?.ended;
+  }
+
+  function ensureActiveCampaignStream() {
+    if (!activeDropNeedsStream()) return false;
+
+    const targetGame = currentDrop.game || "";
+    const targetSlug = resolveCategorySlug(currentDrop);
+    if (!targetGame || !targetSlug) return false;
+
+    const login = watchingLogin();
+    if (login) {
+      const info = readStreamInfo();
+      if (info.live && info.game && gameNamesMatch(targetGame, info.game)) return false;
+      return maybeRecoverCategoryMismatch();
+    }
+
+    const targetDirectory = gameDirectoryUrl(currentDrop);
+    const pageSlug = currentDirectorySlug();
+    const onTargetDirectory = Boolean(
+      isDirectoryCategoryPage() &&
+      pageSlug &&
+      (pageSlug === targetSlug || pageSlug.includes(targetSlug) || targetSlug.includes(pageSlug))
+    );
+
+    let pending = getHandoffState();
+    const pendingState = normalizedHandoffState(pending);
+    const alreadyLocked = Boolean(
+      pending &&
+      pending.lockActiveCampaign &&
+      pending.targetGame &&
+      gameNamesMatch(pending.targetGame, targetGame) &&
+      [
+        HANDOFF_STATES.FINDING_STREAM,
+        HANDOFF_STATES.SWITCHING,
+        HANDOFF_STATES.VERIFYING,
+      ].includes(pendingState)
+    );
+
+    if (!alreadyLocked) {
+      pending = transitionHandoff(
+        HANDOFF_STATES.FINDING_STREAM,
+        {
+          completedGame: targetGame,
+          completedDrop: currentDrop.name || "Drop",
+          completedDropId: currentDrop.id || "",
+          targetGame,
+          targetSlug,
+          targetStream: "",
+          targetCampaign: currentDrop.campaign || "",
+          targetCampaignKey: currentDrop.campaignKey || currentDrop.campaignId || "",
+          failedStreams: [],
+          lockActiveCampaign: true,
+          recoveryReason: "resume-active-campaign",
+          startedAt: Date.now(),
+        },
+        `Resuming unfinished ${currentDrop.campaign || targetGame} campaign`,
+      );
+    }
+
+    if (onTargetDirectory) {
+      continueDirectoryHandoffFromDom();
+      return true;
+    }
+
+    if (targetDirectory) {
+      setStatus(`Resuming ${targetGame} Drops · Finding Compatible Stream`);
+      location.href = targetDirectory;
+      return true;
+    }
+    return false;
+  }
+
   function heartbeat() {
     if (!ui) return;
     const now = Date.now();
@@ -351,6 +435,7 @@
     if (maybeAdvanceExpiredCampaign(lastInventoryCampaigns)) return;
     if (maybeAdvanceStuckClaim(lastInventoryCampaigns)) return;
     if (maybeRecoverCategoryMismatch()) return;
+    if (ensureActiveCampaignStream()) return;
 
     if (settings.claimDrops) scanDrops();
     else refreshDropCard();
@@ -1420,7 +1505,7 @@
       .replace(/^-+|-+$/g, "");
   }
 
-  function findEligibleDirectoryStream(gameName, gameSlug = "") {
+  function findEligibleDirectoryStream(gameName, gameSlug = "", excludedStreams = []) {
     const wantedGame = normalizeGameName(gameName);
     const wantedSlug = resolveCategorySlug({ game: gameName, gameSlug });
     const pageSlug = currentDirectorySlug();
@@ -1429,16 +1514,23 @@
       wantedSlug &&
       (pageSlug === wantedSlug || pageSlug.includes(wantedSlug) || wantedSlug.includes(pageSlug))
     );
+    const excluded = new Set((excludedStreams || []).map((login) => cleanText(login).toLowerCase()).filter(Boolean));
+    const preferred = [];
+    const fallback = [];
+    const seen = new Set();
 
     const links = [
       ...document.querySelectorAll(
-        'a[data-a-target="preview-card-channel-link"], a[data-test-selector*="channel-link"], a[href]',
+        'a[data-a-target="preview-card-channel-link"], a[data-test-selector*="channel-link"]',
       ),
     ];
 
     for (const link of links) {
       const href = twitchChannelHref(link.href);
       if (!href) continue;
+      const login = streamLoginFromUrl(href);
+      if (!login || excluded.has(login) || seen.has(login)) continue;
+      seen.add(login);
 
       const card =
         link.closest(
@@ -1455,17 +1547,80 @@
         ),
       ) || /\bdrops\s*enabled\b/i.test(text);
 
-      // On the requested Twitch category page, the page itself establishes the
-      // game. Stream cards do not consistently repeat the category name.
       const gameMatches =
         pageIsTargetCategory ||
         !wantedGame ||
         !normalizedText ||
         normalizedText.includes(wantedGame);
 
-      if (hasDropsTag && gameMatches) return href;
+      if (!gameMatches) continue;
+      if (hasDropsTag) preferred.push(href);
+      else if (pageIsTargetCategory) fallback.push(href);
     }
-    return "";
+
+    const chosen = preferred[0] || fallback[0] || "";
+    if (chosen && !preferred.length) {
+      logActivity("stream-candidate", "Trying category stream without visible Drops badge", {
+        game: gameName || null,
+        stream: streamLoginFromUrl(chosen) || null,
+        excludedStreams: [...excluded],
+      });
+    }
+    return chosen;
+  }
+
+  function campaignMatchesTarget(campaign, pending) {
+    if (!campaign || !pending) return false;
+    const targetKey = String(pending.targetCampaignKey || "");
+    const targetName = normalizeGameName(pending.targetCampaign || "");
+    const targetGame = normalizeGameName(pending.targetGame || "");
+
+    if (targetKey && campaignKey(campaign) === targetKey) return true;
+    if (targetKey && String(campaign.id || "") === targetKey) return true;
+
+    const campaignName = normalizeGameName(campaign.name || "");
+    const campaignGame = normalizeGameName(campaign.game?.displayName || campaign.game?.name || "");
+    return Boolean(
+      targetName &&
+      campaignName === targetName &&
+      (!targetGame || !campaignGame || gameNamesMatch(targetGame, campaignGame))
+    );
+  }
+
+  function channelSupportsTargetCampaign(availableCampaigns, pending) {
+    if (!pending) return null;
+    if (!Array.isArray(availableCampaigns) || !availableCampaigns.length) return null;
+    return availableCampaigns.some((campaign) => campaignMatchesTarget(campaign, pending));
+  }
+
+  function retryLockedCampaignStream(pending, reason) {
+    if (!pending?.targetGame) return false;
+    const failedStreams = [...new Set([
+      ...(pending.failedStreams || []),
+      pending.targetStream,
+    ].filter(Boolean))];
+
+    transitionHandoff(
+      HANDOFF_STATES.FINDING_STREAM,
+      {
+        targetGame: pending.targetGame,
+        targetSlug: pending.targetSlug || resolveCategorySlug({ game: pending.targetGame }),
+        targetStream: "",
+        targetCampaign: pending.targetCampaign || currentDrop?.campaign || "",
+        targetCampaignKey: pending.targetCampaignKey || currentDrop?.campaignKey || "",
+        failedStreams,
+        lockActiveCampaign: true,
+        recoveryReason: pending.recoveryReason || "active-campaign",
+      },
+      reason || `Trying another ${pending.targetGame} Drops stream`,
+    );
+
+    const url = gameDirectoryUrl({
+      game: pending.targetGame,
+      gameSlug: pending.targetSlug || currentDrop?.gameSlug || "",
+    });
+    if (url && location.href !== url) location.href = url;
+    return true;
   }
 
   function continueDirectoryHandoffFromDom() {
@@ -1475,6 +1630,20 @@
     const stateStartedAt = Number(pending.stateStartedAt || pending.stageStartedAt || pending.startedAt || Date.now());
     const stageAge = Date.now() - stateStartedAt;
     if (stageAge > HANDOFF_STAGE_TIMEOUT_MS) {
+      if (pending.lockActiveCampaign) {
+        transitionHandoff(
+          HANDOFF_STATES.FINDING_STREAM,
+          {
+            failedStreams: [],
+            retryCount: Number(pending.retryCount || 0) + 1,
+          },
+          `Still searching for ${pending.targetGame || "active campaign"} streams · retrying category candidates`,
+        );
+        setStatus(`Waiting For A Compatible ${pending.targetGame || "Drops"} Stream`);
+        queueGqlPollSoon("active-stream-search", GQL_RECOVERY_INTERVAL_MS);
+        return false;
+      }
+
       const skippedGames = [...new Set([...(pending.skippedGames || []), pending.targetGame].filter(Boolean))];
       transitionHandoff(
         HANDOFF_STATES.SELECTING_GAME,
@@ -1492,7 +1661,11 @@
       return true;
     }
 
-    const href = findEligibleDirectoryStream(pending.targetGame || "", pending.targetSlug || "");
+    const href = findEligibleDirectoryStream(
+      pending.targetGame || "",
+      pending.targetSlug || "",
+      pending.failedStreams || [],
+    );
     if (!href) {
       const secondsLeft = Math.max(0, Math.ceil((HANDOFF_STAGE_TIMEOUT_MS - stageAge) / 1000));
       setStatus(`Finding A Drops Stream For ${pending.targetGame || "Next Game"} · ${secondsLeft}s`);
@@ -1502,8 +1675,12 @@
     const targetStream = streamLoginFromUrl(href);
     transitionHandoff(
       HANDOFF_STATES.SWITCHING,
-      { targetStream, switchStartedAt: Date.now() },
-      `Found Drops stream ${targetStream || "channel"} for ${pending.targetGame || "next game"}`,
+      {
+        targetStream,
+        switchStartedAt: Date.now(),
+        failedStreams: pending.failedStreams || [],
+      },
+      `Trying stream ${targetStream || "channel"} for ${pending.targetGame || "next game"}`,
     );
     lastStreamSwitch = Date.now();
     lastProgressAt = Date.now();
@@ -1544,22 +1721,62 @@
     return "";
   }
 
-  function verifyHandoffWithDrop(drop) {
+  function verifyHandoffChannel(login, streamGame, availableCampaigns, sessionDrop) {
     const pending = getHandoffState();
     if (!pending) return false;
     const state = normalizedHandoffState(pending);
     if (state !== HANDOFF_STATES.SWITCHING && state !== HANDOFF_STATES.VERIFYING) return false;
 
-    const targetGame = cleanText(pending.targetGame).toLowerCase();
-    const dropGame = cleanText(drop?.game).toLowerCase();
-    if (targetGame && dropGame && targetGame === dropGame) {
-      transitionHandoff(HANDOFF_STATES.COMPLETE, {}, `Verified earning target for ${pending.targetGame}`);
-      clearHandoff(`Handoff verified for ${pending.targetGame}`);
-      return true;
+    const targetGame = pending.targetGame || "";
+    const gameMatches = Boolean(targetGame && streamGame && gameNamesMatch(targetGame, streamGame));
+    const campaignSupport = channelSupportsTargetCampaign(availableCampaigns, pending);
+    const sessionMatches = Boolean(
+      sessionDrop &&
+      gameNamesMatch(targetGame, sessionDrop.game || "") &&
+      (
+        !pending.targetCampaignKey ||
+        sessionDrop.campaignKey === pending.targetCampaignKey ||
+        sessionDrop.campaignId === pending.targetCampaignKey
+      )
+    );
+
+    if (gameMatches && (campaignSupport === true || sessionMatches)) {
+      transitionHandoff(
+        HANDOFF_STATES.COMPLETE,
+        {},
+        `Verified ${login || pending.targetStream || "stream"} for ${pending.targetCampaign || pending.targetGame}`,
+      );
+      clearHandoff(`Active campaign stream verified for ${pending.targetGame}`);
+      logActivity("stream-verified", "Compatible Drops stream verified", {
+        channel: login || pending.targetStream || null,
+        game: streamGame || null,
+        campaign: pending.targetCampaign || null,
+      });
+      return false;
     }
 
-    const verifyStartedAt = Number(pending.verifyStartedAt || pending.switchStartedAt || pending.stateStartedAt || Date.now());
-    if (state === HANDOFF_STATES.VERIFYING && Date.now() - verifyStartedAt > HANDOFF_VERIFY_TIMEOUT_MS) {
+    const startedAt = Number(
+      pending.verifyStartedAt ||
+      pending.switchStartedAt ||
+      pending.stateStartedAt ||
+      Date.now()
+    );
+
+    if (state === HANDOFF_STATES.VERIFYING && Date.now() - startedAt > ACTIVE_STREAM_VERIFY_TIMEOUT_MS) {
+      if (pending.lockActiveCampaign) {
+        logActivity("stream-rejected", "Stream did not verify for active campaign", {
+          channel: pending.targetStream || login || null,
+          targetGame: pending.targetGame || null,
+          streamGame: streamGame || null,
+          campaignSupport,
+        });
+        retryLockedCampaignStream(
+          pending,
+          `Rejected ${pending.targetStream || login || "stream"} · trying another ${pending.targetGame} channel`,
+        );
+        return true;
+      }
+
       const skippedGames = [...new Set([...(pending.skippedGames || []), pending.targetGame].filter(Boolean))];
       transitionHandoff(
         HANDOFF_STATES.SELECTING_GAME,
@@ -1595,7 +1812,13 @@
         return false;
       }
       const switchStartedAt = Number(pending.switchStartedAt || pending.stateStartedAt || pending.startedAt || Date.now());
-      if (Date.now() - switchStartedAt > HANDOFF_VERIFY_TIMEOUT_MS) {
+      if (Date.now() - switchStartedAt > ACTIVE_STREAM_VERIFY_TIMEOUT_MS) {
+        if (pending.lockActiveCampaign) {
+          return retryLockedCampaignStream(
+            pending,
+            `Stream switch timed out · trying another ${pending.targetGame} channel`,
+          );
+        }
         const skippedGames = [...new Set([...(pending.skippedGames || []), pending.targetGame].filter(Boolean))];
         transitionHandoff(
           HANDOFF_STATES.SELECTING_GAME,
@@ -1610,7 +1833,13 @@
 
     if (state === HANDOFF_STATES.VERIFYING) {
       const verifyStartedAt = Number(pending.verifyStartedAt || pending.stateStartedAt || pending.startedAt || Date.now());
-      if (Date.now() - verifyStartedAt > HANDOFF_VERIFY_TIMEOUT_MS) {
+      if (Date.now() - verifyStartedAt > ACTIVE_STREAM_VERIFY_TIMEOUT_MS) {
+        if (pending.lockActiveCampaign) {
+          return retryLockedCampaignStream(
+            pending,
+            `Verification timed out · trying another ${pending.targetGame} channel`,
+          );
+        }
         const skippedGames = [...new Set([...(pending.skippedGames || []), pending.targetGame].filter(Boolean))];
         transitionHandoff(
           HANDOFF_STATES.SELECTING_GAME,
@@ -1976,10 +2205,37 @@
           sessionDrop = parseSessionDrop(loginResult[0], [...inventoryCampaigns, ...available]);
         }
       }
-      const fromAvailable = pickTimedDrop(available, gameName);
-      const fromInventory = pickTimedDrop(inventoryCampaigns, gameName) || pickTimedDrop(inventoryCampaigns, "");
-      let drop = sessionDrop || fromInventory || fromAvailable;
-      if (sessionDrop && fromInventory) {
+      const activeIncomplete = Boolean(
+        currentDrop &&
+        !currentDrop.isClaimed &&
+        Number(currentDrop.percent || 0) < 100
+      );
+      const preferredGame = activeIncomplete ? currentDrop.game || "" : gameName || "";
+      const streamMatchesActive = Boolean(
+        !activeIncomplete ||
+        !gameName ||
+        gameNamesMatch(currentDrop.game || "", gameName)
+      );
+
+      if (activeIncomplete && gameName && !streamMatchesActive) {
+        sessionDrop = null;
+        available = [];
+      }
+
+      const fromAvailable = streamMatchesActive
+        ? pickTimedDrop(available, preferredGame || gameName)
+        : null;
+
+      const preferredInventory = pickTimedDrop(inventoryCampaigns, preferredGame);
+      const fromInventory = preferredInventory || (
+        activeIncomplete ? null : pickTimedDrop(inventoryCampaigns, "")
+      );
+
+      let drop = activeIncomplete
+        ? (fromInventory || (streamMatchesActive ? sessionDrop || fromAvailable : null) || currentDrop)
+        : (sessionDrop || fromInventory || fromAvailable);
+
+      if (sessionDrop && fromInventory && streamMatchesActive) {
         const minutes = reconcileDropProgress(sessionDrop, fromInventory);
         const requiredMinutes = fromInventory.requiredMinutes || sessionDrop.requiredMinutes || 0;
         drop = {
@@ -2006,9 +2262,11 @@
           : drop.percent || 0;
         drop.remainingMinutes = Math.max(0, requiredMinutes - minutes);
       }
+
+      if (verifyHandoffChannel(login, gameName, available, sessionDrop)) return;
+
       if (drop) {
         applyDrop(drop);
-        verifyHandoffWithDrop(drop);
         const channelNote = login ? ` on ${login}` : "";
         setStatus(`Working toward ${drop.name}${channelNote}`);
         if (settings.findNextStream && !getHandoffState() && Date.now() - lastProgressAt > 6 * 60 * 1000 && !isAutoSwitchPaused()) {
@@ -2977,19 +3235,24 @@
     const seen = new Set();
     const items = [];
     const add = (href, label = "") => {
-      if (!href || !isTrustedTwitchUrl(href)) return;
+      const channelHref = twitchChannelHref(href);
+      if (!channelHref) return;
       try {
-        const parsed = new URL(href, location.href);
+        const parsed = new URL(channelHref);
         const login = parsed.pathname.split("/").filter(Boolean)[0]?.toLowerCase() || "";
-        if (!login || RESERVED.has(login) || seen.has(login) || login === watchingLogin()) return;
+        if (!login || login.length < 2 || seen.has(login) || login === watchingLogin()) return;
         seen.add(login);
         const cleanLabel = cleanText(label) || login;
         const viewerMatch = cleanLabel.match(/([\d,.]+)\s*(?:viewers?|watching)/i);
         const viewers = viewerMatch ? Number(viewerMatch[1].replace(/,/g, "")) || 0 : 0;
-        items.push({ login, href: parsed.href, label: cleanLabel, viewers });
+        items.push({ login, href: channelHref, label: cleanLabel, viewers });
       } catch (_) { /* ignore */ }
     };
-    document.querySelectorAll("[data-test-selector='DropsCampaignInProgressDescription-hint-text-parent'] a, [data-test-selector='DropsCampaignInProgressDescription-no-channels-hint-text'] a, a[href*='twitch.tv/']").forEach((node) => add(node.href, node.textContent));
+    document.querySelectorAll(
+      "[data-test-selector='DropsCampaignInProgressDescription-hint-text-parent'] a, " +
+      "[data-test-selector='DropsCampaignInProgressDescription-no-channels-hint-text'] a, " +
+      "a[data-a-target='preview-card-channel-link'], a[data-test-selector*='channel-link']"
+    ).forEach((node) => add(node.href, node.textContent));
     if (settings.queuePreference === "Lowest Viewers") items.sort((a, b) => (a.viewers || Number.MAX_SAFE_INTEGER) - (b.viewers || Number.MAX_SAFE_INTEGER));
     if (settings.queuePreference === "Highest Viewers") items.sort((a, b) => (b.viewers || 0) - (a.viewers || 0));
     return items.slice(0, Number(settings.queueCount) || 3);
@@ -3376,6 +3639,14 @@
         requestsLastHour: circuit.requestsLastHour,
         requestBudgetPerHour: circuit.budget,
         consecutiveFailures: circuit.consecutiveFailures,
+      },
+      activeCampaignRouting: {
+        needsStream: activeDropNeedsStream(),
+        watchingLogin: watchingLogin() || null,
+        locked: Boolean(getHandoffState()?.lockActiveCampaign),
+        failedStreams: getHandoffState()?.failedStreams || [],
+        targetGame: getHandoffState()?.targetGame || currentDrop?.game || null,
+        targetCampaign: getHandoffState()?.targetCampaign || currentDrop?.campaign || null,
       },
       categoryRouting: {
         activeGame: currentDrop?.game || null,
