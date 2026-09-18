@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.21
+// @version      2.6.22
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.21";
+  const APP_VERSION = "2.6.22";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -82,7 +82,15 @@
   const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
+  const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
+  const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.22": [
+      "Automatically closes the Settings menu after 15 seconds without interaction.",
+      "Resets the Settings timeout when the menu is used.",
+      "Automatically collapses a manually expanded progress card after 5 seconds.",
+      "Closes a version-click changelog together with the Settings menu.",
+    ],
     "2.6.21": [
       "Shrinks the Settings header icon to recover more vertical menu space.",
       "Tightens header spacing so more controls fit without scrolling.",
@@ -320,6 +328,8 @@
   let railOpen = false;
   let clusterTop = Number(localStorage.getItem(LAUNCHER_TOP_KEY) || 0);
   let autoHideTimer = null;
+  let progressExpandTimer = null;
+  let menuDismissTimer = null;
   let updateNoticeTimer = null;
   let updateNoticeState = null;
   let pauseAutoSwitchUntil = 0;
@@ -3997,6 +4007,7 @@
     bindDrag();
     bindSwitches();
     bindPanels();
+    bindMenuInactivity();
     bindDropperControls();
     setProgressCardCollapsed(localStorage.getItem(PROGRESS_CARD_STATE_KEY) === "true", false);
     renderSwitches();
@@ -4011,6 +4022,7 @@
       event.stopPropagation();
       if (!railOpen) setRailOpen(true);
       showCurrentChangelog();
+      scheduleMenuDismiss();
     });
     shadow.getElementById("tdh-rail-close").addEventListener("click", () => setRailOpen(false));
     document.addEventListener("keydown", (event) => {
@@ -4415,12 +4427,32 @@
     updateProgressToggleIcon();
   }
 
+  function clearProgressExpandTimer() {
+    clearTimeout(progressExpandTimer);
+    progressExpandTimer = null;
+  }
+
+  function scheduleProgressExpandCollapse() {
+    clearProgressExpandTimer();
+    if (!ui) return;
+
+    const card = ui.shadow.getElementById("tdh-drop-card");
+    if (!card || card.classList.contains("collapsed")) return;
+
+    progressExpandTimer = setTimeout(() => {
+      const currentCard = ui?.shadow?.getElementById("tdh-drop-card");
+      if (!currentCard || currentCard.classList.contains("collapsed")) return;
+      setProgressCardCollapsed(true, true);
+    }, PROGRESS_EXPAND_AUTO_COLLAPSE_MS);
+  }
+
   function setProgressCardCollapsed(collapsed, persist = false) {
     if (!ui) return;
     const card = ui.shadow.getElementById("tdh-drop-card");
     if (!card) return;
 
     card.classList.toggle("collapsed", Boolean(collapsed));
+    if (collapsed) clearProgressExpandTimer();
     updateProgressToggleIcon();
     if (persist) localStorage.setItem(PROGRESS_CARD_STATE_KEY, String(Boolean(collapsed)));
     requestAnimationFrame(layoutChrome);
@@ -4457,7 +4489,16 @@
     });
     s.getElementById("tdh-card-collapse")?.addEventListener("click", () => {
       const card = s.getElementById("tdh-drop-card");
-      setProgressCardCollapsed(!card.classList.contains("collapsed"), true);
+      const willCollapse = !card.classList.contains("collapsed");
+      setProgressCardCollapsed(willCollapse, true);
+      if (!willCollapse) scheduleProgressExpandCollapse();
+    });
+
+    const progressCard = s.getElementById("tdh-drop-card");
+    ["pointerdown", "wheel", "keydown"].forEach((type) => {
+      progressCard?.addEventListener(type, () => {
+        if (!progressCard.classList.contains("collapsed")) scheduleProgressExpandCollapse();
+      }, { passive: type === "wheel" });
     });
     s.getElementById("tdh-refresh-now")?.addEventListener("click", () => requestGqlPoll("manual-refresh", true));
     const diag = s.getElementById("tdh-diagnostics");
@@ -4845,6 +4886,12 @@
     return {
       version: APP_VERSION,
       headerVersionControl: Boolean(ui?.shadow?.getElementById("tdh-header-version")),
+      autoDismiss: {
+        menuSeconds: Math.round(MENU_INACTIVITY_DISMISS_MS / 1000),
+        progressExpandSeconds: Math.round(PROGRESS_EXPAND_AUTO_COLLAPSE_MS / 1000),
+        menuTimerActive: Boolean(menuDismissTimer),
+        progressTimerActive: Boolean(progressExpandTimer),
+      },
       updateNoticePlacement: ui?.shadow?.getElementById("tdh-update-notice")?.dataset?.placement || null,
       generatedAt: new Date(now).toISOString(),
       tokenCaptured: Boolean(getToken()),
@@ -5109,10 +5156,50 @@
     }, true);
   }
 
+  function clearMenuDismissTimer() {
+    clearTimeout(menuDismissTimer);
+    menuDismissTimer = null;
+  }
+
+  function scheduleMenuDismiss() {
+    clearMenuDismissTimer();
+    if (!railOpen || !ui) return;
+
+    menuDismissTimer = setTimeout(() => {
+      if (railOpen) setRailOpen(false);
+    }, MENU_INACTIVITY_DISMISS_MS);
+  }
+
+  function bindMenuInactivity() {
+    if (!ui?.dock) return;
+    const reset = () => {
+      if (railOpen) scheduleMenuDismiss();
+    };
+
+    ["pointerdown", "click", "wheel", "keydown", "input", "change"].forEach((type) => {
+      ui.dock.addEventListener(type, reset, { passive: type === "wheel" });
+    });
+  }
+
   function setRailOpen(open, focus) {
     railOpen = open;
     ui.dock.classList.toggle("fl-rail-open", open);
     ui.launcher.setAttribute("aria-expanded", String(open));
+
+    if (open) {
+      scheduleMenuDismiss();
+    } else {
+      clearMenuDismissTimer();
+      const notice = ui.shadow.getElementById("tdh-update-notice");
+      if (
+        notice &&
+        !notice.hidden &&
+        notice.dataset.placement === "menu"
+      ) {
+        hideUpdateNotice();
+      }
+    }
+
     layoutChrome();
     requestAnimationFrame(layoutChrome);
     if (focus && open) ui.dock.querySelector("button")?.focus();
