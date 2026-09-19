@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.41
+// @version      2.6.42
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -34,7 +34,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.41";
+  const APP_VERSION = "2.6.42";
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const UPDATE_STATE_KEY = "dropper-update-state-v2";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -99,6 +99,12 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.42": [
+      "Prevents duplicate Drop claim-button activation and incorrect claim counts.",
+      "Applies Auto-Claim toggle changes immediately and manages claim observers safely.",
+      "Restores chat-width tracking after Twitch replaces its chat layout during navigation.",
+      "Improves Twitch GQL error handling and avoids refreshes when an update installer was not detected.",
+    ],
     "2.6.41": [
       "Falls back to Twitch Drops Inventory when a completed Drop claim is rejected by Twitch integrity checks.",
       "Prevents claim-only integrity rejections from counting as Dropper network failures.",
@@ -466,6 +472,9 @@
   let lastInventoryCampaigns = [];
   let chatWidthObserver = null;
   let chatDomObserver = null;
+  let observedChatElement = null;
+  let bonusClaimObserver = null;
+  let dropClaimObserver = null;
   let suppressedSubscriptionPromoCount = 0;
   let lastPromoScanAt = 0;
   let lastQueueRefreshAt = 0;
@@ -505,8 +514,7 @@
   function boot() {
     mountUi();
     watchProgressTitle();
-    if (settings.claimBonus) watchBonus();
-    if (settings.claimDrops) watchDrops();
+    syncClaimWatchers();
     setStatus(featureStatus());
     logActivity("lifecycle", `Dropper ${APP_VERSION} started`);
     refreshDropCard();
@@ -1020,10 +1028,22 @@
   function watchChatWidth() {
     if (!ui?.cluster) return;
     const attach = () => {
-      syncDropperWidthToChat();
       const chat = findTwitchChatColumn();
-      if (!chat || typeof ResizeObserver !== "function") return;
+      if (!chat) {
+        if (observedChatElement && !observedChatElement.isConnected) {
+          chatWidthObserver?.disconnect();
+          chatWidthObserver = null;
+          observedChatElement = null;
+        }
+        syncDropperWidthToChat();
+        return;
+      }
+      if (chat === observedChatElement && chatWidthObserver) return;
+
       chatWidthObserver?.disconnect();
+      observedChatElement = chat;
+      syncDropperWidthToChat();
+      if (typeof ResizeObserver !== "function") return;
       chatWidthObserver = new ResizeObserver(() => {
         syncDropperWidthToChat();
         layoutChrome();
@@ -1034,12 +1054,7 @@
     attach();
     if (chatDomObserver || typeof MutationObserver !== "function") return;
     chatDomObserver = new MutationObserver(() => {
-      const chat = findTwitchChatColumn();
-      if (!chat) {
-        syncDropperWidthToChat();
-        return;
-      }
-      if (!chatWidthObserver) attach();
+      attach();
     });
     chatDomObserver.observe(document.documentElement, { childList: true, subtree: true });
   }
@@ -1513,10 +1528,14 @@
       const parseRows = (json, status = 200) => {
         if (status < 200 || status >= 300) throw new Error(`GQL HTTP ${status}`);
         const rows = Array.isArray(json) ? json : [json];
-        const fatal = rows.flatMap((row) => row?.errors || []).find((item) =>
-          /PersistedQueryNotFound|Unauthorized|integrity/i.test(item?.message || ""),
-        );
-        if (fatal) throw new Error(fatal.message || "Twitch GQL error");
+        const errors = rows.flatMap((row) => Array.isArray(row?.errors) ? row.errors : []);
+        if (errors.length) {
+          const message = errors
+            .map((item) => cleanText(item?.message || ""))
+            .filter(Boolean)
+            .join(" · ");
+          throw new Error(message || "Twitch GQL error");
+        }
         return rows;
       };
 
@@ -3443,11 +3462,13 @@
   function clickMatch(root, selector) {
     const node = root.matches?.(selector) ? root : root.querySelector?.(selector);
     const button = node?.closest?.("button") || (node?.tagName === "BUTTON" ? node : null);
-    if (button && !button.disabled) button.click();
-    return Boolean(button);
+    if (!button || button.disabled) return false;
+    button.click();
+    return true;
   }
 
   function watchBonus() {
+    if (bonusClaimObserver || !settings.claimBonus) return;
     const claim = (root = document) => {
       if (!settings.claimBonus) return;
       if (Date.now() - lastBonusAt < 1500) return;
@@ -3458,13 +3479,14 @@
       }
     };
     claim();
-    new MutationObserver((mutations) => {
+    bonusClaimObserver = new MutationObserver((mutations) => {
       for (const { addedNodes } of mutations) {
         for (const node of addedNodes) {
           if (node instanceof Element) claim(node);
         }
       }
-    }).observe(document.documentElement, { childList: true, subtree: true });
+    });
+    bonusClaimObserver.observe(document.documentElement, { childList: true, subtree: true });
   }
 
   function isDropClaimButton(button) {
@@ -3545,22 +3567,22 @@
     if (!settings.claimDrops) return 0;
     if (campaignExpirySnapshot(lastInventoryCampaigns, currentDrop)?.overdue) return 0;
     if (Date.now() - lastDropAt < 1200) return 0;
-    let claimed = 0;
-    root.querySelectorAll(DROP_CLAIM_SELECTOR).forEach((node) => {
+    const buttons = new Set();
+    const knownNodes = [
+      ...(root.matches?.(DROP_CLAIM_SELECTOR) ? [root] : []),
+      ...root.querySelectorAll(DROP_CLAIM_SELECTOR),
+    ];
+    knownNodes.forEach((node) => {
       const button = node.closest("button") || node;
-      if (button && !button.disabled) {
-        button.click();
-        claimed += 1;
-      }
+      if (button && !button.disabled) buttons.add(button);
     });
     if (isInventory()) {
       document.querySelectorAll(".inventory-max-width > div:not(:first-child) button").forEach((button) => {
-        if (isDropClaimButton(button) && !button.disabled) {
-          button.click();
-          claimed += 1;
-        }
+        if (isDropClaimButton(button) && !button.disabled) buttons.add(button);
       });
     }
+    buttons.forEach((button) => button.click());
+    const claimed = buttons.size;
     if (claimed) {
       lastDropAt = Date.now();
       resetClaimReadyTimer();
@@ -3573,14 +3595,30 @@
   }
 
   function watchDrops() {
+    if (dropClaimObserver || !settings.claimDrops) return;
     claimDropButtons();
-    new MutationObserver((mutations) => {
+    dropClaimObserver = new MutationObserver((mutations) => {
       for (const { addedNodes } of mutations) {
         for (const node of addedNodes) {
           if (node instanceof Element) claimDropButtons(node);
         }
       }
-    }).observe(document.documentElement, { childList: true, subtree: true });
+    });
+    dropClaimObserver.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  function syncClaimWatchers() {
+    if (settings.claimBonus) watchBonus();
+    else if (bonusClaimObserver) {
+      bonusClaimObserver.disconnect();
+      bonusClaimObserver = null;
+    }
+
+    if (settings.claimDrops) watchDrops();
+    else if (dropClaimObserver) {
+      dropClaimObserver.disconnect();
+      dropClaimObserver = null;
+    }
   }
 
   function formatClock(ms) {
@@ -4291,8 +4329,8 @@
       .fl-switch, .mini-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 0; }
       .fl-switch + .fl-switch, .mini-row + .mini-row { border-top:1px solid #26262b; }
       .fl-switch-text, .mini-row > span { min-width:0; font-size:11px; }
-      .toggleSwitch { position:relative; flex:none; width:34px; height:20px; border:0; border-radius:20px; background:#626873; cursor:pointer; }
-      .toggleSwitch::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.15s transform; }
+      .toggleSwitch { position:relative; flex:none; width:34px; height:20px; border:0; border-radius:6px; background:#626873; cursor:pointer; }
+      .toggleSwitch::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:4px; background:#fff; transition:.15s transform; }
       .toggleSwitch[aria-checked="true"] { background:#9147ff; }
       .toggleSwitch[aria-checked="true"]::after { transform:translateX(14px); }
       .life-btn { width:100%; min-height:28px; margin-top:6px; font-size:11px; }
@@ -5119,6 +5157,12 @@
     }
 
     if (now < Number(state.fallbackAt || 0)) return false;
+
+    if (!state.leftAt) {
+      clearUpdateReloadState("Update installer was not detected; automatic refresh cancelled");
+      setStatus("Update Refresh Cancelled · Reload Twitch After Installing");
+      return false;
+    }
 
     if (document.visibilityState === "visible") {
       return scheduleUpdateReload(UPDATE_RETURN_DELAY_MS, "45-second-fallback");
@@ -5993,6 +6037,7 @@
       ui.shadow.getElementById(id)?.addEventListener("click", () => {
         settings[key] = !settings[key];
         saveSettings();
+        if (key === "claimBonus" || key === "claimDrops") syncClaimWatchers();
         if (key === "keepTabActive") setStatus("Reload The Page To Apply Keep Tab Active.");
         if (key === "backgroundEarning" && settings.backgroundEarning && !settings.keepTabActive) {
           settings.keepTabActive = true;

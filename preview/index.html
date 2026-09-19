@@ -151,11 +151,11 @@
   .setting + .setting{border-top:1px solid #26262b}
   .setting small{display:block;color:var(--muted);font-size:10px;margin-top:2px}
   .toggle{
-    position:relative;width:36px;height:21px;border:0;border-radius:99px;
+    position:relative;width:36px;height:21px;border:0;border-radius:6px;
     background:#60636c;cursor:pointer;flex:none;
   }
   .toggle::after{
-    content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;
+    content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:4px;
     background:#fff;transition:.15s transform;
   }
   .toggle[aria-checked="true"]{background:var(--accent)}
@@ -993,8 +993,105 @@
       <div class="update-notice" id="updateNotice" hidden>
         <div class="update-copy">
           <div class="update-title" id="updateTitle">Update Available</div>
-          <div class="update-text" id="updateText">Dropper 1.1.0 Is Ready To Install.</div>
+          <div class="update-text" id="updateText">Dropper 2.6.42 Is Ready To Install.</div>
         </div>
         <button class="update-action" id="updateAction" type="button">View</button>
         <button class="update-dismiss" id="updateDismiss" type="button" aria-label="Dismiss Update Notice">×</button>
       </div>
+
+      <div class="status">On: bonus · tab · drops</div>
+
+      <section class="panel">
+        <button class="panel-head" type="button" aria-expanded="true" aria-controls="featuresPanel">
+          <span>Features</span><span aria-hidden="true">▾</span>
+        </button>
+        <div class="panel-body" id="featuresPanel">
+          <div class="setting"><span>Auto-Claim Bonus Chests</span><button class="toggle" type="button" role="switch" aria-checked="true" aria-label="Auto-Claim Bonus Chests"></button></div>
+          <div class="setting"><span>Keep Tab Active</span><button class="toggle" type="button" role="switch" aria-checked="true" aria-label="Keep Tab Active"></button></div>
+          <div class="setting"><span>Auto-Claim Drops</span><button class="toggle" type="button" role="switch" aria-checked="true" aria-label="Auto-Claim Drops"></button></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <button class="panel-head" type="button" aria-expanded="false" aria-controls="appearancePanel">
+          <span>Appearance</span><span aria-hidden="true">▸</span>
+        </button>
+        <div class="panel-body hidden" id="appearancePanel">
+          <div class="setting"><span>Show Progress In Tab</span><button class="toggle" type="button" role="switch" aria-checked="true" aria-label="Show Progress In Tab"></button></div>
+          <div class="setting"><span>Reduce Motion</span><button class="toggle" type="button" role="switch" aria-checked="false" aria-label="Reduce Motion"></button></div>
+        </div>
+      </section>
+
+      <button class="life-btn" id="showUpdate" type="button">Preview Update Notice</button>
+    </aside>
+
+    <div class="card-row">
+      <section class="progress-card" aria-label="Drop progress preview">
+        <div class="channel">
+          <div class="avatar" aria-hidden="true"></div>
+          <div class="channel-main">
+            <div class="channel-name-row"><span class="channel-name">DailyDropsON</span><span class="live">LIVE</span><span class="drops-badge">Drops Enabled</span></div>
+            <div class="game">Sid Meier's Civilization VII</div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="drop">
+          <div class="kicker">Working Toward</div>
+          <div class="drop-head"><span class="drop-name">Exclusive Campaign Reward</span></div>
+          <div class="bar-wrap"><div class="bar"><div class="fill"></div></div><span class="pct">72%</span></div>
+          <div class="drop-meta">43 / 60 min · about 17 min remaining</div>
+        </div>
+      </section>
+      <button class="launcher" id="launcher" type="button" aria-expanded="false" aria-controls="menu" aria-label="Open Dropper settings">
+        <svg viewBox="0 0 48 48" width="28" height="28" aria-hidden="true">
+          <rect x="3" y="3" width="42" height="42" rx="10" fill="#111114" stroke="#9147ff"/>
+          <path d="M14 14h20v20H14z" fill="#9147ff" opacity=".28"/>
+          <path d="M24 12l9 12-9 12-9-12z" fill="#bf94ff"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+<script>
+  (() => {
+    "use strict";
+    const menu = document.getElementById("menu");
+    const launcher = document.getElementById("launcher");
+    const close = document.getElementById("close");
+    const updateNotice = document.getElementById("updateNotice");
+
+    const setMenuOpen = (open) => {
+      menu.classList.toggle("open", open);
+      launcher.setAttribute("aria-expanded", String(open));
+      launcher.setAttribute("aria-label", open ? "Close Dropper settings" : "Open Dropper settings");
+    };
+
+    launcher.addEventListener("click", () => setMenuOpen(!menu.classList.contains("open")));
+    close.addEventListener("click", () => setMenuOpen(false));
+
+    document.querySelectorAll(".panel-head").forEach((button) => {
+      button.addEventListener("click", () => {
+        const body = document.getElementById(button.getAttribute("aria-controls"));
+        const open = button.getAttribute("aria-expanded") !== "true";
+        button.setAttribute("aria-expanded", String(open));
+        button.lastElementChild.textContent = open ? "▾" : "▸";
+        body.classList.toggle("hidden", !open);
+      });
+    });
+
+    document.querySelectorAll('[role="switch"]').forEach((toggle) => {
+      toggle.addEventListener("click", () => {
+        toggle.setAttribute("aria-checked", String(toggle.getAttribute("aria-checked") !== "true"));
+      });
+    });
+
+    document.getElementById("showUpdate").addEventListener("click", () => {
+      updateNotice.hidden = false;
+    });
+    document.getElementById("updateDismiss").addEventListener("click", () => {
+      updateNotice.hidden = true;
+    });
+  })();
+</script>
+</body>
+</html>
