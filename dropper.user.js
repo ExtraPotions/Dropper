@@ -6,8 +6,10 @@
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
 // @downloadURL  https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
-// @tag          Twitch, Drops, Auto Claim, Tracker, Rewards
-// @author       Dare
+// @tag          Twitch
+// @tag          Drops
+// @tag          Rewards
+// @author       ExtraPotions
 // @license      PolyForm-Noncommercial-1.0.0
 // @match        https://www.twitch.tv/*
 // @match        https://player.twitch.tv/*
@@ -22,7 +24,7 @@
 
 // Dropper Manager Metadata
 // Description: Track Twitch Drop progress, monitor watch time, auto-claim rewards, manage backup streams, and keep earning in the background.
-// Tags: Twitch, Drops, Auto Claim, Tracker, Rewards
+// Tags: Twitch, Drops, Rewards
 
 
 (function twitchDropsHelper() {
@@ -34,6 +36,13 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
+  function registerBadgeGrid(host, productId, priority) {
+    host.dataset.expProductLauncher = "1"; host.dataset.productId = productId; host.dataset.launcherPriority = String(priority);
+    const layout = () => [...document.querySelectorAll('[data-exp-product-launcher="1"]')].sort((a,b)=>Number(b.dataset.launcherPriority||0)-Number(a.dataset.launcherPriority||0)||(a.dataset.productId||'').localeCompare(b.dataset.productId||'')).forEach((node,index)=>{node.dataset.launcherSlot=String(index);node.style.setProperty('--exp-launcher-offset',`${index*56}px`);});
+    const refresh = () => requestAnimationFrame(() => { layout(); layoutChrome(); });
+    document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
+    document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
+  }
   const APP_VERSION = "2.6.43";
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const UPDATE_STATE_KEY = "dropper-update-state-v2";
@@ -465,6 +474,7 @@
   let ui = null;
   let railOpen = false;
   let clusterTop = Number(localStorage.getItem(LAUNCHER_TOP_KEY) || 0);
+  let launcherManuallyPlaced = localStorage.getItem(LAUNCHER_TOP_KEY) !== null;
   let progressExpandTimer = null;
   let progressCollapseAt = 0;
   let menuDismissTimer = null;
@@ -4501,6 +4511,7 @@
         </div>
       </div>`;
     document.documentElement.appendChild(host);
+    registerBadgeGrid(host, "dropper", 90);
     ui = { host, shadow, cluster: shadow.getElementById("tdh-cluster"), launcher: shadow.getElementById("tdh-settings-launcher"), dock: shadow.getElementById("tdh-tools-dock") };
     const updateNotice = shadow.getElementById("tdh-update-notice");
     const progressStack = shadow.querySelector(".progress-stack");
@@ -5908,6 +5919,7 @@
 
     const row = ui.shadow.querySelector(".progress-stack") || ui.shadow.querySelector(".badge-row");
     const rowHeight = row?.offsetHeight || 56;
+    if (!launcherManuallyPlaced) clusterTop = window.innerHeight - rowHeight - 24 - (parseFloat(getComputedStyle(ui.host).getPropertyValue('--exp-launcher-offset')) || 0);
     const notice = ui.shadow.getElementById("tdh-update-notice");
     const menuNoticeVisible = Boolean(
       notice &&
@@ -5959,6 +5971,7 @@
       const delta = event.clientY - startY;
       if (Math.abs(delta) > 4) didDrag = true;
       if (!didDrag) return;
+      launcherManuallyPlaced = true;
       clusterTop = startTop + delta;
       localStorage.setItem(LAUNCHER_TOP_KEY, String(clusterTop));
       layoutChrome();
