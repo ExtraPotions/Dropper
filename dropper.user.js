@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.38
+// @version      2.6.39
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -34,7 +34,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.38";
+  const APP_VERSION = "2.6.39";
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const UPDATE_STATE_KEY = "dropper-update-state-v2";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -99,6 +99,11 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.39": [
+      "Removes the unused blank space beneath Advanced in the Settings menu.",
+      "Makes the Settings dock shrink-wrap its visible content while preserving max-height scrolling.",
+      "Uses the rendered menu height for placement instead of the full scroll height.",
+    ],
     "2.6.38": [
       "Hides Twitch community highlight backlog placeholder cards left behind after highlight suppression.",
       "Adds the community-highlight-stack backlog container to the JavaScript fallback and diagnostics.",
@@ -4159,13 +4164,14 @@
       .fill { fill:none; stroke:#9147ff; stroke-width:3; stroke-linecap:round; transform:rotate(-90deg); transform-origin:18px 18px; transition:.2s stroke; }
       #tdh-settings-launcher .icon { width:22px; height:22px; pointer-events:none; position:relative; z-index:1; }
       #tdh-tools-dock {
-        display:none; width:min(var(--dropper-width, 312px), calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:min(72vh,560px); overflow:auto;
+        display:none; width:min(var(--dropper-width, 312px), calc(100vw - 24px)); max-width:calc(100vw - 24px);
+        height:max-content; min-height:0; max-height:min(72vh,560px); overflow-x:hidden; overflow-y:auto; flex:0 0 auto;
         transition:.15s width;
-        padding:9px 9px 0; background:#111114; border:1px solid #2f2f35; border-radius:14px; box-shadow:0 18px 50px #0008; color-scheme:dark;
+        padding:9px; background:#111114; border:1px solid #2f2f35; border-radius:14px; box-shadow:0 18px 50px #0008; color-scheme:dark;
         scrollbar-width:none; -ms-overflow-style:none;
       }
       #tdh-tools-dock::-webkit-scrollbar { width:0; height:0; display:none; }
-      #tdh-tools-dock.fl-rail-open { display:block; }
+      #tdh-tools-dock.fl-rail-open { display:block; height:max-content; min-height:0; }
       .menu-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
       .header-brand { display:flex; align-items:center; gap:8px; min-width:0; }
       .header-icon { width:38px; height:38px; flex:0 0 38px; }
@@ -5720,6 +5726,11 @@
         titleObserverActive: Boolean(progressTitleObserver),
       },
       panelAndMenuWidth: normalizedCollapsedPanelWidth(),
+      menuLayout: {
+        renderedHeight: ui?.dock ? Math.round(ui.dock.getBoundingClientRect().height) : null,
+        scrollHeight: ui?.dock ? Math.round(ui.dock.scrollHeight) : null,
+        maxHeight: ui?.dock ? getComputedStyle(ui.dock).maxHeight : null,
+      },
       progressPanelWidth: ui?.shadow?.querySelector(".progress-stack")
         ? Math.round(ui.shadow.querySelector(".progress-stack").getBoundingClientRect().width)
         : null,
@@ -5753,7 +5764,7 @@
     const noticeHeight = menuNoticeVisible ? notice.offsetHeight || notice.scrollHeight || 0 : 0;
     const noticeGap = menuNoticeVisible && noticeHeight ? 8 : 0;
 
-    const menuHeight = railOpen ? ui.dock.scrollHeight || ui.dock.offsetHeight || 280 : 0;
+    const menuHeight = railOpen ? ui.dock.offsetHeight || ui.dock.clientHeight || 280 : 0;
     const gap = railOpen ? 8 : 0;
     const menuBlockHeight = menuHeight + noticeHeight + noticeGap;
     const spaceBelow = window.innerHeight - clusterTop - rowHeight - 8;
