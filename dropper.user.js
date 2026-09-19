@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.37
+// @version      2.6.38
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -34,7 +34,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.37";
+  const APP_VERSION = "2.6.38";
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const UPDATE_STATE_KEY = "dropper-update-state-v2";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -99,6 +99,10 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.38": [
+      "Hides Twitch community highlight backlog placeholder cards left behind after highlight suppression.",
+      "Adds the community-highlight-stack backlog container to the JavaScript fallback and diagnostics.",
+    ],
     "2.6.37": [
       "Prevents stale category slugs from routing one game into another game category.",
       "Rebuilds the category-slug cache with stricter game-to-slug validation.",
@@ -779,6 +783,7 @@
       [role="button"][aria-label^="Subscribe" i],
       [role="button"][aria-label*="Gift a Sub" i],
       div.community-highlight,
+      div.community-highlight-stack__backlog-card,
       div.pinned-chat__highlight-card,
       div.pinned-chat__highlight-card__collapsed,
       div.highlight.highlight__collapsed:has([data-test-selector="header-content"]) {
@@ -907,7 +912,7 @@
     const targets = new Set();
 
     document.querySelectorAll(
-      "div.community-highlight, div.pinned-chat__highlight-card, div.pinned-chat__highlight-card__collapsed, div.highlight.highlight__collapsed"
+      "div.community-highlight, div.community-highlight-stack__backlog-card, div.pinned-chat__highlight-card, div.pinned-chat__highlight-card__collapsed, div.highlight.highlight__collapsed"
     ).forEach((candidate) => {
       if (!(candidate instanceof Element)) return;
       if (candidate.closest("#tdh-root")) return;
@@ -915,6 +920,9 @@
       const outerCommunity = candidate.matches("div.community-highlight")
         ? candidate
         : candidate.closest("div.community-highlight");
+      const backlogCard = candidate.matches("div.community-highlight-stack__backlog-card")
+        ? candidate
+        : candidate.closest("div.community-highlight-stack__backlog-card");
       const pinnedCard = candidate.matches("div.pinned-chat__highlight-card, div.pinned-chat__highlight-card__collapsed")
         ? candidate
         : candidate.closest("div.pinned-chat__highlight-card, div.pinned-chat__highlight-card__collapsed");
@@ -922,16 +930,18 @@
         ? candidate
         : candidate.querySelector?.("div.highlight.highlight__collapsed");
 
-      const target = outerCommunity || pinnedCard || highlight || candidate;
+      const target = outerCommunity || backlogCard || pinnedCard || highlight || candidate;
       if (target) targets.add(target);
     });
 
     targets.forEach((target) => {
       const scope = target.matches?.("div.community-highlight")
         ? "community-highlight"
-        : target.matches?.("div.pinned-chat__highlight-card, div.pinned-chat__highlight-card__collapsed")
-          ? "pinned-highlight"
-          : "highlight";
+        : target.matches?.("div.community-highlight-stack__backlog-card")
+          ? "community-highlight-backlog"
+          : target.matches?.("div.pinned-chat__highlight-card, div.pinned-chat__highlight-card__collapsed")
+            ? "pinned-highlight"
+            : "highlight";
       if (suppressPromoNode(target, scope)) hidden += 1;
     });
 
@@ -5673,6 +5683,7 @@
         hiddenPageCtas: document.querySelectorAll('[data-dropper-sub-promo-scope="page-cta"]').length,
         hiddenHighlights: document.querySelectorAll('[data-dropper-sub-promo-scope="highlight"]').length,
         hiddenCommunityHighlights: document.querySelectorAll('[data-dropper-sub-promo-scope="community-highlight"]').length,
+        hiddenCommunityHighlightBacklog: document.querySelectorAll('[data-dropper-sub-promo-scope="community-highlight-backlog"]').length,
         hiddenPinnedHighlights: document.querySelectorAll('[data-dropper-sub-promo-scope="pinned-highlight"]').length,
         cssSuppressionActive: Boolean(document.getElementById("dropper-subscription-promo-style")),
       },
