@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.33
+// @version      2.6.34
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,10 +29,11 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.33";
+  const APP_VERSION = "2.6.34";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+  const UPDATE_CHECK_LEASE_MS = 30 * 1000;
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
   const PROGRESS_CARD_STATE_KEY = "dropper-progress-card-collapsed";
   const HANDOFF_STAGE_TIMEOUT_MS = 45 * 1000;
@@ -93,6 +94,11 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.34": [
+      "Prevents duplicate update checks and repeated update-available notices across Twitch contexts.",
+      "Adds a short shared update-check lease so only one GitHub check can run at a time.",
+      "Hides Twitch community-highlight and pinned-chat highlight-card containers directly.",
+    ],
     "2.6.33": [
       "Fixes clipped helper text by allowing badge and progress hints to wrap inside their tooltip boxes.",
       "Hides the full Twitch community-highlight / pinned-chat highlight container instead of only its inner content.",
@@ -407,6 +413,7 @@
   let menuDismissAt = 0;
   let updateNoticeTimer = null;
   let updateNoticeState = null;
+  let lastUpdateNoticeVersion = "";
   let updateReloadTimer = null;
   let updateFallbackTimer = null;
   let pauseAutoSwitchUntil = 0;
@@ -744,8 +751,9 @@
       button[aria-label*="Gift a Sub" i],
       [role="button"][aria-label^="Subscribe" i],
       [role="button"][aria-label*="Gift a Sub" i],
-      div.community-highlight:has(.pinned-chat__highlight-card__collapsed),
-      div.pinned-chat__highlight-card__collapsed:has(.highlight.highlight__collapsed),
+      div.community-highlight,
+      div.pinned-chat__highlight-card,
+      div.pinned-chat__highlight-card__collapsed,
       div.highlight.highlight__collapsed:has([data-test-selector="header-content"]) {
         display: none !important;
       }
@@ -872,7 +880,7 @@
     const targets = new Set();
 
     document.querySelectorAll(
-      "div.community-highlight, div.pinned-chat__highlight-card__collapsed, div.highlight.highlight__collapsed"
+      "div.community-highlight, div.pinned-chat__highlight-card, div.pinned-chat__highlight-card__collapsed, div.highlight.highlight__collapsed"
     ).forEach((candidate) => {
       if (!(candidate instanceof Element)) return;
       if (candidate.closest("#tdh-root")) return;
@@ -880,33 +888,23 @@
       const outerCommunity = candidate.matches("div.community-highlight")
         ? candidate
         : candidate.closest("div.community-highlight");
-      const pinnedCard = candidate.matches("div.pinned-chat__highlight-card__collapsed")
+      const pinnedCard = candidate.matches("div.pinned-chat__highlight-card, div.pinned-chat__highlight-card__collapsed")
         ? candidate
-        : candidate.closest("div.pinned-chat__highlight-card__collapsed");
+        : candidate.closest("div.pinned-chat__highlight-card, div.pinned-chat__highlight-card__collapsed");
       const highlight = candidate.matches("div.highlight.highlight__collapsed")
         ? candidate
         : candidate.querySelector?.("div.highlight.highlight__collapsed");
 
-      const contentRoot = outerCommunity || pinnedCard || highlight || candidate;
-      const hasHeader = Boolean(contentRoot.querySelector?.('[data-test-selector="header-content"]'));
-      const isPinnedCommunity = Boolean(
-        outerCommunity?.querySelector?.(".pinned-chat__highlight-card__collapsed") ||
-        pinnedCard
-      );
-      const text = cleanText(contentRoot.textContent);
-      const dismissible = Boolean(contentRoot.querySelector?.('button[aria-label="Dismiss This Message"]'));
-      const rewardHighlight = /\bWatch for\b/i.test(text);
-
-      if (!hasHeader && !isPinnedCommunity) return;
-      if (!isPinnedCommunity && !dismissible && !rewardHighlight) return;
-
-      targets.add(outerCommunity || pinnedCard || highlight || candidate);
+      const target = outerCommunity || pinnedCard || highlight || candidate;
+      if (target) targets.add(target);
     });
 
     targets.forEach((target) => {
       const scope = target.matches?.("div.community-highlight")
         ? "community-highlight"
-        : "highlight";
+        : target.matches?.("div.pinned-chat__highlight-card, div.pinned-chat__highlight-card__collapsed")
+          ? "pinned-highlight"
+          : "highlight";
       if (suppressPromoNode(target, scope)) hidden += 1;
     });
 
@@ -5100,12 +5098,16 @@
   function markUpdateAvailable(version) {
     if (!ui || !version || compareVersions(version, APP_VERSION) <= 0) return;
 
+    const alreadyAnnounced = lastUpdateNoticeVersion === version;
     ui.launcher?.classList.add("update-available");
     if (ui.launcher) {
       ui.launcher.dataset.help = `Click To Open Settings · Update v${version} Available`;
       ui.launcher.removeAttribute("title");
       ui.launcher.setAttribute("aria-label", `Open Dropper Settings · Update v${version} Available`);
     }
+
+    if (alreadyAnnounced) return;
+    lastUpdateNoticeVersion = version;
 
     showUpdateNotice(
       "New Dropper Version Available",
@@ -5127,6 +5129,7 @@
   }
 
   function clearUpdateAvailableIndicator() {
+    lastUpdateNoticeVersion = "";
     ui?.launcher?.classList.remove("update-available");
     if (ui?.launcher) {
       ui.launcher.dataset.help = "Click To Open Settings";
@@ -5190,6 +5193,13 @@
     // This prevents a check from an older version suppressing update discovery.
     const checkedForCurrentVersion = state.checkedForVersion === APP_VERSION;
     const lastCheckAt = Number(state.lastCheckAt || 0);
+    const leaseUntil = Number(state.checkLeaseUntil || 0);
+
+    if (!force && leaseUntil > now) {
+      checkCachedUpdateNotice();
+      return;
+    }
+
     if (!force && checkedForCurrentVersion && now - lastCheckAt < UPDATE_CHECK_INTERVAL_MS) {
       checkCachedUpdateNotice();
       return;
@@ -5197,6 +5207,7 @@
 
     state.checkedForVersion = APP_VERSION;
     state.lastCheckAt = now;
+    state.checkLeaseUntil = now + UPDATE_CHECK_LEASE_MS;
     state.lastError = "";
     saveUpdateState(state);
 
@@ -5221,16 +5232,19 @@
         nextState.lastCheckAt = Date.now();
         nextState.lastHttpStatus = Number(response.status || 0);
         nextState.lastRemoteVersion = remoteVersion || "";
+        nextState.checkLeaseUntil = 0;
         nextState.lastError = "";
 
         if (remoteVersion && compareVersions(remoteVersion, APP_VERSION) > 0) {
           nextState.availableVersion = remoteVersion;
           nextState.availableAt = Date.now();
           saveUpdateState(nextState);
-          logActivity("update", `Dropper v${remoteVersion} is available`, {
-            installedVersion: APP_VERSION,
-            remoteVersion,
-          });
+          if (lastUpdateNoticeVersion !== remoteVersion) {
+            logActivity("update", `Dropper v${remoteVersion} is available`, {
+              installedVersion: APP_VERSION,
+              remoteVersion,
+            });
+          }
           markUpdateAvailable(remoteVersion);
           return;
         }
@@ -5246,6 +5260,7 @@
       onerror(response) {
         const nextState = loadUpdateState();
         nextState.lastError = `Update check network error${response?.status ? ` (${response.status})` : ""}`;
+        nextState.checkLeaseUntil = 0;
         nextState.lastCheckAt = Date.now();
         saveUpdateState(nextState);
         logActivity("update-error", nextState.lastError);
@@ -5253,6 +5268,7 @@
       ontimeout() {
         const nextState = loadUpdateState();
         nextState.lastError = "Update check timed out";
+        nextState.checkLeaseUntil = 0;
         nextState.lastCheckAt = Date.now();
         saveUpdateState(nextState);
         logActivity("update-error", nextState.lastError);
@@ -5401,6 +5417,8 @@
           availableAt: state.availableAt ? new Date(state.availableAt).toISOString() : null,
           lastHttpStatus: Number(state.lastHttpStatus || 0) || null,
           lastError: state.lastError || null,
+          checkLeaseUntil: state.checkLeaseUntil ? new Date(state.checkLeaseUntil).toISOString() : null,
+          noticeVersionThisPage: lastUpdateNoticeVersion || null,
           pendingRefresh: (() => {
             const pending = loadUpdateReloadState();
             if (!pending?.startedAt || !pending?.targetVersion) return null;
@@ -5517,6 +5535,7 @@
         hiddenPageCtas: document.querySelectorAll('[data-dropper-sub-promo-scope="page-cta"]').length,
         hiddenHighlights: document.querySelectorAll('[data-dropper-sub-promo-scope="highlight"]').length,
         hiddenCommunityHighlights: document.querySelectorAll('[data-dropper-sub-promo-scope="community-highlight"]').length,
+        hiddenPinnedHighlights: document.querySelectorAll('[data-dropper-sub-promo-scope="pinned-highlight"]').length,
         cssSuppressionActive: Boolean(document.getElementById("dropper-subscription-promo-style")),
       },
       queueEnabled: settings.queueEnabled,
