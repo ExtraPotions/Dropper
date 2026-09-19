@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.30
+// @version      2.6.31
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.30";
+  const APP_VERSION = "2.6.31";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -40,6 +40,10 @@
   const STARTUP_NETWORK_QUIET_MS = 12 * 1000;
   const STREAM_ROUTE_SETTLE_MS = 15 * 1000;
   const NAVIGATION_GUARD_KEY = "dropper-auto-navigation-guard";
+  const NAVIGATION_FLIGHT_KEY = "dropper-navigation-in-flight";
+  const AUTO_NAVIGATION_IN_FLIGHT_MS = 20 * 1000;
+  const UI_DOM_SCAN_INTERVAL_MS = 15 * 1000;
+  const PROMO_STARTUP_SCAN_DELAY_MS = 8 * 1000;
   const AUTO_NAVIGATION_WINDOW_MS = 60 * 1000;
   const AUTO_NAVIGATION_LIMIT = 4;
   const AUTO_NAVIGATION_COOLDOWN_MS = 90 * 1000;
@@ -89,6 +93,13 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.31": [
+      "Prevents duplicate automatic navigations while a Twitch page change is already in flight.",
+      "Removes the full-document subscription-promo MutationObserver.",
+      "Throttles queue and promo DOM scans to reduce Twitch rendering contention.",
+      "Replaces two heavy Keep Tab Active DOM observers with lightweight periodic checks.",
+      "Skips unnecessary Drop DOM scans once authoritative GQL progress is available.",
+    ],
     "2.6.30": [
       "Makes Panel + Menu Width apply to the expanded progress card too.",
       "Keeps Full, Compact, and Narrow widths consistent across collapsed, expanded, hover-preview, menu, and changelog states.",
@@ -390,7 +401,9 @@
   let chatWidthObserver = null;
   let chatDomObserver = null;
   let suppressedSubscriptionPromoCount = 0;
-  let subscriptionPromoObserver = null;
+  let lastPromoScanAt = 0;
+  let lastQueueRefreshAt = 0;
+  let duplicateNavigationSkips = 0;
   let lastGqlPollAt = 0;
   let lastGqlSuccessAt = 0;
   let lastGqlError = "";
@@ -661,8 +674,8 @@
     if (settings.claimDrops) scanDrops();
     else refreshDropCard();
 
-    refreshQueueList();
-    suppressTwitchSubscriptionPromos();
+    if (now - lastQueueRefreshAt >= UI_DOM_SCAN_INTERVAL_MS) refreshQueueList();
+    if (now - lastPromoScanAt >= UI_DOM_SCAN_INTERVAL_MS) suppressTwitchSubscriptionPromos();
 
     if (settings.queueEnabled && settings.queueOnOffline && watchingLogin() && document.readyState === "complete" && !getHandoffState()) {
       const info = readStreamInfo();
@@ -855,6 +868,7 @@
   }
 
   function suppressTwitchSubscriptionPromos() {
+    lastPromoScanAt = Date.now();
     if (!settings.hideTwitchSubscriptionPromos) {
       restoreTwitchSubscriptionPromos();
       return 0;
@@ -873,17 +887,12 @@
   }
 
   function watchTwitchSubscriptionPromos() {
+    // Exact selectors are hidden immediately by CSS. Delay the broader DOM
+    // fallback scan until Twitch has had time to render its initial page.
     subscriptionPromoStyle();
-    suppressTwitchSubscriptionPromos();
-
-    if (subscriptionPromoObserver || typeof MutationObserver !== "function") return;
-    let timer = null;
-    subscriptionPromoObserver = new MutationObserver(() => {
-      if (!settings.hideTwitchSubscriptionPromos) return;
-      clearTimeout(timer);
-      timer = setTimeout(() => suppressTwitchSubscriptionPromos(), 120);
-    });
-    subscriptionPromoObserver.observe(document.documentElement, { childList: true, subtree: true });
+    setTimeout(() => {
+      if (settings.hideTwitchSubscriptionPromos) suppressTwitchSubscriptionPromos();
+    }, PROMO_STARTUP_SCAN_DELAY_MS);
   }
 
   function findTwitchChatColumn() {
@@ -1084,6 +1093,31 @@
     });
   }
 
+  function navigationLocationKey(url = location.href) {
+    try {
+      const parsed = new URL(url, location.href);
+      return `${parsed.origin}${parsed.pathname}${parsed.search}`;
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function clearNavigationFlight() {
+    try { sessionStorage.removeItem(NAVIGATION_FLIGHT_KEY); } catch (_) { /* ignore */ }
+  }
+
+  function navigationFlightSnapshot(now = Date.now()) {
+    const state = readSession(NAVIGATION_FLIGHT_KEY, null);
+    if (!state?.targetKey || !state?.expiresAt) return null;
+
+    const currentKey = navigationLocationKey();
+    if (currentKey === state.targetKey || Number(state.expiresAt) <= now) {
+      clearNavigationFlight();
+      return null;
+    }
+    return state;
+  }
+
   function readNavigationGuard() {
     return readSession(NAVIGATION_GUARD_KEY, {
       events: [],
@@ -1127,11 +1161,17 @@
       return false;
     }
 
-    const targetKey = `${target.origin}${target.pathname}${target.search}`;
-    const currentKey = `${current.origin}${current.pathname}${current.search}`;
-    if (targetKey === currentKey) return false;
+    const targetKey = navigationLocationKey(target.href);
+    const currentKey = navigationLocationKey(current.href);
+    if (!targetKey || targetKey === currentKey) return false;
 
     const now = Date.now();
+    const flight = navigationFlightSnapshot(now);
+    if (flight) {
+      duplicateNavigationSkips += 1;
+      return false;
+    }
+
     const guard = navigationGuardSnapshot(now);
     if (guard.blocked) {
       setStatus(`Auto-Switch Paused · Reload Loop Protection ${Math.ceil((guard.blockedUntil - now) / 1000)}s`);
@@ -1172,6 +1212,13 @@
       reason,
       from: current.pathname,
       to: target.pathname,
+    });
+    writeSession(NAVIGATION_FLIGHT_KEY, {
+      targetKey,
+      fromKey: currentKey,
+      reason,
+      startedAt: now,
+      expiresAt: now + AUTO_NAVIGATION_IN_FLIGHT_MS,
     });
     location.assign(target.href);
     return true;
@@ -3544,10 +3591,17 @@
 
   function scanDrops() {
     claimDropButtons();
-    const drop = readCurrentDrop();
-    if (drop && (drop.percent || drop.name) && !currentDrop?.requiredMinutes) applyDrop(drop);
-    else refreshDropCard();
-    layoutChrome();
+
+    // Once GQL has supplied authoritative minute requirements, the Twitch DOM
+    // no longer needs to be searched for Drop cards every heartbeat.
+    if (!currentDrop?.requiredMinutes) {
+      const drop = readCurrentDrop();
+      if (drop && (drop.percent || drop.name)) applyDrop(drop);
+      else refreshDropCard();
+      return;
+    }
+
+    refreshDropCard();
   }
 
   function findNextStream() {
@@ -3684,17 +3738,6 @@
       }
     };
 
-    new uw.MutationObserver((muts) => {
-      for (const mutation of muts) {
-        mutation.addedNodes.forEach((node) => {
-          if (node && node.nodeType === 1) {
-            if (node.tagName === "VIDEO") resumeIfPaused(node);
-            node.querySelectorAll?.("video")?.forEach(resumeIfPaused);
-          }
-        });
-      }
-    }).observe(uw.document.documentElement || uw.document, { childList: true, subtree: true });
-
     uw.document.addEventListener(
       "pause",
       (ev) => {
@@ -3766,10 +3809,17 @@
         target.click();
       }
     };
-    new uw.MutationObserver(() => {
-      clickGate('[data-a-target="content-classification-gate-overlay-start-watching-button"]');
-      clickGate('[data-a-target="player-overlay-content-gate"]');
-    }).observe(uw.document.documentElement || uw.document, { childList: true, subtree: true, attributes: true });
+    // Twitch mutates its DOM continuously. A periodic targeted check is much
+    // cheaper than observing the full document subtree and all attributes.
+    uw.setInterval(() => {
+      try {
+        uw.document.querySelectorAll("video").forEach(resumeIfPaused);
+        clickGate('[data-a-target="content-classification-gate-overlay-start-watching-button"]');
+        clickGate('[data-a-target="player-overlay-content-gate"]');
+      } catch (_) {
+        /* ignore */
+      }
+    }, 5000);
   }
 
   function switchHtml(id, label, description, on) {
@@ -4310,6 +4360,7 @@
   }
 
   function refreshQueueList() {
+    lastQueueRefreshAt = Date.now();
     if (!ui) return;
     const list = ui.shadow.getElementById("tdh-queue-list");
     const summary = ui.shadow.getElementById("tdh-queue-summary");
@@ -5209,6 +5260,22 @@
       progressAgeSeconds: Math.max(0, Math.floor((now - lastProgressAt) / 1000)),
       lastProgress,
       lastProgressAt: new Date(lastProgressAt).toISOString(),
+      navigationInFlight: (() => {
+        const flight = navigationFlightSnapshot(now);
+        return flight ? {
+          target: flight.targetKey || null,
+          reason: flight.reason || null,
+          ageSeconds: Math.max(0, Math.floor((now - Number(flight.startedAt || now)) / 1000)),
+          remainingSeconds: Math.max(0, Math.ceil((Number(flight.expiresAt || now) - now) / 1000)),
+          duplicateSkips: duplicateNavigationSkips,
+        } : {
+          target: null,
+          reason: null,
+          ageSeconds: 0,
+          remainingSeconds: 0,
+          duplicateSkips: duplicateNavigationSkips,
+        };
+      })(),
       navigationGuard: (() => {
         const guard = navigationGuardSnapshot(now);
         return {
@@ -5222,6 +5289,14 @@
           pageAgeSeconds: Math.floor((now - PAGE_STARTED_AT) / 1000),
         };
       })(),
+      performance: {
+        uiDomScanIntervalSeconds: Math.round(UI_DOM_SCAN_INTERVAL_MS / 1000),
+        promoStartupDelaySeconds: Math.round(PROMO_STARTUP_SCAN_DELAY_MS / 1000),
+        globalPromoMutationObserver: false,
+        keepTabFullDomMutationObservers: 0,
+        lastPromoScanAt: lastPromoScanAt ? new Date(lastPromoScanAt).toISOString() : null,
+        lastQueueRefreshAt: lastQueueRefreshAt ? new Date(lastQueueRefreshAt).toISOString() : null,
+      },
       heartbeat: {
         intervalMs: HEARTBEAT_INTERVAL_MS,
         lastAt: lastHeartbeatAt ? new Date(lastHeartbeatAt).toISOString() : null,
