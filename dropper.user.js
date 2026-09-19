@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.42
+// @version      2.6.43
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -34,7 +34,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.42";
+  const APP_VERSION = "2.6.43";
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const UPDATE_STATE_KEY = "dropper-update-state-v2";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -99,6 +99,12 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.43": [
+      "Stops next-game selection from choosing already-complete unclaimed Drops.",
+      "Keeps an unclaimed Working Toward Drop sticky at 100% so inventory polls cannot swap in another game.",
+      "Ignores Twitch session Drop payloads that belong to a different game than the active target.",
+      "Uses the in-flight handoff game for category-mismatch checks so a stream switch is not treated as a category change.",
+    ],
     "2.6.42": [
       "Prevents duplicate Drop claim-button activation and incorrect claim counts.",
       "Applies Auto-Claim toggle changes immediately and manages claim observers safely.",
@@ -1899,6 +1905,7 @@
 
         next.push({
           id: drop.id || "",
+          isClaimed: Boolean(self.isClaimed),
           name: drop.name || drop.benefitEdges?.[0]?.benefit?.name || "Drop",
           game,
           gameSlug: campaign.game?.slug || "",
@@ -1910,6 +1917,7 @@
           campaignEndAt: campaign.endAt || drop.endAt || "",
           dropStartAt: drop.startAt || "",
           dropEndAt: drop.endAt || "",
+          percent: Math.min(100, Math.round((current / required) * 100)),
           currentMinutes: current,
           requiredMinutes: required,
           remainingMinutes: Math.max(0, required - current),
@@ -1917,11 +1925,15 @@
       }
     }
 
-    next.sort((a, b) => {
+    // Complete-but-unclaimed Drops are claim targets, not watch targets.
+    // Sorting by remaining minutes otherwise prefers 100% Drops (remaining 0)
+    // over incomplete campaigns in other games.
+    const incomplete = next.filter((item) => Number(item.percent || 0) < 100);
+    incomplete.sort((a, b) => {
       if ((b.currentMinutes > 0) !== (a.currentMinutes > 0)) return (b.currentMinutes > 0) - (a.currentMinutes > 0);
       return a.remainingMinutes - b.remainingMinutes;
     });
-    return next[0] || null;
+    return incomplete[0] || null;
   }
 
   function maybeAdvanceExpiredCampaign(campaigns = lastInventoryCampaigns) {
@@ -2039,8 +2051,19 @@
       return false;
     }
 
+    const pending = getHandoffState();
+    const pendingState = normalizedHandoffState(pending);
+    const handoffLocksGame = Boolean(
+      pending?.targetGame &&
+      [
+        HANDOFF_STATES.FINDING_STREAM,
+        HANDOFF_STATES.SWITCHING,
+        HANDOFF_STATES.VERIFYING,
+      ].includes(pendingState)
+    );
+
     const info = readStreamInfo();
-    const expectedGame = cleanText(currentDrop.game);
+    const expectedGame = cleanText(handoffLocksGame ? pending.targetGame : currentDrop.game);
     const actualGame = cleanText(info.game);
 
     if (!info.live || !expectedGame || !actualGame || gameNamesMatch(expectedGame, actualGame)) {
@@ -2068,15 +2091,7 @@
       return false;
     }
 
-    const pending = getHandoffState();
-    const pendingState = normalizedHandoffState(pending);
-    if (pending && [
-      HANDOFF_STATES.FINDING_STREAM,
-      HANDOFF_STATES.SWITCHING,
-      HANDOFF_STATES.VERIFYING,
-    ].includes(pendingState)) {
-      return true;
-    }
+    if (handoffLocksGame) return true;
 
     transitionHandoff(
       HANDOFF_STATES.FINDING_STREAM,
@@ -3251,21 +3266,20 @@
           sessionDrop = parseSessionDrop(loginResult[0], [...inventoryCampaigns, ...available]);
         }
       }
-      const activeIncomplete = Boolean(
-        currentDrop &&
-        !currentDrop.isClaimed &&
-        Number(currentDrop.percent || 0) < 100
-      );
-      const preferredGame = activeIncomplete ? currentDrop.game || "" : gameName || "";
+      const activeUnclaimed = Boolean(currentDrop && !currentDrop.isClaimed);
+      const preferredGame = activeUnclaimed ? currentDrop.game || "" : gameName || "";
       const streamMatchesActive = Boolean(
-        !activeIncomplete ||
+        !activeUnclaimed ||
         !gameName ||
         gameNamesMatch(currentDrop.game || "", gameName)
       );
 
-      if (activeIncomplete && gameName && !streamMatchesActive) {
+      if (activeUnclaimed && gameName && !streamMatchesActive) {
         sessionDrop = null;
         available = [];
+      }
+      if (sessionDrop && preferredGame && !gameNamesMatch(sessionDrop.game || "", preferredGame)) {
+        sessionDrop = null;
       }
 
       const fromAvailable = streamMatchesActive
@@ -3274,14 +3288,19 @@
 
       const preferredInventory = pickTimedDrop(inventoryCampaigns, preferredGame);
       const fromInventory = preferredInventory || (
-        activeIncomplete ? null : pickTimedDrop(inventoryCampaigns, "")
+        activeUnclaimed ? null : pickTimedDrop(inventoryCampaigns, "")
       );
 
-      let drop = activeIncomplete
+      let drop = activeUnclaimed
         ? (fromInventory || (streamMatchesActive ? sessionDrop || fromAvailable : null) || currentDrop)
         : (sessionDrop || fromInventory || fromAvailable);
 
-      if (sessionDrop && fromInventory && streamMatchesActive) {
+      if (
+        sessionDrop &&
+        fromInventory &&
+        streamMatchesActive &&
+        gameNamesMatch(sessionDrop.game || "", fromInventory.game || preferredGame || "")
+      ) {
         const minutes = reconcileDropProgress(sessionDrop, fromInventory);
         const requiredMinutes = fromInventory.requiredMinutes || sessionDrop.requiredMinutes || 0;
         drop = {
@@ -3307,6 +3326,22 @@
           ? Math.min(100, Math.round((minutes / requiredMinutes) * 100))
           : drop.percent || 0;
         drop.remainingMinutes = Math.max(0, requiredMinutes - minutes);
+      }
+
+      const pendingHandoff = getHandoffState();
+      const handoffState = normalizedHandoffState(pendingHandoff);
+      const handoffLocksGame = Boolean(
+        pendingHandoff?.targetGame &&
+        [
+          HANDOFF_STATES.FINDING_STREAM,
+          HANDOFF_STATES.SWITCHING,
+          HANDOFF_STATES.VERIFYING,
+        ].includes(handoffState)
+      );
+      if (handoffLocksGame && drop && !gameNamesMatch(drop.game || "", pendingHandoff.targetGame)) {
+        drop = currentDrop && gameNamesMatch(currentDrop.game || "", pendingHandoff.targetGame)
+          ? currentDrop
+          : null;
       }
 
       if (verifyHandoffChannel(login, gameName, available, sessionDrop)) return;
