@@ -42,6 +42,7 @@
 - Shows a compact Drop inventory, progress, ETA, campaign state, and current reward.
 - Includes minimized progress, background earning status, diagnostics, notifications, and update/changelog notices.
 - Uses a Twitch-themed interface with dedicated full-size and launcher icon assets.
+- Keeps its launcher arranged with other ExtraPotions menus while preserving manual placement.
 
 ## License
 
