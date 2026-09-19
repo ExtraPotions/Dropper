@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.39
+// @version      2.6.40
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -34,7 +34,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.39";
+  const APP_VERSION = "2.6.40";
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const UPDATE_STATE_KEY = "dropper-update-state-v2";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -99,6 +99,11 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.40": [
+      "Removes the Settings dock max-height cap so the menu always sizes naturally to its content.",
+      "Separates the close button into its own header column so it cannot cover title or subtitle text.",
+      "Allows the header subtitle to wrap cleanly at Narrow width.",
+    ],
     "2.6.39": [
       "Removes the unused blank space beneath Advanced in the Settings menu.",
       "Makes the Settings dock shrink-wrap its visible content while preserving max-height scrolling.",
@@ -4165,19 +4170,23 @@
       #tdh-settings-launcher .icon { width:22px; height:22px; pointer-events:none; position:relative; z-index:1; }
       #tdh-tools-dock {
         display:none; width:min(var(--dropper-width, 312px), calc(100vw - 24px)); max-width:calc(100vw - 24px);
-        height:max-content; min-height:0; max-height:min(72vh,560px); overflow-x:hidden; overflow-y:auto; flex:0 0 auto;
+        height:max-content; min-height:0; max-height:none; overflow:visible; flex:0 0 auto;
         transition:.15s width;
         padding:9px; background:#111114; border:1px solid #2f2f35; border-radius:14px; box-shadow:0 18px 50px #0008; color-scheme:dark;
-        scrollbar-width:none; -ms-overflow-style:none;
       }
-      #tdh-tools-dock::-webkit-scrollbar { width:0; height:0; display:none; }
-      #tdh-tools-dock.fl-rail-open { display:block; height:max-content; min-height:0; }
-      .menu-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
-      .header-brand { display:flex; align-items:center; gap:8px; min-width:0; }
-      .header-icon { width:38px; height:38px; flex:0 0 38px; }
+      #tdh-tools-dock.fl-rail-open { display:block; height:max-content; min-height:0; max-height:none; }
+      .menu-head {
+        display:grid; grid-template-columns:minmax(0,1fr) 30px;
+        align-items:start; gap:8px; width:100%;
+      }
+      .header-brand {
+        display:grid; grid-template-columns:38px minmax(0,1fr);
+        align-items:center; gap:8px; min-width:0; width:100%;
+      }
+      .header-icon { width:38px; height:38px; }
       .header-icon svg { width:38px; height:38px; display:block; }
-      .header-copy { min-width:0; }
-      .header-title-row { display:flex; align-items:center; gap:6px; min-width:0; }
+      .header-copy { min-width:0; overflow:hidden; }
+      .header-title-row { display:flex; align-items:center; gap:6px; min-width:0; flex-wrap:wrap; }
       #tdh-rail-title { margin:0; font-size:15px; font-weight:800; line-height:1.1; }
       #tdh-header-version {
         min-height:18px; padding:1px 6px; border:1px solid #4a3b61; border-radius:999px;
@@ -4187,8 +4196,15 @@
       #tdh-header-version:hover, #tdh-header-version:focus-visible {
         border-color:#9147ff; background:#251d31; color:#fff; outline:none;
       }
-      #tdh-rail-subtitle { margin-top:2px; font-size:9px; color:#adadb8; white-space:nowrap; }
-      #tdh-rail-close { width:30px; height:30px; border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0; cursor:pointer; font:18px/1 Arial,sans-serif; }
+      #tdh-rail-subtitle {
+        margin-top:2px; font-size:9px; line-height:1.2; color:#adadb8;
+        white-space:normal; overflow-wrap:anywhere;
+      }
+      #tdh-rail-close {
+        width:30px; height:30px; min-width:30px; padding:0; justify-self:end;
+        border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0;
+        cursor:pointer; font:18px/1 Arial,sans-serif;
+      }
       #tdh-rail-close:hover { border-color:#9147ff; color:#fff; background:#211b2b; }
       .header-divider { height:1px; width:100%; margin:5px 0; background:linear-gradient(90deg,transparent,#9147ff88 50%,transparent); }
       .update-notice {
@@ -5730,6 +5746,7 @@
         renderedHeight: ui?.dock ? Math.round(ui.dock.getBoundingClientRect().height) : null,
         scrollHeight: ui?.dock ? Math.round(ui.dock.scrollHeight) : null,
         maxHeight: ui?.dock ? getComputedStyle(ui.dock).maxHeight : null,
+        overflow: ui?.dock ? getComputedStyle(ui.dock).overflow : null,
       },
       progressPanelWidth: ui?.shadow?.querySelector(".progress-stack")
         ? Math.round(ui.shadow.querySelector(".progress-stack").getBoundingClientRect().width)
