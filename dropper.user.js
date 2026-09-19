@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.31
+// @version      2.6.32
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.31";
+  const APP_VERSION = "2.6.32";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -93,6 +93,12 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.32": [
+      "Fixes Show Progress In Tab on normal Twitch stream pages.",
+      "Prefixes Twitch native tab titles with the current Drop percentage instead of replacing them.",
+      "Adds a Badge Only appearance option that hides the progress panel while keeping the Dropper launcher visible.",
+      "Keeps Settings and update controls available while Badge Only is enabled.",
+    ],
     "2.6.31": [
       "Prevents duplicate automatic navigations while a Twitch page change is already in flight.",
       "Removes the full-document subscription-promo MutationObserver.",
@@ -310,6 +316,7 @@
     backgroundEarning: false,
     reduceMotion: false,
     collapsedPanelWidth: "narrow",
+    badgeOnly: false,
     notifications: true,
     hideTwitchSubscriptionPromos: true,
     pauseAutoSwitchMinutes: 0,
@@ -367,6 +374,7 @@
   const PAGE_STARTED_AT = Date.now();
   let statusText = "Starting…";
   let progressLabel = "";
+  let lastNativeTitle = document.title || "Twitch";
   let lastBonusAt = 0;
   let lastDropAt = 0;
   let lastClaimAttemptAt = 0;
@@ -682,7 +690,7 @@
       if (!info.live && now - lastStreamSwitch > 60000 && !isAutoSwitchPaused()) findNextStream();
     }
 
-    if (settings.progressInTitle) updateTitle();
+    updateTitle();
 
     if (!nextGqlPollAt || now >= nextGqlPollAt) {
       requestGqlPoll(pendingGqlReason || "heartbeat");
@@ -3584,8 +3592,24 @@
   }
 
   function updateTitle() {
-    if (!settings.progressInTitle || !progressLabel || !isInventory()) return;
-    const wanted = `${progressLabel} · Twitch Drops`;
+    const dropperPrefix = /^\[\d{1,3}%\]\s+/;
+    const currentTitle = cleanText(document.title);
+
+    if (!dropperPrefix.test(currentTitle) && currentTitle) {
+      lastNativeTitle = currentTitle;
+    }
+
+    if (!settings.progressInTitle) {
+      if (dropperPrefix.test(currentTitle) && lastNativeTitle) {
+        document.title = lastNativeTitle;
+      }
+      return;
+    }
+
+    if (!progressLabel) return;
+
+    const baseTitle = lastNativeTitle || currentTitle.replace(dropperPrefix, "") || "Twitch";
+    const wanted = `[${progressLabel}] ${baseTitle}`;
     if (document.title !== wanted) document.title = wanted;
   }
 
@@ -3863,6 +3887,12 @@
         width:min(var(--dropper-width, 312px), calc(100vw - 24px));
       }
       .badge-row { display:flex; align-items:stretch; width:100%; position:relative; }
+      .progress-stack.badge-only .badge-row { justify-content:flex-end; }
+      .progress-stack.badge-only #tdh-drop-card { display:none !important; }
+      .progress-stack.badge-only #tdh-settings-launcher {
+        border-radius:12px;
+        border-left:1px solid #9147ff77;
+      }
       #tdh-drop-card {
         position: relative; flex:1 1 auto; width:auto; min-width:0; max-width:none;
         background:#18181b; border:1px solid #9147ff66; border-right:0;
@@ -4132,6 +4162,7 @@
           </div></section>
           <section class="fl-tool-panel"><div class="fl-tool-header has-tooltip" data-tip="Progress Panel Size And Visual Preferences." data-panel="tdh-appearance-body"><span class="fl-tool-title">Appearance</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-appearance-body">
             ${switchHtml("tdh-progress-title", "Show Progress In Tab", "Shows Current Drop Progress In The Browser Tab Title.", settings.progressInTitle)}
+            ${switchHtml("tdh-badge-only", "Badge Only", "Hides The Progress Panel And Leaves Only The Dropper Badge Visible.", settings.badgeOnly)}
             ${switchHtml("tdh-reduce-motion", "Reduce Motion", "Disables Dropper Interface Animations.", settings.reduceMotion)}
             ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "Hides Twitch Subscribe CTAs And Promotional Highlight Cards.", settings.hideTwitchSubscriptionPromos)}
             <div class="mini-row"><span>Panel + Menu Width</span><select class="select-lite" id="tdh-collapsed-width"><option value="full">Full</option><option value="compact">Compact</option><option value="narrow">Narrow</option></select></div>
@@ -4577,7 +4608,9 @@
     if (!stack) return;
     const width = normalizedCollapsedPanelWidth();
     stack.dataset.collapsedWidth = width;
+    stack.classList.toggle("badge-only", Boolean(settings.badgeOnly));
     ui.cluster.dataset.panelWidth = width;
+    ui.cluster.dataset.badgeOnly = settings.badgeOnly ? "true" : "false";
     const select = ui.shadow.getElementById("tdh-collapsed-width");
     if (select && select.value !== width) select.value = width;
     requestAnimationFrame(layoutChrome);
@@ -5462,6 +5495,13 @@
       queueCandidates: discoverQueueCandidates().map((item) => item.login),
       autoSwitchPaused: isAutoSwitchPaused(),
       progressCardCollapsed: Boolean(card?.classList.contains("collapsed")),
+      badgeOnly: Boolean(settings.badgeOnly),
+      progressInTitle: {
+        enabled: Boolean(settings.progressInTitle),
+        label: progressLabel || null,
+        nativeTitle: lastNativeTitle || null,
+        renderedTitle: document.title || null,
+      },
       panelAndMenuWidth: normalizedCollapsedPanelWidth(),
       progressPanelWidth: ui?.shadow?.querySelector(".progress-stack")
         ? Math.round(ui.shadow.querySelector(".progress-stack").getBoundingClientRect().width)
@@ -5643,7 +5683,7 @@
     const map = {
       "tdh-claim-bonus": "claimBonus", "tdh-keep-tab": "keepTabActive", "tdh-claim-drops": "claimDrops",
       "tdh-progress-title": "progressInTitle", "tdh-find-next": "findNextStream", "tdh-mute-next": "muteRestarted",
-      "tdh-background-earning": "backgroundEarning", "tdh-reduce-motion": "reduceMotion", "tdh-notifications": "notifications",
+      "tdh-background-earning": "backgroundEarning", "tdh-badge-only": "badgeOnly", "tdh-reduce-motion": "reduceMotion", "tdh-notifications": "notifications",
       "tdh-hide-sub-promos": "hideTwitchSubscriptionPromos",
       "tdh-queue-enabled": "queueEnabled", "tdh-queue-stall": "queueOnStall", "tdh-queue-offline": "queueOnOffline", "tdh-queue-category": "queueOnCategoryChange",
     };
@@ -5658,6 +5698,8 @@
           renderSwitches();
           notifyUser("Keep Tab Active Enabled. Reload Twitch To Apply Background Earning.");
         }
+        if (key === "progressInTitle") updateTitle();
+        if (key === "badgeOnly") applyAppearanceSettings();
         if (key === "reduceMotion") applyMotionSetting();
         if (key === "hideTwitchSubscriptionPromos") {
           if (settings.hideTwitchSubscriptionPromos) suppressTwitchSubscriptionPromos();
@@ -5674,7 +5716,7 @@
     const map = {
       "tdh-claim-bonus": settings.claimBonus, "tdh-keep-tab": settings.keepTabActive, "tdh-claim-drops": settings.claimDrops,
       "tdh-progress-title": settings.progressInTitle, "tdh-find-next": settings.findNextStream, "tdh-mute-next": settings.muteRestarted,
-      "tdh-background-earning": settings.backgroundEarning, "tdh-reduce-motion": settings.reduceMotion, "tdh-notifications": settings.notifications,
+      "tdh-background-earning": settings.backgroundEarning, "tdh-badge-only": settings.badgeOnly, "tdh-reduce-motion": settings.reduceMotion, "tdh-notifications": settings.notifications,
       "tdh-hide-sub-promos": settings.hideTwitchSubscriptionPromos,
       "tdh-queue-enabled": settings.queueEnabled, "tdh-queue-stall": settings.queueOnStall, "tdh-queue-offline": settings.queueOnOffline, "tdh-queue-category": settings.queueOnCategoryChange,
     };
