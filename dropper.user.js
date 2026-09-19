@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.32
+// @version      2.6.33
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -29,7 +29,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.32";
+  const APP_VERSION = "2.6.33";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -93,6 +93,11 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.33": [
+      "Fixes clipped helper text by allowing badge and progress hints to wrap inside their tooltip boxes.",
+      "Hides the full Twitch community-highlight / pinned-chat highlight container instead of only its inner content.",
+      "Adds a JavaScript fallback for pinned community highlights so no empty Twitch card shell remains.",
+    ],
     "2.6.32": [
       "Fixes Show Progress In Tab on normal Twitch stream pages.",
       "Prefixes Twitch native tab titles with the current Drop percentage instead of replacing them.",
@@ -739,6 +744,8 @@
       button[aria-label*="Gift a Sub" i],
       [role="button"][aria-label^="Subscribe" i],
       [role="button"][aria-label*="Gift a Sub" i],
+      div.community-highlight:has(.pinned-chat__highlight-card__collapsed),
+      div.pinned-chat__highlight-card__collapsed:has(.highlight.highlight__collapsed),
       div.highlight.highlight__collapsed:has([data-test-selector="header-content"]) {
         display: none !important;
       }
@@ -862,16 +869,47 @@
 
   function suppressTwitchHighlightPromos() {
     let hidden = 0;
-    document.querySelectorAll("div.highlight.highlight__collapsed").forEach((candidate) => {
+    const targets = new Set();
+
+    document.querySelectorAll(
+      "div.community-highlight, div.pinned-chat__highlight-card__collapsed, div.highlight.highlight__collapsed"
+    ).forEach((candidate) => {
       if (!(candidate instanceof Element)) return;
       if (candidate.closest("#tdh-root")) return;
-      if (!candidate.querySelector('[data-test-selector="header-content"]')) return;
-      const text = cleanText(candidate.textContent);
-      const dismissible = Boolean(candidate.querySelector('button[aria-label="Dismiss This Message"]'));
+
+      const outerCommunity = candidate.matches("div.community-highlight")
+        ? candidate
+        : candidate.closest("div.community-highlight");
+      const pinnedCard = candidate.matches("div.pinned-chat__highlight-card__collapsed")
+        ? candidate
+        : candidate.closest("div.pinned-chat__highlight-card__collapsed");
+      const highlight = candidate.matches("div.highlight.highlight__collapsed")
+        ? candidate
+        : candidate.querySelector?.("div.highlight.highlight__collapsed");
+
+      const contentRoot = outerCommunity || pinnedCard || highlight || candidate;
+      const hasHeader = Boolean(contentRoot.querySelector?.('[data-test-selector="header-content"]'));
+      const isPinnedCommunity = Boolean(
+        outerCommunity?.querySelector?.(".pinned-chat__highlight-card__collapsed") ||
+        pinnedCard
+      );
+      const text = cleanText(contentRoot.textContent);
+      const dismissible = Boolean(contentRoot.querySelector?.('button[aria-label="Dismiss This Message"]'));
       const rewardHighlight = /\bWatch for\b/i.test(text);
-      if (!dismissible && !rewardHighlight) return;
-      if (suppressPromoNode(candidate, "highlight")) hidden += 1;
+
+      if (!hasHeader && !isPinnedCommunity) return;
+      if (!isPinnedCommunity && !dismissible && !rewardHighlight) return;
+
+      targets.add(outerCommunity || pinnedCard || highlight || candidate);
     });
+
+    targets.forEach((target) => {
+      const scope = target.matches?.("div.community-highlight")
+        ? "community-highlight"
+        : "highlight";
+      if (suppressPromoNode(target, scope)) hidden += 1;
+    });
+
     return hidden;
   }
 
@@ -3908,7 +3946,8 @@
         content:attr(data-help); position:absolute; right:0; top:calc(100% + 7px);
         max-width:220px; padding:5px 8px; border:1px solid #3b3b44; border-radius:7px;
         background:#0e0e10; color:#efeff1; box-shadow:0 6px 18px #0008;
-        font-size:9px; font-weight:700; line-height:1.3; white-space:nowrap;
+        width:max-content; max-width:min(200px, calc(100vw - 24px)); box-sizing:border-box;
+        font-size:9px; font-weight:700; line-height:1.3; white-space:normal; overflow-wrap:anywhere; text-align:left;
         opacity:0; visibility:hidden; transform:translateY(-2px); pointer-events:none; z-index:10;
         transition:.12s opacity .35s,.12s transform .35s,.12s visibility .35s;
       }
@@ -3989,7 +4028,8 @@
         content:attr(data-help); position:absolute; right:0; bottom:calc(100% + 7px);
         max-width:220px; padding:5px 8px; border:1px solid #3b3b44; border-radius:7px;
         background:#0e0e10; color:#efeff1; box-shadow:0 6px 18px #0008;
-        font-size:9px; font-weight:700; line-height:1.3; white-space:nowrap;
+        width:max-content; max-width:min(200px, calc(100vw - 24px)); box-sizing:border-box;
+        font-size:9px; font-weight:700; line-height:1.3; white-space:normal; overflow-wrap:anywhere; text-align:left;
         opacity:0; visibility:hidden; transform:translateY(2px); pointer-events:none; z-index:10;
         transition:.12s opacity .35s,.12s transform .35s,.12s visibility .35s;
       }
@@ -4091,7 +4131,7 @@
       .diag { display:none; margin-top:6px; padding:7px; border:1px solid #2b2b31; border-radius:7px; background:#101014; font:9px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; color:#b8b8c0; white-space:pre-wrap; }
       .diag.open { display:block; }
       .has-tooltip { position:relative; }
-      .has-tooltip::after { content:attr(data-tip); position:absolute; left:0; top:calc(100% + 4px); width:190px; padding:6px 8px; border:1px solid #3b3b44; border-radius:7px; background:#0e0e10; color:#efeff1; box-shadow:0 6px 18px #0007; font-size:10px; line-height:1.35; opacity:0; pointer-events:none; z-index:999; transform:translateY(-2px); transition:.12s opacity,.12s transform; }
+      .has-tooltip::after { content:attr(data-tip); position:absolute; left:0; top:calc(100% + 4px); width:min(190px, calc(100vw - 48px)); max-width:100%; padding:6px 8px; border:1px solid #3b3b44; border-radius:7px; background:#0e0e10; color:#efeff1; box-shadow:0 6px 18px #0007; box-sizing:border-box; font-size:10px; line-height:1.35; white-space:normal; overflow-wrap:anywhere; opacity:0; pointer-events:none; z-index:999; transform:translateY(-2px); transition:.12s opacity,.12s transform; }
       .has-tooltip:hover::after, .has-tooltip:focus-visible::after { opacity:1; transform:translateY(0); }
       .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation:none !important; transition:none !important; }
       @media (max-width:700px) {
@@ -5476,6 +5516,7 @@
         hiddenChat: document.querySelectorAll('[data-dropper-sub-promo-scope="chat"]').length,
         hiddenPageCtas: document.querySelectorAll('[data-dropper-sub-promo-scope="page-cta"]').length,
         hiddenHighlights: document.querySelectorAll('[data-dropper-sub-promo-scope="highlight"]').length,
+        hiddenCommunityHighlights: document.querySelectorAll('[data-dropper-sub-promo-scope="community-highlight"]').length,
         cssSuppressionActive: Boolean(document.getElementById("dropper-subscription-promo-style")),
       },
       queueEnabled: settings.queueEnabled,
