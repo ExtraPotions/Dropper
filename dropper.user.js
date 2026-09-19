@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.35
+// @version      2.6.36
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -34,7 +34,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.35";
+  const APP_VERSION = "2.6.36";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -99,6 +99,11 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.36": [
+      "Expands Pause Auto-Switch with 2, 4, 8, 12, and 24 hour options.",
+      "Persists the auto-switch pause deadline across Twitch navigation and page reloads.",
+      "Automatically clears expired pause state.",
+    ],
     "2.6.35": [
       "Counts newly credited watch minutes as fresh progress even when the rounded percentage does not change.",
       "Prevents false Delayed or Stalled status while Twitch is still crediting minutes.",
@@ -342,6 +347,7 @@
     notifications: true,
     hideTwitchSubscriptionPromos: true,
     pauseAutoSwitchMinutes: 0,
+    pauseAutoSwitchUntil: 0,
     queueEnabled: true,
     queueCount: 3,
     queueOnStall: true,
@@ -427,7 +433,7 @@
   let lastUpdateNoticeVersion = "";
   let updateReloadTimer = null;
   let updateFallbackTimer = null;
-  let pauseAutoSwitchUntil = 0;
+  let pauseAutoSwitchUntil = Number(settings.pauseAutoSwitchUntil || 0);
   let lastInventoryCampaigns = [];
   let chatWidthObserver = null;
   let chatDomObserver = null;
@@ -4251,7 +4257,7 @@
           <section class="fl-tool-panel"><div class="fl-tool-header has-tooltip" data-tip="Background Earning, Interface Preferences, Notifications, Diagnostics, And Shortcuts." data-panel="tdh-advanced-body"><span class="fl-tool-title">Advanced</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-advanced-body">
             ${switchHtml("tdh-background-earning", "Background Earning Mode", "Monitors Twitch-Credited Minutes While The Stream Is In The Background.", settings.backgroundEarning)}
             ${switchHtml("tdh-notifications", "Notifications", "Shows Brief Dropper Notices For Important State Changes.", settings.notifications)}
-            <div class="mini-row"><span>Pause Auto-Switch</span><select class="select-lite" id="tdh-pause-switch"><option value="0">Off</option><option value="30">30 Min</option><option value="60">1 Hour</option></select></div>
+            <div class="mini-row"><span>Pause Auto-Switch</span><select class="select-lite" id="tdh-pause-switch"><option value="0">Off</option><option value="30">30 Min</option><option value="60">1 Hour</option><option value="120">2 Hours</option><option value="240">4 Hours</option><option value="480">8 Hours</option><option value="720">12 Hours</option><option value="1440">24 Hours</option></select></div>
             <button type="button" class="life-btn" id="tdh-refresh-now">Refresh Drop State</button>
             <button type="button" class="life-btn" id="tdh-diagnostics-toggle">Show Diagnostics</button>
             <button type="button" class="life-btn" id="tdh-copy-diagnostics">Copy Diagnostics</button>
@@ -4742,7 +4748,21 @@
     card.classList.toggle("preview-below", spaceAbove < previewHeight + 12 && spaceBelow > spaceAbove);
   }
 
-  function isAutoSwitchPaused() { return pauseAutoSwitchUntil > Date.now(); }
+  function isAutoSwitchPaused() {
+    const now = Date.now();
+    if (pauseAutoSwitchUntil > now) return true;
+
+    if (pauseAutoSwitchUntil || settings.pauseAutoSwitchMinutes || settings.pauseAutoSwitchUntil) {
+      pauseAutoSwitchUntil = 0;
+      settings.pauseAutoSwitchMinutes = 0;
+      settings.pauseAutoSwitchUntil = 0;
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (_) { /* ignore */ }
+
+      const select = ui?.shadow?.getElementById("tdh-pause-switch");
+      if (select) select.value = "0";
+    }
+    return false;
+  }
 
   function bindDropperControls() {
     const s = ui.shadow;
@@ -4799,7 +4819,20 @@
     });
     const queueCount = s.getElementById("tdh-queue-count"); queueCount.value = String(settings.queueCount); queueCount.addEventListener("change", () => { settings.queueCount = Number(queueCount.value); saveSettings(); refreshQueueList(); });
     const pref = s.getElementById("tdh-queue-preference"); pref.value = settings.queuePreference; pref.addEventListener("change", () => { settings.queuePreference = pref.value; saveSettings(); refreshQueueList(); });
-    const pause = s.getElementById("tdh-pause-switch"); pause.value = String(settings.pauseAutoSwitchMinutes || 0); pause.addEventListener("change", () => { settings.pauseAutoSwitchMinutes = Number(pause.value); pauseAutoSwitchUntil = settings.pauseAutoSwitchMinutes ? Date.now() + settings.pauseAutoSwitchMinutes * 60000 : 0; saveSettings(); });
+    const pause = s.getElementById("tdh-pause-switch");
+    if (!isAutoSwitchPaused()) {
+      settings.pauseAutoSwitchMinutes = 0;
+      settings.pauseAutoSwitchUntil = 0;
+    }
+    pause.value = String(settings.pauseAutoSwitchMinutes || 0);
+    pause.addEventListener("change", () => {
+      settings.pauseAutoSwitchMinutes = Number(pause.value);
+      pauseAutoSwitchUntil = settings.pauseAutoSwitchMinutes
+        ? Date.now() + settings.pauseAutoSwitchMinutes * 60000
+        : 0;
+      settings.pauseAutoSwitchUntil = pauseAutoSwitchUntil;
+      saveSettings();
+    });
     const collapsedWidth = s.getElementById("tdh-collapsed-width");
     collapsedWidth.value = normalizedCollapsedPanelWidth();
     collapsedWidth.addEventListener("change", () => {
@@ -5590,6 +5623,13 @@
       },
       queueCandidates: discoverQueueCandidates().map((item) => item.login),
       autoSwitchPaused: isAutoSwitchPaused(),
+      autoSwitchPause: {
+        selectedMinutes: Number(settings.pauseAutoSwitchMinutes || 0),
+        until: pauseAutoSwitchUntil ? new Date(pauseAutoSwitchUntil).toISOString() : null,
+        remainingMinutes: pauseAutoSwitchUntil
+          ? Math.max(0, Math.ceil((pauseAutoSwitchUntil - now) / 60000))
+          : 0,
+      },
       progressCardCollapsed: Boolean(card?.classList.contains("collapsed")),
       badgeOnly: Boolean(settings.badgeOnly),
       progressInTitle: {
