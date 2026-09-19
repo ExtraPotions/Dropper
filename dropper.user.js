@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.36
+// @version      2.6.37
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -34,9 +34,9 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.36";
-  const LAST_VERSION_KEY = "dropper-last-version";
-  const UPDATE_STATE_KEY = "dropper-update-state";
+  const APP_VERSION = "2.6.37";
+  const LAST_VERSION_KEY = "dropper-last-version-v2";
+  const UPDATE_STATE_KEY = "dropper-update-state-v2";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
   const UPDATE_CHECK_LEASE_MS = 30 * 1000;
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
@@ -76,7 +76,7 @@
   const HEALTHY_STREAM_DELAYED_MS = 5 * 60 * 1000;
   const HEALTHY_STREAM_STALLED_MS = 6 * 60 * 1000;
   const UNHEALTHY_STREAM_DELAYED_MS = 90 * 1000;
-  const CATEGORY_SLUG_CACHE_KEY = "dropper-category-slugs";
+  const CATEGORY_SLUG_CACHE_KEY = "dropper-category-slugs-v2";
   const CATEGORY_SLUG_ALIASES = Object.freeze({
     "the blood of dawnwalker": "dawnwalker",
   });
@@ -99,6 +99,12 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.37": [
+      "Prevents stale category slugs from routing one game into another game category.",
+      "Rebuilds the category-slug cache with stricter game-to-slug validation.",
+      "Isolates update state from older Dropper tabs that may still be open.",
+      "Keeps Show Progress In Tab applied when Twitch rewrites the native page title.",
+    ],
     "2.6.36": [
       "Expands Pause Auto-Switch with 2, 4, 8, 12, and 24 hour options.",
       "Persists the auto-switch pause deadline across Twitch navigation and page reloads.",
@@ -403,6 +409,8 @@
   let statusText = "Starting…";
   let progressLabel = "";
   let lastNativeTitle = document.title || "Twitch";
+  let progressTitleObserver = null;
+  let progressTitleSyncQueued = false;
   let lastBonusAt = 0;
   let lastDropAt = 0;
   let lastClaimAttemptAt = 0;
@@ -475,6 +483,7 @@
 
   function boot() {
     mountUi();
+    watchProgressTitle();
     if (settings.claimBonus) watchBonus();
     if (settings.claimDrops) watchDrops();
     setStatus(featureStatus());
@@ -693,6 +702,7 @@
     enforceUpdateReloadPending(now);
     enforceAutoDismissDeadlines(now);
     noteWatching();
+    watchProgressTitle();
 
     if (location.pathname !== lastPath) {
       lastPath = location.pathname;
@@ -2084,10 +2094,36 @@
     }
   }
 
+  function expectedCategorySlugCandidates(gameName) {
+    const gameKey = normalizeGameName(gameName);
+    const candidates = new Set();
+    const fallback = normalizedGameSlug(gameName);
+    const alias = normalizedGameSlug(CATEGORY_SLUG_ALIASES[gameKey] || "");
+    if (fallback) candidates.add(fallback);
+    if (alias) candidates.add(alias);
+    return candidates;
+  }
+
+  function suppliedCategorySlugMatchesGame(gameName, slugOrUrl) {
+    const slug = categorySlugFromUrl(slugOrUrl) || normalizedGameSlug(slugOrUrl);
+    if (!slug) return false;
+    return expectedCategorySlugCandidates(gameName).has(slug);
+  }
+
   function rememberCategorySlug(gameName, slugOrUrl, source = "observed") {
     const gameKey = normalizeGameName(gameName);
     const slug = categorySlugFromUrl(slugOrUrl) || normalizedGameSlug(slugOrUrl);
     if (!gameKey || !slug) return "";
+
+    const trustedObservedSource = ["twitch-link", "active-stream", "canonical-alias"].includes(source);
+    if (!trustedObservedSource && !suppliedCategorySlugMatchesGame(gameName, slug)) {
+      logActivity("category-route-rejected", "Rejected mismatched category slug", {
+        game: gameName,
+        slug,
+        source,
+      });
+      return "";
+    }
 
     if (categorySlugCache[gameKey] !== slug) {
       categorySlugCache[gameKey] = slug;
@@ -2117,7 +2153,7 @@
         link.getAttribute?.("title") ||
         "",
       );
-      if (text && !gameNamesMatch(gameName, text)) continue;
+      if (!text || !gameNamesMatch(gameName, text)) continue;
 
       const slug = categorySlugFromUrl(link.href);
       if (slug) return rememberCategorySlug(gameName, slug, "twitch-link");
@@ -2149,10 +2185,18 @@
     const supplied = typeof dropOrGame === "object"
       ? cleanText(dropOrGame?.gameSlug || "")
       : "";
-    if (supplied) {
+    if (supplied && suppliedCategorySlugMatchesGame(gameName, supplied)) {
       const resolved = normalizedGameSlug(supplied);
       if (resolved) rememberCategorySlug(gameName, resolved, "twitch-gql");
       return resolved;
+    }
+
+    if (supplied) {
+      logActivity("category-route-rejected", "Ignored stale supplied category slug", {
+        game: gameName,
+        suppliedSlug: supplied,
+        fallbackSlug: normalizedGameSlug(gameName),
+      });
     }
 
     // Conservative last resort for games whose Twitch category slug follows
@@ -3665,6 +3709,27 @@
     applyProgressColor(percent);
     syncCompactState();
     renderCompactInventory();
+  }
+
+  function queueProgressTitleSync() {
+    if (progressTitleSyncQueued) return;
+    progressTitleSyncQueued = true;
+    queueMicrotask(() => {
+      progressTitleSyncQueued = false;
+      updateTitle();
+    });
+  }
+
+  function watchProgressTitle() {
+    if (typeof MutationObserver !== "function") return;
+    const title = document.querySelector("title");
+    if (!title) return;
+
+    if (progressTitleObserver && progressTitleObserver._dropperTitleNode === title) return;
+    progressTitleObserver?.disconnect?.();
+    progressTitleObserver = new MutationObserver(() => queueProgressTitleSync());
+    progressTitleObserver.observe(title, { childList: true, subtree: true, characterData: true });
+    progressTitleObserver._dropperTitleNode = title;
   }
 
   function updateTitle() {
@@ -5479,6 +5544,7 @@
         const state = loadUpdateState();
         return {
           intervalMinutes: Math.round(UPDATE_CHECK_INTERVAL_MS / 60000),
+          stateKey: UPDATE_STATE_KEY,
           checkedForVersion: state.checkedForVersion || null,
           lastCheckAt: state.lastCheckAt ? new Date(state.lastCheckAt).toISOString() : null,
           lastRemoteVersion: state.lastRemoteVersion || null,
@@ -5534,6 +5600,9 @@
       categoryRouting: {
         activeGame: currentDrop?.game || null,
         suppliedSlug: currentDrop?.gameSlug || null,
+        suppliedSlugMatchesGame: currentDrop?.game
+          ? suppliedCategorySlugMatchesGame(currentDrop.game, currentDrop.gameSlug || "")
+          : null,
         resolvedSlug: currentDrop?.game ? resolveCategorySlug(currentDrop) : null,
         resolvedUrl: currentDrop?.game ? gameDirectoryUrl(currentDrop) : null,
         learnedSlugCount: Object.keys(categorySlugCache || {}).length,
@@ -5637,6 +5706,7 @@
         label: progressLabel || null,
         nativeTitle: lastNativeTitle || null,
         renderedTitle: document.title || null,
+        titleObserverActive: Boolean(progressTitleObserver),
       },
       panelAndMenuWidth: normalizedCollapsedPanelWidth(),
       progressPanelWidth: ui?.shadow?.querySelector(".progress-stack")
