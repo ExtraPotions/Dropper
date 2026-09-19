@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.40
+// @version      2.6.41
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -34,7 +34,7 @@
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.40";
+  const APP_VERSION = "2.6.41";
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const UPDATE_STATE_KEY = "dropper-update-state-v2";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -99,6 +99,12 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.41": [
+      "Falls back to Twitch Drops Inventory when a completed Drop claim is rejected by Twitch integrity checks.",
+      "Prevents claim-only integrity rejections from counting as Dropper network failures.",
+      "Avoids retrying an integrity-rejected claim with a second client ID.",
+      "Adds claim integrity fallback diagnostics.",
+    ],
     "2.6.40": [
       "Removes the Settings dock max-height cap so the menu always sizes naturally to its content.",
       "Separates the close button into its own header column so it cannot cover title or subtitle text.",
@@ -430,6 +436,7 @@
   let lastClaimAttemptAt = 0;
   let claimReadySince = 0;
   let claimReadySignature = "";
+  let lastClaimIntegrityFallback = null;
   let lastProgressReconcile = null;
   let lastStreamVerification = null;
   let lastStreamSwitch = 0;
@@ -1487,6 +1494,11 @@
   async function gql(requests) {
     const token = getToken();
     if (!token) throw new Error("Not logged in");
+    const claimOnly = Boolean(
+      Array.isArray(requests) &&
+      requests.length &&
+      requests.every((req) => req?.op === "claimDrop")
+    );
     const body = requests.map((req) => gqlPayload(GQL_OPS[req.op], req.variables));
     const send = async (clientId) => {
       beforeDropperNetworkRequest();
@@ -1556,6 +1568,12 @@
       recordDropperNetworkSuccess();
       return result;
     } catch (error) {
+      const integrityRejected = /integrity/i.test(error?.message || "");
+
+      if (claimOnly && integrityRejected) {
+        throw error;
+      }
+
       if (/401|403|integrity/i.test(error.message) && !error?.circuitOpen) {
         try {
           const fallback = await send(CLIENT_IDS[1]);
@@ -3470,12 +3488,42 @@
         return true;
       }
     } catch (error) {
+      const message = error?.message || String(error);
+      const integrityRejected = /integrity/i.test(message);
+
       logActivity("claim-error", "GQL claim attempt failed", {
         drop: drop?.name || null,
         game: drop?.game || null,
-        message: error?.message || String(error),
+        message,
+        integrityRejected,
       });
-      // DOM claim remains the fallback.
+
+      if (integrityRejected) {
+        const alreadyOnInventory = isInventory();
+        lastClaimIntegrityFallback = {
+          at: Date.now(),
+          drop: drop?.name || null,
+          game: drop?.game || null,
+          alreadyOnInventory,
+          navigatedToInventory: !alreadyOnInventory,
+        };
+
+        setStatus(
+          alreadyOnInventory
+            ? "Claim Ready · Waiting For Twitch Claim Control"
+            : "Claim Ready · Opening Twitch Drops Inventory"
+        );
+
+        logActivity("claim-fallback", "Using Twitch page claim control after integrity rejection", {
+          drop: drop?.name || null,
+          game: drop?.game || null,
+          alreadyOnInventory,
+        });
+
+        if (!alreadyOnInventory) {
+          autoNavigateTwitch(INVENTORY_URL, "claim-integrity-fallback");
+        }
+      }
     }
     return false;
   }
@@ -5511,6 +5559,15 @@
         signature: claimReadySignature || null,
         dropInstanceIdAvailable: Boolean(currentDrop?.dropInstanceID),
       },
+      claimIntegrityFallback: lastClaimIntegrityFallback
+        ? {
+            at: new Date(lastClaimIntegrityFallback.at).toISOString(),
+            drop: lastClaimIntegrityFallback.drop,
+            game: lastClaimIntegrityFallback.game,
+            alreadyOnInventory: lastClaimIntegrityFallback.alreadyOnInventory,
+            navigatedToInventory: lastClaimIntegrityFallback.navigatedToInventory,
+          }
+        : null,
       progressAgeSeconds: Math.max(0, Math.floor((now - lastProgressAt) / 1000)),
       progressFreshnessBasis: "credited-minutes-or-percent",
       lastProgress,
