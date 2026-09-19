@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.43
+// @version      3.0.0
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -43,7 +43,7 @@
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "2.6.43";
+  const APP_VERSION = "3.0.0";
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const UPDATE_STATE_KEY = "dropper-update-state-v2";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -108,6 +108,11 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "3.0.0": [
+      "Introduces the coordinated ExtraPotions launcher grid.",
+      "Aligns userscript identity and manager metadata across the product family.",
+      "Keeps Dropper features and Twitch-specific behavior intact.",
+    ],
     "2.6.43": [
       "Stops next-game selection from choosing already-complete unclaimed Drops.",
       "Keeps an unclaimed Working Toward Drop sticky at 100% so inventory polls cannot swap in another game.",
