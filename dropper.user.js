@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      2.6.34
+// @version      2.6.35
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-icon-1024.png
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -13,6 +13,7 @@
 // @match        https://player.twitch.tv/*
 // @match        https://embed.twitch.tv/*
 // @run-at       document-start
+// @noframes
 // @grant        unsafeWindow
 // @grant        GM_xmlhttpRequest
 // @connect      gql.twitch.tv
@@ -27,9 +28,13 @@
 (function twitchDropsHelper() {
   "use strict";
 
+  // Dropper owns one top-level Twitch page. Running inside Twitch player/embed
+  // frames duplicates heartbeats, update checks, DOM scans, and network work.
+  if (window.top !== window.self) return;
+
   const SETTINGS_KEY = "tdh-settings-v3";
   const LAUNCHER_TOP_KEY = "tdh-launcher-top";
-  const APP_VERSION = "2.6.34";
+  const APP_VERSION = "2.6.35";
   const LAST_VERSION_KEY = "dropper-last-version";
   const UPDATE_STATE_KEY = "dropper-update-state";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -94,6 +99,12 @@
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 5 * 1000;
   const RELEASE_NOTES = {
+    "2.6.35": [
+      "Counts newly credited watch minutes as fresh progress even when the rounded percentage does not change.",
+      "Prevents false Delayed or Stalled status while Twitch is still crediting minutes.",
+      "Stops Dropper from running inside Twitch player and embed frames.",
+      "Reduces duplicate heartbeat, update-check, DOM-scan, and GQL work from extra Twitch contexts.",
+    ],
     "2.6.34": [
       "Prevents duplicate update checks and repeated update-available notices across Twitch contexts.",
       "Adds a short shared update-check lease so only one GitHub check can run at a time.",
@@ -3232,23 +3243,46 @@
     if (currentDrop.isClaimed || Number(percent) < 100) resetClaimReadyTimer();
     const resolvedGameSlug = resolveCategorySlug(currentDrop);
     if (resolvedGameSlug) currentDrop.gameSlug = resolvedGameSlug;
+
     const changedDrop = previousDrop?.id !== currentDrop.id || previousDrop?.name !== currentDrop.name;
     const changedPercent = Number(previousDrop?.percent ?? -1) !== Number(percent);
+    const previousMinutes = Number(previousDrop?.currentMinutes);
+    const currentMinutes = Number(currentDrop.currentMinutes);
+    const creditedMinuteAdvanced = Boolean(
+      Number.isFinite(currentMinutes) &&
+      currentMinutes >= 0 &&
+      (
+        changedDrop ||
+        !Number.isFinite(previousMinutes) ||
+        currentMinutes > previousMinutes
+      )
+    );
+
     if (changedDrop || changedPercent) {
       logActivity("progress", `${currentDrop.name || "Drop"} · ${percent}%`, {
         game: currentDrop.game || null,
         currentMinutes: currentDrop.currentMinutes || 0,
         requiredMinutes: currentDrop.requiredMinutes || 0,
       });
+    } else if (creditedMinuteAdvanced) {
+      logActivity("progress-minute", `${currentDrop.name || "Drop"} · ${currentMinutes} / ${currentDrop.requiredMinutes || "?"} min`, {
+        game: currentDrop.game || null,
+        currentMinutes,
+        requiredMinutes: currentDrop.requiredMinutes || 0,
+        percent,
+      });
     }
+
     writeSession("tdh-drop", currentDrop);
     progressLabel = `${percent}%`;
-    if (percent !== lastProgress) {
+
+    if (changedDrop || percent !== lastProgress || creditedMinuteAdvanced) {
       lastProgress = percent;
       lastProgressAt = Date.now();
       writeSession("tdh-progress", percent);
       writeSession("tdh-progress-at", lastProgressAt);
     }
+
     verifyHandoffWithCreditedProgress(currentDrop, previousDrop);
     refreshDropCard();
     layoutChrome();
@@ -5318,6 +5352,7 @@
     const circuit = networkCircuitSnapshot(now);
     return {
       version: APP_VERSION,
+      topLevelContext: window.top === window.self,
       headerVersionControl: Boolean(ui?.shadow?.getElementById("tdh-header-version")),
       autoDismiss: {
         menuSeconds: Math.round(MENU_INACTIVITY_DISMISS_MS / 1000),
@@ -5347,6 +5382,7 @@
         dropInstanceIdAvailable: Boolean(currentDrop?.dropInstanceID),
       },
       progressAgeSeconds: Math.max(0, Math.floor((now - lastProgressAt) / 1000)),
+      progressFreshnessBasis: "credited-minutes-or-percent",
       lastProgress,
       lastProgressAt: new Date(lastProgressAt).toISOString(),
       navigationInFlight: (() => {
