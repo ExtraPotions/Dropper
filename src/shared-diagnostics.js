@@ -53,8 +53,31 @@ const ExtraPotionsDiagnostics = (() => {
       if (console[level] === wrapped) hooks.push({ level, original, wrapped });
     } catch {}
   }
+  function resourceErrorDetails(target) {
+    const element = target?.tagName || 'unknown';
+    const root = target?.getRootNode?.();
+    const host = root?.host || null;
+    const productId = host?.dataset?.productId || host?.dataset?.expDiagnosticsProduct || null;
+    const owned = Boolean(
+      productId ||
+      host?.dataset?.expOwned === '1' ||
+      target?.dataset?.expOwned === '1'
+    );
+    let assetHost = null;
+    try {
+      const raw = target?.currentSrc || target?.src || target?.href || '';
+      assetHost = raw ? new URL(raw, location.href).hostname : null;
+    } catch {}
+    return {
+      element,
+      owner: owned ? (productId || 'extrapotions') : 'page',
+      assetHost,
+    };
+  }
   const onError = event => record('error', event.target === window ? 'runtime-error' : 'resource-error',
-    event.target === window ? [event.error || event.message, { line: event.lineno, column: event.colno }] : [{ element: event.target?.tagName || 'unknown' }]);
+    event.target === window
+      ? [event.error || event.message, { line: event.lineno, column: event.colno }]
+      : [resourceErrorDetails(event.target)]);
   const onRejection = event => record('error', 'unhandled-rejection', [event.reason]);
   addEventListener('error', onError, true);
   addEventListener('unhandledrejection', onRejection);
