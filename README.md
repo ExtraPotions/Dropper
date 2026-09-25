@@ -22,10 +22,10 @@
 ## Install
 
 <p>
-  <a href="https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js?v=3.2.22">
+  <a href="https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js?v=3.2.23">
     <img alt="Install Dropper" src="https://img.shields.io/badge/Install-Dropper-9147FF?style=flat-square">
   </a>
-    <img alt="Version 3.2.22" src="https://img.shields.io/badge/version-3.2.22-22C55E?style=flat-square">
+    <img alt="Version 3.2.23" src="https://img.shields.io/badge/version-3.2.23-22C55E?style=flat-square">
   <a href="https://github.com/ExtraPotions/Dropper/releases">
     <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/ExtraPotions/Dropper/total?style=flat-square&label=Downloads">
   </a>

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.2.22
+// @version      3.2.23
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -332,7 +332,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.2.22";
+  const APP_VERSION = "3.2.23";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -503,6 +503,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.2.23": [
+      "Places the Badge Only progress card inside the Drops menu instead of above the menu.",
+      "Keeps the progress card at the top of the expanded Drops controls."
+    ],
     "3.2.22": [
       "Treats Dropper as an integrated ExtraPotions product in shared coordination and release provenance.",
       "Moves the live progress card above Drops inside the menu when Badge Only is enabled.",
@@ -11256,7 +11260,7 @@ const ExtraPotionsDiagnostics = (() => {
         border-radius:12px;
         border-left:1px solid color-mix(in srgb, var(--theme-accent) 47%, transparent);
       }
-      .badge-only-progress-slot{display:block;margin:0 0 7px;min-width:0}
+      .badge-only-progress-slot{display:block;grid-column:1/-1;margin:0 0 8px;min-width:0}
       .badge-only-progress-slot[hidden]{display:none!important}
       .badge-only-progress-slot #tdh-drop-card{position:relative!important;inset:auto!important;display:block!important;width:100%!important;min-width:0!important;max-width:none!important;margin:0!important}
       .compact-line { height:auto; min-height:48px; padding:6px 10px; display:grid; grid-template-columns:6px minmax(0,1fr) auto auto; gap:7px; align-items:center; cursor:pointer; }
@@ -11948,8 +11952,8 @@ const ExtraPotionsDiagnostics = (() => {
               <a class="update-action" id="tdh-update-action" href="#" target="_blank" rel="noopener noreferrer" role="button">View Update</a>
             </div>
           </div>
-          <div class="badge-only-progress-slot" id="tdh-badge-only-progress-slot" aria-label="Drop progress" hidden></div>
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-drops-body"><span class="fl-tool-title">Drops</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-drops-body">
+            <div class="badge-only-progress-slot" id="tdh-badge-only-progress-slot" aria-label="Drop progress" hidden></div>
             ${switchHtml("tdh-claim-drops", "Auto-Claim Drops", "", settings.claimDrops)}
             ${switchHtml("tdh-claim-bonus", "Auto-Claim Bonus Chests", "Clicks Claim Bonus When The Chest Appears.", settings.claimBonus)}
             ${switchHtml("tdh-keep-tab", "Keep Tab Active", "Keeps Twitch From Pausing Or Throttling In The Background. Reload After Changing.", settings.keepTabActive)}
@@ -11994,7 +11998,7 @@ const ExtraPotionsDiagnostics = (() => {
           </div></section>
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-progress-body"><span class="fl-tool-title">Appearance</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-progress-body">
             ${switchHtml("tdh-progress-title", "Show Progress In Tab", "", settings.progressInTitle)}
-            ${switchHtml("tdh-badge-only", "Badge Only", "Keeps Only The Dropper Badge On The Page And Shows Progress Above Drops When The Menu Is Open.", settings.badgeOnly)}
+            ${switchHtml("tdh-badge-only", "Badge Only", "Keeps Only The Dropper Badge On The Page And Shows Progress At The Top Of The Drops Menu.", settings.badgeOnly)}
             ${switchHtml("tdh-reduce-motion", "Reduce Motion", "", settings.reduceMotion)}
             <hr class="appearance-separator">
             ${themeSwatchesHtml()}

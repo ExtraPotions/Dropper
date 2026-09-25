@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.23 — 2026-09-25
+
+- Places the Badge Only progress card inside the Drops menu instead of above the menu.
+- Keeps the progress card at the top of the expanded Drops controls.
+- Keeps the collapsed Drops header free of an external progress card.
+- Restores the progress card beside the launcher when Badge Only is disabled.
+
 ## 3.2.22 — 2026-09-25
 
 - Treats Dropper as an integrated ExtraPotions product in shared coordination and release provenance.

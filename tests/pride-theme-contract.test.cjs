@@ -136,7 +136,7 @@ test('pride theme computed contract exposes dataset and rainbow treatments', asy
   }
 });
 
-test('Badge Only moves the live progress card above the Drops menu', async () => {
+test('Badge Only moves the live progress card inside the Drops menu', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -154,25 +154,28 @@ test('Badge Only moves the live progress card above the Drops menu', async () =>
       const shadow = document.getElementById('tdh-root').shadowRoot;
       shadow.querySelector('[data-panel="tdh-progress-body"]').click();
       shadow.getElementById('tdh-badge-only').click();
+      shadow.querySelector('[data-panel="tdh-drops-body"]').click();
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const slot = shadow.getElementById('tdh-badge-only-progress-slot');
       const card = shadow.getElementById('tdh-drop-card');
-      const dropsPanel = shadow.querySelector('[data-panel="tdh-drops-body"]').closest('.fl-tool-panel');
+      const dropsBody = shadow.getElementById('tdh-drops-body');
       const launcher = shadow.getElementById('tdh-settings-launcher');
       return {
         parent: card.parentElement.id,
+        slotParent: slot.parentElement.id,
+        slotIsFirst: dropsBody.firstElementChild === slot,
         presentation: card.dataset.presentation,
         slotHidden: slot.hidden,
-        slotBeforeDrops: Boolean(slot.compareDocumentPosition(dropsPanel) & Node.DOCUMENT_POSITION_FOLLOWING),
         cardVisible: getComputedStyle(card).display !== 'none' && card.getBoundingClientRect().height > 0,
         launcherRow: launcher.parentElement.className,
       };
     });
     assert.deepEqual(facts, {
       parent: 'tdh-badge-only-progress-slot',
+      slotParent: 'tdh-drops-body',
+      slotIsFirst: true,
       presentation: 'menu-card',
       slotHidden: false,
-      slotBeforeDrops: true,
       cardVisible: true,
       launcherRow: 'badge-row',
     });
