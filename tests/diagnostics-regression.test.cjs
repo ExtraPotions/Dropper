@@ -10,6 +10,19 @@ const source = loadDropperSource();
 
 assert.match(source, /report: "Dropper Diagnostics"/, "diagnostic exports identify themselves clearly");
 assert.match(source, /rewardImage:\s*\(\(\) => \{/u, "diagnostics report reward image resolution");
+assert.match(source, /function resourceErrorDetails\(target\)/u, "resource errors include bounded attribution details");
+assert.match(source, /owner: owned \? \(productId \|\| 'extrapotions'\) : 'page'/u, "resource errors distinguish Dropper-owned assets from page assets");
+assert.match(source, /assetHost,/u, "resource errors retain only the asset hostname rather than a full URL");
+assert.match(source, /const checkedForCurrentVersion = state\.checkedForVersion === APP_VERSION;/u, "update checks detect a newly installed version before mutating state");
+assert.match(source, /if \(!checkedForCurrentVersion\) \{[\s\S]*state\.lastCheckAt = 0;[\s\S]*state\.lastRemoteVersion = "";/u, "a new installed version clears stale update-check timing and remote-version state");
+assert.match(source, /progressCardRect: rectSnapshot\(card\)/u, "diagnostics report the actual progress-card geometry");
+assert.match(source, /launcherRect: rectSnapshot\(launcher\)/u, "diagnostics report launcher geometry");
+assert.match(source, /launcherRowRect: rectSnapshot\(launcherRow\)/u, "diagnostics report launcher-row geometry");
+assert.match(source, /menuRect: rectSnapshot\(ui\?\.dock\)/u, "diagnostics report menu geometry");
+assert.match(source, /noticeRect: rectSnapshot\(notice\)/u, "diagnostics report notice geometry");
+assert.match(source, /progressPanelWidth: card \? Math\.round\(card\.getBoundingClientRect\(\)\.width\) : null/u, "progressPanelWidth measures the card instead of the combined launcher row");
+assert.match(source, /launcherRowWidth: launcherRow \? Math\.round\(launcherRow\.getBoundingClientRect\(\)\.width\) : null/u, "diagnostics expose the combined launcher-row width separately");
+
 assert.match(source, /source: direct \? "drop-data"/u, "diagnostics distinguish direct and fallback reward image sources");
 
 const parserStart = source.indexOf("  function cleanText");
