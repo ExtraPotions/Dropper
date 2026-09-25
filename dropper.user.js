@@ -11280,7 +11280,7 @@ const ExtraPotionsDiagnostics = (() => {
         border-radius:12px;
         border-left:1px solid color-mix(in srgb, var(--theme-accent) 47%, transparent);
       }
-      .badge-only-progress-slot{display:block;grid-column:1/-1;margin:0 0 8px;min-width:0}
+      .badge-only-progress-slot{display:block;width:100%;margin:0 0 5px;min-width:0}
       .badge-only-progress-slot[hidden]{display:none!important}
       .badge-only-progress-slot #tdh-drop-card{position:relative!important;inset:auto!important;display:block!important;width:100%!important;min-width:0!important;max-width:none!important;margin:0!important}
       .compact-line { height:auto; min-height:48px; padding:6px 10px; display:grid; grid-template-columns:6px minmax(0,1fr) auto auto; gap:7px; align-items:center; cursor:pointer; }
@@ -11973,8 +11973,8 @@ const ExtraPotionsDiagnostics = (() => {
               <a class="update-action" id="tdh-update-action" href="#" target="_blank" rel="noopener noreferrer" role="button">View Update</a>
             </div>
           </div>
+          <div class="badge-only-progress-slot" id="tdh-badge-only-progress-slot" aria-label="Drop progress" hidden></div>
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-drops-body"><span class="fl-tool-title">Drops</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-drops-body">
-            <div class="badge-only-progress-slot" id="tdh-badge-only-progress-slot" aria-label="Drop progress" hidden></div>
             ${switchHtml("tdh-claim-drops", "Auto-Claim Drops", "", settings.claimDrops)}
             ${switchHtml("tdh-claim-bonus", "Auto-Claim Bonus Chests", "Clicks Claim Bonus When The Chest Appears.", settings.claimBonus)}
             ${switchHtml("tdh-keep-tab", "Keep Tab Active", "Keeps Twitch From Pausing Or Throttling In The Background. Reload After Changing.", settings.keepTabActive)}
