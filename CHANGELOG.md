@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.27 — 2026-09-25
+
+- Reanchors the launcher, progress panel, menu, and changelog to one measured launcher-grid geometry.
+- Prevents opening the menu or changelog from shifting Dropper surfaces apart across the page.
+- Keeps the progress panel and menu fixed relative to the real launcher grid instead of the cluster flow box.
+- Preserves the changelog as a menu-width card directly above the menu.
+
 ## 3.2.26 — 2026-09-25
 
 - Keeps the Current Version changelog card aligned to the Dropper menu instead of stretching across the page.
