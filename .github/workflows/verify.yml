@@ -24,9 +24,11 @@ jobs:
         run: |
           set -euo pipefail
           npm test 2>&1 | tee test-results.txt
-      - name: Archive reviewed source
+      - name: Archive reviewed source and locked toolchain
         if: always()
-        run: git archive --format=zip --output=dropper-source.zip HEAD
+        run: |
+          git archive --format=zip --output=dropper-source.zip HEAD
+          if test -d node_modules; then tar -czf dropper-toolchain.tgz node_modules; fi
       - name: Retain verification artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -34,6 +36,7 @@ jobs:
           name: dropper-verification-${{ github.sha }}
           path: |
             dropper-source.zip
+            dropper-toolchain.tgz
             test-results.txt
             dropper.user.js
           retention-days: 7
