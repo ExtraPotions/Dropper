@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.29 — 2026-09-25
+
+- Places the Badge Only progress card above the Drops menu section instead of inside the Drops body.
+- Keeps the Badge Only progress card matched to the active Full, Compact, or Narrow menu width.
+- Preserves the normal layout where the live progress panel sits directly left of the Dropper launcher.
+- Updates browser and layout regression coverage for the corrected Badge Only hierarchy.
+
 ## 3.2.28 — 2026-09-25
 
 - Returns the live progress panel to the same launcher row, directly left of the Dropper launcher.
