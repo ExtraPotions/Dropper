@@ -158,7 +158,20 @@ test('menu changelog notice stays card-sized and anchored to the Dropper menu', 
   assert.match(source, /notice\.style\.setProperty\("width", `\$\{width\}px`, "important"\);/u);
   assert.match(source, /const preferredTop = menuBox\.top - height - 8;/u);
   assert.match(source, /menuBox\.right - width/u);
-  assert.match(source, /positionMenuUpdateNotice\(openUp\);\s+layoutFloatingNotices\(\);/u);
+  assert.match(source, /positionMenuUpdateNotice\(\);\s+layoutFloatingNotices\(\);/u);
+});
+
+test('launcher, progress, menu, and changelog share one fixed anchor geometry', () => {
+  assert.match(source, /#tdh-tools-dock \{\s+position:fixed;/u);
+  assert.match(source, /#tdh-drop-card\[data-presentation="page-card"\]\{position:fixed!important;/u);
+  assert.match(source, /#tdh-drop-card\[data-presentation="menu-card"\]\{position:relative!important;/u);
+  assert.match(source, /const launcherBoxes = \[\.\.\.document\.querySelectorAll/u);
+  assert.match(source, /const gridTop = launcherBoxes\.length \? Math\.min/u);
+  assert.match(source, /const gridBottom = launcherBoxes\.length \? Math\.max/u);
+  assert.match(source, /const desiredMenuTop = anchor === "top"/u);
+  assert.match(source, /ui\.cluster\.style\.gap = "0px";/u);
+  assert.doesNotMatch(source, /const clusterHeight =/u);
+  assert.doesNotMatch(source, /const menuBlockHeight =/u);
 });
 
 test('launcher helper tooltip is removed', () => {
