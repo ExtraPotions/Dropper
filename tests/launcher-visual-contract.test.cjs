@@ -152,15 +152,19 @@ test('the fixed Dropper row leaves neighboring product launchers clickable', () 
   assert.match(source, /\.cluster \.badge-row\{[^}]*pointer-events:none!important\}/u);
 });
 
-test('menu changelog notice stays card-sized and anchored to the Dropper menu', () => {
-  assert.match(source, /placement: options\.placement === "menu" \? "menu" : "launcher-grid"/u);
-  assert.match(source, /const resolvedPlacement = placement === "menu" \? "menu" : "launcher-grid";/u);
-  assert.match(source, /if \(resolvedPlacement === "launcher-grid"\) \{\s+notice\.dataset\.expFloatingNotice = "1";\s+\} else \{\s+delete notice\.dataset\.expFloatingNotice;/u);
-  assert.match(source, /const menuBox = ui\.dock\.getBoundingClientRect\(\);/u);
+test('all Dropper update and changelog notices share one menu-width card space', () => {
+  assert.match(source, /function placeUpdateNotice\(\)/u);
+  assert.match(source, /notice\.dataset\.placement = "menu";/u);
+  assert.match(source, /delete notice\.dataset\.expFloatingNotice;/u);
+  assert.match(source, /function noticePanelWidth\(\)/u);
+  assert.match(source, /if \(mode === "narrow"\) return 220;/u);
+  assert.match(source, /if \(mode === "compact"\) return 260;/u);
+  assert.match(source, /placement: "menu"/u);
+  assert.match(source, /const menuBox = railOpen \? ui\.dock\.getBoundingClientRect\(\) : null;/u);
+  assert.match(source, /const anchorBox = menuBox\?\.width && menuBox\?\.height/u);
   assert.match(source, /notice\.style\.setProperty\("width", `\$\{width\}px`, "important"\);/u);
-  assert.match(source, /const preferredTop = menuBox\.top - height - 8;/u);
-  assert.match(source, /menuBox\.right - width/u);
-  assert.match(source, /positionMenuUpdateNotice\(\);\s+layoutFloatingNotices\(\);/u);
+  assert.match(source, /positionMenuUpdateNotice\(\);/u);
+  assert.doesNotMatch(source, /placement: options\.placement === "menu" \? "menu" : "launcher-grid"/u);
 });
 
 test('progress panel remains in the launcher row instead of taking fixed viewport coordinates', () => {
