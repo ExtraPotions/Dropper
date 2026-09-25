@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.2.23
+// @version      3.2.24
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -332,7 +332,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.2.23";
+  const APP_VERSION = "3.2.24";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -503,6 +503,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.2.24": [
+      "Keeps Update and Changelog notices fixed inside the visible browser window.",
+      "Preserves launcher-grid anchoring and notice stacking at either grid edge."
+    ],
     "3.2.23": [
       "Places the Badge Only progress card inside the Drops menu instead of above the menu.",
       "Keeps the progress card at the top of the expanded Drops controls."
@@ -11495,7 +11499,7 @@ const ExtraPotionsDiagnostics = (() => {
       #tdh-rail-close:hover { border-color:#9147ff; color:#fff; background:#211b2b; }
       .header-divider { height:1px; width:100%; margin:5px 0; background:linear-gradient(90deg,transparent,#9147ff88 50%,transparent); }
       .update-notice {
-        position:relative; display:block; width:100%; max-width:calc(100vw - 24px); margin:0 0 8px; padding:10px;
+        position:fixed; display:block; width:100%; max-width:calc(100vw - 24px); margin:0; padding:10px;
         box-sizing:border-box;
         border:1px solid color-mix(in srgb,var(--theme-accent) 62%,var(--theme-line)); border-radius:10px;
         background:

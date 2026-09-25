@@ -183,3 +183,46 @@ test('Badge Only moves the live progress card inside the Drops menu', async () =
     await browser.close();
   }
 });
+
+test('the changelog notice stays fixed inside the viewport', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1920, height: 885 } });
+    await page.addInitScript(() => {
+      window.GM_xmlhttpRequest = () => {};
+      localStorage.setItem('exp:v3:launcher-grid-delta', '4');
+    });
+    await page.route('https://www.twitch.tv/**', (route) => route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: '<!doctype html><html><head><title>Twitch</title></head><body></body></html>',
+    }));
+    await page.goto('https://www.twitch.tv/dropper-changelog-contract');
+    await page.addScriptTag({ content: fs.readFileSync(installPath, 'utf8') });
+    await page.waitForFunction(() => Boolean(document.getElementById('tdh-root')?.shadowRoot?.getElementById('tdh-header-version')));
+    const facts = await page.evaluate(async () => {
+      window.dropperShow?.();
+      const shadow = document.getElementById('tdh-root').shadowRoot;
+      shadow.getElementById('tdh-header-version').click();
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const notice = shadow.getElementById('tdh-update-notice');
+      const rect = notice.getBoundingClientRect();
+      return {
+        hidden: notice.hidden,
+        position: getComputedStyle(notice).position,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
+      };
+    });
+    assert.equal(facts.hidden, false);
+    assert.equal(facts.position, 'fixed');
+    assert.ok(facts.top >= 8, `notice top ${facts.top} should remain visible`);
+    assert.ok(facts.left >= 8, `notice left ${facts.left} should remain visible`);
+    assert.ok(facts.right <= 1912, `notice right ${facts.right} should remain visible`);
+    assert.ok(facts.bottom <= 877, `notice bottom ${facts.bottom} should remain visible`);
+  } finally {
+    await browser.close();
+  }
+});

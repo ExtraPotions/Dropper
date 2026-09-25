@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.24 — 2026-09-25
+
+- Keeps Update and Changelog notices fixed inside the visible browser window.
+- Preserves launcher-grid anchoring at either the top or bottom edge.
+- Keeps simultaneous product notices stacked beside the launcher grid.
+- Prevents the zero-sized userscript host from offsetting the notice outside the viewport.
+
 ## 3.2.23 — 2026-09-25
 
 - Places the Badge Only progress card inside the Drops menu instead of above the menu.
