@@ -12092,11 +12092,11 @@ const ExtraPotionsDiagnostics = (() => {
     ui = { host, shadow, cluster: shadow.getElementById("tdh-cluster"), launcher: shadow.getElementById("tdh-settings-launcher"), dock: shadow.getElementById("tdh-tools-dock") };
     const updateNotice = shadow.getElementById("tdh-update-notice");
     if (updateNotice) {
-      updateNotice.dataset.expFloatingNotice = "1";
-      updateNotice.dataset.placement = "launcher-grid";
+      updateNotice.dataset.placement = "menu";
+      delete updateNotice.dataset.expFloatingNotice;
       ui.cluster.append(updateNotice);
-      new ResizeObserver(() => requestAnimationFrame(layoutFloatingNotices)).observe(updateNotice);
-      new MutationObserver(() => requestAnimationFrame(layoutFloatingNotices)).observe(updateNotice,{attributes:true,attributeFilter:["hidden","class"]});
+      new ResizeObserver(() => requestAnimationFrame(positionMenuUpdateNotice)).observe(updateNotice);
+      new MutationObserver(() => requestAnimationFrame(positionMenuUpdateNotice)).observe(updateNotice,{attributes:true,attributeFilter:["hidden","class"]});
     }
     bindDrag();
     bindSwitches();
@@ -13496,45 +13496,63 @@ const ExtraPotionsDiagnostics = (() => {
     );
   }
 
-  function placeUpdateNotice(placement = "launcher-grid") {
+  function placeUpdateNotice() {
     if (!ui) return;
     const notice = ui.shadow.getElementById("tdh-update-notice");
     if (!notice) return;
-    const resolvedPlacement = placement === "menu" ? "menu" : "launcher-grid";
-    notice.dataset.placement = resolvedPlacement;
+    notice.dataset.placement = "menu";
+    delete notice.dataset.expFloatingNotice;
     for (const property of ["left", "right", "top", "bottom", "width"]) {
       notice.style.removeProperty(property);
-    }
-    if (resolvedPlacement === "launcher-grid") {
-      notice.dataset.expFloatingNotice = "1";
-    } else {
-      delete notice.dataset.expFloatingNotice;
     }
     if (notice.parentElement !== ui.cluster) ui.cluster.appendChild(notice);
   }
 
+  function noticePanelWidth() {
+    const mode = normalizedCollapsedPanelWidth();
+    if (mode === "narrow") return 220;
+    if (mode === "compact") return 260;
+    const full = parseFloat(getComputedStyle(ui.cluster).getPropertyValue("--dropper-width")) || 312;
+    return Math.max(280, Math.min(full, 340));
+  }
+
   function positionMenuUpdateNotice() {
-    if (!ui || !railOpen) return;
+    if (!ui) return;
     const notice = ui.shadow.getElementById("tdh-update-notice");
-    if (!notice || notice.hidden || notice.dataset.placement !== "menu") return;
+    if (!notice || notice.hidden) return;
 
-    const menuBox = ui.dock.getBoundingClientRect();
-    if (!menuBox.width || !menuBox.height) return;
-
-    const width = Math.min(
-      menuBox.width || ui.dock.offsetWidth || 260,
-      Math.max(0, window.innerWidth - 24),
-    );
+    const width = Math.min(noticePanelWidth(), Math.max(0, window.innerWidth - 24));
     notice.style.setProperty("width", `${width}px`, "important");
 
+    const menuBox = railOpen ? ui.dock.getBoundingClientRect() : null;
+    const rowBox = ui.shadow.querySelector(".badge-row")?.getBoundingClientRect?.();
+    const launcherBox = ui.launcher?.getBoundingClientRect?.();
+    const anchorBox = menuBox?.width && menuBox?.height
+      ? menuBox
+      : rowBox?.width && rowBox?.height
+        ? rowBox
+        : launcherBox;
+
+    if (!anchorBox?.width || !anchorBox?.height) return;
+
     const height = notice.offsetHeight || notice.scrollHeight || 72;
-    const preferredTop = menuBox.top - height - 8;
-    const top = preferredTop >= 8
-      ? preferredTop
-      : Math.min(window.innerHeight - height - 8, menuBox.bottom + 8);
+    const anchor = document.documentElement.dataset.expLauncherAnchor === "top" ? "top" : "bottom";
+    let top;
+
+    if (menuBox?.width && menuBox?.height) {
+      const preferredTop = menuBox.top - height - 8;
+      top = preferredTop >= 8
+        ? preferredTop
+        : Math.min(window.innerHeight - height - 8, menuBox.bottom + 8);
+    } else if (anchor === "top") {
+      top = Math.min(window.innerHeight - height - 8, anchorBox.bottom + 8);
+    } else {
+      top = Math.max(8, anchorBox.top - height - 8);
+    }
+
     const left = Math.max(
       8,
-      Math.min(window.innerWidth - width - 8, menuBox.right - width),
+      Math.min(window.innerWidth - width - 8, anchorBox.right - width),
     );
 
     notice.style.setProperty("left", `${left}px`, "important");
@@ -13555,12 +13573,12 @@ const ExtraPotionsDiagnostics = (() => {
       details,
       releaseUrl: options.releaseUrl || RELEASES_URL,
       actionUrl: options.actionUrl || "",
-      placement: options.placement === "menu" ? "menu" : "launcher-grid",
+      placement: "menu",
     };
     if (!ui) { updateNoticeState = state; return; }
 
     clearTimeout(updateNoticeTimer);
-    placeUpdateNotice(state.placement);
+    placeUpdateNotice();
     const notice = ui.shadow.getElementById("tdh-update-notice");
     const list = ui.shadow.getElementById("tdh-update-list");
     ui.shadow.getElementById("tdh-update-kicker").textContent = state.kicker;
@@ -13663,6 +13681,7 @@ const ExtraPotionsDiagnostics = (() => {
           "After reinstalling, return to Twitch and Dropper will refresh this page automatically.",
         ],
         actionUrl: INSTALL_URL,
+        placement: "menu",
       },
     );
 
@@ -13710,7 +13729,7 @@ const ExtraPotionsDiagnostics = (() => {
         `Updated from v${previous} to v${APP_VERSION}.`,
         "",
         null,
-        { kicker: "Update Complete", version: APP_VERSION, details: RELEASE_NOTES[APP_VERSION] || [] },
+        { kicker: "Update Complete", version: APP_VERSION, details: RELEASE_NOTES[APP_VERSION] || [], placement: "menu" },
       );
     }
     localStorage.setItem(LAST_VERSION_KEY, APP_VERSION);
@@ -14535,7 +14554,6 @@ const ExtraPotionsDiagnostics = (() => {
     ui.cluster.style.zIndex = railOpen ? "2147483647" : "2147483600";
 
     positionMenuUpdateNotice();
-    layoutFloatingNotices();
   }
 
   function bindDrag() {
