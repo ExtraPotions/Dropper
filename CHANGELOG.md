@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.20 — 2026-09-25
+
+- Keeps the transparent width of Dropper's fixed badge row from intercepting neighboring launchers.
+- Preserves pointer input for the Dropper launcher and progress panel.
+- Verifies every installed product launcher remains the top hit target at both grid anchors.
+- Keeps the existing three-column launcher order and spacing unchanged.
+
 ## 3.2.19 — 2026-09-25
 
 - Uses the borderless Dropper launcher artwork for the userscript-manager icon.

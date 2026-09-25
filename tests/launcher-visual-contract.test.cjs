@@ -138,6 +138,13 @@ test('progress visibility preserves the badge-only controls', () => {
   assert.doesNotMatch(source, /const firstProductSlot = dropper \? columns \* reservedRows : 0;/u);
 });
 
+test('the fixed Dropper row leaves neighboring product launchers clickable', () => {
+  assert.match(source, /\.cluster\{pointer-events:none!important\}/u);
+  assert.match(source, /\.cluster :is\(#tdh-tools-dock,\.update-notice,#tdh-drop-card,#tdh-settings-launcher\)\{pointer-events:auto!important\}/u);
+  assert.match(source, /\.cluster \.progress-stack\{[^}]*pointer-events:none!important\}/u);
+  assert.match(source, /\.cluster \.badge-row\{[^}]*pointer-events:none!important\}/u);
+});
+
 test('launcher helper tooltip is removed', () => {
   assert.doesNotMatch(source, /#tdh-settings-launcher::before \{[^}]*bottom:calc\(100% \+ 7px\);/u);
   assert.doesNotMatch(source, /#tdh-settings-launcher\.tip-below::before/u);
