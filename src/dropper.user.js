@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.2.18
+// @version      3.2.19
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
-// @icon         data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDI0IDEwMjQiIHJvbGU9ImltZyIgYXJpYS1sYWJlbGxlZGJ5PSJ0aXRsZSBkZXNjIj4KICA8dGl0bGUgaWQ9InRpdGxlIj5Ecm9wcGVyIEljb248L3RpdGxlPgogIDxkZXNjIGlkPSJkZXNjIj5BIHNwbGl0IGZhY2V0ZWQgZ2VtIHdpdGggYSBkaWFnb25hbCBncmF5IHRvIFR3aXRjaCBwdXJwbGUgYm9yZGVyLjwvZGVzYz4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iYm9yZGVyR3JhZCIgeDE9IjAiIHkxPSIwIiB4Mj0iMSIgeTI9IjEiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjQjlCQkM3Ii8+CiAgICAgIDxzdG9wIG9mZnNldD0iNTIlIiBzdG9wLWNvbG9yPSIjOEE2QkU4Ii8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzkxNDdGRiIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iYmdHcmFkIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiMxNzE1MjAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjMEUwRDEzIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJwdXJwbGVBIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNEOUI1RkYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjOUQ1N0ZGIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJwdXJwbGVCIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNBMjRDRkYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjNkEyMUU4Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJwdXJwbGVDIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiM3QjI4RjQiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjNEIxNTlFIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJncmF5QSIgeDE9IjAiIHkxPSIwIiB4Mj0iMSIgeTI9IjEiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjQUVCMEMyIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzY2NkE4MiIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ3JheUIiIHgxPSIwIiB5MT0iMCIgeDI9IjEiIHkyPSIxIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iIzYyNjY3RSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiMzNDM3NDgiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImdyYXlDIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiMzRDQwNTEiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjMjIyNDMxIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KCiAgPHJlY3QgeD0iMzIiIHk9IjMyIiB3aWR0aD0iOTYwIiBoZWlnaHQ9Ijk2MCIgcng9IjE4NSIgZmlsbD0idXJsKCNiZ0dyYWQpIi8+CiAgPHJlY3QgeD0iNDIiIHk9IjQyIiB3aWR0aD0iOTQwIiBoZWlnaHQ9Ijk0MCIgcng9IjE3NSIKICAgICAgICBmaWxsPSJub25lIiBzdHJva2U9InVybCgjYm9yZGVyR3JhZCkiIHN0cm9rZS13aWR0aD0iMjgiLz4KCiAgPCEtLSBMZWZ0IHB1cnBsZSBoYWxmIC0tPgogIDxwb2x5Z29uIHBvaW50cz0iNDk0LDIxMCAyODUsNTAwIDQzMCw1OTAiIGZpbGw9InVybCgjcHVycGxlQSkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQ5NCwyMTAgNDMwLDU5MCA0OTQsNDcwIiBmaWxsPSIjOUI1QUY5Ii8+CiAgPHBvbHlnb24gcG9pbnRzPSIyODUsNTAwIDI4NSw2ODUgNDMwLDU5MCIgZmlsbD0iIzhDMzlGMiIvPgogIDxwb2x5Z29uIHBvaW50cz0iMjg1LDY4NSA0OTQsODQyIDQzMCw1OTAiIGZpbGw9InVybCgjcHVycGxlQykiLz4KICA8cG9seWdvbiBwb2ludHM9IjQzMCw1OTAgNDk0LDQ3MCA0OTQsODQyIiBmaWxsPSJ1cmwoI3B1cnBsZUIpIi8+CgogIDwhLS0gUmlnaHQgZ3JhcGhpdGUgaGFsZiAtLT4KICA8cG9seWdvbiBwb2ludHM9IjUzMCwyMTAgNzM5LDUwMCA1OTQsNTkwIiBmaWxsPSJ1cmwoI2dyYXlBKSIvPgogIDxwb2x5Z29uIHBvaW50cz0iNTMwLDIxMCA1OTQsNTkwIDUzMCw0NzAiIGZpbGw9IiM2QTZFODciLz4KICA8cG9seWdvbiBwb2ludHM9IjczOSw1MDAgNzM5LDY4NSA1OTQsNTkwIiBmaWxsPSIjNEU1MjY4Ii8+CiAgPHBvbHlnb24gcG9pbnRzPSI3MzksNjg1IDUzMCw4NDIgNTk0LDU5MCIgZmlsbD0idXJsKCNncmF5QykiLz4KICA8cG9seWdvbiBwb2ludHM9IjU5NCw1OTAgNTMwLDQ3MCA1MzAsODQyIiBmaWxsPSJ1cmwoI2dyYXlCKSIvPgoKICA8IS0tIENlbnRyYWwgc3BsaXQgLS0+CiAgPHJlY3QgeD0iNTAyIiB5PSIyMDUiIHdpZHRoPSIyMCIgaGVpZ2h0PSI2NTAiIHJ4PSIxMCIgZmlsbD0iIzEwMTAxNyIvPgo8L3N2Zz4=
+// @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
 // @downloadURL  https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
 // @tag          Twitch
@@ -332,7 +332,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.2.18";
+  const APP_VERSION = "3.2.19";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const UPDATE_STATE_KEY = "dropper-update-state-v2";
@@ -464,6 +464,12 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.2.19": [
+      "Uses the borderless Dropper launcher artwork for the userscript-manager icon.",
+      "References the shared SVG by URL instead of embedding image bytes in the userscript.",
+      "Removes the superseded bordered SVG and raster badge files.",
+      "Blocks future builds if embedded image data returns."
+    ],
     "3.2.18": [
       "Uses compact rounded rectangles for status, progress, version, and skip controls.",
       "Keeps diagnostics and multi-product conflict reporting aligned across the active suite."

@@ -8,11 +8,9 @@ https://creativecommons.org/licenses/by-nc-sa/4.0/
 
 This includes, unless otherwise noted:
 
-- `assets/dropper-icon.svg`
-- `assets/dropper-icon-1024.png`
 - `assets/dropper-launcher.svg`
 - Dropper documentation and README content
-- The Dropper icon embedded in the userscript metadata
+- The borderless Dropper icon referenced by the userscript metadata
 
 You must provide appropriate attribution, may not use the licensed material for commercial purposes, and must license adapted material under the same license. Refer to the official Creative Commons license for the legally controlling terms.
 

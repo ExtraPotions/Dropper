@@ -9,21 +9,7 @@ const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_INPUT = path.join(ROOT, 'src', 'dropper.user.js');
 const DEFAULT_OUTPUT = path.join(ROOT, 'dropper.user.js');
 const MINIFY_THRESHOLD_BYTES = 2 * 1024 * 1024;
-
-function userscriptVersion(source) {
-  return source.match(/^\/\/ @version\s+(\S+)/m)?.[1] || '';
-}
-
-function promoteInstallSource(sourcePath, installPath) {
-  if (!fs.existsSync(installPath)) return;
-  const install = fs.readFileSync(installPath, 'utf8');
-  if (!install.includes('function twitchDropsHelper')) return;
-  const current = fs.existsSync(sourcePath) ? fs.readFileSync(sourcePath, 'utf8') : '';
-  if (userscriptVersion(install) && userscriptVersion(install) !== userscriptVersion(current)) {
-    fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
-    fs.writeFileSync(sourcePath, install);
-  }
-}
+const ICON_URL = 'https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg';
 
 function splitHeader(source) {
   const end = source.indexOf('// ==/UserScript==');
@@ -69,8 +55,9 @@ async function minifyUserscript(inputPath, outputPath = DEFAULT_OUTPUT, options 
   if (path.resolve(inputPath) === DEFAULT_INPUT) {
     const shared = fs.readFileSync(path.join(ROOT, 'src/shared-diagnostics.js'), 'utf8').replace(/\r\n/g, '\n').trim();
     if (!source.includes(shared)) throw new Error('Shared diagnostics differ; run node scripts/sync-diagnostics.cjs');
-    const icon = source.match(/^\/\/ @icon\s+data:image\/svg\+xml;base64,(.+)$/m)?.[1];
-    if (!icon || !Buffer.from(icon, 'base64').equals(fs.readFileSync(path.join(ROOT, 'assets/dropper-icon.svg')))) throw new Error('Manager icon differs from badge SVG');
+    const icon = source.match(/^\/\/ @icon\s+(.+)$/m)?.[1]?.trim();
+    if (icon !== ICON_URL) throw new Error('Manager icon must reference the borderless launcher SVG');
+    if (/data:image\//u.test(source)) throw new Error('Images must be referenced by URL instead of embedded data');
   }
   const originalBytes = Buffer.byteLength(source);
   const thresholdBytes = options.thresholdBytes ?? MINIFY_THRESHOLD_BYTES;
@@ -115,9 +102,6 @@ if (require.main === module) {
   (async () => {
     const input = process.argv[2] || DEFAULT_INPUT;
     const output = process.argv[3] || DEFAULT_OUTPUT;
-    if (input === DEFAULT_INPUT && output === DEFAULT_OUTPUT) {
-      promoteInstallSource(DEFAULT_INPUT, DEFAULT_OUTPUT);
-    }
     const stats = await minifyUserscript(input, output);
     if (stats.minified) {
       console.log(`${path.basename(output)} ${stats.originalBytes} -> ${stats.outputBytes} bytes sha256=${stats.sha256}`);

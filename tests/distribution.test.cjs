@@ -20,6 +20,9 @@ const LEGACY_PATHS = [
   'scripts/release.ps1',
   'dropper-loader.user.js',
   'assets/dropper-launcher-1024.png',
+  'assets/dropper-icon.svg',
+  'assets/dropper-icon-1024.png',
+  'assets/dropper-icon-128.png',
 ];
 
 test('repository keeps only current docs, assets, and required build inputs', () => {
@@ -67,10 +70,10 @@ test('in-app release notes and update checker stay current-only but functional',
   const source = loadDropperSource(root);
   const releaseNotesBlock = source.match(/const RELEASE_NOTES = \{([\s\S]*?)\};/u)?.[1] || '';
   const versions = [...releaseNotesBlock.matchAll(/"(\d+\.\d+\.\d+)": \[/gu)].map((match) => match[1]);
-  assert.deepEqual(versions.slice(0, 3), ['3.2.18', '3.2.17', '3.2.16']);
-  assert.match(releaseNotesBlock, /"3.2.18": \[/u);
+  assert.deepEqual(versions.slice(0, 3), ['3.2.19', '3.2.18', '3.2.17']);
+  assert.match(releaseNotesBlock, /"3.2.19": \[/u);
   assert.doesNotMatch(releaseNotesBlock, /"3\.1\.32": \[/u);
-  const currentNotes = releaseNotesBlock.match(/"3\.2\.18": \[([\s\S]*?)\],/u)?.[1] || '';
+  const currentNotes = releaseNotesBlock.match(/"3\.2\.19": \[([\s\S]*?)\],/u)?.[1] || '';
   const bullets = [...currentNotes.matchAll(/"([^"]+)"/gu)];
   assert.ok(bullets.length >= 2 && bullets.length <= 5, 'current release notes stay concise');
 

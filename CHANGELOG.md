@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.19 — 2026-09-25
+
+- Uses the borderless Dropper launcher artwork for the userscript-manager icon.
+- References the shared SVG by URL instead of embedding image bytes in the userscript.
+- Removes the superseded bordered SVG and raster badge files.
+- Blocks future builds if embedded image data returns.
+
 ## 3.2.18 — 2026-09-25
 
 - Replaced pill and circular status chrome with compact rounded rectangles.

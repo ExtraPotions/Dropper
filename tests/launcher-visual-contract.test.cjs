@@ -11,8 +11,6 @@ const source = loadDropperSource(root);
 const launcher = fs.readFileSync(path.join(root, 'assets', 'dropper-launcher.svg'), 'utf8');
 
 test('launcher mark is a dedicated borderless asset', () => {
-  const badge = fs.readFileSync(path.join(root, 'assets', 'dropper-icon.svg'));
-  assert.equal(crypto.createHash('sha256').update(badge).digest('hex'), '2f1822b2e7791475619e94ecbc7ba5784e2af9ff2a034a21684c34068037056a');
   assert.equal(crypto.createHash('sha256').update(launcher).digest('hex'), '730dd1b661c995ffdfed7e3883393affa24bcbbe88932e35c6835f3f474ca449');
   assert.match(launcher, /Dropper Launcher Mark/u);
   assert.doesNotMatch(launcher, /borderGrad|<rect x="32"|<rect x="42"/u);
@@ -21,16 +19,15 @@ test('launcher mark is a dedicated borderless asset', () => {
   assert.match(source, /dropperGemSvg\("icon"\)/u);
 });
 
-test('launcher, spacing, menu badge, and source badge use exact suite measurements', () => {
+test('launcher, spacing, and menu artwork use exact suite measurements', () => {
   assert.match(source, /#tdh-settings-launcher \{[\s\S]*?width:48px;[\s\S]*?height:48px;/u);
   assert.match(source, /#tdh-settings-launcher \.icon \{[^}]*width:40px; height:40px;/u);
   assert.match(source, /#tdh-settings-launcher \.ring \{[^}]*width:44px; height:44px;/u);
   assert.match(source, /\.header-icon \.menu-icon \{ width:38px; height:38px;/u);
   assert.match(source, /column \* 56/u);
-  const png = fs.readFileSync(path.join(root, 'assets', 'dropper-icon-128.png'));
-  assert.equal(png.subarray(1, 4).toString(), 'PNG');
-  assert.equal(png.readUInt32BE(16), 128);
-  assert.equal(png.readUInt32BE(20), 128);
+  for (const removed of ['dropper-icon.svg', 'dropper-icon-1024.png', 'dropper-icon-128.png']) {
+    assert.equal(fs.existsSync(path.join(root, 'assets', removed)), false, removed);
+  }
 });
 
 test('progress panel and launcher remain one stable row', () => {
