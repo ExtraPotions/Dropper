@@ -13479,16 +13479,52 @@ const ExtraPotionsDiagnostics = (() => {
     );
   }
 
-  function placeUpdateNotice(placement = "progress") {
+  function placeUpdateNotice(placement = "launcher-grid") {
     if (!ui) return;
     const notice = ui.shadow.getElementById("tdh-update-notice");
     if (!notice) return;
-    notice.dataset.placement = "launcher-grid";
+    const resolvedPlacement = placement === "menu" ? "menu" : "launcher-grid";
+    notice.dataset.placement = resolvedPlacement;
+    for (const property of ["left", "right", "top", "bottom", "width"]) {
+      notice.style.removeProperty(property);
+    }
+    if (resolvedPlacement === "launcher-grid") {
+      notice.dataset.expFloatingNotice = "1";
+    } else {
+      delete notice.dataset.expFloatingNotice;
+    }
     if (notice.parentElement !== ui.cluster) ui.cluster.appendChild(notice);
-    void placement;
   }
 
-  function positionMenuUpdateNotice() { layoutFloatingNotices(); }
+  function positionMenuUpdateNotice() {
+    if (!ui || !railOpen) return;
+    const notice = ui.shadow.getElementById("tdh-update-notice");
+    if (!notice || notice.hidden || notice.dataset.placement !== "menu") return;
+
+    const menuBox = ui.dock.getBoundingClientRect();
+    if (!menuBox.width || !menuBox.height) return;
+
+    const width = Math.min(
+      menuBox.width || ui.dock.offsetWidth || 260,
+      Math.max(0, window.innerWidth - 24),
+    );
+    notice.style.setProperty("width", `${width}px`, "important");
+
+    const height = notice.offsetHeight || notice.scrollHeight || 72;
+    const preferredTop = menuBox.top - height - 8;
+    const top = preferredTop >= 8
+      ? preferredTop
+      : Math.min(window.innerHeight - height - 8, menuBox.bottom + 8);
+    const left = Math.max(
+      8,
+      Math.min(window.innerWidth - width - 8, menuBox.right - width),
+    );
+
+    notice.style.setProperty("left", `${left}px`, "important");
+    notice.style.setProperty("right", "auto", "important");
+    notice.style.setProperty("top", `${Math.max(8, top)}px`, "important");
+    notice.style.setProperty("bottom", "auto", "important");
+  }
 
   function showUpdateNotice(title, text, actionText = "View Update", action = null, options = {}) {
     const details = Array.isArray(options.details) ? options.details.slice(0, 4) : [];
@@ -13502,7 +13538,7 @@ const ExtraPotionsDiagnostics = (() => {
       details,
       releaseUrl: options.releaseUrl || RELEASES_URL,
       actionUrl: options.actionUrl || "",
-      placement: "launcher-grid",
+      placement: options.placement === "menu" ? "menu" : "launcher-grid",
     };
     if (!ui) { updateNoticeState = state; return; }
 
@@ -14442,8 +14478,6 @@ const ExtraPotionsDiagnostics = (() => {
 
     ui.cluster.classList.toggle("open-up", openUp);
     ui.cluster.style.zIndex = railOpen ? "2147483647" : "2147483600";
-    positionMenuUpdateNotice(openUp);
-
     const clusterHeight =
       rowHeight +
       gap +
@@ -14466,6 +14500,7 @@ const ExtraPotionsDiagnostics = (() => {
       document.documentElement.style.setProperty("--exp-dropper-menu-top", nextTop);
       if (previousTop !== nextTop) document.dispatchEvent(new CustomEvent("exp-core:coordination", { detail: { type: "dropper-menu-position", productId: "dropper" } }));
     }
+    positionMenuUpdateNotice(openUp);
     layoutFloatingNotices();
   }
 
