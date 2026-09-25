@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.26 — 2026-09-25
+
+- Keeps the Current Version changelog card aligned to the Dropper menu instead of stretching across the page.
+- Matches the changelog width to the active Full, Compact, or Narrow menu width.
+- Positions the card directly above the menu with an 8 px gap and a viewport-safe below-menu fallback.
+- Keeps automatic update notices in launcher-grid coordination while menu changelogs remain Dropper-owned.
+
 ## 3.2.25 — 2026-09-25
 
 - Restores full theme colors to Update and Changelog notices.
