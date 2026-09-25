@@ -161,17 +161,17 @@ test('menu changelog notice stays card-sized and anchored to the Dropper menu', 
   assert.match(source, /positionMenuUpdateNotice\(\);\s+layoutFloatingNotices\(\);/u);
 });
 
-test('launcher, progress, menu, and changelog share one fixed anchor geometry', () => {
+test('progress panel remains in the launcher row instead of taking fixed viewport coordinates', () => {
   assert.match(source, /#tdh-tools-dock \{\s+position:fixed;/u);
-  assert.match(source, /#tdh-drop-card\[data-presentation="page-card"\]\{position:fixed!important;/u);
-  assert.match(source, /#tdh-drop-card\[data-presentation="menu-card"\]\{position:relative!important;/u);
-  assert.match(source, /const launcherBoxes = \[\.\.\.document\.querySelectorAll/u);
-  assert.match(source, /const gridTop = launcherBoxes\.length \? Math\.min/u);
-  assert.match(source, /const gridBottom = launcherBoxes\.length \? Math\.max/u);
+  assert.match(source, /#tdh-drop-card\[data-presentation="page-card"\]\{position:relative!important;/u);
+  assert.match(source, /const rowWidth = settings\.badgeOnly \? launcherWidth : panelWidth \+ rowGap \+ launcherWidth;/u);
+  assert.match(source, /progressCard\.style\.setProperty\("width"/u);
+  assert.match(source, /for \(const property of \["left", "right", "top", "bottom"\]\) progressCard\.style\.removeProperty\(property\);/u);
+  assert.match(source, /const rowBox = badgeRow\?\.getBoundingClientRect\?\.\(\);/u);
   assert.match(source, /const desiredMenuTop = anchor === "top"/u);
   assert.match(source, /ui\.cluster\.style\.gap = "0px";/u);
-  assert.doesNotMatch(source, /const clusterHeight =/u);
-  assert.doesNotMatch(source, /const menuBlockHeight =/u);
+  assert.doesNotMatch(source, /progressCard\.style\.setProperty\("top"/u);
+  assert.doesNotMatch(source, /progressCard\.style\.setProperty\("right"/u);
 });
 
 test('launcher helper tooltip is removed', () => {
