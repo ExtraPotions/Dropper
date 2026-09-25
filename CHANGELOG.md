@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.30 — 2026-09-25
+
+- Unifies Update Available, Update Complete, notices, and Changelog into one Dropper-owned card space.
+- Constrains every notice to the active Full, Compact, or Narrow menu width.
+- Uses the menu bounds when open and the launcher row as the fallback anchor when the menu is closed.
+- Removes Dropper notices from the shared launcher-grid floating-notice width path.
+
 ## 3.2.29 — 2026-09-25
 
 - Places the Badge Only progress card above the Drops menu section instead of inside the Drops body.
