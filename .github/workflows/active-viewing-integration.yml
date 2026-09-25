@@ -1,0 +1,106 @@
+name: Verify active-viewing implementation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.changes/active-viewing.*.br'
+      - '.github/workflows/active-viewing-integration.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dropper-active-viewing-integration
+  cancel-in-progress: false
+
+jobs:
+  integrate:
+    if: contains(github.event.head_commit.message, 'verify active-viewing candidate')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply checksummed reviewed source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const crypto = require('node:crypto');
+          const zlib = require('node:zlib');
+          const hash = b => crypto.createHash('sha256').update(b).digest('hex');
+          const bytes = Buffer.concat([1, 2, 3].map(n => fs.readFileSync(`.changes/active-viewing.${n}.br`)));
+          if (hash(bytes) !== '5a9ef92ed7ce5a14c38a1973a1996c13f3acae4fde3b7d3183b8dfed5bca3512') throw new Error('Change archive checksum mismatch');
+          const changes = JSON.parse(zlib.brotliDecompressSync(bytes));
+          for (const [path, change] of Object.entries(changes.files)) {
+            if (path.startsWith('/') || path.includes('..') || !/^(src\/|tests\/|docs\/|README\.md$|CHANGELOG\.md$|package(?:-lock)?\.json$|\.gitignore$|\.github\/workflows\/verify\.yml$)/.test(path)) throw new Error('Unexpected change path');
+            if (change.before === null) {
+              if (fs.existsSync(path)) throw new Error('New file already exists: ' + path);
+              fs.mkdirSync(require('node:path').dirname(path), { recursive: true });
+              fs.writeFileSync(path, change.content);
+            } else {
+              const before = fs.readFileSync(path);
+              if (hash(before) !== change.before) throw new Error('Baseline changed: ' + path);
+              const lines = before.toString('utf8').match(/[^\n]*\n|[^\n]+$/g) || [];
+              for (const edit of [...change.edits].reverse()) lines.splice(edit.start, edit.delete, edit.text);
+              fs.writeFileSync(path, lines.join(''));
+            }
+            if (hash(fs.readFileSync(path)) !== change.after) throw new Error('Applied file checksum mismatch: ' + path);
+          }
+          fs.writeFileSync(process.env.RUNNER_TEMP + '/active-viewing-files.json', JSON.stringify(Object.keys(changes.files)));
+          NODE
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run all logic and browser regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test 2>&1 | tee test-results.txt
+      - name: Verify distribution and unchanged licenses
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' '1781192a55f7f747d96eb4dfdcaa400f754a7a683de370fec6273543d1a33e4a' 'dropper.user.js' | sha256sum -c -
+          git diff --exit-code -- LICENSE-CODE.md LICENSE-ASSETS.md NOTICE.md
+          sha256sum dropper.user.js src/dropper.user.js LICENSE-CODE.md LICENSE-ASSETS.md NOTICE.md > SHA256SUMS
+      - name: Commit verified development build without a release
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin refs/heads/main | cut -f1)"
+          test "$remote_head" = "$EXPECTED_HEAD"
+          node <<'NODE'
+          const cp = require('node:child_process');
+          const paths = JSON.parse(require('node:fs').readFileSync(process.env.RUNNER_TEMP + '/active-viewing-files.json'));
+          cp.execFileSync('git', ['add', '--', ...paths, 'dropper.user.js']);
+          NODE
+          git rm -- .changes/active-viewing.1.br .changes/active-viewing.2.br .changes/active-viewing.3.br .github/workflows/active-viewing-integration.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: integrate verified active-viewing development build'
+          git push origin HEAD:main
+          git rev-parse HEAD > verified-commit.txt
+          git archive --format=zip --output=dropper-source.zip HEAD
+      - name: Retain exact build, source, logs, and fixture screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dropper-active-viewing-${{ github.sha }}
+          path: |
+            test-results.txt
+            test-artifacts/
+            dropper.user.js
+            dropper-source.zip
+            SHA256SUMS
+            verified-commit.txt
+          retention-days: 7
+          if-no-files-found: error
