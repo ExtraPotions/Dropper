@@ -1,7 +1,7 @@
 {
   "name": "extrapotions-dropper",
   "private": true,
-  "version": "3.2.20",
+  "version": "3.2.21",
   "description": "Twitch Drops companion userscript",
   "scripts": {
     "build": "node scripts/minify-dist.cjs",

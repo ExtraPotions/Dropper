@@ -64,7 +64,7 @@ test('settings open collapsed and retain a themed last-category marker', () => {
   assert.match(source, /lastPanelId = header\.dataset\.panel/u);
   assert.match(source, /\.fl-tool-header\.last-opened \{ box-shadow:inset 3px 0 0 #b783ff; \}/u);
   const titles = [...source.matchAll(/<span class="fl-tool-title">([^<]+)<\/span>/gu)].map((match) => match[1]);
-  assert.deepEqual(titles, ['Drops', 'Streams', 'Appearance', 'Diagnostics']);
+  assert.deepEqual(titles, ['Drops', 'Streams', 'Appearance', 'System']);
 });
 
 test('menu sections group related Dropper controls without token-only rows', () => {

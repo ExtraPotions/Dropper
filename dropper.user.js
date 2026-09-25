@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.2.20
+// @version      3.2.21
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -328,16 +328,55 @@ const ExtraPotionsDiagnostics = (() => {
       products.forEach((node, index) => assign(node, (dropper ? 1 : 0) + index));
       try{localStorage.setItem(LAUNCHER_ORDER_KEY,JSON.stringify(products.map((node)=>node.dataset.productId).filter(Boolean)));}catch{}
     };
-    const refresh = () => requestAnimationFrame(() => { layout(); layoutChrome(); });
+    const refresh = () => requestAnimationFrame(() => { layout(); layoutChrome(); layoutFloatingNotices(); });
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.2.20";
+  const APP_VERSION = "3.2.21";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
+  const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
   const UPDATE_STATE_KEY = "dropper-update-state-v2";
   const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
   const UPDATE_CHECK_LEASE_MS = 30 * 1000;
+
+  function claimNotice(changeId) {
+    const key = NOTICE_KEY_PREFIX + String(changeId || "change");
+    try {
+      if (localStorage.getItem(key) === "1") return false;
+      localStorage.setItem(key, "1");
+    } catch (_) { /* best effort */ }
+    return true;
+  }
+
+  function layoutFloatingNotices() {
+    const launchers = [...document.querySelectorAll('[data-exp-product-launcher="1"][data-product-id]')]
+      .map((host) => host.shadowRoot?.querySelector('[data-exp-part="launcher"],.ward-launcher,.launcher,#tdh-settings-launcher'))
+      .filter(Boolean)
+      .map((node) => node.getBoundingClientRect())
+      .filter((box) => box.width && box.height);
+    const notices = [...document.querySelectorAll('[data-exp-product-launcher="1"][data-product-id]')]
+      .flatMap((host) => [...(host.shadowRoot?.querySelectorAll('[data-exp-floating-notice="1"]') || [])].map((notice) => ({ host, notice })))
+      .filter(({ notice }) => !notice.hidden && notice.getClientRects().length)
+      .sort((a, b) => Number(a.host.dataset.launcherSlot || 0) - Number(b.host.dataset.launcherSlot || 0) || a.host.dataset.productId.localeCompare(b.host.dataset.productId));
+    if (!launchers.length || !notices.length) return;
+    const anchor = document.documentElement.dataset.expLauncherAnchor === "top" ? "top" : "bottom";
+    const gridTop = Math.min(...launchers.map((box) => box.top));
+    const gridBottom = Math.max(...launchers.map((box) => box.bottom));
+    const gridRight = Math.max(...launchers.map((box) => box.right));
+    let cursor = anchor === "top" ? gridBottom + 8 : gridTop - 8;
+    for (const { notice } of notices) {
+      const width = Math.min(notice.offsetWidth || notice.scrollWidth || 260, Math.max(0, innerWidth - 24));
+      const height = notice.offsetHeight || notice.scrollHeight || 72;
+      const top = anchor === "top" ? cursor : cursor - height;
+      notice.style.setProperty("width", `${width}px`, "important");
+      notice.style.setProperty("left", `${Math.max(8, Math.min(innerWidth - width - 8, gridRight - width))}px`, "important");
+      notice.style.setProperty("right", "auto", "important");
+      notice.style.setProperty("top", `${Math.max(8, Math.min(innerHeight - height - 8, top))}px`, "important");
+      notice.style.setProperty("bottom", "auto", "important");
+      cursor = anchor === "top" ? top + height + 8 : top - 8;
+    }
+  }
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
   const ROUTING_SESSION_KEY = "dropper-routing-session-v310";
   const ROUTING_SESSION_VERSION = 1;
@@ -464,6 +503,11 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.2.21": [
+      "Shows each automatic update notice once for that version instead of on every page load.",
+      "Stacks simultaneous notices beside the complete launcher grid.",
+      "Moves diagnostics and recovery actions under the final System menu."
+    ],
     "3.2.20": [
       "Keeps Dropper's transparent launcher row from intercepting neighboring product launchers.",
       "Preserves pointer input for the Dropper launcher and progress panel.",
@@ -11954,7 +11998,7 @@ const ExtraPotionsDiagnostics = (() => {
               <output id="tdh-opacity-value" for="tdh-opacity-range">${normalizedOpacityPercent()}%</output>
             </div>
           </div></section>
-          <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-diagnostics-body"><span class="fl-tool-title">Diagnostics</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-diagnostics-body">
+          <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-diagnostics-body"><span class="fl-tool-title">System</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-diagnostics-body">
             <div class="action-pair"><button type="button" class="life-btn" id="tdh-diagnostics-toggle">Show Diagnostics</button>
             <button type="button" class="life-btn" id="tdh-copy-diagnostics">Copy Diagnostics</button></div>
             <hr class="action-separator">
@@ -12010,8 +12054,13 @@ const ExtraPotionsDiagnostics = (() => {
     registerBadgeGrid(host, "dropper", 90);
     ui = { host, shadow, cluster: shadow.getElementById("tdh-cluster"), launcher: shadow.getElementById("tdh-settings-launcher"), dock: shadow.getElementById("tdh-tools-dock") };
     const updateNotice = shadow.getElementById("tdh-update-notice");
-    const progressStack = shadow.querySelector(".progress-stack");
-    if (updateNotice && progressStack) progressStack.prepend(updateNotice);
+    if (updateNotice) {
+      updateNotice.dataset.expFloatingNotice = "1";
+      updateNotice.dataset.placement = "launcher-grid";
+      shadow.append(updateNotice);
+      new ResizeObserver(() => requestAnimationFrame(layoutFloatingNotices)).observe(updateNotice);
+      new MutationObserver(() => requestAnimationFrame(layoutFloatingNotices)).observe(updateNotice,{attributes:true,attributeFilter:["hidden","class"]});
+    }
     bindDrag();
     bindSwitches();
     bindPanels();
@@ -13395,36 +13444,13 @@ const ExtraPotionsDiagnostics = (() => {
   function placeUpdateNotice(placement = "progress") {
     if (!ui) return;
     const notice = ui.shadow.getElementById("tdh-update-notice");
-    const progressStack = ui.shadow.querySelector(".progress-stack");
-    if (!notice || !progressStack) return;
-
-    notice.dataset.placement = placement === "menu" ? "menu" : "progress";
-    if (ui.cluster) ui.cluster.dataset.panelWidth = normalizedCollapsedPanelWidth();
-    if (notice.dataset.placement === "progress") {
-      progressStack.prepend(notice);
-    } else if (notice.parentElement !== ui.cluster) {
-      ui.cluster.appendChild(notice);
-    }
+    if (!notice) return;
+    notice.dataset.placement = "launcher-grid";
+    if (notice.parentElement !== ui.shadow) ui.shadow.appendChild(notice);
+    void placement;
   }
 
-  function positionMenuUpdateNotice(openUp) {
-    if (!ui) return;
-    const notice = ui.shadow.getElementById("tdh-update-notice");
-    const progressStack = ui.shadow.querySelector(".progress-stack");
-    if (
-      !notice ||
-      !progressStack ||
-      notice.hidden ||
-      notice.dataset.placement !== "menu" ||
-      notice.parentElement !== ui.cluster
-    ) return;
-
-    if (openUp) {
-      ui.cluster.insertBefore(notice, ui.dock);
-    } else {
-      ui.cluster.insertBefore(notice, progressStack);
-    }
-  }
+  function positionMenuUpdateNotice() { layoutFloatingNotices(); }
 
   function showUpdateNotice(title, text, actionText = "View Update", action = null, options = {}) {
     const details = Array.isArray(options.details) ? options.details.slice(0, 4) : [];
@@ -13438,7 +13464,7 @@ const ExtraPotionsDiagnostics = (() => {
       details,
       releaseUrl: options.releaseUrl || RELEASES_URL,
       actionUrl: options.actionUrl || "",
-      placement: options.placement === "menu" ? "menu" : "progress",
+      placement: "launcher-grid",
     };
     if (!ui) { updateNoticeState = state; return; }
 
@@ -13485,7 +13511,7 @@ const ExtraPotionsDiagnostics = (() => {
 
     notice.hidden = false;
     updateNoticeState = state;
-    requestAnimationFrame(layoutChrome);
+    requestAnimationFrame(() => { layoutChrome(); layoutFloatingNotices(); });
 
     updateNoticeTimer = setTimeout(() => {
       if (!notice.hidden) hideUpdateNotice();
@@ -13498,7 +13524,7 @@ const ExtraPotionsDiagnostics = (() => {
     const notice = ui?.shadow?.getElementById("tdh-update-notice");
     if (notice) notice.hidden = true;
     updateNoticeState = null;
-    requestAnimationFrame(layoutChrome);
+    requestAnimationFrame(() => { layoutChrome(); layoutFloatingNotices(); });
   }
 
   function loadUpdateState() {
@@ -13530,6 +13556,7 @@ const ExtraPotionsDiagnostics = (() => {
 
     if (alreadyAnnounced) return;
     lastUpdateNoticeVersion = version;
+    if (!claimNotice(`available:${version}`)) return;
 
     showUpdateNotice(
       "New Dropper Version Available",
@@ -13586,7 +13613,7 @@ const ExtraPotionsDiagnostics = (() => {
     clearUpdateAvailableIndicator();
 
     const previous = localStorage.getItem(LAST_VERSION_KEY);
-    if (previous && previous !== APP_VERSION) {
+    if (previous && previous !== APP_VERSION && claimNotice(`updated:${APP_VERSION}`)) {
       showUpdateNotice(
         "Dropper Updated",
         `Updated from v${previous} to v${APP_VERSION}.`,
@@ -14401,6 +14428,7 @@ const ExtraPotionsDiagnostics = (() => {
       document.documentElement.style.setProperty("--exp-dropper-menu-top", nextTop);
       if (previousTop !== nextTop) document.dispatchEvent(new CustomEvent("exp-core:coordination", { detail: { type: "dropper-menu-position", productId: "dropper" } }));
     }
+    layoutFloatingNotices();
   }
 
   function bindDrag() {

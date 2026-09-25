@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.21 — 2026-09-25
+
+- Shows each automatic update notice once for that version instead of on every page load.
+- Stacks simultaneous notices beside the complete launcher grid.
+- Moves diagnostics and recovery actions under the final System menu.
+- Keeps the version button available for reopening the current changelog manually.
+
 ## 3.2.20 — 2026-09-25
 
 - Keeps the transparent width of Dropper's fixed badge row from intercepting neighboring launchers.

@@ -70,10 +70,10 @@ test('in-app release notes and update checker stay current-only but functional',
   const source = loadDropperSource(root);
   const releaseNotesBlock = source.match(/const RELEASE_NOTES = \{([\s\S]*?)\};/u)?.[1] || '';
   const versions = [...releaseNotesBlock.matchAll(/"(\d+\.\d+\.\d+)": \[/gu)].map((match) => match[1]);
-  assert.deepEqual(versions.slice(0, 3), ['3.2.20', '3.2.19', '3.2.18']);
-  assert.match(releaseNotesBlock, /"3.2.20": \[/u);
+  assert.deepEqual(versions.slice(0, 3), ['3.2.21', '3.2.20', '3.2.19']);
+  assert.match(releaseNotesBlock, /"3.2.21": \[/u);
   assert.doesNotMatch(releaseNotesBlock, /"3\.1\.32": \[/u);
-  const currentNotes = releaseNotesBlock.match(/"3\.2\.20": \[([\s\S]*?)\],/u)?.[1] || '';
+  const currentNotes = releaseNotesBlock.match(/"3\.2\.21": \[([\s\S]*?)\],/u)?.[1] || '';
   const bullets = [...currentNotes.matchAll(/"([^"]+)"/gu)];
   assert.ok(bullets.length >= 2 && bullets.length <= 5, 'current release notes stay concise');
 
