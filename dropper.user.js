@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.2.28
+// @version      3.2.29
 // @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -332,7 +332,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.2.28";
+  const APP_VERSION = "3.2.29";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -503,6 +503,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.2.29": [
+      "Places the Badge Only progress card above the Drops menu section instead of inside the Drops body.",
+      "Keeps the Badge Only progress card matched to the active Full, Compact, or Narrow menu width."
+    ],
     "3.2.28": [
       "Returns the live progress panel to the same launcher row, directly left of the Dropper launcher.",
       "Removes independent viewport positioning from the page progress card so the panel and launcher move as one unit."
