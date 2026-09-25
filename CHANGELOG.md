@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.28 — 2026-09-25
+
+- Returns the live progress panel to the same launcher row, directly left of the Dropper launcher.
+- Removes independent viewport positioning from the page progress card.
+- Keeps the progress panel and launcher moving as one unit with an 8 px gap.
+- Keeps the menu anchored above or below that row and the changelog directly above the menu.
+
 ## 3.2.27 — 2026-09-25
 
 - Reanchors the launcher, progress panel, menu, and changelog to one measured launcher-grid geometry.
