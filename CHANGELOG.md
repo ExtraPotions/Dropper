@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.22 — 2026-09-25
+
+- Treats Dropper as an integrated ExtraPotions product in shared coordination and release provenance.
+- Moves the live progress card above Drops inside the menu when Badge Only is enabled.
+- Keeps only the Dropper badge visible on the page while Badge Only is active.
+- Restores the progress card to the page beside the launcher when Badge Only is disabled.
+
 ## 3.2.21 — 2026-09-25
 
 - Shows each automatic update notice once for that version instead of on every page load.

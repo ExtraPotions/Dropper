@@ -135,3 +135,48 @@ test('pride theme computed contract exposes dataset and rainbow treatments', asy
     await browser.close();
   }
 });
+
+test('Badge Only moves the live progress card above the Drops menu', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await page.addInitScript(() => { window.GM_xmlhttpRequest = () => {}; });
+    await page.route('https://www.twitch.tv/**', (route) => route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: '<!doctype html><html><head><title>Twitch</title></head><body></body></html>',
+    }));
+    await page.goto('https://www.twitch.tv/dropper-badge-only-contract');
+    await page.addScriptTag({ content: fs.readFileSync(installPath, 'utf8') });
+    await page.waitForFunction(() => Boolean(document.getElementById('tdh-root')?.shadowRoot?.getElementById('tdh-drop-card')));
+    const facts = await page.evaluate(async () => {
+      window.dropperShow?.();
+      const shadow = document.getElementById('tdh-root').shadowRoot;
+      shadow.querySelector('[data-panel="tdh-progress-body"]').click();
+      shadow.getElementById('tdh-badge-only').click();
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const slot = shadow.getElementById('tdh-badge-only-progress-slot');
+      const card = shadow.getElementById('tdh-drop-card');
+      const dropsPanel = shadow.querySelector('[data-panel="tdh-drops-body"]').closest('.fl-tool-panel');
+      const launcher = shadow.getElementById('tdh-settings-launcher');
+      return {
+        parent: card.parentElement.id,
+        presentation: card.dataset.presentation,
+        slotHidden: slot.hidden,
+        slotBeforeDrops: Boolean(slot.compareDocumentPosition(dropsPanel) & Node.DOCUMENT_POSITION_FOLLOWING),
+        cardVisible: getComputedStyle(card).display !== 'none' && card.getBoundingClientRect().height > 0,
+        launcherRow: launcher.parentElement.className,
+      };
+    });
+    assert.deepEqual(facts, {
+      parent: 'tdh-badge-only-progress-slot',
+      presentation: 'menu-card',
+      slotHidden: false,
+      slotBeforeDrops: true,
+      cardVisible: true,
+      launcherRow: 'badge-row',
+    });
+  } finally {
+    await browser.close();
+  }
+});
