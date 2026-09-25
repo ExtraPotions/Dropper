@@ -11316,9 +11316,9 @@ const ExtraPotionsDiagnostics = (() => {
       /* 3.2.0 progress panel */
       .cluster{pointer-events:none!important}
       .cluster :is(#tdh-tools-dock,.update-notice,#tdh-drop-card,#tdh-settings-launcher){pointer-events:auto!important}
-      .cluster .progress-stack{height:48px;min-height:48px;pointer-events:none!important}
-      .cluster .badge-row{position:fixed!important;min-height:48px!important;height:48px!important;width:inherit!important;justify-content:flex-end!important;pointer-events:none!important}
-      .cluster #tdh-drop-card[data-presentation="page-card"]{position:fixed!important;right:12px!important;width:min(var(--dropper-width,312px),calc(100vw - 24px))!important;left:auto!important;top:auto!important;bottom:auto!important}
+      .cluster .progress-stack{height:auto;min-height:48px;pointer-events:none!important}
+      .cluster .badge-row{position:fixed!important;min-height:112px!important;height:auto!important;justify-content:flex-end!important;align-items:center!important;pointer-events:none!important}
+      .cluster #tdh-drop-card[data-presentation="page-card"]{position:relative!important;inset:auto!important;right:auto!important;left:auto!important;top:auto!important;bottom:auto!important;flex:0 0 auto!important;margin:0!important}
       .cluster .badge-only-progress-slot #tdh-drop-card[data-presentation="menu-card"]{position:relative!important;inset:auto!important;right:auto!important;left:auto!important;width:100%!important;min-width:0!important;max-width:none!important;margin:0!important}
 
       .badge-row {display:flex!important;flex-wrap:nowrap!important;align-items:center!important;gap:8px!important;width:100%!important;min-height:112px!important;height:auto!important;position:relative!important}
@@ -14438,77 +14438,75 @@ const ExtraPotionsDiagnostics = (() => {
     const badgeRow = ui.shadow.querySelector(".badge-row");
     const progressStack = ui.shadow.querySelector(".progress-stack");
     const progressCard = ui.shadow.getElementById("tdh-drop-card");
-    const rowHeight = 48;
-    const progressVisible = !settings.badgeOnly && progressCard && getComputedStyle(progressCard).display !== "none";
-    const reserveHeight = progressVisible ? Math.max(48, progressCard.offsetHeight || 48) : 48;
+    const rowHeight = settings.badgeOnly ? 48 : Math.max(112, progressCard?.offsetHeight || 112);
+    const panelMode = normalizedCollapsedPanelWidth();
+    const panelWidth =
+      panelMode === "narrow" ? 220 :
+      panelMode === "compact" ? 260 :
+      Math.max(280, Math.min(parseFloat(getComputedStyle(ui.cluster).getPropertyValue("--dropper-width")) || 312, 340));
+    const launcherWidth = 48;
+    const rowGap = settings.badgeOnly ? 0 : 8;
+    const rowWidth = settings.badgeOnly ? launcherWidth : panelWidth + rowGap + launcherWidth;
+
     const reservedRows = 1;
     if (ui.host.dataset.launcherReservedRows !== String(reservedRows)) {
       ui.host.dataset.launcherReservedRows = String(reservedRows);
       document.dispatchEvent(new CustomEvent("exp-core:coordination", { detail: { type: "launcher-reservation", productId: "dropper", rows: reservedRows } }));
     }
 
-    ui.dock.style.overflowY = railOpen ? "auto" : "";
     const gridOffset = parseFloat(getComputedStyle(ui.host).getPropertyValue("--exp-launcher-offset")) || 0;
     const storedDelta = Number(localStorage.getItem(LAUNCHER_GRID_DELTA_KEY) || 0);
-    const minimumDelta = 8 - (window.innerHeight - rowHeight - 12);
+    const minimumDelta = 8 - (window.innerHeight - 48 - 12);
     launcherGridDelta = Math.max(minimumDelta, Math.min(4, Number.isFinite(storedDelta) ? storedDelta : 0));
-    const origin = window.innerHeight - rowHeight - 12 + launcherGridDelta;
-    const anchor = origin <= (window.innerHeight - rowHeight) / 2 ? "top" : "bottom";
+    const launcherTop = window.innerHeight - 48 - 12 + launcherGridDelta;
+    const anchor = launcherTop <= (window.innerHeight - 48) / 2 ? "top" : "bottom";
     document.documentElement.dataset.expLauncherAnchor = anchor;
     ui.cluster.dataset.launcherAnchor = anchor;
-    clusterTop = anchor === "top" ? origin + gridOffset : origin - gridOffset;
+
+    // Dropper's row is the single positioning surface. The progress card remains
+    // directly to the left of the launcher and never receives viewport coordinates.
+    clusterTop = anchor === "top"
+      ? launcherTop + gridOffset
+      : launcherTop - gridOffset - (settings.badgeOnly ? 0 : Math.round((rowHeight - 48) / 2));
+
     if (badgeRow) {
-      badgeRow.style.top = `${clusterTop}px`;
-      badgeRow.style.right = "12px";
+      badgeRow.style.setProperty("width", `${Math.min(rowWidth, window.innerWidth - 24)}px`, "important");
+      badgeRow.style.setProperty("right", "12px", "important");
+      badgeRow.style.setProperty("left", "auto", "important");
+      badgeRow.style.setProperty("top", `${Math.max(8, Math.min(window.innerHeight - rowHeight - 8, clusterTop))}px`, "important");
+      badgeRow.style.setProperty("bottom", "auto", "important");
+      badgeRow.style.setProperty("gap", `${rowGap}px`, "important");
+      badgeRow.style.setProperty("min-height", `${rowHeight}px`, "important");
     }
 
-    // Read the real launcher boxes after coordination. All Dropper surfaces anchor
-    // to this one geometry instead of changing the cluster's flow position.
-    const launcherBoxes = [...document.querySelectorAll('[data-exp-product-launcher="1"][data-product-id]')]
-      .map((host) => host.shadowRoot?.querySelector('[data-exp-part="launcher"],.ward-launcher,.launcher,#tdh-settings-launcher'))
-      .filter(Boolean)
-      .map((node) => node.getBoundingClientRect())
-      .filter((box) => box.width && box.height);
-    const ownLauncherBox = ui.launcher?.getBoundingClientRect?.();
-    if (ownLauncherBox?.width && ownLauncherBox?.height) launcherBoxes.push(ownLauncherBox);
-
-    const gridTop = launcherBoxes.length ? Math.min(...launcherBoxes.map((box) => box.top)) : clusterTop;
-    const gridBottom = launcherBoxes.length ? Math.max(...launcherBoxes.map((box) => box.bottom)) : clusterTop + rowHeight;
-    const gridRight = launcherBoxes.length ? Math.max(...launcherBoxes.map((box) => box.right)) : window.innerWidth - 12;
-
-    const panelWidth = progressStack?.getBoundingClientRect?.().width || ui.dock.offsetWidth || 260;
-    const safeWidth = Math.min(panelWidth, Math.max(0, window.innerWidth - 24));
-    const right = Math.max(8, window.innerWidth - gridRight + 0);
-
-    let outerTop = gridTop;
-    let outerBottom = gridBottom;
-
-    if (progressVisible && progressCard?.dataset.presentation === "page-card") {
-      const progressTop = anchor === "top"
-        ? gridBottom + 8
-        : gridTop - reserveHeight - 8;
-      const safeProgressTop = Math.max(8, Math.min(window.innerHeight - reserveHeight - 8, progressTop));
-      progressCard.style.setProperty("width", `${safeWidth}px`, "important");
-      progressCard.style.setProperty("right", `${right}px`, "important");
-      progressCard.style.setProperty("left", "auto", "important");
-      progressCard.style.setProperty("top", `${safeProgressTop}px`, "important");
-      progressCard.style.setProperty("bottom", "auto", "important");
-      outerTop = Math.min(outerTop, safeProgressTop);
-      outerBottom = Math.max(outerBottom, safeProgressTop + reserveHeight);
+    if (progressStack) {
+      progressStack.style.width = `${Math.min(rowWidth, window.innerWidth - 24)}px`;
+      progressStack.style.minHeight = `${rowHeight}px`;
     }
+
+    if (progressCard?.dataset.presentation === "page-card") {
+      progressCard.style.setProperty("width", `${Math.min(panelWidth, Math.max(0, window.innerWidth - 80))}px`, "important");
+      progressCard.style.setProperty("max-width", `calc(100vw - 80px)`, "important");
+      for (const property of ["left", "right", "top", "bottom"]) progressCard.style.removeProperty(property);
+    }
+
+    const rowBox = badgeRow?.getBoundingClientRect?.();
+    const rowTop = rowBox?.height ? rowBox.top : clusterTop;
+    const rowBottom = rowBox?.height ? rowBox.bottom : clusterTop + rowHeight;
 
     const menuHeight = railOpen ? ui.dock.offsetHeight || ui.dock.clientHeight || 280 : 0;
     if (railOpen) {
       const desiredMenuTop = anchor === "top"
-        ? outerBottom + 8
-        : outerTop - menuHeight - 8;
+        ? rowBottom + 8
+        : rowTop - menuHeight - 8;
       const safeMenuTop = Math.max(8, Math.min(window.innerHeight - menuHeight - 8, desiredMenuTop));
-      ui.dock.style.setProperty("width", `${safeWidth}px`, "important");
-      ui.dock.style.right = `${right}px`;
+      ui.dock.style.setProperty("width", `${Math.min(panelWidth, window.innerWidth - 24)}px`, "important");
+      ui.dock.style.right = "12px";
       ui.dock.style.left = "auto";
       ui.dock.style.top = `${safeMenuTop}px`;
       ui.dock.style.bottom = "auto";
       ui.dock.style.maxHeight = `${Math.max(80, window.innerHeight - safeMenuTop - 8)}px`;
+      ui.dock.style.overflowY = "auto";
 
       document.documentElement.dataset.expDropperMenuOpen = "1";
       const previousTop = document.documentElement.style.getPropertyValue("--exp-dropper-menu-top");
@@ -14518,19 +14516,13 @@ const ExtraPotionsDiagnostics = (() => {
         document.dispatchEvent(new CustomEvent("exp-core:coordination", { detail: { type: "dropper-menu-position", productId: "dropper" } }));
       }
     } else {
-      ui.dock.style.removeProperty("top");
-      ui.dock.style.removeProperty("bottom");
-      ui.dock.style.removeProperty("left");
-      ui.dock.style.removeProperty("right");
-      ui.dock.style.removeProperty("width");
-      ui.dock.style.removeProperty("max-height");
+      ui.dock.style.overflowY = "";
+      for (const property of ["top", "bottom", "left", "right", "width", "max-height"]) ui.dock.style.removeProperty(property);
     }
 
-    // The cluster no longer carries menu or notice height. Keeping it at the launcher
-    // origin prevents any open surface from displacing the launcher or progress card.
     ui.cluster.classList.remove("open-up");
-    ui.cluster.style.top = `${clusterTop}px`;
-    ui.cluster.style.right = "12px";
+    ui.cluster.style.top = "0px";
+    ui.cluster.style.right = "0px";
     ui.cluster.style.gap = "0px";
     ui.cluster.style.zIndex = railOpen ? "2147483647" : "2147483600";
 
