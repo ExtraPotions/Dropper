@@ -11314,8 +11314,8 @@ const ExtraPotionsDiagnostics = (() => {
       .cluster :is(#tdh-tools-dock,.update-notice,#tdh-drop-card,#tdh-settings-launcher){pointer-events:auto!important}
       .cluster .progress-stack{height:48px;min-height:48px;pointer-events:none!important}
       .cluster .badge-row{position:fixed!important;min-height:48px!important;height:48px!important;width:inherit!important;justify-content:flex-end!important;pointer-events:none!important}
-      .cluster #tdh-drop-card{position:absolute!important;right:0!important;width:100%!important;bottom:calc(100% + var(--exp-product-grid-height,0px) + 8px)!important;top:auto!important}
-      .cluster[data-launcher-anchor="top"] #tdh-drop-card{top:calc(100% + var(--exp-product-grid-height,0px) + 8px)!important;bottom:auto!important}
+      .cluster #tdh-drop-card[data-presentation="page-card"]{position:fixed!important;right:12px!important;width:min(var(--dropper-width,312px),calc(100vw - 24px))!important;left:auto!important;top:auto!important;bottom:auto!important}
+      .cluster .badge-only-progress-slot #tdh-drop-card[data-presentation="menu-card"]{position:relative!important;inset:auto!important;right:auto!important;left:auto!important;width:100%!important;min-width:0!important;max-width:none!important;margin:0!important}
 
       .badge-row {display:flex!important;flex-wrap:nowrap!important;align-items:center!important;gap:8px!important;width:100%!important;min-height:112px!important;height:auto!important;position:relative!important}
       #tdh-drop-card {position:relative!important;order:0!important;flex:1 1 auto!important;width:auto!important;min-width:0!important;max-width:none!important;min-height:112px!important;margin:0!important;overflow:hidden!important;isolation:isolate!important;cursor:default!important;background:var(--theme-panel)!important;border:1px solid color-mix(in srgb,var(--theme-line) 94%,var(--theme-accent) 6%)!important;border-radius:12px!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.03),inset 0 0 18px rgba(255,255,255,.012),0 8px 28px #0006!important;opacity:1!important;transition:border-color .16s ease,box-shadow .16s ease!important}
@@ -11462,6 +11462,7 @@ const ExtraPotionsDiagnostics = (() => {
       #tdh-settings-launcher .fill { fill:none; stroke:var(--theme-accent,#9147ff); stroke-width:2.5; stroke-linecap:round; transition:.2s stroke; }
       #tdh-settings-launcher .icon { position:absolute; top:50%; left:50%; width:40px; height:40px; pointer-events:none; z-index:1; transform:translate(-50%,-50%); }
       #tdh-tools-dock {
+        position:fixed; right:12px; top:auto; bottom:auto;
         display:none; width:min(var(--dropper-width, 312px), calc(100vw - 24px)); max-width:calc(100vw - 24px);
         height:max-content; min-height:0; max-height:none; overflow:visible; flex:0 0 auto;
         transition:.15s width;
@@ -14434,7 +14435,6 @@ const ExtraPotionsDiagnostics = (() => {
     const progressStack = ui.shadow.querySelector(".progress-stack");
     const progressCard = ui.shadow.getElementById("tdh-drop-card");
     const rowHeight = 48;
-    // Progress opens beyond the complete launcher grid; it never consumes badge cells.
     const progressVisible = !settings.badgeOnly && progressCard && getComputedStyle(progressCard).display !== "none";
     const reserveHeight = progressVisible ? Math.max(48, progressCard.offsetHeight || 48) : 48;
     const reservedRows = 1;
@@ -14445,66 +14445,92 @@ const ExtraPotionsDiagnostics = (() => {
 
     ui.dock.style.overflowY = railOpen ? "auto" : "";
     const gridOffset = parseFloat(getComputedStyle(ui.host).getPropertyValue("--exp-launcher-offset")) || 0;
-    const peers = [...document.querySelectorAll('[data-exp-product-launcher="1"]')];
-    const productRows = peers
-      .filter((peer) => peer.dataset.productId !== "dropper")
-      .map((peer) => Number(peer.dataset.launcherRow || 0))
-      .filter(Number.isFinite);
-    const productGridHeight = Math.max(0, ...productRows) * 56;
-    ui.cluster.style.setProperty("--exp-product-grid-height", `${productGridHeight}px`);
-    const clearance = productGridHeight + (progressVisible ? reserveHeight + 8 : 0);
-    ui.dock.style.maxHeight = railOpen ? `${Math.max(80, window.innerHeight - rowHeight - clearance - 32)}px` : "";
-    const minimumDelta = 8 - (window.innerHeight - rowHeight - 12);
     const storedDelta = Number(localStorage.getItem(LAUNCHER_GRID_DELTA_KEY) || 0);
+    const minimumDelta = 8 - (window.innerHeight - rowHeight - 12);
     launcherGridDelta = Math.max(minimumDelta, Math.min(4, Number.isFinite(storedDelta) ? storedDelta : 0));
     const origin = window.innerHeight - rowHeight - 12 + launcherGridDelta;
     const anchor = origin <= (window.innerHeight - rowHeight) / 2 ? "top" : "bottom";
     document.documentElement.dataset.expLauncherAnchor = anchor;
     ui.cluster.dataset.launcherAnchor = anchor;
     clusterTop = anchor === "top" ? origin + gridOffset : origin - gridOffset;
-    if (badgeRow) { badgeRow.style.top = `${clusterTop}px`; badgeRow.style.right = "12px"; }
-    const notice = ui.shadow.getElementById("tdh-update-notice");
-    const menuNoticeVisible = Boolean(
-      notice &&
-      !notice.hidden &&
-      notice.dataset.placement === "menu"
-    );
-    const noticeHeight = menuNoticeVisible ? notice.offsetHeight || notice.scrollHeight || 0 : 0;
-    const noticeGap = menuNoticeVisible && noticeHeight ? 8 : 0;
+    if (badgeRow) {
+      badgeRow.style.top = `${clusterTop}px`;
+      badgeRow.style.right = "12px";
+    }
+
+    // Read the real launcher boxes after coordination. All Dropper surfaces anchor
+    // to this one geometry instead of changing the cluster's flow position.
+    const launcherBoxes = [...document.querySelectorAll('[data-exp-product-launcher="1"][data-product-id]')]
+      .map((host) => host.shadowRoot?.querySelector('[data-exp-part="launcher"],.ward-launcher,.launcher,#tdh-settings-launcher'))
+      .filter(Boolean)
+      .map((node) => node.getBoundingClientRect())
+      .filter((box) => box.width && box.height);
+    const ownLauncherBox = ui.launcher?.getBoundingClientRect?.();
+    if (ownLauncherBox?.width && ownLauncherBox?.height) launcherBoxes.push(ownLauncherBox);
+
+    const gridTop = launcherBoxes.length ? Math.min(...launcherBoxes.map((box) => box.top)) : clusterTop;
+    const gridBottom = launcherBoxes.length ? Math.max(...launcherBoxes.map((box) => box.bottom)) : clusterTop + rowHeight;
+    const gridRight = launcherBoxes.length ? Math.max(...launcherBoxes.map((box) => box.right)) : window.innerWidth - 12;
+
+    const panelWidth = progressStack?.getBoundingClientRect?.().width || ui.dock.offsetWidth || 260;
+    const safeWidth = Math.min(panelWidth, Math.max(0, window.innerWidth - 24));
+    const right = Math.max(8, window.innerWidth - gridRight + 0);
+
+    let outerTop = gridTop;
+    let outerBottom = gridBottom;
+
+    if (progressVisible && progressCard?.dataset.presentation === "page-card") {
+      const progressTop = anchor === "top"
+        ? gridBottom + 8
+        : gridTop - reserveHeight - 8;
+      const safeProgressTop = Math.max(8, Math.min(window.innerHeight - reserveHeight - 8, progressTop));
+      progressCard.style.setProperty("width", `${safeWidth}px`, "important");
+      progressCard.style.setProperty("right", `${right}px`, "important");
+      progressCard.style.setProperty("left", "auto", "important");
+      progressCard.style.setProperty("top", `${safeProgressTop}px`, "important");
+      progressCard.style.setProperty("bottom", "auto", "important");
+      outerTop = Math.min(outerTop, safeProgressTop);
+      outerBottom = Math.max(outerBottom, safeProgressTop + reserveHeight);
+    }
 
     const menuHeight = railOpen ? ui.dock.offsetHeight || ui.dock.clientHeight || 280 : 0;
-    const gap = railOpen ? clearance + 8 : 0;
-    ui.cluster.style.gap = `${gap}px`;
-    const menuBlockHeight = menuHeight + noticeHeight + noticeGap;
-    const spaceBelow = window.innerHeight - clusterTop - rowHeight - 8;
-    const spaceAbove = clusterTop - 8;
-    const openUp = railOpen && anchor === "bottom";
-
-    ui.cluster.classList.toggle("open-up", openUp);
-    ui.cluster.style.zIndex = railOpen ? "2147483647" : "2147483600";
-    const clusterHeight =
-      rowHeight +
-      gap +
-      (railOpen ? menuHeight : 0) +
-      noticeHeight +
-      noticeGap;
-
-    let top = openUp
-      ? clusterTop - menuHeight - gap - noticeHeight - noticeGap
-      : clusterTop;
-
-    top = Math.max(8, Math.min(window.innerHeight - clusterHeight - 8, top));
-    ui.cluster.style.top = `${top}px`;
-    ui.cluster.style.right = "12px";
     if (railOpen) {
+      const desiredMenuTop = anchor === "top"
+        ? outerBottom + 8
+        : outerTop - menuHeight - 8;
+      const safeMenuTop = Math.max(8, Math.min(window.innerHeight - menuHeight - 8, desiredMenuTop));
+      ui.dock.style.setProperty("width", `${safeWidth}px`, "important");
+      ui.dock.style.right = `${right}px`;
+      ui.dock.style.left = "auto";
+      ui.dock.style.top = `${safeMenuTop}px`;
+      ui.dock.style.bottom = "auto";
+      ui.dock.style.maxHeight = `${Math.max(80, window.innerHeight - safeMenuTop - 8)}px`;
+
       document.documentElement.dataset.expDropperMenuOpen = "1";
-      const menuTop = ui.dock.getBoundingClientRect().top;
       const previousTop = document.documentElement.style.getPropertyValue("--exp-dropper-menu-top");
-      const nextTop = `${Math.round(menuTop)}px`;
+      const nextTop = `${Math.round(safeMenuTop)}px`;
       document.documentElement.style.setProperty("--exp-dropper-menu-top", nextTop);
-      if (previousTop !== nextTop) document.dispatchEvent(new CustomEvent("exp-core:coordination", { detail: { type: "dropper-menu-position", productId: "dropper" } }));
+      if (previousTop !== nextTop) {
+        document.dispatchEvent(new CustomEvent("exp-core:coordination", { detail: { type: "dropper-menu-position", productId: "dropper" } }));
+      }
+    } else {
+      ui.dock.style.removeProperty("top");
+      ui.dock.style.removeProperty("bottom");
+      ui.dock.style.removeProperty("left");
+      ui.dock.style.removeProperty("right");
+      ui.dock.style.removeProperty("width");
+      ui.dock.style.removeProperty("max-height");
     }
-    positionMenuUpdateNotice(openUp);
+
+    // The cluster no longer carries menu or notice height. Keeping it at the launcher
+    // origin prevents any open surface from displacing the launcher or progress card.
+    ui.cluster.classList.remove("open-up");
+    ui.cluster.style.top = `${clusterTop}px`;
+    ui.cluster.style.right = "12px";
+    ui.cluster.style.gap = "0px";
+    ui.cluster.style.zIndex = railOpen ? "2147483647" : "2147483600";
+
+    positionMenuUpdateNotice();
     layoutFloatingNotices();
   }
 
