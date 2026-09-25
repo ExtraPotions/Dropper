@@ -206,10 +206,16 @@ test('the changelog notice stays fixed inside the viewport', async () => {
       shadow.getElementById('tdh-header-version').click();
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const notice = shadow.getElementById('tdh-update-notice');
+      const cluster = shadow.getElementById('tdh-cluster');
       const rect = notice.getBoundingClientRect();
+      const style = getComputedStyle(notice);
       return {
         hidden: notice.hidden,
-        position: getComputedStyle(notice).position,
+        parent: notice.parentElement?.id || null,
+        position: style.position,
+        color: style.color,
+        clusterColor: getComputedStyle(cluster).color,
+        backgroundImage: style.backgroundImage,
         top: rect.top,
         right: rect.right,
         bottom: rect.bottom,
@@ -217,7 +223,11 @@ test('the changelog notice stays fixed inside the viewport', async () => {
       };
     });
     assert.equal(facts.hidden, false);
+    assert.equal(facts.parent, 'tdh-cluster');
     assert.equal(facts.position, 'fixed');
+    assert.equal(facts.color, facts.clusterColor);
+    assert.notEqual(facts.color, 'rgb(0, 0, 0)');
+    assert.match(facts.backgroundImage, /linear-gradient/u);
     assert.ok(facts.top >= 8, `notice top ${facts.top} should remain visible`);
     assert.ok(facts.left >= 8, `notice left ${facts.left} should remain visible`);
     assert.ok(facts.right <= 1912, `notice right ${facts.right} should remain visible`);

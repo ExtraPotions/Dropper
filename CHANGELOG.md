@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.25 — 2026-09-25
+
+- Restores full theme colors to Update and Changelog notices.
+- Restores the themed background, border, text, and button contrast.
+- Keeps floating notices inside Dropper's themed container.
+- Preserves viewport-safe launcher-grid positioning and multi-product stacking.
+
 ## 3.2.24 — 2026-09-25
 
 - Keeps Update and Changelog notices fixed inside the visible browser window.
