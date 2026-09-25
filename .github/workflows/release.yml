@@ -54,7 +54,7 @@ jobs:
             /^## / { section += 1; if (section > 3) exit }
             { print }
           ' CHANGELOG.md > release-notes.md
-          if ! gh release create "$TAG"             dropper.user.js             --target "$GITHUB_SHA"             --title "Dropper ${version}"             --notes-file release-notes.md; then
+          if ! gh release create "$TAG"             dropper.user.js             assets/dropper-launcher.svg             --target "$GITHUB_SHA"             --title "Dropper ${version}"             --notes-file release-notes.md; then
             sleep 5
             gh release view "$TAG" >/dev/null
           fi
