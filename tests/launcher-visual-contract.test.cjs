@@ -150,6 +150,17 @@ test('the fixed Dropper row leaves neighboring product launchers clickable', () 
   assert.match(source, /\.cluster \.badge-row\{[^}]*pointer-events:none!important\}/u);
 });
 
+test('menu changelog notice stays card-sized and anchored to the Dropper menu', () => {
+  assert.match(source, /placement: options\.placement === "menu" \? "menu" : "launcher-grid"/u);
+  assert.match(source, /const resolvedPlacement = placement === "menu" \? "menu" : "launcher-grid";/u);
+  assert.match(source, /if \(resolvedPlacement === "launcher-grid"\) \{\s+notice\.dataset\.expFloatingNotice = "1";\s+\} else \{\s+delete notice\.dataset\.expFloatingNotice;/u);
+  assert.match(source, /const menuBox = ui\.dock\.getBoundingClientRect\(\);/u);
+  assert.match(source, /notice\.style\.setProperty\("width", `\$\{width\}px`, "important"\);/u);
+  assert.match(source, /const preferredTop = menuBox\.top - height - 8;/u);
+  assert.match(source, /menuBox\.right - width/u);
+  assert.match(source, /positionMenuUpdateNotice\(openUp\);\s+layoutFloatingNotices\(\);/u);
+});
+
 test('launcher helper tooltip is removed', () => {
   assert.doesNotMatch(source, /#tdh-settings-launcher::before \{[^}]*bottom:calc\(100% \+ 7px\);/u);
   assert.doesNotMatch(source, /#tdh-settings-launcher\.tip-below::before/u);
