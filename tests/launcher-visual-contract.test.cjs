@@ -132,8 +132,9 @@ test('launcher host is protected from hostile site CSS', () => {
 });
 
 test('progress visibility preserves the badge-only controls', () => {
-  assert.match(source, /const progressVisible = !settings\.badgeOnly && progressCard/u);
-  assert.match(source, /const reserveHeight = progressVisible \? Math\.max\(48, progressCard\.offsetHeight \|\| 48\) : 48;/u);
+  assert.match(source, /const rowHeight = settings\.badgeOnly \? 48 : Math\.max\(112, progressCard\?\.offsetHeight \|\| 112\);/u);
+  assert.match(source, /const rowGap = settings\.badgeOnly \? 0 : 8;/u);
+  assert.match(source, /const rowWidth = settings\.badgeOnly \? launcherWidth : panelWidth \+ rowGap \+ launcherWidth;/u);
   assert.match(source, /\.progress-stack\.badge-only \.badge-row \{ justify-content:flex-end; min-height:48px!important; \}/u);
   assert.match(source, /id="tdh-badge-only-progress-slot"[^>]*hidden/u);
   assert.match(source, /id="tdh-drops-body">\s*<div class="badge-only-progress-slot" id="tdh-badge-only-progress-slot"/u);
