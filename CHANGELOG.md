@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.31 — 2026-09-25
+
+- Reports separate progress-card, launcher, launcher-row, menu, and notice rectangles in diagnostics.
+- Corrects progressPanelWidth so it measures the progress card instead of the combined launcher row.
+- Forces a newly installed Dropper version to perform its own fresh remote update check instead of inheriting the prior version's throttle window.
+- Attributes resource-load errors as Dropper-owned or page-owned and records only the asset hostname, not the full URL.
+
 ## 3.2.30 — 2026-09-25
 
 - Unifies Update Available, Update Complete, notices, and Changelog into one Dropper-owned card space.
