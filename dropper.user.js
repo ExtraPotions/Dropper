@@ -91,8 +91,31 @@ const ExtraPotionsDiagnostics = (() => {
       if (console[level] === wrapped) hooks.push({ level, original, wrapped });
     } catch {}
   }
+  function resourceErrorDetails(target) {
+    const element = target?.tagName || 'unknown';
+    const root = target?.getRootNode?.();
+    const host = root?.host || null;
+    const productId = host?.dataset?.productId || host?.dataset?.expDiagnosticsProduct || null;
+    const owned = Boolean(
+      productId ||
+      host?.dataset?.expOwned === '1' ||
+      target?.dataset?.expOwned === '1'
+    );
+    let assetHost = null;
+    try {
+      const raw = target?.currentSrc || target?.src || target?.href || '';
+      assetHost = raw ? new URL(raw, location.href).hostname : null;
+    } catch {}
+    return {
+      element,
+      owner: owned ? (productId || 'extrapotions') : 'page',
+      assetHost,
+    };
+  }
   const onError = event => record('error', event.target === window ? 'runtime-error' : 'resource-error',
-    event.target === window ? [event.error || event.message, { line: event.lineno, column: event.colno }] : [{ element: event.target?.tagName || 'unknown' }]);
+    event.target === window
+      ? [event.error || event.message, { line: event.lineno, column: event.colno }]
+      : [resourceErrorDetails(event.target)]);
   const onRejection = event => record('error', 'unhandled-rejection', [event.reason]);
   addEventListener('error', onError, true);
   addEventListener('unhandledrejection', onRejection);
@@ -13624,7 +13647,7 @@ const ExtraPotionsDiagnostics = (() => {
 
     notice.hidden = false;
     updateNoticeState = state;
-    requestAnimationFrame(() => { layoutChrome(); layoutFloatingNotices(); });
+    requestAnimationFrame(() => { layoutChrome(); });
 
     updateNoticeTimer = setTimeout(() => {
       if (!notice.hidden) hideUpdateNotice();
@@ -13637,7 +13660,7 @@ const ExtraPotionsDiagnostics = (() => {
     const notice = ui?.shadow?.getElementById("tdh-update-notice");
     if (notice) notice.hidden = true;
     updateNoticeState = null;
-    requestAnimationFrame(() => { layoutChrome(); layoutFloatingNotices(); });
+    requestAnimationFrame(() => { layoutChrome(); });
   }
 
   function loadUpdateState() {
@@ -13760,14 +13783,19 @@ const ExtraPotionsDiagnostics = (() => {
       state.availableVersion = "";
       state.availableAt = 0;
     }
-    if (state.checkedForVersion !== APP_VERSION) {
+    const checkedForCurrentVersion = state.checkedForVersion === APP_VERSION;
+    if (!checkedForCurrentVersion) {
       state.checkedForVersion = APP_VERSION;
+      state.lastCheckAt = 0;
+      state.checkLeaseUntil = 0;
+      state.lastRemoteVersion = "";
+      state.lastHttpStatus = 0;
+      state.lastError = "";
     }
     saveUpdateState(state);
 
-    // An installed version should always get at least one fresh check of its own.
-    // This prevents a check from an older version suppressing update discovery.
-    const checkedForCurrentVersion = state.checkedForVersion === APP_VERSION;
+    // A newly installed version always performs one fresh remote check of its own
+    // instead of inheriting the previous version's 15-minute throttle window.
     const lastCheckAt = Number(state.lastCheckAt || 0);
     const leaseUntil = Number(state.checkLeaseUntil || 0);
 
@@ -13998,6 +14026,22 @@ const ExtraPotionsDiagnostics = (() => {
     pruneIgnoredCampaignGames(now);
     const routingSession = readRoutingControllerSession();
     const card = ui?.shadow?.getElementById("tdh-drop-card");
+    const launcher = ui?.launcher || null;
+    const launcherRow = ui?.shadow?.querySelector(".badge-row") || null;
+    const notice = ui?.shadow?.getElementById("tdh-update-notice") || null;
+    const rectSnapshot = (node) => {
+      if (!node?.getBoundingClientRect) return null;
+      const rect = node.getBoundingClientRect();
+      if (!rect.width && !rect.height) return null;
+      return {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        right: Math.round(rect.right),
+        bottom: Math.round(rect.bottom),
+      };
+    };
     const chat = findTwitchChatColumn();
     const circuit = networkCircuitSnapshot(now);
     const memoryEntries = Object.entries(campaignMemory?.campaigns || {});
@@ -14447,10 +14491,17 @@ const ExtraPotionsDiagnostics = (() => {
         maxHeight: ui?.dock ? getComputedStyle(ui.dock).maxHeight : null,
         overflow: ui?.dock ? getComputedStyle(ui.dock).overflow : null,
       },
-      progressPanelWidth: ui?.shadow?.querySelector(".progress-stack")
-        ? Math.round(ui.shadow.querySelector(".progress-stack").getBoundingClientRect().width)
-        : null,
+      uiGeometry: {
+        progressCardRect: rectSnapshot(card),
+        launcherRect: rectSnapshot(launcher),
+        launcherRowRect: rectSnapshot(launcherRow),
+        menuRect: rectSnapshot(ui?.dock),
+        noticeRect: rectSnapshot(notice),
+      },
+      progressPanelWidth: card ? Math.round(card.getBoundingClientRect().width) : null,
+      launcherRowWidth: launcherRow ? Math.round(launcherRow.getBoundingClientRect().width) : null,
       menuWidth: ui?.dock ? Math.round(ui.dock.getBoundingClientRect().width) : null,
+      noticeWidth: notice && !notice.hidden ? Math.round(notice.getBoundingClientRect().width) : null,
       chatWidth: chat ? Math.round(chat.getBoundingClientRect().width) : null,
       recentActivity: diagnosticActivity.map((entry) => ({
         at: new Date(entry.at).toISOString(),
