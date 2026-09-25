@@ -136,7 +136,7 @@ test('pride theme computed contract exposes dataset and rainbow treatments', asy
   }
 });
 
-test('Badge Only moves the live progress card inside the Drops menu', async () => {
+test('Badge Only places the live progress card above the Drops section', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -163,7 +163,8 @@ test('Badge Only moves the live progress card inside the Drops menu', async () =
       return {
         parent: card.parentElement.id,
         slotParent: slot.parentElement.id,
-        slotIsFirst: dropsBody.firstElementChild === slot,
+        slotAboveDrops: slot.nextElementSibling?.querySelector?.('[data-panel="tdh-drops-body"]') != null,
+        slotInsideDrops: dropsBody.contains(slot),
         presentation: card.dataset.presentation,
         slotHidden: slot.hidden,
         cardVisible: getComputedStyle(card).display !== 'none' && card.getBoundingClientRect().height > 0,
@@ -172,8 +173,9 @@ test('Badge Only moves the live progress card inside the Drops menu', async () =
     });
     assert.deepEqual(facts, {
       parent: 'tdh-badge-only-progress-slot',
-      slotParent: 'tdh-drops-body',
-      slotIsFirst: true,
+      slotParent: 'tdh-tools-dock',
+      slotAboveDrops: true,
+      slotInsideDrops: false,
       presentation: 'menu-card',
       slotHidden: false,
       cardVisible: true,
