@@ -137,7 +137,8 @@ test('progress visibility preserves the badge-only controls', () => {
   assert.match(source, /const rowWidth = settings\.badgeOnly \? launcherWidth : panelWidth \+ rowGap \+ launcherWidth;/u);
   assert.match(source, /\.progress-stack\.badge-only \.badge-row \{ justify-content:flex-end; min-height:48px!important; \}/u);
   assert.match(source, /id="tdh-badge-only-progress-slot"[^>]*hidden/u);
-  assert.match(source, /id="tdh-drops-body">\s*<div class="badge-only-progress-slot" id="tdh-badge-only-progress-slot"/u);
+  assert.match(source, /id="tdh-badge-only-progress-slot"[^>]*hidden><\/div>\s*<section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-drops-body"/u);
+  assert.doesNotMatch(source, /id="tdh-drops-body">\s*<div class="badge-only-progress-slot"/u);
   assert.match(source, /function syncProgressPanelPlacement\(\)/u);
   assert.match(source, /menuSlot\.append\(card\)/u);
   assert.match(source, /badgeRow\.insertBefore\(card, ui\.launcher\)/u);
