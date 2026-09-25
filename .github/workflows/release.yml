@@ -1,0 +1,60 @@
+name: Publish release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.ref_type == 'tag' || (github.ref_type == 'branch' && startsWith(github.event.head_commit.message, 'Release Dropper '))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            tag="${GITHUB_REF_NAME}"
+          else
+            version="$(node -p "require('./package.json').version")"
+            tag="v${version}"
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+      - name: Validate release
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          npm test
+          grep -q "^// @version[[:space:]]*$version$" dropper.user.js
+      - name: Publish assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then exit 0; fi
+          version="${TAG#v}"
+          awk '
+            /^## / { section += 1; if (section > 3) exit }
+            { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! gh release create "$TAG"             dropper.user.js             --target "$GITHUB_SHA"             --title "Dropper ${version}"             --notes-file release-notes.md; then
+            sleep 5
+            gh release view "$TAG" >/dev/null
+          fi
