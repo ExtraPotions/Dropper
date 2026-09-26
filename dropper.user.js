@@ -531,11 +531,7 @@ const ExtraPotionsDiagnostics = (() => {
       "Adds reward and campaign deadline feasibility to eligibility diagnostics while keeping Twitch-credited progress authoritative.",
       "Clarifies unconfirmed claim timeout wording and reconciles credited-progress verification with current GQL campaign evidence."
     ],
-    "3.3.0-dev.1": [
-      "Protects viewer pauses and selected streams; removes simulated visibility, focus, and activity.",
-      "Separates claim attempts from confirmed rewards with bounded retries, account-scoped history, and selector diagnostics.",
-      "Adds prerequisite checks, eligibility explanations, campaign priorities, and optional-support wording without changing the shared menu design."
-    ],
+
     "3.2.31": [
       "Improves diagnostics with separate progress-card, launcher, launcher-row, menu, and notice geometry.",
       "Forces each newly installed Dropper version to perform its own fresh update check and attributes resource errors to Dropper or the page."
