@@ -1,3 +1,8 @@
+## 3.3.1 - 2026-09-25
+
+- Makes the Badge Only progress card use the same Full, Compact, and Narrow width calculation as the normal progress panel, menu, and update notice.
+- Compensates for the menu's 9 px side padding on both sides so Badge Only no longer renders 18 px narrower than the selected panel width.
+- Adds a visual-contract regression test that requires the Badge Only card and menu to share the same calculated width.
 ## 3.3.0 - 2026-09-25
 
 - Finalizes the browser-only active-viewing Dropper rebuild with campaign discovery, priority and ignore controls, verified stream routing, automatic reward claiming, and account-scoped state.
