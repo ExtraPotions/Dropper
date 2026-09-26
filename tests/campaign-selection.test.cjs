@@ -184,6 +184,7 @@ const pickerStart = source.indexOf("  function requiresSubscription");
 const pickerEnd = source.indexOf("\n  function maybeAdvanceExpiredCampaign", pickerStart);
 const activeViewing = loadActiveViewing();
 const pickerContext = {
+  DropperActiveViewing: activeViewing,
   dropperPreconditionsMet: (drop, drops) => activeViewing.planPrerequisites(drop, drops).ready,
   campaignPriority: () => 0,
   EXCLUDED_CATEGORY_SLUGS: new Set(["first-partners-collection"]),
