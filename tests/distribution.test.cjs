@@ -72,7 +72,7 @@ test('in-app release notes and update checker stay current-only but functional',
   const currentVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
   const versions = [...releaseNotesBlock.matchAll(/"(\d+\.\d+\.\d+(?:-[\w.-]+)?)": \[/gu)].map((match) => match[1]);
   assert.equal(versions[0], currentVersion, 'current development or stable version is first');
-  assert.deepEqual(versions.slice(1, 3), ['3.2.31', '3.2.30']);
+  assert.deepEqual(versions.slice(1, 3), ['3.3.0', '3.2.31']);
   assert.doesNotMatch(releaseNotesBlock, /"3\.1\.32": \[/u);
   const currentNotes = releaseNotesBlock.slice(releaseNotesBlock.indexOf(JSON.stringify(currentVersion))).split('],')[0];
   const bullets = [...currentNotes.matchAll(/"([^"]+)"/gu)];
