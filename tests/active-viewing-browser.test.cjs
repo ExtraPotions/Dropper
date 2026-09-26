@@ -18,6 +18,7 @@ const exposed = source.replace('  startDropper();\n})();', `
     setWidth: mode => { settings.collapsedPanelWidth = mode; applyAppearanceSettings(); },
     setActiveClaims: value => { settings.claimBonus = value; settings.claimDrops = value; syncClaimWatchers(); },
     queueScan: queueClaimScan, setPriority: setCampaignPriority, priorityEntry: campaignPriorityEntry,
+    rankCandidates: rankStreamCandidatesByEvidence,
     status: () => ({ viewing: viewingIntent.snapshot(), selectors: claimHealth }),
     pauseIntent: () => { viewingIntent.pause(true); },
   };
@@ -284,4 +285,34 @@ test('campaign priority diagnostics distinguish saved preferences from the defau
   });
   assert.deepEqual(result.saved, { value: 1, explicit: true });
   assert.deepEqual(result.normal, { value: 0, explicit: false });
+}));
+
+
+test('stream evidence ranking keeps live campaign ACL ahead of generic Drops candidates', async () => fixture(async page => {
+  const ranked = await page.evaluate(() => window.__dropperTest.rankCandidates([
+    { login: 'probationary', availability: 'live', visibleInCategory: true, viewers: 1 },
+    { login: 'tagged', availability: 'live', visibleInCategory: true, dropsTagged: true, viewers: 1000 },
+    { login: 'allowed', availability: 'live', visibleInCategory: true, allowListMatch: true, viewers: 5000 },
+    { login: 'cached-allowed', availability: 'cached', freshCached: true, allowListMatch: true, viewers: 1 },
+  ]).map(item => ({ login: item.login, rank: item.evidenceRank, label: item.evidenceLabel })));
+  assert.deepEqual(ranked.map(item => item.login), ['allowed', 'tagged', 'probationary', 'cached-allowed']);
+  assert.equal(ranked[0].label, 'live-campaign-allowed');
+  assert.equal(ranked[1].label, 'live-drops-tagged');
+  assert.equal(ranked[2].label, 'live-same-game');
+  assert.equal(ranked[3].label, 'fresh-cache-allowed');
+}));
+
+test('viewer-count preference only breaks ties within the same evidence tier', async () => fixture(async page => {
+  const order = await page.evaluate(() => {
+    const t = window.__dropperTest;
+    const root = document.getElementById('tdh-root').shadowRoot;
+    const select = root.querySelector('#tdh-queue-preference');
+    if (select) { select.value = 'Lowest Viewers'; select.dispatchEvent(new Event('change')); }
+    return t.rankCandidates([
+      { login: 'high-viewers-allowed', availability: 'live', visibleInCategory: true, allowListMatch: true, viewers: 9000 },
+      { login: 'low-viewers-allowed', availability: 'live', visibleInCategory: true, allowListMatch: true, viewers: 10 },
+      { login: 'low-viewers-tagged', availability: 'live', visibleInCategory: true, dropsTagged: true, viewers: 1 },
+    ]).map(item => item.login);
+  });
+  assert.deepEqual(order, ['low-viewers-allowed', 'high-viewers-allowed', 'low-viewers-tagged']);
 }));
