@@ -1,3 +1,11 @@
+## 3.3.0-dev.15 - 2026-09-25
+
+- Centralizes claim-related Twitch DOM selectors into one internal registry and strengthens fail-closed visibility checks without rejecting safe zero-size React controls.
+- Separates campaign-level stream verification from exact reward identity so a different Drop in the same campaign cannot advance the locked reward when both Drop IDs are known.
+- Adds explicit session identity diagnostics, including exact-drop, campaign-fallback, and campaign-only-different-drop classifications.
+- Removes stale six-hour routing sessions from storage instead of only ignoring them.
+- Expands browser claim-safety coverage and adds release-gate tests for identity mismatches and bounded transient-state cleanup.
+
 ## 3.3.0-dev.14 - 2026-09-25
 
 - Distinguishes stale Twitch credit caused while the browser or Twitch tab is unfocused from a true foreground credit stall.

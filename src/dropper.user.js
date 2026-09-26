@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.0-dev.14
+// @version      3.3.0-dev.15
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.0-dev.14";
+  const APP_VERSION = "3.3.0-dev.15";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -531,10 +531,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
-    "3.3.0-dev.14": [
-      "Treats stale Twitch credit while the browser or Twitch tab is unfocused as a background delay instead of an automatic stall.",
-      "Rechecks Twitch credit for 30 seconds after focus returns before allowing stale credit to become a recoverable stall.",
-      "Keeps actual non-viewer playback stops recoverable and adds focus, visibility, and foreground-grace details to Diagnostics."
+    "3.3.0-dev.15": [
+      "Centralizes claim-related Twitch DOM selectors and strengthens fail-closed visibility checks for automatic claim controls.",
+      "Separates campaign-level stream verification from exact reward identity so a different Drop in the same campaign cannot advance the locked reward.",
+      "Expires stale routing sessions from storage and adds release-gate regression coverage for unsafe controls, identity mismatches, and bounded transient state."
     ],
 
     "3.2.31": [
@@ -823,11 +823,23 @@ const ExtraPotionsDiagnostics = (() => {
     { id:"twitch", name:"Twitch", swatch:"linear-gradient(135deg,#18181b 0 48%,#9147ff 48% 78%,#bf94ff 78% 100%)", canvas:"#111114", surface:"#19191e", primary:"#9147ff", companion:"#772ce8", counterpoint:"#bf94ff", interactive:"#bf94ff", bg:"#111114", panel:"#19191e", line:"#34343b", text:"#efeff1", muted:"#adadb8", accent:"#9147ff", accent2:"#bf94ff", skin:"linear-gradient(135deg,#9147ff,#bf94ff)", skinVertical:"linear-gradient(180deg,#9147ff,#bf94ff)", skinMode:"flat" },
     { id:"dropper", name:"Dropper gem", swatch:"linear-gradient(135deg,#0b0713 0 38%,#7a46c8 38% 69%,#2a8c9b 69% 100%)", canvas:"#0b0713", surface:"#171025", primary:"#7a46c8", companion:"#b14589", counterpoint:"#2a8c9b", interactive:"#9864dc", bg:"#0b0713", panel:"#171025", line:"#3c2850", text:"#e8ddf2", muted:"#aa98bb", accent:"#7a46c8", accent2:"#9864dc", skin:"linear-gradient(135deg,#7a46c8 0%,#b14589 52%,#2a8c9b 100%)", skinVertical:"linear-gradient(180deg,#7a46c8 0%,#b14589 52%,#2a8c9b 100%)" }
   ]);
-  const BONUS_SELECTOR = 'button[aria-label="Claim Bonus"], .claimable-bonus__icon';
-  const DROP_CLAIM_SELECTOR = [
-    '[data-test-selector="DropsCampaignInProgressRewardPresentation-claim-button"]',
-    'button[data-a-target="drops-claim-button"]',
-  ].join(",");
+  // Central registry for claim-related Twitch DOM assumptions. Keep selectors
+  // here so Twitch UI changes have one fail-closed repair surface.
+  const TWITCH_DOM_SELECTORS = Object.freeze({
+    bonusClaim: 'button[aria-label="Claim Bonus"], .claimable-bonus__icon',
+    bonusContainer: '.community-points-summary,[data-test-selector="community-points-summary"],[data-a-target="community-points-summary"]',
+    dropClaim: [
+      '[data-test-selector="DropsCampaignInProgressRewardPresentation-claim-button"]',
+      'button[data-a-target="drops-claim-button"]',
+    ].join(","),
+    inventoryCard: '.inventory-max-width > div:not(:first-child)',
+    rewardPresentation: '[role="progressbar"],[data-test-selector*="RewardPresentation"]',
+    progressBar: '[role="progressbar"]',
+    dropsCampaignCard: '[data-test-selector*="DropsCampaign"]',
+    dropsCampaignClassCard: '[class*="drops-campaign"]',
+  });
+  const BONUS_SELECTOR = TWITCH_DOM_SELECTORS.bonusClaim;
+  const DROP_CLAIM_SELECTOR = TWITCH_DOM_SELECTORS.dropClaim;
   const INVENTORY_URL = "https://www.twitch.tv/drops/inventory";
   const CAMPAIGNS_URL = "https://www.twitch.tv/drops/campaigns";
   const TWITCH_HOME_URL = "https://www.twitch.tv/";
@@ -1929,15 +1941,35 @@ const ExtraPotionsDiagnostics = (() => {
     { id: 'stream-drop', kind: 'drop', selector: DROP_CLAIM_SELECTOR, applies: () => Boolean(watchingLogin()) },
     { id: 'inventory-drop', kind: 'drop', selector: DROP_CLAIM_SELECTOR, applies: () => isInventory() },
   ]);
+  function claimTargetRendered(button) {
+    if (!button?.isConnected) return false;
+    const ownStyle = getComputedStyle(button);
+    if (ownStyle.pointerEvents === 'none') return false;
+    try {
+      if (typeof button.checkVisibility === 'function') {
+        return button.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+      }
+    } catch (_) {}
+    for (let node = button; node && node !== document.documentElement; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    }
+    return true;
+  }
   function isSafeClaimTarget(button, group) {
     if (!button || button.tagName !== 'BUTTON' || !button.isConnected || button.disabled || button.getAttribute('aria-disabled') === 'true' || button.closest('[inert]')) return false;
     const label = cleanText(`${button.getAttribute('aria-label') || ''} ${button.textContent || ''}`);
     if (/\b(?:subscribe|subscription|gift|purchase|buy|redeem|spend)\b/i.test(label)) return false;
-    const bonusContainer = button.closest('.community-points-summary,[data-test-selector="community-points-summary"],[data-a-target="community-points-summary"]');
+    const bonusContainer = button.closest(TWITCH_DOM_SELECTORS.bonusContainer);
     if (group.kind === 'bonus' && !bonusContainer && !button.querySelector('.claimable-bonus__icon')) return false;
-    const visible = Boolean(button.getClientRects().length && getComputedStyle(button).visibility !== 'hidden');
-    if (visible) return true;
-    return Boolean(group.kind === 'bonus' && document.fullscreenElement && bonusContainer && button.matches('button[aria-label="Claim Bonus"]') && button.querySelector('.claimable-bonus__icon'));
+    if (claimTargetRendered(button)) return true;
+    return Boolean(
+      group.kind === 'bonus' &&
+      document.fullscreenElement &&
+      bonusContainer &&
+      button.matches('button[aria-label="Claim Bonus"]') &&
+      button.querySelector('.claimable-bonus__icon')
+    );
   }
   function claimTargetIdentity(button, group) {
     if (group.kind === 'drop') {
@@ -1955,7 +1987,7 @@ const ExtraPotionsDiagnostics = (() => {
   }
   function bonusControlStillClaimable(button) {
     if (!button?.isConnected) return false;
-    const container = button.closest('.community-points-summary,[data-test-selector="community-points-summary"],[data-a-target="community-points-summary"]');
+    const container = button.closest(TWITCH_DOM_SELECTORS.bonusContainer);
     if (!container) return false;
     if (!button.querySelector('.claimable-bonus__icon')) return false;
     return isSafeClaimTarget(button, CLAIM_GROUPS[0]);
@@ -2027,8 +2059,8 @@ const ExtraPotionsDiagnostics = (() => {
           if (button && isSafeClaimTarget(button, group)) candidates.add(button);
         }
         if (group.id === 'inventory-drop') {
-          for (const card of document.querySelectorAll('.inventory-max-width > div:not(:first-child)')) {
-            if (!card.querySelector('[role="progressbar"],[data-test-selector*="RewardPresentation"]')) continue;
+          for (const card of document.querySelectorAll(TWITCH_DOM_SELECTORS.inventoryCard)) {
+            if (!card.querySelector(TWITCH_DOM_SELECTORS.rewardPresentation)) continue;
             for (const button of card.querySelectorAll('button')) if (isDropClaimButton(button) && isSafeClaimTarget(button, group)) candidates.add(button);
           }
         }
@@ -3016,6 +3048,7 @@ const ExtraPotionsDiagnostics = (() => {
       return routingSessionDefaults();
     }
     if (raw.updatedAt && Date.now() - Number(raw.updatedAt) > 6 * 60 * 60 * 1000) {
+      removeSession(ROUTING_SESSION_KEY);
       return routingSessionDefaults();
     }
     return { ...routingSessionDefaults(raw.state), ...raw, version: ROUTING_SESSION_VERSION };
@@ -3638,6 +3671,11 @@ const ExtraPotionsDiagnostics = (() => {
       sessionDropId === targetDropId
     );
     const sessionMatches = sessionCampaignMatches || sessionDropMatches;
+    const sessionIdentityLevel = sessionDropMatches
+      ? "exact-drop"
+      : sessionCampaignMatches
+        ? (targetDropId && sessionDropId ? "campaign-only-different-drop" : "campaign-fallback")
+        : "none";
 
     if (campaignSupport !== true && !sessionMatches) return false;
 
@@ -3647,6 +3685,7 @@ const ExtraPotionsDiagnostics = (() => {
       gqlSessionMatched: sessionMatches,
       gqlSessionCampaignMatched: sessionCampaignMatches,
       gqlSessionDropMatched: sessionDropMatches,
+      gqlSessionIdentityLevel: sessionIdentityLevel,
       gqlEvidenceAt: Date.now(),
     };
     writeRoutingControllerSession({ ...session, candidateEvidence: evidence });
@@ -3659,6 +3698,7 @@ const ExtraPotionsDiagnostics = (() => {
       viaAvailableCampaigns: campaignSupport === true,
       viaCurrentSessionCampaign: sessionCampaignMatches,
       viaCurrentSessionDrop: sessionDropMatches,
+      sessionIdentityLevel,
     });
     return true;
   }
@@ -7455,9 +7495,9 @@ const ExtraPotionsDiagnostics = (() => {
     const wantedGame = cleanText(drop.game).toLowerCase();
     const wantedPercent = Number(drop.percent);
     const cards = [
-      ...document.querySelectorAll(".inventory-max-width > div:not(:first-child)"),
-      ...document.querySelectorAll("[data-test-selector*='DropsCampaign']"),
-      ...document.querySelectorAll("[class*='drops-campaign']"),
+      ...document.querySelectorAll(TWITCH_DOM_SELECTORS.inventoryCard),
+      ...document.querySelectorAll(TWITCH_DOM_SELECTORS.dropsCampaignCard),
+      ...document.querySelectorAll(TWITCH_DOM_SELECTORS.dropsCampaignClassCard),
     ];
 
     let fallback = "";
@@ -10646,6 +10686,7 @@ const ExtraPotionsDiagnostics = (() => {
       targetCampaignKey: cleanText(routing.targetCampaignKey) || null,
       dropIdMatchedTarget: false,
       campaignMatchedTarget: false,
+      identityLevel: "none",
       error: null,
     };
     let sessionDrop = null;
@@ -10677,6 +10718,11 @@ const ExtraPotionsDiagnostics = (() => {
         note.targetCampaignKey &&
         note.campaignKey.toLowerCase() === note.targetCampaignKey.toLowerCase()
       );
+      note.identityLevel = note.dropIdMatchedTarget
+        ? "exact-drop"
+        : note.campaignMatchedTarget
+          ? (note.dropId && note.targetDropId ? "campaign-only-different-drop" : "campaign-fallback")
+          : "none";
     } catch (error) {
       note.error = error?.message || String(error);
     }
@@ -10884,6 +10930,28 @@ const ExtraPotionsDiagnostics = (() => {
       dropId &&
       targetDropId === dropId
     );
+    const bothDropIdsKnown = Boolean(targetDropId && dropId);
+    const bothCampaignKeysKnown = Boolean(targetCampaignKey && dropCampaignKey);
+    const exactDropMatched = Boolean(
+      dropMatched &&
+      (!bothCampaignKeysKnown || campaignMatched)
+    );
+    const campaignFallbackMatched = Boolean(
+      campaignMatched &&
+      !bothDropIdsKnown
+    );
+    const sameCampaignDifferentDrop = Boolean(
+      campaignMatched &&
+      bothDropIdsKnown &&
+      !dropMatched
+    );
+    const identityLevel = exactDropMatched
+      ? "exact-drop"
+      : campaignFallbackMatched
+        ? "campaign-fallback"
+        : sameCampaignDifferentDrop
+          ? "campaign-only-different-drop"
+          : "none";
     return {
       targetCampaignKey: targetCampaignKey || null,
       targetDropId: targetDropId || null,
@@ -10891,9 +10959,19 @@ const ExtraPotionsDiagnostics = (() => {
       dropId: dropId || null,
       campaignMatched,
       dropMatched,
+      exactDropMatched,
+      campaignFallbackMatched,
+      sameCampaignDifferentDrop,
+      identityLevel,
       targetCampaignOpen: Boolean(targetRoutingState.open),
       targetCampaignReason: targetRoutingState.reason || null,
-      matchesTarget: Boolean(targetRoutingState.open && (campaignMatched || dropMatched)),
+      matchesTarget: Boolean(
+        targetRoutingState.open &&
+        (exactDropMatched || campaignFallbackMatched)
+      ),
+      mismatchReason: sameCampaignDifferentDrop
+        ? "same-campaign-different-drop"
+        : (!campaignMatched && bothCampaignKeysKnown ? "different-campaign" : null),
     };
   }
 
@@ -11237,7 +11315,7 @@ const ExtraPotionsDiagnostics = (() => {
           inventoryLive: true,
           sessionEligible,
           sessionRejectedReason: sessionDrop && !sessionEligible
-            ? "different-campaign-or-drop"
+            ? (sessionIdentity.mismatchReason || "different-campaign-or-drop")
             : "",
         });
         const requiredMinutes = Number(inventorySide.requiredMinutes || drop?.requiredMinutes || 0);
@@ -11262,7 +11340,7 @@ const ExtraPotionsDiagnostics = (() => {
           inventoryLive: false,
           sessionEligible: Boolean(!activeUnclaimed || sessionIdentity.matchesTarget),
           sessionRejectedReason: activeUnclaimed && !sessionIdentity.matchesTarget
-            ? "different-campaign-or-drop"
+            ? (sessionIdentity.mismatchReason || "different-campaign-or-drop")
             : "",
         });
       }
@@ -11940,7 +12018,7 @@ const ExtraPotionsDiagnostics = (() => {
   }
 
   function readDropFromCard(card) {
-    const bars = [...card.querySelectorAll("[role='progressbar']")].map((bar) => ({
+    const bars = [...card.querySelectorAll(TWITCH_DOM_SELECTORS.progressBar)].map((bar) => ({
       bar,
       percent: barPercent(bar),
     })).filter((item) => Number.isFinite(item.percent));
