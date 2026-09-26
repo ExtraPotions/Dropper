@@ -278,3 +278,52 @@ test('Dropper routing consumes shared deadline-aware ranking and timeout wording
   assert.match(source, /Claim Sent · Confirmation Unavailable/);
   assert.match(source, /campaignSupported,/);
 });
+
+
+test('selector health distinguishes monitoring from actual detection failure', () => {
+  const now = 1_000_000;
+  assert.equal(active.selectorHealth({ applicable: false }, now).status, 'not-applicable');
+  assert.equal(active.selectorHealth({ applicable: true, state: 'no-claimable-reward', checkedAt: now - 1000 }, now).status, 'monitoring');
+  assert.equal(active.selectorHealth({ applicable: true, state: 'matched', checkedAt: now }, now).status, 'observed');
+  assert.equal(active.selectorHealth({ applicable: true, state: 'no-claimable-reward', checkedAt: now, lastMatchedAt: now - 1000 }, now).status, 'observed-recently');
+  assert.equal(active.selectorHealth({ applicable: true, state: 'no-claimable-reward', checkedAt: now, lastMatchedAt: now - 100_000 }, now, 50_000).status, 'stale-observation');
+  assert.equal(active.selectorHealth({ applicable: true, state: 'detection-failed', checkedAt: now }, now).status, 'degraded');
+});
+
+test('recovery diagnosis separates viewer intent, offline, eligibility, delay, and real stalls', () => {
+  const base = { login: 'streamer', live: true, gameMatches: true, campaignVerified: true, playback: 'playing', progressAgeMs: 10_000 };
+  assert.equal(active.recoveryDiagnosis(base).code, 'healthy');
+  assert.deepEqual(active.recoveryDiagnosis({ ...base, paused: true, pauseReason: 'viewer' }), { code: 'viewer-paused', recoverable: false });
+  assert.deepEqual(active.recoveryDiagnosis({ ...base, live: false }), { code: 'offline', recoverable: true });
+  assert.deepEqual(active.recoveryDiagnosis({ ...base, gameMatches: false }), { code: 'wrong-game', recoverable: true });
+  assert.deepEqual(active.recoveryDiagnosis({ ...base, campaignVerified: false }), { code: 'eligibility-unverified', recoverable: false });
+  assert.deepEqual(active.recoveryDiagnosis({ ...base, progressAgeMs: 6 * 60 * 1000 }, { delayedMs: 5 * 60 * 1000, stalledMs: 6 * 60 * 1000 }), { code: 'credit-stalled', recoverable: true });
+  assert.deepEqual(active.recoveryDiagnosis({ ...base, progressAgeMs: 5 * 60 * 1000 }, { delayedMs: 5 * 60 * 1000, stalledMs: 6 * 60 * 1000 }), { code: 'credit-delayed', recoverable: false });
+});
+
+test('fallback lease prevents a second tab from running the same claim and releases afterward', async () => {
+  const store = new Map();
+  let clock = 1000;
+  const read = key => store.get(key) || null;
+  const write = (key, value) => store.set(key, value);
+  const remove = key => store.delete(key);
+  let unblock;
+  const gate = new Promise(resolve => { unblock = resolve; });
+  const first = active.createLease({ now: () => clock, id: () => 'tab-a', read, write, remove, ttlMs: 8000 });
+  const second = active.createLease({ now: () => clock, id: () => 'tab-b', read, write, remove, ttlMs: 8000 });
+  const held = first.run('claim:reward', async () => { await gate; return 'first'; });
+  await Promise.resolve();
+  assert.equal(await second.run('claim:reward', async () => 'second'), false);
+  unblock();
+  assert.equal(await held, 'first');
+  clock += 1;
+  assert.equal(await second.run('claim:reward', async () => 'second'), 'second');
+  assert.equal(store.has('claim:reward'), false);
+});
+
+test('distribution reports local-storage lease and interpreted selector/recovery health', () => {
+  assert.match(source, /crossTabLock: navigator\.locks\?\.request \? 'web-locks' : 'local-storage-lease'/);
+  assert.match(source, /claimSelectorHealthSnapshot/);
+  assert.match(source, /recoveryDiagnosis: health\.recovery\?\.code/);
+  assert.match(source, /fallbackClaimLease\.run/);
+});
