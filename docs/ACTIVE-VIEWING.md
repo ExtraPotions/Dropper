@@ -1,6 +1,6 @@
 # Active-viewing implementation
 
-Development version: 3.3.0-dev.12. Baseline: Dropper 3.2.31.
+Development version: 3.3.0-dev.13. Baseline: Dropper 3.2.31.
 
 ## Behavior
 
@@ -168,3 +168,12 @@ The Ko-fi action opens in a separate tab with noopener and noreferrer protection
 The Support Dropper popover is now positioned relative to the full menu header instead of the small heart-button wrapper. Its width is capped by the available menu header width, so Narrow mode keeps the entire popover inside the Dropper menu.
 
 The Ko-fi confirmation flow and support wording are unchanged. Browser regression coverage verifies the popover's left edge, right edge, and width remain within the Narrow menu rectangle.
+
+
+## 3.3.0-dev.13 reload-state reconciliation
+
+Identified Drops now preserve or restore their exact Twitch reward metadata across same-account reloads. A reward title that begins with a duration can be legitimate, so dated titles such as `1 Hour (Sep 25)` are no longer classified as generic card metadata. If a prior build stored a generic `Current drop` name, Dropper repairs it from an exact Drop-ID match in known Inventory or catalog data.
+
+Eligibility can now reuse recent persisted routing/GQL verification after reload when the active channel, campaign key, Drop ID, and game still match. The saved evidence must include Twitch campaign support plus an exact session campaign or Drop match and must remain within the bounded verification window. Stale or identity-mismatched evidence remains unverified.
+
+The restored proof also repopulates `lastStreamVerification` during boot so Diagnostics, routing state, earning health, and the eligibility chip report a consistent state after reload.
