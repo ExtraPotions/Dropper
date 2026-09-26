@@ -292,13 +292,18 @@ test('selector health distinguishes monitoring from actual detection failure', (
 
 test('recovery diagnosis separates viewer intent, offline, eligibility, delay, and real stalls', () => {
   const base = { login: 'streamer', live: true, gameMatches: true, campaignVerified: true, playback: 'playing', progressAgeMs: 10_000 };
-  assert.equal(active.recoveryDiagnosis(base).code, 'healthy');
-  assert.deepEqual(active.recoveryDiagnosis({ ...base, paused: true, pauseReason: 'viewer' }), { code: 'viewer-paused', recoverable: false });
-  assert.deepEqual(active.recoveryDiagnosis({ ...base, live: false }), { code: 'offline', recoverable: true });
-  assert.deepEqual(active.recoveryDiagnosis({ ...base, gameMatches: false }), { code: 'wrong-game', recoverable: true });
-  assert.deepEqual(active.recoveryDiagnosis({ ...base, campaignVerified: false }), { code: 'eligibility-unverified', recoverable: false });
-  assert.deepEqual(active.recoveryDiagnosis({ ...base, progressAgeMs: 6 * 60 * 1000 }, { delayedMs: 5 * 60 * 1000, stalledMs: 6 * 60 * 1000 }), { code: 'credit-stalled', recoverable: true });
-  assert.deepEqual(active.recoveryDiagnosis({ ...base, progressAgeMs: 5 * 60 * 1000 }, { delayedMs: 5 * 60 * 1000, stalledMs: 6 * 60 * 1000 }), { code: 'credit-delayed', recoverable: false });
+  const expectDiagnosis = (health, expected, options) => {
+    const actual = active.recoveryDiagnosis(health, options);
+    assert.equal(actual.code, expected.code);
+    assert.equal(actual.recoverable, expected.recoverable);
+  };
+  expectDiagnosis(base, { code: 'healthy', recoverable: false });
+  expectDiagnosis({ ...base, paused: true, pauseReason: 'viewer' }, { code: 'viewer-paused', recoverable: false });
+  expectDiagnosis({ ...base, live: false }, { code: 'offline', recoverable: true });
+  expectDiagnosis({ ...base, gameMatches: false }, { code: 'wrong-game', recoverable: true });
+  expectDiagnosis({ ...base, campaignVerified: false }, { code: 'eligibility-unverified', recoverable: false });
+  expectDiagnosis({ ...base, progressAgeMs: 6 * 60 * 1000 }, { code: 'credit-stalled', recoverable: true }, { delayedMs: 5 * 60 * 1000, stalledMs: 6 * 60 * 1000 });
+  expectDiagnosis({ ...base, progressAgeMs: 5 * 60 * 1000 }, { code: 'credit-delayed', recoverable: false }, { delayedMs: 5 * 60 * 1000, stalledMs: 6 * 60 * 1000 });
 });
 
 test('fallback lease prevents a second tab from running the same claim and releases afterward', async () => {
