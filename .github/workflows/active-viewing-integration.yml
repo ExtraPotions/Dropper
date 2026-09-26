@@ -37,8 +37,9 @@ jobs:
           const changes = {
             'src/dropper.user.js': {
               before: '1781192a55f7f747d96eb4dfdcaa400f754a7a683de370fec6273543d1a33e4a',
-              after: '8c5f972091b9ce81fcc144cdea3fa0c955817ef6aaa7bf493d641a270412594e',
+              after: 'e77818551345611839aa0739db78dd358d0a26693d1a353538547798f8d4ab1c',
               edits: [
+                { start: 12595, delete: 0, text: '    // Text wrapping, width transitions, and nested panels can change the menu\n    // after the initial layout. Coalesce resize work without another poll loop.\n    let chromeLayoutFrame = 0;\n    const chromeResizeObserver = new ResizeObserver(() => {\n      if (!host.isConnected || ui?.host !== host) {\n        cancelAnimationFrame(chromeLayoutFrame);\n        chromeResizeObserver.disconnect();\n        return;\n      }\n      if (chromeLayoutFrame) return;\n      chromeLayoutFrame = requestAnimationFrame(() => {\n        chromeLayoutFrame = 0;\n        if (host.isConnected && ui?.host === host) layoutChrome();\n      });\n    });\n    chromeResizeObserver.observe(ui.dock);\n    chromeResizeObserver.observe(shadow.querySelector(".badge-row"));\n' },
                 { start: 15084, delete: 1, text: '' },
                 { start: 15086, delete: 0, text: '      // Inline width from the previous mode must not determine the measured\n      // height. Constrain the new width and inward space before positioning.\n      ui.dock.style.setProperty("width", `${Math.min(panelWidth, window.innerWidth - 24)}px`, "important");\n      const availableMenuHeight = anchor === "top"\n        ? window.innerHeight - rowBottom - 16\n        : rowTop - 16;\n      ui.dock.style.maxHeight = `${Math.max(0, availableMenuHeight)}px`;\n      ui.dock.style.overflowY = "auto";\n      const menuHeight = ui.dock.offsetHeight || ui.dock.clientHeight || 0;\n' },
                 { start: 15090, delete: 1, text: '' },
@@ -47,10 +48,11 @@ jobs:
             },
             'tests/active-viewing-browser.test.cjs': {
               before: '20cd6d329727e8eebfdc1ea1ad862aa6596ee58128c731f772a9109d19da4488',
-              after: '86a09cf2c1e4b9044bceaab72805e3c50846eaa882872dcdb27fd2a7c7deb450',
+              after: '9dc0be9b5f7e9636228ace222ed298bd20954927718e8698d86f932e9cb09999',
               edits: [
+                { start: 175, delete: 1, text: '    await page.waitForTimeout(300);\n' },
                 { start: 179, delete: 1, text: "      const row = root.querySelector('.badge-row').getBoundingClientRect();\n      return { width: rect.width, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, rowTop: row.top, rowBottom: row.bottom, overflow: dock.scrollWidth - dock.clientWidth };\n" },
-                { start: 183, delete: 0, text: '    assert.ok(box.top >= 8 && box.bottom <= 892, `${mode} menu stays inside the viewport`);\n    assert.ok(box.bottom <= box.rowTop - 7 || box.top >= box.rowBottom + 7, `${mode} menu does not overlap the progress/launcher row`);\n' }
+                { start: 183, delete: 0, text: '    assert.ok(box.top >= 8 && box.bottom <= 892, `${mode} menu stays inside the viewport`);\n    assert.ok(box.bottom <= box.rowTop - 7 || box.top >= box.rowBottom + 7, `${mode} menu does not overlap the progress/launcher row: ${JSON.stringify(box)}`);\n' }
               ]
             }
           };
@@ -74,7 +76,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s  %s\n' '8c5f972091b9ce81fcc144cdea3fa0c955817ef6aaa7bf493d641a270412594e' 'dropper.user.js' | sha256sum -c -
+          printf '%s  %s\n' 'e77818551345611839aa0739db78dd358d0a26693d1a353538547798f8d4ab1c' 'dropper.user.js' | sha256sum -c -
           git diff --exit-code -- LICENSE-CODE.md LICENSE-ASSETS.md NOTICE.md
           sha256sum dropper.user.js src/dropper.user.js LICENSE-CODE.md LICENSE-ASSETS.md NOTICE.md > SHA256SUMS
       - name: Commit verified product files without workflow changes or a release
