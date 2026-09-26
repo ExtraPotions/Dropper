@@ -166,7 +166,7 @@ assert.equal(
   "recursive discovery cannot add campaigns that are not on the dashboard",
 );
 
-const catalogBeforeFallback = catalogContext.lastCampaignCatalog.map((campaign) => campaign.id);
+const catalogBeforeFallback = Array.from(catalogContext.lastCampaignCatalog, (campaign) => campaign.id);
 catalogContext.remember([{
   id: "open-campaign",
   name: "Open Campaign",
