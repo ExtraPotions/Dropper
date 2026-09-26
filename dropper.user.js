@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.0-dev.2
+// @version      3.3.0-dev.3
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.0-dev.2";
+  const APP_VERSION = "3.3.0-dev.3";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -526,10 +526,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
-    "3.3.0-dev.2": [
-      "Uses deadline-aware campaign sequencing: known-unfinishable campaigns fall behind viable choices before personal priority, urgency, active progress, and remaining watch time are considered.",
-      "Adds reward and campaign deadline feasibility to eligibility diagnostics while keeping Twitch-credited progress authoritative.",
-      "Clarifies unconfirmed claim timeout wording and reconciles credited-progress verification with current GQL campaign evidence."
+    "3.3.0-dev.3": [
+      "Tracks selector observations over time without treating an empty claim surface as a broken selector.",
+      "Adds explicit recovery diagnoses for offline, wrong-game, delayed-credit, stalled-credit, buffering, and viewer-paused states.",
+      "Uses an account-scoped localStorage claim lease when Web Locks are unavailable to reduce cross-tab duplicate claim attempts."
     ],
 
     "3.2.31": [
@@ -1173,6 +1173,61 @@ const ExtraPotionsDiagnostics = (() => {
       return result('eligible', 'Eligible Stream', deadline.urgency === 'tight' ? 'This stream is eligible, but the reward deadline is close.' : 'Twitch campaign or credited-progress evidence verifies this stream.', { plan, deadline, campaignPlan, deadlineMs: end, estimateMinutes: plan.totalRemainingMinutes });
     }
 
+    function selectorHealth(entry, now = Date.now(), staleAfterMs = 15 * 60 * 1000) {
+      if (!entry?.applicable) return { status: 'not-applicable', ageMs: null, matchedAgeMs: null };
+      const checkedAt = number(entry.checkedAt);
+      const matchedAt = number(entry.lastMatchedAt);
+      const ageMs = checkedAt === null ? null : Math.max(0, now - checkedAt);
+      const matchedAgeMs = matchedAt === null ? null : Math.max(0, now - matchedAt);
+      if (entry.state === 'detection-failed') return { status: 'degraded', ageMs, matchedAgeMs };
+      if (entry.state === 'attempted') return { status: 'action-pending', ageMs, matchedAgeMs };
+      if (entry.state === 'matched') return { status: 'observed', ageMs, matchedAgeMs: 0 };
+      if (matchedAgeMs !== null && matchedAgeMs > Math.max(0, staleAfterMs)) return { status: 'stale-observation', ageMs, matchedAgeMs };
+      if (matchedAgeMs !== null) return { status: 'observed-recently', ageMs, matchedAgeMs };
+      // No historical match is not evidence of a broken selector when there is
+      // simply nothing claimable on the current page.
+      return { status: 'monitoring', ageMs, matchedAgeMs: null };
+    }
+
+    function recoveryDiagnosis(health, { delayedMs = 5 * 60 * 1000, stalledMs = 6 * 60 * 1000 } = {}) {
+      if (!health?.login) return { code: 'no-stream', recoverable: false };
+      if (health.pauseReason === 'viewer' || health.paused === true) return { code: 'viewer-paused', recoverable: false };
+      if (health.live === false) return { code: 'offline', recoverable: true };
+      if (health.gameMatches === false) return { code: 'wrong-game', recoverable: true };
+      if (health.playback === 'error') return { code: 'playback-error', recoverable: true };
+      if (health.inVerificationGrace) return { code: 'verification-grace', recoverable: false };
+      if (health.campaignVerified === false) return { code: 'eligibility-unverified', recoverable: false };
+      const progressAgeMs = Math.max(0, Number(health.progressAgeMs || 0));
+      if (progressAgeMs >= Math.max(0, stalledMs)) return { code: 'credit-stalled', recoverable: true };
+      if (health.playback === 'buffering' && progressAgeMs >= Math.max(0, delayedMs)) return { code: 'buffering', recoverable: false };
+      if (progressAgeMs >= Math.max(0, delayedMs)) return { code: 'credit-delayed', recoverable: false };
+      return { code: 'healthy', recoverable: false };
+    }
+
+    function createLease({ now = Date.now, id = () => `${Date.now()}-${Math.random()}`, read = () => null, write = () => {}, remove = () => {}, ttlMs = 8000, settle = () => Promise.resolve() } = {}) {
+      async function run(key, task) {
+        const owner = text(id());
+        const startedAt = now();
+        let current = null;
+        try { current = read(key); } catch (_) {}
+        if (current && Number(current.expiresAt || 0) > startedAt && current.owner !== owner) return false;
+        const token = `${owner}:${startedAt}:${Math.random().toString(36).slice(2)}`;
+        const lease = { owner, token, expiresAt: startedAt + Math.max(1000, Number(ttlMs) || 8000) };
+        try { write(key, lease); } catch (_) { return false; }
+        try { await settle(); } catch (_) {}
+        let held = null;
+        try { held = read(key); } catch (_) {}
+        if (!held || held.token !== token || Number(held.expiresAt || 0) <= now()) return false;
+        try { return await task(); }
+        finally {
+          try {
+            const latest = read(key);
+            if (latest?.token === token) remove(key);
+          } catch (_) {}
+        }
+      }
+      return Object.freeze({ run });
+    }
     function claimPresentation(record) {
       const outcome = record?.outcome;
       const evidence = record?.evidence;
@@ -1186,7 +1241,7 @@ const ExtraPotionsDiagnostics = (() => {
       return 'Claim Not Confirmed';
     }
 
-    return Object.freeze({ createIntent, createClaims, claimResponse, claimFailure, planPrerequisites, deadlineAssessment, campaignSequence, rankCampaignCandidates, eligibility, claimPresentation });
+    return Object.freeze({ createIntent, createClaims, claimResponse, claimFailure, planPrerequisites, deadlineAssessment, campaignSequence, rankCampaignCandidates, eligibility, selectorHealth, recoveryDiagnosis, createLease, claimPresentation });
   })();
   // END DROPPER ACTIVE VIEWING
 
@@ -1656,15 +1711,27 @@ const ExtraPotionsDiagnostics = (() => {
     const identity = String(drop?.id || drop?.dropInstanceID || '');
     return identity ? `drop:${String(drop.campaignId || drop.campaignKey || '').toLowerCase()}:${identity}` : '';
   }
+  function claimLeaseStorageKey(key, account) {
+    return `dropper-claim-lease-v1:${encodeURIComponent(account || 'signed-out')}:${encodeURIComponent(key)}`;
+  }
+  const fallbackClaimLease = DropperActiveViewing.createLease({
+    id: () => TAB_ID,
+    ttlMs: 8000,
+    read: key => {
+      try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) { return null; }
+    },
+    write: (key, value) => localStorage.setItem(key, JSON.stringify(value)),
+    remove: key => localStorage.removeItem(key),
+    // A short settle lets simultaneous tabs observe which write actually won.
+    settle: () => new Promise(resolve => setTimeout(resolve, 25)),
+  });
   async function withClaimLock(key, context, task) {
     if (!claimContextIsCurrent(context)) return false;
     if (navigator.locks?.request) {
       return navigator.locks.request(`dropper-claim:${context.account}:${key}`, { ifAvailable: true }, lock => lock && claimContextIsCurrent(context) ? task() : false);
     }
-    // Without Web Locks this is advisory leader coordination, not a cross-tab
-    // atomicity guarantee. The persisted pending record still suppresses repeats.
     if (!isAutoRoutingController()) return false;
-    return task();
+    return fallbackClaimLease.run(claimLeaseStorageKey(key, context.account), () => claimContextIsCurrent(context) ? task() : false);
   }
   function recordClaimOutcome(ledger, attempt, outcome, evidence) {
     const settled = ledger.settle(attempt.key, attempt.attemptId, outcome, evidence);
@@ -1758,7 +1825,17 @@ const ExtraPotionsDiagnostics = (() => {
     for (const group of CLAIM_GROUPS) {
       if (kind && kind !== group.kind) continue;
       const applicable = group.applies() && (group.kind === 'bonus' ? settings.claimBonus : settings.claimDrops);
-      claimHealth[group.id] = { ...claimHealth[group.id], kind: group.kind, applicable, state: applicable ? 'no-claimable-reward' : 'not-applicable', checkedAt: Date.now() };
+      const checkedAt = Date.now();
+      const previous = claimHealth[group.id] || {};
+      claimHealth[group.id] = {
+        ...previous,
+        kind: group.kind,
+        applicable,
+        state: applicable ? 'no-claimable-reward' : 'not-applicable',
+        checkedAt,
+        checks: Number(previous.checks || 0) + 1,
+        consecutiveNoMatch: applicable ? Number(previous.consecutiveNoMatch || 0) + 1 : 0,
+      };
       if (!applicable) continue;
       try {
         const candidates = new Set();
@@ -1772,15 +1849,26 @@ const ExtraPotionsDiagnostics = (() => {
             for (const button of card.querySelectorAll('button')) if (isDropClaimButton(button) && isSafeClaimTarget(button, group)) candidates.add(button);
           }
         }
-        if (candidates.size) claimHealth[group.id].state = 'matched';
+        if (candidates.size) {
+          claimHealth[group.id].state = 'matched';
+          claimHealth[group.id].lastMatchedAt = checkedAt;
+          claimHealth[group.id].matchCount = Number(claimHealth[group.id].matchCount || 0) + candidates.size;
+          claimHealth[group.id].consecutiveNoMatch = 0;
+        }
         for (const button of candidates) if (queuePageClaim(button, group)) queued += 1;
-      } catch (_) { claimHealth[group.id].state = 'detection-failed'; }
+      } catch (_) { claimHealth[group.id].state = 'detection-failed'; claimHealth[group.id].lastFailureAt = Date.now(); }
     }
     return queued;
   }
   function queueClaimScan() {
     if (claimScanTimer || (!settings.claimBonus && !settings.claimDrops)) return;
     claimScanTimer = setTimeout(() => { claimScanTimer = null; scanClaimGroups(); }, 150);
+  }
+  function claimSelectorHealthSnapshot(now = Date.now()) {
+    return Object.fromEntries(Object.entries(claimHealth).map(([id, entry]) => [id, {
+      ...entry,
+      health: DropperActiveViewing.selectorHealth(entry, now),
+    }]));
   }
   function renderClaimHistory() {
     const output = ui?.shadow?.getElementById('tdh-claim-history');
@@ -13536,7 +13624,8 @@ const ExtraPotionsDiagnostics = (() => {
       )
     );
 
-    return {
+    const viewing = viewingIntent.snapshot();
+    const result = {
       login: login || null,
       live: Boolean(info.live),
       domVideoPlaying,
@@ -13551,6 +13640,9 @@ const ExtraPotionsDiagnostics = (() => {
       dropsTagVisible: Boolean(info.dropsEnabled),
       healthy,
       routingState: timing.routingState,
+      paused: Boolean(viewing.paused),
+      pauseReason: viewing.pauseReason || '',
+      playback: viewing.playback || (domVideoPlaying ? 'playing' : 'unknown'),
       inVerificationGrace: timing.inVerificationGrace,
       graceAnchorAt: timing.graceAnchorAt,
       graceAnchorSource: timing.graceAnchorSource,
@@ -13558,6 +13650,11 @@ const ExtraPotionsDiagnostics = (() => {
       creditedProgressAgeMs: timing.creditedProgressAgeMs,
       progressAgeMs: timing.effectiveProgressAgeMs,
     };
+    result.recovery = DropperActiveViewing.recoveryDiagnosis(result, {
+      delayedMs: healthy ? HEALTHY_STREAM_DELAYED_MS : UNHEALTHY_STREAM_DELAYED_MS,
+      stalledMs: progressStallTimeoutMs(healthy),
+    });
+    return result;
   }
 
   function syncCompactState() {
@@ -14722,7 +14819,7 @@ const ExtraPotionsDiagnostics = (() => {
       watchingLogin: watchingLogin(),
       currentDrop,
       viewing: { ...viewingIntent.snapshot(), screenWakeLock: Boolean(screenWakeLock), navigationBlocked: lastViewingNavigationBlock || null },
-      claims: { history: claimLedger().snapshot(), selectors: claimHealth, crossTabLock: navigator.locks?.request ? 'web-locks' : 'advisory-leader', limit: 100 },
+      claims: { history: claimLedger().snapshot(), selectors: claimSelectorHealthSnapshot(now), crossTabLock: navigator.locks?.request ? 'web-locks' : 'local-storage-lease', limit: 100 },
       rewardEligibility: activeRewardEligibility(),
       rewardImage: (() => {
         const direct = dropBenefitImage(currentDrop);
@@ -15008,6 +15105,9 @@ const ExtraPotionsDiagnostics = (() => {
           gameMatches: health.gameMatches,
           dropsTagVisible: health.dropsTagVisible,
           healthy: health.healthy,
+          recoveryDiagnosis: health.recovery?.code || null,
+          recoveryRecommended: Boolean(health.recovery?.recoverable),
+          playback: health.playback || null,
           progressAgeSeconds: Math.floor(health.progressAgeMs / 1000),
           creditedProgressAgeSeconds: Math.floor(health.creditedProgressAgeMs / 1000),
           verificationGraceRemainingSeconds: Math.ceil(health.graceRemainingMs / 1000),
