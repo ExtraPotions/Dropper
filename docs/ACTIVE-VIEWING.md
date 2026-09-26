@@ -1,6 +1,6 @@
 # Active-viewing implementation
 
-Development version: 3.3.0-dev.4. Baseline: Dropper 3.2.31.
+Development version: 3.3.0-dev.5. Baseline: Dropper 3.2.31.
 
 ## Behavior
 
@@ -104,3 +104,12 @@ Mutation-driven claim scanning is coalesced to a five-second minimum interval. D
 Campaign priority diagnostics now say whether a value came from a saved preference or the default. Selecting Normal removes the saved override entirely.
 
 A verified credit stall no longer causes an immediate stream rotation. Dropper performs an urgent Twitch recheck, waits 30 seconds, performs one final recheck, waits another 30 seconds, and only then rotates if the stall is still present and automatic routing remains allowed.
+
+
+## 3.3.0-dev.5 stream evidence tranche
+
+Stream routing now uses an explicit evidence tier before viewer-count preference. A currently visible campaign allow-list match is strongest, followed by a currently visible Drops-tagged stream, followed by another live same-game stream that still needs verification. Campaign hints and cached standby entries remain lower-confidence fallbacks.
+
+Lowest Viewers and Highest Viewers only break ties inside the same evidence tier, so a generic low-viewer stream cannot outrank a campaign-allow-listed channel. Any Eligible preserves its existing tie behavior after evidence quality is applied.
+
+The selected candidate's evidence rank and label are retained in routing diagnostics so a future live report can explain why Dropper chose a channel.
