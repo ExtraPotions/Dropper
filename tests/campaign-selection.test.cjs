@@ -165,6 +165,25 @@ assert.equal(
   false,
   "recursive discovery cannot add campaigns that are not on the dashboard",
 );
+
+const catalogBeforeFallback = catalogContext.lastCampaignCatalog.map((campaign) => campaign.id);
+catalogContext.remember([{
+  id: "open-campaign",
+  name: "Open Campaign",
+  status: "ACTIVE",
+  game: { displayName: "Real Game" },
+  timeBasedDrops: [{ id: "open-drop", self: { currentMinutesWatched: 35 } }],
+}], "campaign-auth-import-inventory-fallback");
+assert.deepEqual(
+  [...catalogContext.lastCampaignCatalog.map((campaign) => campaign.id)],
+  catalogBeforeFallback,
+  "Inventory fallback overlays known progress without shrinking dashboard or All Campaigns membership",
+);
+assert.equal(
+  catalogContext.lastCampaignCatalog.find((campaign) => campaign.id === "open-campaign")?.timeBasedDrops?.[0]?.self?.currentMinutesWatched,
+  35,
+  "Inventory fallback still updates authoritative progress for matching catalog campaigns",
+);
 const catalogBeforeEmptyInventory = catalogContext.lastCampaignCatalog;
 catalogContext.apply([]);
 assert.equal(catalogContext.lastCampaignCatalog, catalogBeforeEmptyInventory, "an empty Inventory snapshot cannot wipe dashboard-only campaigns");
@@ -782,6 +801,8 @@ assert.match(source, /TWITCH_LOGIN_URL/, "Twitch login page is linked for signed
 assert.match(source, /DropCampaignDetails/, "campaign details enrichment uses Twitch DropCampaignDetails");
 assert.match(source, /CAMPAIGN_PAGE_DISPLAY\.GQL_AUTH/, "GQL auth imports are tracked as a display mode");
 assert.match(source, /CAMPAIGN_PAGE_DISPLAY\.GQL_INVENTORY/, "Inventory fallback imports are tracked as a display mode");
+assert.doesNotMatch(source, /replaceCatalogFromDashboard\(open, \x60\$\{source\}-inventory-fallback\x60\)/, "Inventory fallback never replaces broad catalog membership");
+assert.match(source, /rememberCampaignCatalog\(open, \x60\$\{source\}-inventory-fallback\x60\)/, "Inventory fallback overlays the existing catalog instead");
 assert.match(source, /lastCampaignAuthImportError/, "failed campaign imports keep the Twitch error for the UI");
 assert.match(source, /Campaign import failed/, "failed campaign imports surface an actionable status");
 assert.match(source, /Inventory fallback/, "integrity-blocked All Campaigns imports fall back to Inventory");
