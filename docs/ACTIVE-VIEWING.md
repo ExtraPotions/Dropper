@@ -1,6 +1,6 @@
 # Active-viewing implementation
 
-Development version: 3.3.0-dev.10. Baseline: Dropper 3.2.31.
+Development version: 3.3.0-dev.11. Baseline: Dropper 3.2.31.
 
 ## Behavior
 
@@ -154,3 +154,10 @@ The permanent donation paragraph has been removed from System. A small heart but
 Reward eligibility is now a compact expandable chip inside Drops. The collapsed state uses short labels such as "✓ Eligible · 88 min remaining", "⚠ Deadline Risk · 88 min needed", "⚠ Account Link Required", "⚠ Previous Reward Required", "⚠ Stream Not Eligible", or "? Eligibility Not Verified". Expanding the chip reveals the detailed eligibility explanation, timing estimate, deadline margin/risk, and campaign watch-time context when available.
 
 The verbose eligibility data remains available in Diagnostics. No new top-level panel or dashboard was added.
+
+
+## 3.3.0-dev.11 Ko-fi support destination
+
+The Support Dropper heart popover now includes an "Open Ko-fi" action pointing to https://ko-fi.com/expdare. The heart remains a non-navigating control that opens the compact confirmation popover first.
+
+The Ko-fi action opens in a separate tab with noopener and noreferrer protections. Support remains optional and does not alter access to any Dropper feature.
