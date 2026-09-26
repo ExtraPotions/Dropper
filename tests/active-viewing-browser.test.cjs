@@ -23,6 +23,12 @@ const exposed = source.replace('  startDropper();\n})();', `
     status: () => ({ viewing: viewingIntent.snapshot(), selectors: claimHealth }),
     activityStatus: dropActivityStatus, claimSummary: claimHealthSummary,
     eligibilityCompact: eligibilityCompactPresentation,
+    restoreMetadata: restoreCurrentDropMetadataFromKnownCampaigns,
+    eligibilityState: activeRewardEligibility, routingProof: persistedRoutingEligibilityProof,
+    restoreVerification: restorePersistedRoutingVerification,
+    setRouting: writeRoutingControllerSession,
+    clearVerification: () => { lastStreamVerification = null; },
+    verification: () => lastStreamVerification,
     setFindNext: value => { settings.findNextStream = Boolean(value); },
     pauseIntent: () => { viewingIntent.pause(true); },
   };
@@ -556,4 +562,122 @@ test('support popover stays inside narrow menu bounds', async () => fixture(asyn
   assert.ok(geometry.popover.left >= geometry.menu.left - 0.5);
   assert.ok(geometry.popover.right <= geometry.menu.right + 0.5);
   assert.ok(geometry.popover.width <= geometry.menu.width + 0.5);
+}));
+
+
+test('reload reconciliation restores exact reward metadata and persisted eligibility proof', async () => fixture(async page => {
+  const now = Date.now();
+  const start = new Date(now - 3600000).toISOString();
+  const end = new Date(now + 8 * 3600000).toISOString();
+  const campaigns = [{
+    id: 'campaign-reload',
+    name: "Donghwa's Gift (Sep 25)",
+    status: 'ACTIVE',
+    startAt: start,
+    endAt: end,
+    game: { name: 'Black Desert', displayName: 'Black Desert', slug: 'black-desert' },
+    timeBasedDrops: [{
+      id: 'reward-reload',
+      name: '1 Hour (Sep 25)',
+      requiredMinutesWatched: 60,
+      self: { currentMinutesWatched: 1, isClaimed: false, dropInstanceID: '' },
+    }],
+  }];
+  const drop = {
+    id: 'reward-reload',
+    campaignId: 'campaign-reload',
+    campaignKey: 'campaign-reload',
+    name: 'Current drop',
+    game: 'Black Desert',
+    campaign: "Donghwa's Gift (Sep 25)",
+    campaignStartAt: start,
+    campaignEndAt: end,
+    dropStartAt: start,
+    dropEndAt: end,
+    requiredMinutes: 60,
+    currentMinutes: 1,
+    remainingMinutes: 59,
+    percent: 2,
+  };
+
+  const result = await page.evaluate(({ drop, campaigns, now }) => {
+    const t = window.__dropperTest;
+    t.configure(drop, campaigns);
+    const restoredMetadata = t.restoreMetadata();
+    const afterMetadata = t.current();
+
+    t.setRouting({
+      state: 'earning',
+      targetGame: 'Black Desert',
+      targetCampaign: "Donghwa's Gift (Sep 25)",
+      targetCampaignKey: 'campaign-reload',
+      targetDropId: 'reward-reload',
+      targetStream: 'chosen_channel',
+      candidateEvidence: {
+        gqlCampaignSupported: true,
+        gqlSessionMatched: true,
+        gqlSessionCampaignMatched: true,
+        gqlSessionDropMatched: true,
+        gqlEvidenceAt: now,
+      },
+    });
+    t.clearVerification();
+    const restoredVerification = t.restoreVerification(now);
+    const fresh = t.eligibilityState();
+    const verification = t.verification();
+
+    t.setRouting({
+      state: 'earning',
+      targetGame: 'Black Desert',
+      targetCampaign: "Donghwa's Gift (Sep 25)",
+      targetCampaignKey: 'campaign-reload',
+      targetDropId: 'reward-reload',
+      targetStream: 'chosen_channel',
+      candidateEvidence: {
+        gqlCampaignSupported: true,
+        gqlSessionMatched: true,
+        gqlSessionCampaignMatched: true,
+        gqlSessionDropMatched: true,
+        gqlEvidenceAt: now - 5 * 60 * 1000,
+      },
+    });
+    t.clearVerification();
+    const stale = t.eligibilityState();
+
+    t.setRouting({
+      state: 'earning',
+      targetGame: 'Black Desert',
+      targetCampaign: "Donghwa's Gift (Sep 25)",
+      targetCampaignKey: 'campaign-reload',
+      targetDropId: 'different-reward',
+      targetStream: 'chosen_channel',
+      candidateEvidence: {
+        gqlCampaignSupported: true,
+        gqlSessionMatched: true,
+        gqlSessionCampaignMatched: true,
+        gqlSessionDropMatched: true,
+        gqlEvidenceAt: now,
+      },
+    });
+    t.clearVerification();
+    const mismatch = t.eligibilityState();
+
+    return {
+      restoredMetadata,
+      name: afterMetadata?.name,
+      restoredVerification,
+      verificationMethod: verification?.method || '',
+      freshCode: fresh.code,
+      staleCode: stale.code,
+      mismatchCode: mismatch.code,
+    };
+  }, { drop, campaigns, now });
+
+  assert.equal(result.restoredMetadata, true);
+  assert.equal(result.name, '1 Hour (Sep 25)');
+  assert.equal(result.restoredVerification, true);
+  assert.equal(result.verificationMethod, 'routing-session-restored');
+  assert.equal(result.freshCode, 'eligible');
+  assert.equal(result.staleCode, 'unknown');
+  assert.equal(result.mismatchCode, 'unknown');
 }));
