@@ -296,6 +296,61 @@
       return result('eligible', 'Eligible Stream', deadline.urgency === 'tight' ? 'This stream is eligible, but the reward deadline is close.' : 'Twitch campaign or credited-progress evidence verifies this stream.', { plan, deadline, campaignPlan, deadlineMs: end, estimateMinutes: plan.totalRemainingMinutes });
     }
 
+    function selectorHealth(entry, now = Date.now(), staleAfterMs = 15 * 60 * 1000) {
+      if (!entry?.applicable) return { status: 'not-applicable', ageMs: null, matchedAgeMs: null };
+      const checkedAt = number(entry.checkedAt);
+      const matchedAt = number(entry.lastMatchedAt);
+      const ageMs = checkedAt === null ? null : Math.max(0, now - checkedAt);
+      const matchedAgeMs = matchedAt === null ? null : Math.max(0, now - matchedAt);
+      if (entry.state === 'detection-failed') return { status: 'degraded', ageMs, matchedAgeMs };
+      if (entry.state === 'attempted') return { status: 'action-pending', ageMs, matchedAgeMs };
+      if (entry.state === 'matched') return { status: 'observed', ageMs, matchedAgeMs: 0 };
+      if (matchedAgeMs !== null && matchedAgeMs > Math.max(0, staleAfterMs)) return { status: 'stale-observation', ageMs, matchedAgeMs };
+      if (matchedAgeMs !== null) return { status: 'observed-recently', ageMs, matchedAgeMs };
+      // No historical match is not evidence of a broken selector when there is
+      // simply nothing claimable on the current page.
+      return { status: 'monitoring', ageMs, matchedAgeMs: null };
+    }
+
+    function recoveryDiagnosis(health, { delayedMs = 5 * 60 * 1000, stalledMs = 6 * 60 * 1000 } = {}) {
+      if (!health?.login) return { code: 'no-stream', recoverable: false };
+      if (health.pauseReason === 'viewer' || health.paused === true) return { code: 'viewer-paused', recoverable: false };
+      if (health.live === false) return { code: 'offline', recoverable: true };
+      if (health.gameMatches === false) return { code: 'wrong-game', recoverable: true };
+      if (health.playback === 'error') return { code: 'playback-error', recoverable: true };
+      if (health.inVerificationGrace) return { code: 'verification-grace', recoverable: false };
+      if (health.campaignVerified === false) return { code: 'eligibility-unverified', recoverable: false };
+      const progressAgeMs = Math.max(0, Number(health.progressAgeMs || 0));
+      if (progressAgeMs >= Math.max(0, stalledMs)) return { code: 'credit-stalled', recoverable: true };
+      if (health.playback === 'buffering' && progressAgeMs >= Math.max(0, delayedMs)) return { code: 'buffering', recoverable: false };
+      if (progressAgeMs >= Math.max(0, delayedMs)) return { code: 'credit-delayed', recoverable: false };
+      return { code: 'healthy', recoverable: false };
+    }
+
+    function createLease({ now = Date.now, id = () => `${Date.now()}-${Math.random()}`, read = () => null, write = () => {}, remove = () => {}, ttlMs = 8000, settle = () => Promise.resolve() } = {}) {
+      async function run(key, task) {
+        const owner = text(id());
+        const startedAt = now();
+        let current = null;
+        try { current = read(key); } catch (_) {}
+        if (current && Number(current.expiresAt || 0) > startedAt && current.owner !== owner) return false;
+        const token = `${owner}:${startedAt}:${Math.random().toString(36).slice(2)}`;
+        const lease = { owner, token, expiresAt: startedAt + Math.max(1000, Number(ttlMs) || 8000) };
+        try { write(key, lease); } catch (_) { return false; }
+        try { await settle(); } catch (_) {}
+        let held = null;
+        try { held = read(key); } catch (_) {}
+        if (!held || held.token !== token || Number(held.expiresAt || 0) <= now()) return false;
+        try { return await task(); }
+        finally {
+          try {
+            const latest = read(key);
+            if (latest?.token === token) remove(key);
+          } catch (_) {}
+        }
+      }
+      return Object.freeze({ run });
+    }
     function claimPresentation(record) {
       const outcome = record?.outcome;
       const evidence = record?.evidence;
@@ -309,6 +364,6 @@
       return 'Claim Not Confirmed';
     }
 
-    return Object.freeze({ createIntent, createClaims, claimResponse, claimFailure, planPrerequisites, deadlineAssessment, campaignSequence, rankCampaignCandidates, eligibility, claimPresentation });
+    return Object.freeze({ createIntent, createClaims, claimResponse, claimFailure, planPrerequisites, deadlineAssessment, campaignSequence, rankCampaignCandidates, eligibility, selectorHealth, recoveryDiagnosis, createLease, claimPresentation });
   })();
   // END DROPPER ACTIVE VIEWING
