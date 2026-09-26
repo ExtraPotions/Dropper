@@ -3160,26 +3160,10 @@ const ExtraPotionsDiagnostics = (() => {
       routableCandidates,
       candidates,
     } = snapshot;
-    let candidate = null;
-    let aclMatched = false;
-
-    if (allowedChannels.length) {
-      const visibleAllowed = candidates.find(
-        (item) => allowedLogins.has(cleanText(item.login).toLowerCase()),
-      ) || null;
-      if (visibleAllowed) {
-        candidate = {
-          ...visibleAllowed,
-          aclMatched: true,
-          visibleInCategory: true,
-          source: "campaign-acl",
-        };
-        aclMatched = true;
-      }
-    } else {
-      const taggedCandidate = candidates.find((item) => item.dropsTagged === true) || null;
-      const probationaryCandidate = candidates.find((item) => item.dropsTagged !== true) || null;
-      candidate = taggedCandidate || probationaryCandidate;
+    let candidate = candidates[0] || null;
+    const aclMatched = Boolean(candidate?.allowListMatch);
+    if (candidate && aclMatched) {
+      candidate = { ...candidate, aclMatched: true, visibleInCategory: true, source: 'campaign-acl' };
     }
 
     if (!candidate) {
@@ -3252,6 +3236,8 @@ const ExtraPotionsDiagnostics = (() => {
           campaignAllowListPresent: Boolean(allowedChannels.length),
           campaignAllowListMatch: campaignAclProof,
           game: candidate.game || targetGame,
+          evidenceRank: candidate.evidenceRank ?? streamCandidateEvidence(candidate).rank,
+          evidenceLabel: candidate.evidenceLabel || streamCandidateEvidence(candidate).label,
           seenAt: now,
         },
         navigationTarget: candidate.href,
@@ -8053,6 +8039,49 @@ const ExtraPotionsDiagnostics = (() => {
     return descending ? b - a : a - b;
   }
 
+  function streamCandidateEvidence(candidate) {
+    const live = candidate?.availability === 'live' || candidate?.visibleInCategory === true;
+    const hint = candidate?.availability === 'campaign-hint' || candidate?.source === 'campaign-hint';
+    const freshCached = candidate?.freshCached === true;
+    const acl = candidate?.allowListMatch === true || candidate?.aclMatched === true || candidate?.campaignAclMatched === true;
+    const drops = candidate?.dropsTagged === true;
+    let rank = 7;
+    let label = 'stale-cache';
+    if (live && acl) { rank = 0; label = 'live-campaign-allowed'; }
+    else if (live && drops) { rank = 1; label = 'live-drops-tagged'; }
+    else if (live) { rank = 2; label = 'live-same-game'; }
+    else if (hint && acl) { rank = 3; label = 'campaign-hint-allowed'; }
+    else if (hint && drops) { rank = 4; label = 'campaign-hint'; }
+    else if (freshCached && acl) { rank = 5; label = 'fresh-cache-allowed'; }
+    else if (freshCached && drops) { rank = 6; label = 'fresh-cache-drops'; }
+    return { rank, label, live, acl, drops, hint, freshCached };
+  }
+
+  function rankStreamCandidatesByEvidence(candidates, extraCompare = null) {
+    const items = [...(candidates || [])];
+    items.sort((left, right) => {
+      const a = streamCandidateEvidence(left);
+      const b = streamCandidateEvidence(right);
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      if (settings.queuePreference === 'Lowest Viewers') {
+        const viewer = compareKnownViewerCounts(left, right, false);
+        if (viewer) return viewer;
+      }
+      if (settings.queuePreference === 'Highest Viewers') {
+        const viewer = compareKnownViewerCounts(left, right, true);
+        if (viewer) return viewer;
+      }
+      if (extraCompare) {
+        const extra = extraCompare(left, right);
+        if (extra) return extra;
+      }
+      return 0;
+    });
+    return items.map(item => {
+      const evidence = streamCandidateEvidence(item);
+      return { ...item, evidenceRank: evidence.rank, evidenceLabel: evidence.label };
+    });
+  }
   function sortStreamCandidates(candidates, extraCompare = null) {
     const items = [...(candidates || [])];
     if (settings.queuePreference === "Any Eligible") {
@@ -9016,7 +9045,7 @@ const ExtraPotionsDiagnostics = (() => {
     const skipped = routingControllerFailedSet(session);
     const allowListPresent = allowedChannels.length > 0;
 
-    const visible = allCandidates.map((item) => {
+    const visible = rankStreamCandidatesByEvidence(allCandidates.map((item) => {
       const login = cleanText(item.login).toLowerCase();
       const allowListMatch = Boolean(login && allowedLogins.has(login));
       const dropsTagged = item.dropsTagged === true;
@@ -9042,7 +9071,7 @@ const ExtraPotionsDiagnostics = (() => {
         routable,
         reason,
       };
-    });
+    }));
 
     lastRoutingCandidateSnapshot = {
       at: now,
@@ -9058,6 +9087,8 @@ const ExtraPotionsDiagnostics = (() => {
         temporarilySkipped: item.temporarilySkipped,
         routable: item.routable,
         reason: item.reason,
+        evidenceRank: item.evidenceRank,
+        evidenceLabel: item.evidenceLabel,
         seenAt: item.seenAt,
       })),
     };
@@ -9179,6 +9210,8 @@ const ExtraPotionsDiagnostics = (() => {
             : allowListPresent
               ? allowListMatch ? "campaign-allow-list-match" : "campaign-allow-list-mismatch"
               : item.reason || null,
+          evidenceRank: item.evidenceRank ?? streamCandidateEvidence({ ...item, allowListMatch, availability: 'live' }).rank,
+          evidenceLabel: item.evidenceLabel || streamCandidateEvidence({ ...item, allowListMatch, availability: 'live' }).label,
           seenAt: item.seenAt ? new Date(item.seenAt).toISOString() : null,
         };
       }),
@@ -13353,17 +13386,13 @@ const ExtraPotionsDiagnostics = (() => {
       return 3;
     };
 
-    items.sort((a, b) => {
+    const ranked = rankStreamCandidatesByEvidence(items, (a, b) => {
       const availabilityDiff = availabilityRank(a) - availabilityRank(b);
       if (availabilityDiff) return availabilityDiff;
-      if (Boolean(b.allowListMatch) !== Boolean(a.allowListMatch)) return Number(Boolean(b.allowListMatch)) - Number(Boolean(a.allowListMatch));
-      if (Boolean(b.dropsTagged) !== Boolean(a.dropsTagged)) return Number(Boolean(b.dropsTagged)) - Number(Boolean(a.dropsTagged));
-      if (settings.queuePreference === "Lowest Viewers") return compareKnownViewerCounts(a, b, false);
-      if (settings.queuePreference === "Highest Viewers") return compareKnownViewerCounts(a, b, true);
       return Number(b.seenAt || 0) - Number(a.seenAt || 0);
     });
 
-    return items.slice(0, Number(settings.queueCount) || 3);
+    return ranked.slice(0, Number(settings.queueCount) || 3);
   }
 
   function refreshQueueList() {
@@ -13391,7 +13420,7 @@ const ExtraPotionsDiagnostics = (() => {
             ? `Cached ${item.cacheAgeSeconds}s`
             : `Cached ${Math.max(1, Math.ceil(item.cacheAgeSeconds / 60))}m`;
       const viewers = item.viewers != null ? ` · ${item.viewers} Viewers` : "";
-      const proof = item.allowListMatch ? "Allowed" : item.dropsTagged ? "Drops" : "Standby";
+      const proof = item.evidenceLabel === 'live-campaign-allowed' ? 'Campaign' : item.dropsTagged ? 'Drops' : item.freshCached ? 'Cached' : 'Standby';
       appendQueueItem(
         list,
         item.label,
@@ -15277,6 +15306,8 @@ const ExtraPotionsDiagnostics = (() => {
         source: item.source,
         dropsTagged: Boolean(item.dropsTagged),
         allowListMatch: Boolean(item.allowListMatch),
+        evidenceRank: item.evidenceRank ?? null,
+        evidenceLabel: item.evidenceLabel || null,
         cacheAgeSeconds: item.cacheAgeSeconds,
         freshCached: Boolean(item.freshCached),
       })),
