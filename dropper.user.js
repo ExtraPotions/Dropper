@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.0-dev.11
+// @version      3.3.0-dev.12
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.0-dev.11";
+  const APP_VERSION = "3.3.0-dev.12";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -530,10 +530,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
-    "3.3.0-dev.11": [
-      "Connects the Support Dropper heart popover to the official ExtraPotions Ko-fi page.",
-      "Keeps support optional, keeps every Dropper feature available without donating, and opens Ko-fi in a separate tab.",
-      "Preserves the compact support confirmation step so clicking the heart itself never navigates away from Twitch."
+    "3.3.0-dev.12": [
+      "Keeps the Support Dropper popover inside the menu at Narrow width instead of letting it overflow past the left edge.",
+      "Anchors support popover geometry to the full menu header rather than the 30px heart-button wrapper.",
+      "Adds browser geometry coverage for Narrow mode while preserving the compact Ko-fi support interaction."
     ],
 
     "3.2.31": [
@@ -12582,11 +12582,12 @@ const ExtraPotionsDiagnostics = (() => {
       #tdh-tools-dock.fl-rail-open { display:block; height:max-content; min-height:0; max-height:none; }
       #tdh-tools-dock:focus { outline:none; }
       .menu-head {
+        position:relative;
         display:grid; grid-template-columns:minmax(0,1fr) auto;
         align-items:start; gap:8px; width:100%;
       }
-      .header-actions { display:flex; align-items:flex-start; gap:5px; position:relative; }
-      .support-wrap { position:relative; }
+      .header-actions { display:flex; align-items:flex-start; gap:5px; position:static; }
+      .support-wrap { position:static; }
       #tdh-support-button, #tdh-rail-close {
         width:30px; height:30px; min-width:30px; padding:0;
         border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0;
@@ -12598,7 +12599,8 @@ const ExtraPotionsDiagnostics = (() => {
         border-color:var(--theme-accent); color:var(--theme-accent2); background:#211b2b; outline:none;
       }
       .support-popover {
-        position:absolute; z-index:14; top:35px; right:0; width:min(190px,calc(100vw - 36px));
+        position:absolute; z-index:14; top:35px; right:0;
+        width:min(190px,100%); max-width:100%;
         box-sizing:border-box; padding:8px 9px;
         border:1px solid color-mix(in srgb,var(--theme-accent) 46%,var(--theme-line));
         border-radius:9px; background:var(--theme-panel); color:var(--theme-text);
