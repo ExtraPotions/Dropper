@@ -2027,6 +2027,7 @@ const ExtraPotionsDiagnostics = (() => {
         for (const button of candidates) if (queuePageClaim(button, group)) queued += 1;
       } catch (_) { claimHealth[group.id].state = 'detection-failed'; claimHealth[group.id].lastFailureAt = Date.now(); }
     }
+    renderClaimHistory();
     return queued;
   }
   function queueClaimScan(reason = 'mutation', immediate = false) {
