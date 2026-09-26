@@ -1,3 +1,10 @@
+## 3.3.0-dev.10 - 2026-09-25
+
+- Moves optional-support wording out of System and into a compact heart button beside the menu Close control.
+- Adds a small Support Dropper popover with the concise copy “Donations are optional. All features stay free.” and no invented donation destination.
+- Replaces the long reward-eligibility paragraph with a one-line expandable status chip for eligible, deadline-risk, account-link, prerequisite, stream-ineligible, and unknown states.
+- Keeps the full eligibility explanation in the chip's expanded content and Diagnostics while preserving existing menu structure and widths.
+
 ## 3.3.0-dev.9 - 2026-09-25
 
 - Replaces misleading off-stream "Working toward" copy with state-aware progress text that distinguishes automatic switching off, finding, opening, verifying, waiting, and manual stream choice.
