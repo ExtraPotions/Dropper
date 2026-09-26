@@ -318,12 +318,23 @@
       if (health.live === false) return { code: 'offline', recoverable: true };
       if (health.gameMatches === false) return { code: 'wrong-game', recoverable: true };
       if (health.playback === 'error') return { code: 'playback-error', recoverable: true };
+      if ((health.playback === 'paused' || health.playback === 'ended') && health.pauseReason !== 'viewer') {
+        return { code: 'playback-stopped', recoverable: true };
+      }
       if (health.inVerificationGrace) return { code: 'verification-grace', recoverable: false };
       if (health.campaignVerified === false) return { code: 'eligibility-unverified', recoverable: false };
       const progressAgeMs = Math.max(0, Number(health.progressAgeMs || 0));
-      if (progressAgeMs >= Math.max(0, stalledMs)) return { code: 'credit-stalled', recoverable: true };
-      if (health.playback === 'buffering' && progressAgeMs >= Math.max(0, delayedMs)) return { code: 'buffering', recoverable: false };
-      if (progressAgeMs >= Math.max(0, delayedMs)) return { code: 'credit-delayed', recoverable: false };
+      const delayedThresholdMs = Math.max(0, delayedMs);
+      const stalledThresholdMs = Math.max(0, stalledMs);
+      if (health.backgrounded === true && progressAgeMs >= delayedThresholdMs) {
+        return { code: 'credit-delayed-background', recoverable: false };
+      }
+      if (Number(health.foregroundGraceRemainingMs || 0) > 0 && progressAgeMs >= delayedThresholdMs) {
+        return { code: 'foreground-revalidation-grace', recoverable: false };
+      }
+      if (progressAgeMs >= stalledThresholdMs) return { code: 'credit-stalled', recoverable: true };
+      if (health.playback === 'buffering' && progressAgeMs >= delayedThresholdMs) return { code: 'buffering', recoverable: false };
+      if (progressAgeMs >= delayedThresholdMs) return { code: 'credit-delayed', recoverable: false };
       return { code: 'healthy', recoverable: false };
     }
 

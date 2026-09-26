@@ -1,3 +1,10 @@
+## 3.3.0-dev.14 - 2026-09-25
+
+- Distinguishes stale Twitch credit caused while the browser or Twitch tab is unfocused from a true foreground credit stall.
+- Holds the verified stream with a `credit-delayed-background` diagnosis instead of rotating solely because credited progress aged in the background.
+- Gives Twitch a 30-second foreground revalidation window after focus returns before a stale-credit condition can become `credit-stalled`.
+- Keeps non-viewer playback stops and playback errors recoverable, and exposes focus, visibility, background timing, and revalidation timing in Diagnostics.
+
 ## 3.3.0-dev.13 - 2026-09-25
 
 - Restores exact reward metadata from known Inventory/catalog rows after reload when an identified Drop was left with a generic `Current drop` label.

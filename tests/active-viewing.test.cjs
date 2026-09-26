@@ -306,6 +306,9 @@ test('recovery diagnosis separates viewer intent, offline, eligibility, delay, a
   expectDiagnosis({ ...base, gameMatches: false }, { code: 'wrong-game', recoverable: true });
   expectDiagnosis({ ...base, campaignVerified: false }, { code: 'eligibility-unverified', recoverable: false });
   expectDiagnosis({ ...base, progressAgeMs: 6 * 60 * 1000 }, { code: 'credit-stalled', recoverable: true }, { delayedMs: 5 * 60 * 1000, stalledMs: 6 * 60 * 1000 });
+  expectDiagnosis({ ...base, backgrounded: true, progressAgeMs: 6 * 60 * 1000 }, { code: 'credit-delayed-background', recoverable: false }, { delayedMs: 5 * 60 * 1000, stalledMs: 6 * 60 * 1000 });
+  expectDiagnosis({ ...base, foregroundGraceRemainingMs: 15_000, progressAgeMs: 6 * 60 * 1000 }, { code: 'foreground-revalidation-grace', recoverable: false }, { delayedMs: 5 * 60 * 1000, stalledMs: 6 * 60 * 1000 });
+  expectDiagnosis({ ...base, backgrounded: true, playback: 'paused', progressAgeMs: 6 * 60 * 1000 }, { code: 'playback-stopped', recoverable: true }, { delayedMs: 5 * 60 * 1000, stalledMs: 6 * 60 * 1000 });
   expectDiagnosis({ ...base, progressAgeMs: 5 * 60 * 1000 }, { code: 'credit-delayed', recoverable: false }, { delayedMs: 5 * 60 * 1000, stalledMs: 6 * 60 * 1000 });
 });
 

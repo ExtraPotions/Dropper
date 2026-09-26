@@ -34,6 +34,7 @@ const stalledRecoveryContext = {
     videoPlaying: true,
     inVerificationGrace: false,
     progressAgeMs: 360001,
+    recovery: { code: 'credit-stalled', recoverable: true },
   }),
 };
 vm.runInNewContext(
@@ -54,6 +55,7 @@ stalledRecoveryContext.streamEarningHealthSnapshot = () => ({
   videoPlaying: false,
   inVerificationGrace: false,
   progressAgeMs: 120001,
+  recovery: { code: 'credit-stalled', recoverable: true },
 });
 stalledRecoveryContext.viewingNavigationAllowed = () => false;
 assert.equal(stalledRecoveryContext.stalledProgressNeedsRecovery(), false, 'a viewer pause remains protected beyond the old 2-minute stall');
@@ -64,6 +66,7 @@ stalledRecoveryContext.streamEarningHealthSnapshot = () => ({
   videoPlaying: false,
   inVerificationGrace: false,
   progressAgeMs: 119999,
+  recovery: { code: 'healthy', recoverable: false },
 });
 assert.equal(stalledRecoveryContext.stalledProgressNeedsRecovery(), false, 'an authorized unhealthy stream does not recover before the 2-minute stall');
 stalledRecoveryContext.streamEarningHealthSnapshot = () => ({
@@ -71,6 +74,7 @@ stalledRecoveryContext.streamEarningHealthSnapshot = () => ({
   videoPlaying: false,
   inVerificationGrace: true,
   progressAgeMs: 120001,
+  recovery: { code: 'credit-stalled', recoverable: true },
 });
 assert.equal(stalledRecoveryContext.stalledProgressNeedsRecovery(), false, 'the 90-second verification window blocks stall recovery');
 stalledRecoveryContext.streamEarningHealthSnapshot = () => ({
@@ -78,5 +82,27 @@ stalledRecoveryContext.streamEarningHealthSnapshot = () => ({
   videoPlaying: true,
   inVerificationGrace: true,
   progressAgeMs: 120001,
+  recovery: { code: 'credit-stalled', recoverable: true },
 });
 assert.equal(stalledRecoveryContext.stalledProgressNeedsRecovery(), false, 'an unhealthy but playing stream still honors verification grace');
+stalledRecoveryContext.streamEarningHealthSnapshot = () => ({
+  healthy: true,
+  inVerificationGrace: false,
+  progressAgeMs: 600001,
+  recovery: { code: 'credit-delayed-background', recoverable: false },
+});
+assert.equal(stalledRecoveryContext.stalledProgressNeedsRecovery(), false, 'background-delayed credit never triggers stream rotation by itself');
+stalledRecoveryContext.streamEarningHealthSnapshot = () => ({
+  healthy: true,
+  inVerificationGrace: false,
+  progressAgeMs: 600001,
+  recovery: { code: 'foreground-revalidation-grace', recoverable: false },
+});
+assert.equal(stalledRecoveryContext.stalledProgressNeedsRecovery(), false, 'foreground revalidation grace blocks stall rotation after returning to the browser');
+stalledRecoveryContext.streamEarningHealthSnapshot = () => ({
+  healthy: false,
+  inVerificationGrace: true,
+  progressAgeMs: 120001,
+  recovery: { code: 'playback-stopped', recoverable: true },
+});
+assert.equal(stalledRecoveryContext.stalledProgressNeedsRecovery(), true, 'stopped playback can still recover even during credit grace');

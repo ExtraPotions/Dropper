@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.0-dev.13
+// @version      3.3.0-dev.14
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.0-dev.13";
+  const APP_VERSION = "3.3.0-dev.14";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -503,6 +503,7 @@ const ExtraPotionsDiagnostics = (() => {
   const UNHEALTHY_STREAM_DELAYED_MS = 90 * 1000;
   const UNHEALTHY_STREAM_STALLED_MS = 2 * 60 * 1000;
   const FIRST_WATCH_CREDIT_GRACE_MS = 90 * 1000;
+  const FOREGROUND_REVALIDATION_GRACE_MS = 30 * 1000;
   const STREAM_OFFLINE_CONFIRM_MS = 60 * 1000;
   const CATEGORY_SLUG_CACHE_KEY = "dropper-category-slugs-v3";
   const EXCLUDED_CATEGORY_SLUGS = new Set(["first-partners-collection"]);
@@ -530,7 +531,7 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
-    "3.3.0-dev.13": [
+    "3.3.0-dev.14": [
       "Restores exact Twitch reward metadata after reload instead of leaving identified rewards labeled Current drop.",
       "Preserves dated duration reward names such as 1 Hour (Sep 25) while still filtering plain duration-only card metadata.",
       "Reuses fresh exact persisted routing/GQL verification after same-account reload so routing, earning health, and eligibility remain consistent."
@@ -1199,12 +1200,23 @@ const ExtraPotionsDiagnostics = (() => {
       if (health.live === false) return { code: 'offline', recoverable: true };
       if (health.gameMatches === false) return { code: 'wrong-game', recoverable: true };
       if (health.playback === 'error') return { code: 'playback-error', recoverable: true };
+      if ((health.playback === 'paused' || health.playback === 'ended') && health.pauseReason !== 'viewer') {
+        return { code: 'playback-stopped', recoverable: true };
+      }
       if (health.inVerificationGrace) return { code: 'verification-grace', recoverable: false };
       if (health.campaignVerified === false) return { code: 'eligibility-unverified', recoverable: false };
       const progressAgeMs = Math.max(0, Number(health.progressAgeMs || 0));
-      if (progressAgeMs >= Math.max(0, stalledMs)) return { code: 'credit-stalled', recoverable: true };
-      if (health.playback === 'buffering' && progressAgeMs >= Math.max(0, delayedMs)) return { code: 'buffering', recoverable: false };
-      if (progressAgeMs >= Math.max(0, delayedMs)) return { code: 'credit-delayed', recoverable: false };
+      const delayedThresholdMs = Math.max(0, delayedMs);
+      const stalledThresholdMs = Math.max(0, stalledMs);
+      if (health.backgrounded === true && progressAgeMs >= delayedThresholdMs) {
+        return { code: 'credit-delayed-background', recoverable: false };
+      }
+      if (Number(health.foregroundGraceRemainingMs || 0) > 0 && progressAgeMs >= delayedThresholdMs) {
+        return { code: 'foreground-revalidation-grace', recoverable: false };
+      }
+      if (progressAgeMs >= stalledThresholdMs) return { code: 'credit-stalled', recoverable: true };
+      if (health.playback === 'buffering' && progressAgeMs >= delayedThresholdMs) return { code: 'buffering', recoverable: false };
+      if (progressAgeMs >= delayedThresholdMs) return { code: 'credit-delayed', recoverable: false };
       return { code: 'healthy', recoverable: false };
     }
 
@@ -2290,19 +2302,23 @@ const ExtraPotionsDiagnostics = (() => {
     startHeartbeat();
 
     window.addEventListener("blur", () => {
+      browserAttentionSnapshot();
       markUpdateInstallerLeft("blur");
     }, { passive: true });
     window.addEventListener("focus", () => {
+      browserAttentionSnapshot();
       handleUpdateInstallerReturn("focus");
       queueGqlPollSoon("focus", 0);
       heartbeat();
     }, { passive: true });
     window.addEventListener("pageshow", () => {
+      browserAttentionSnapshot();
       handleUpdateInstallerReturn("pageshow");
       queueGqlPollSoon("pageshow", 0);
       heartbeat();
     }, { passive: true });
     document.addEventListener("visibilitychange", () => {
+      browserAttentionSnapshot();
       if (document.hidden) {
         markUpdateInstallerLeft("hidden");
       } else {
@@ -2473,7 +2489,10 @@ const ExtraPotionsDiagnostics = (() => {
     }
 
     const health = streamEarningHealthSnapshot();
+    const recovery = health.recovery || { code: 'healthy', recoverable: false };
+    if (recovery.recoverable && recovery.code !== 'credit-stalled') return true;
     if (health.inVerificationGrace) return false;
+    if (recovery.code !== 'credit-stalled') return false;
     return health.progressAgeMs >= progressStallTimeoutMs(health.healthy);
   }
 
@@ -3917,6 +3936,28 @@ const ExtraPotionsDiagnostics = (() => {
     const recovery = health.recovery || { code: 'healthy', recoverable: false };
     if (recovery.code !== 'credit-stalled' && (session.recoveryStage || session.recoveryStartedAt || session.recoveryLastCheckAt)) {
       session = writeRoutingControllerSession({ ...session, recoveryStage: 0, recoveryStartedAt: 0, recoveryLastCheckAt: 0 });
+    }
+    if (recovery.code === 'credit-delayed-background') {
+      setStatus(`Twitch Credit Delayed In Background · Holding ${login}`);
+      return false;
+    }
+    if (recovery.code === 'foreground-revalidation-grace') {
+      setStatus(`Browser Active Again · Rechecking Twitch Credit`);
+      return false;
+    }
+    if (recovery.code === 'playback-stopped' || recovery.code === 'playback-error') {
+      return transitionRoutingController(
+        ROUTING_STATES.FIND_STREAM,
+        {
+          failedStreams: routingControllerAddFailedStream(session, login),
+          targetStream: "",
+          recoveryStage: 0,
+          recoveryStartedAt: 0,
+          recoveryLastCheckAt: 0,
+          deadlineAt: 0,
+        },
+        `Playback stopped on ${login}`,
+      );
     }
     if (recovery.code === 'credit-delayed') {
       setStatus(`Twitch Credit Delayed · Holding ${login}`);
@@ -14099,6 +14140,38 @@ const ExtraPotionsDiagnostics = (() => {
     if (ring) ring.style.stroke = pride ? "#d97898" : main;
   }
 
+  let browserBackgroundSince = 0;
+  let browserForegroundRestoredAt = 0;
+
+  function browserAttentionSnapshot(now = Date.now()) {
+    const visibilityState = document.visibilityState || (document.hidden ? 'hidden' : 'visible');
+    let documentFocused = !document.hidden;
+    try {
+      if (typeof document.hasFocus === 'function') documentFocused = document.hasFocus();
+    } catch (_) {}
+    const backgrounded = Boolean(document.hidden || !documentFocused);
+
+    if (backgrounded) {
+      if (!browserBackgroundSince) browserBackgroundSince = now;
+    } else if (browserBackgroundSince) {
+      browserBackgroundSince = 0;
+      browserForegroundRestoredAt = now;
+    }
+
+    const foregroundGraceRemainingMs = !backgrounded && browserForegroundRestoredAt
+      ? Math.max(0, FOREGROUND_REVALIDATION_GRACE_MS - (now - browserForegroundRestoredAt))
+      : 0;
+
+    return {
+      visibilityState,
+      documentFocused,
+      backgrounded,
+      backgroundSince: browserBackgroundSince,
+      foregroundRestoredAt: browserForegroundRestoredAt,
+      foregroundGraceRemainingMs,
+    };
+  }
+
   function currentStreamTimingSnapshot(now = Date.now()) {
     const routing = readRoutingControllerSession();
     const login = cleanText(watchingLogin()).toLowerCase();
@@ -14154,6 +14227,7 @@ const ExtraPotionsDiagnostics = (() => {
 
   function streamEarningHealthSnapshot() {
     const now = Date.now();
+    const attention = browserAttentionSnapshot(now);
     const login = watchingLogin();
     const info = login ? readStreamInfo() : {
       live: false,
@@ -14243,6 +14317,12 @@ const ExtraPotionsDiagnostics = (() => {
       dropsTagVisible: Boolean(info.dropsEnabled),
       healthy,
       routingState: timing.routingState,
+      visibilityState: attention.visibilityState,
+      documentFocused: attention.documentFocused,
+      backgrounded: attention.backgrounded,
+      backgroundSince: attention.backgroundSince,
+      foregroundRestoredAt: attention.foregroundRestoredAt,
+      foregroundGraceRemainingMs: attention.foregroundGraceRemainingMs,
       paused: Boolean(viewing.paused),
       pauseReason: viewing.pauseReason || '',
       playback: viewing.playback || (domVideoPlaying ? 'playing' : 'unknown'),
@@ -14298,16 +14378,20 @@ const ExtraPotionsDiagnostics = (() => {
       label = "Waiting";
       cls += " warn";
     } else if (routing.state === ROUTING_STATES.EARNING && currentDrop) {
+      const recoveryCode = health.recovery?.code || "healthy";
       if (health.inVerificationGrace) {
         label = settings.backgroundEarning ? "BG Earning" : "Earning";
         cls += " good";
-      } else if (staleMs >= progressStallTimeoutMs(health.healthy)) {
+      } else if (recoveryCode === "credit-delayed-background") {
+        label = "BG Delayed";
+        cls += " warn";
+      } else if (recoveryCode === "foreground-revalidation-grace") {
+        label = "Rechecking";
+        cls += " warn";
+      } else if (recoveryCode === "credit-stalled") {
         label = "Stalled";
         cls += " bad";
-      } else if (health.healthy && staleMs >= HEALTHY_STREAM_DELAYED_MS) {
-        label = "Delayed";
-        cls += " warn";
-      } else if (!health.healthy && staleMs >= UNHEALTHY_STREAM_DELAYED_MS) {
+      } else if (recoveryCode === "credit-delayed" || recoveryCode === "buffering") {
         label = "Delayed";
         cls += " warn";
       } else {
@@ -14336,6 +14420,8 @@ const ExtraPotionsDiagnostics = (() => {
       "Finding": "Find",
       "Waiting": "Wait",
       "BG Earning": "BG Earn",
+      "BG Delayed": "BG Delay",
+      "Rechecking": "Recheck",
       "Earning": "Earn",
       "Stalled": "Stalled",
       "Delayed": "Delayed",
@@ -15713,6 +15799,12 @@ const ExtraPotionsDiagnostics = (() => {
           recoveryDiagnosis: health.recovery?.code || null,
           recoveryRecommended: Boolean(health.recovery?.recoverable),
           playback: health.playback || null,
+          visibilityState: health.visibilityState,
+          documentFocused: health.documentFocused,
+          backgrounded: health.backgrounded,
+          backgroundSince: health.backgroundSince ? new Date(health.backgroundSince).toISOString() : null,
+          foregroundRestoredAt: health.foregroundRestoredAt ? new Date(health.foregroundRestoredAt).toISOString() : null,
+          foregroundGraceRemainingSeconds: Math.ceil(health.foregroundGraceRemainingMs / 1000),
           progressAgeSeconds: Math.floor(health.progressAgeMs / 1000),
           creditedProgressAgeSeconds: Math.floor(health.creditedProgressAgeMs / 1000),
           verificationGraceRemainingSeconds: Math.ceil(health.graceRemainingMs / 1000),
