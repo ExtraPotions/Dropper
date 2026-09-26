@@ -1,3 +1,10 @@
+## 3.3.0-dev.11 - 2026-09-25
+
+- Connects the compact Support Dropper popover to https://ko-fi.com/expdare.
+- Opens Ko-fi in a separate tab with noopener and noreferrer protections.
+- Keeps the heart itself as a non-navigating confirmation control so accidental clicks do not leave Twitch.
+- Preserves the concise optional-support wording and all-features-free policy.
+
 ## 3.3.0-dev.10 - 2026-09-25
 
 - Moves optional-support wording out of System and into a compact heart button beside the menu Close control.
