@@ -479,16 +479,24 @@ test('support heart replaces the permanent donation note and opens a compact pop
     const root = document.getElementById('tdh-root').shadowRoot;
     root.getElementById('tdh-support-button').click();
     const popover = root.getElementById('tdh-support-popover');
+    const supportLink = root.getElementById('tdh-support-link');
     return {
       hidden: popover.hidden,
       text: popover.textContent.replace(/\s+/g, ' ').trim(),
       expanded: root.getElementById('tdh-support-button').getAttribute('aria-expanded'),
+      href: supportLink?.href || '',
+      target: supportLink?.target || '',
+      rel: supportLink?.rel || '',
     };
   });
   assert.equal(opened.hidden, false);
   assert.equal(opened.expanded, 'true');
   assert.match(opened.text, /Support Dropper/);
   assert.match(opened.text, /Donations are optional\. All features stay free\./);
+  assert.equal(opened.href, 'https://ko-fi.com/expdare');
+  assert.equal(opened.target, '_blank');
+  assert.match(opened.rel, /noopener/);
+  assert.match(opened.rel, /noreferrer/);
 }));
 
 test('eligibility uses a compact expandable chip with concise state wording', async () => fixture(async page => {
