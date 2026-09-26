@@ -7032,16 +7032,16 @@ const ExtraPotionsDiagnostics = (() => {
     }
 
     const incomplete = candidates.filter((item) => !dropProgressComplete(item));
-    const ranked = DropperActiveViewing.rankCampaignCandidates(incomplete, {
+    // Preserve the established shell safety window first: a campaign without
+    // reward details needs enough time left to justify inspection. Known
+    // unwinnable detailed rewards are filtered here whenever a viable option
+    // exists. The shared ranker then applies personal priority and sequencing.
+    const winnablePool = preferWinnableDrops(incomplete, now);
+    const pool = DropperActiveViewing.rankCampaignCandidates(winnablePool, {
       priorityOf: campaignPriority,
       now,
       activeGame: currentDrop?.game || "",
     });
-    const viable = ranked.filter((item) => item.sequenceFinishable !== false);
-    const pool = viable.length ? viable : ranked;
-    // Unknown shell campaigns stay in deadline order so a near-ending campaign
-    // can be inspected before a later detailed campaign. Only known-impossible
-    // work is demoted by the shared ranker.
     return preferCurrentWinnableOpenDrop(pool) || pool[0] || null;
   }
 
