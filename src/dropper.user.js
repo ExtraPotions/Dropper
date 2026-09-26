@@ -7039,10 +7039,9 @@ const ExtraPotionsDiagnostics = (() => {
     });
     const viable = ranked.filter((item) => item.sequenceFinishable !== false);
     const pool = viable.length ? viable : ranked;
-    pool.sort((a, b) => {
-      if (Boolean(a.needsDropDetails) !== Boolean(b.needsDropDetails)) return a.needsDropDetails ? 1 : -1;
-      return 0;
-    });
+    // Unknown shell campaigns stay in deadline order so a near-ending campaign
+    // can be inspected before a later detailed campaign. Only known-impossible
+    // work is demoted by the shared ranker.
     return preferCurrentWinnableOpenDrop(pool) || pool[0] || null;
   }
 
