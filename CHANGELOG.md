@@ -3,6 +3,7 @@
 - Adds deadline-aware campaign sequencing that moves known-unfinishable choices behind viable campaigns before applying personal priority, urgency, active progress, and remaining watch time.
 - Adds reward and campaign deadline feasibility to eligibility diagnostics without replacing Twitch-credited progress.
 - Clarifies unconfirmed claim timeout wording and reconciles credited-progress verification with current GQL campaign evidence.
+- Adds queue diagnostics that expose personal priority, finishability, remaining watch time, deadline margin, and in-progress state.
 
 ## 3.3.0-dev.1 - Active-viewing development build
 
