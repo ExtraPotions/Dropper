@@ -1,3 +1,10 @@
+## 3.3.0-dev.9 - 2026-09-25
+
+- Replaces misleading off-stream "Working toward" copy with state-aware progress text that distinguishes automatic switching off, finding, opening, verifying, waiting, and manual stream choice.
+- Adds a compact health summary inside the existing Claim History panel with confirmed/pending/attention counts and applicable selector-health states.
+- Surfaces the latest inventory-sweep result in the same Claim History summary without creating another dashboard or top-level menu.
+- Adds browser regression coverage for off-stream status accuracy and the single-panel claim-health presentation.
+
 ## 3.3.0-dev.8 - 2026-09-25
 
 - Keeps ViewerDropsDashboard and All Campaigns data authoritative for catalog membership while Twitch Inventory remains authoritative for reward progress.
