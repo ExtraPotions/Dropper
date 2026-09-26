@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.1
+// @version      3.3.2
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.1";
+  const APP_VERSION = "3.3.2";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -531,6 +531,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.2": [
+      "Makes Badge Only progress match the menu section cards by using the dock content width instead of the outer dock width.",
+      "Removes the 3.3.1 padding bleed so Full, Compact, and Narrow align with Drops, Streams, Appearance, and System."
+    ],
     "3.3.1": [
       "Makes Badge Only progress use the exact same Full, Compact, and Narrow width calculation as the normal progress panel and menu.",
       "Compensates for the menu side padding so Badge Only no longer renders 18 px narrower than the selected panel width."
@@ -16102,13 +16106,13 @@ const ExtraPotionsDiagnostics = (() => {
       progressCard.style.setProperty("max-width", `calc(100vw - 80px)`, "important");
       for (const property of ["left", "right", "top", "bottom"]) progressCard.style.removeProperty(property);
     } else if (progressCard?.dataset.presentation === "menu-card" && badgeOnlySlot) {
-      // Match the menu outer width instead of its content box. The menu has
-      // 9 px side padding, which otherwise makes Badge Only 18 px too narrow.
-      badgeOnlySlot.style.setProperty("width", `${menuPanelWidth}px`, "important");
-      badgeOnlySlot.style.setProperty("margin-left", "-9px", "important");
-      badgeOnlySlot.style.setProperty("margin-right", "-9px", "important");
-      progressCard.style.setProperty("width", `${menuPanelWidth}px`, "important");
-      progressCard.style.setProperty("max-width", `${menuPanelWidth}px`, "important");
+      // Inside the menu, match the same inner content width used by every
+      // .fl-tool-panel. The dock owns the outer Full/Compact/Narrow width.
+      badgeOnlySlot.style.setProperty("width", "100%", "important");
+      badgeOnlySlot.style.setProperty("margin-left", "0", "important");
+      badgeOnlySlot.style.setProperty("margin-right", "0", "important");
+      progressCard.style.setProperty("width", "100%", "important");
+      progressCard.style.setProperty("max-width", "100%", "important");
       for (const property of ["left", "right", "top", "bottom"]) progressCard.style.removeProperty(property);
     }
 
