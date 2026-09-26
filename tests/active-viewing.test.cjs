@@ -332,3 +332,25 @@ test('distribution reports local-storage lease and interpreted selector/recovery
   assert.match(source, /recoveryDiagnosis: health\.recovery\?\.code/);
   assert.match(source, /fallbackClaimLease\.run/);
 });
+
+
+test('control-dismissed evidence can confirm a pending bonus', () => {
+  const f = ledgerFixture();
+  const attempt = f.ledger.begin({ key: 'bonus:test', kind: 'bonus', evidence: 'page-control' });
+  const settled = f.ledger.settle(attempt.key, attempt.attemptId, 'confirmed', 'control-dismissed');
+  assert.equal(settled.outcome, 'confirmed');
+  assert.equal(settled.evidence, 'control-dismissed');
+});
+
+test('Dropper throttles mutation-driven claim scans and uses bounded stall rechecks', () => {
+  assert.match(source, /const CLAIM_SCAN_MIN_INTERVAL_MS = 5000/);
+  assert.match(source, /new MutationObserver\(\(\) => queueClaimScan\('mutation'\)\)/);
+  assert.match(source, /Credit Stalled · Rechecking Twitch Before Switching/);
+  assert.match(source, /Credit Still Stalled · Final Twitch Check/);
+  assert.match(source, /after two Twitch rechecks/);
+});
+
+test('normal campaign priority removes explicit storage instead of persisting a fake preference', () => {
+  assert.match(source, /if \(priority === 0\) localStorage\.removeItem\(entry\.key\)/);
+  assert.match(source, /prioritySource: campaignPriorityEntry\(item\.game\)\.explicit \? 'saved' : 'default'/);
+});
