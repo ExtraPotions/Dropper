@@ -1,6 +1,6 @@
 # Active-viewing implementation
 
-Development version: 3.3.0-dev.7. Baseline: Dropper 3.2.31.
+Development version: 3.3.0-dev.8. Baseline: Dropper 3.2.31.
 
 ## Behavior
 
@@ -129,3 +129,12 @@ Dropper now checks authoritative Twitch Inventory snapshots for completed, uncla
 The sweep does not introduce a second claim engine. Every selected reward runs through the same account-scoped claim lock, ledger, result parser, retry rules, history, and confirmation flow already used by the current Drop. Secondary tabs do not initiate sweeps.
 
 The reward currently being watched is excluded from the inventory sweep because it already has an immediate claim path. Confirmed background rewards therefore cannot replace or navigate away from a different campaign that is actively earning credited progress.
+
+
+## 3.3.0-dev.8 campaign catalog ownership tranche
+
+Campaign membership and reward progress now have explicit ownership boundaries. ViewerDropsDashboard and All Campaigns data determine which campaigns belong in the broad catalog. Twitch Inventory supplies authoritative in-progress reward state for campaigns it contains.
+
+When the authenticated dashboard request is blocked and Dropper falls back to Inventory, that fallback now overlays progress onto matching catalog entries instead of replacing the catalog. If no broader catalog exists yet, the Inventory fallback may seed it, but once a richer catalog is present a short Inventory response cannot shrink it.
+
+This preserves deadline planning, prerequisite context, next-campaign selection, and campaign-manager completeness across Twitch navigation and integrity fallback while keeping Inventory progress authoritative.
