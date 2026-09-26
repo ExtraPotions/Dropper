@@ -1,6 +1,6 @@
 # Active-viewing implementation
 
-Development version: 3.3.0-dev.2. Baseline: Dropper 3.2.31.
+Development version: 3.3.0-dev.3. Baseline: Dropper 3.2.31.
 
 ## Behavior
 
@@ -84,3 +84,12 @@ No payment integration or donation destination is included in this change.
 Campaign ordering now moves a campaign with a known impossible watch window behind viable work. Among viable or unknown candidates, ordering considers personal game priority, the currently active game, deadline margin, in-progress state, campaign end time, and remaining watch time. Priority still does not grant navigation permission and cannot override a deliberate pause or manual stream choice.
 
 Eligibility reports reward-level deadline feasibility and campaign-wide remaining watch minutes when Twitch supplies enough data. These estimates never replace Twitch-credited progress. Timed-out page claims are described as "Claim Sent · Confirmation Unavailable" rather than as a rejection, and credited-progress verification carries forward current GQL campaign support when that evidence exists.
+
+
+## 3.3.0-dev.3 recovery and coordination tranche
+
+Claim selector health is observational. A page that has no claimable reward is reported as monitoring rather than as a broken selector. Recent and stale historical matches are distinguishable, while exceptions during detection are explicitly degraded.
+
+Stream health now carries a recovery diagnosis that separates viewer pause, offline state, wrong game, eligibility uncertainty, buffering, delayed Twitch credit, and a true credit stall. These diagnostics do not grant navigation permission and therefore do not override the active-viewing safeguards introduced in dev.1.
+
+When the Web Locks API is unavailable, claim coordination now adds a short account-and-reward-scoped localStorage lease with a verification settle step. The established oldest-tab policy and persisted pending records remain in place. This is a stronger browser fallback but is still not represented as a transactional storage primitive.
