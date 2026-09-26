@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.0-dev.1
+// @version      3.3.0-dev.2
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.0-dev.1";
+  const APP_VERSION = "3.3.0-dev.2";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -526,6 +526,11 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.0-dev.2": [
+      "Uses deadline-aware campaign sequencing: known-unfinishable campaigns fall behind viable choices before personal priority, urgency, active progress, and remaining watch time are considered.",
+      "Adds reward and campaign deadline feasibility to eligibility diagnostics while keeping Twitch-credited progress authoritative.",
+      "Clarifies unconfirmed claim timeout wording and reconciles credited-progress verification with current GQL campaign evidence."
+    ],
     "3.3.0-dev.1": [
       "Protects viewer pauses and selected streams; removes simulated visibility, focus, and activity.",
       "Separates claim attempts from confirmed rewards with bounded retries, account-scoped history, and selector diagnostics.",
@@ -1075,6 +1080,77 @@ const ExtraPotionsDiagnostics = (() => {
       };
     }
 
+    function deadlineAssessment(campaign, drop, plan, now = Date.now(), bufferMinutes = 2) {
+      const endMs = Date.parse(drop?.endAt || campaign?.endAt || '');
+      const deadlineMs = Number.isFinite(endMs) ? endMs : null;
+      const minutesUntilDeadline = deadlineMs === null ? null : Math.max(0, Math.floor((deadlineMs - now) / 60000));
+      const requiredMinutes = Number.isFinite(Number(plan?.totalRemainingMinutes)) ? Math.max(0, Number(plan.totalRemainingMinutes)) : null;
+      const safeBufferMinutes = Math.max(0, Number(bufferMinutes) || 0);
+      const finishable = minutesUntilDeadline === null || requiredMinutes === null ? null : requiredMinutes + safeBufferMinutes <= minutesUntilDeadline;
+      const marginMinutes = minutesUntilDeadline === null || requiredMinutes === null ? null : minutesUntilDeadline - requiredMinutes - safeBufferMinutes;
+      const urgency = finishable === false ? 'unfinishable' : marginMinutes === null ? 'unknown' : marginMinutes <= 15 ? 'tight' : marginMinutes <= 60 ? 'soon' : 'comfortable';
+      return { deadlineMs, minutesUntilDeadline, requiredMinutes, bufferMinutes: safeBufferMinutes, finishable, marginMinutes, urgency };
+    }
+
+    function campaignSequence(campaign, now = Date.now(), bufferMinutes = 2) {
+      const drops = campaign?.timeBasedDrops || campaign?.drops || [];
+      let remainingMinutes = 0, known = true, inProgress = false, pendingClaims = 0, watchRewards = 0;
+      for (const drop of drops) {
+        if (drop?.self?.isClaimed === true) continue;
+        const paid = Number(drop?.requiredSubs ?? drop?.requiredSubscriptions ?? drop?.requiredSubscriptionCount ?? drop?.subscriptionRequirement?.requiredSubs ?? 0) > 0;
+        if (paid) continue;
+        const total = number(drop?.requiredMinutesWatched ?? drop?.requiredMinutes);
+        if (total === null || total <= 0) continue;
+        watchRewards += 1;
+        const current = number(drop?.self?.currentMinutesWatched ?? drop?.currentMinutes);
+        if (current === null || current < 0) { known = false; continue; }
+        if (current > 0 && current < total) inProgress = true;
+        remainingMinutes += Math.max(0, total - current);
+        if (current >= total) pendingClaims += 1;
+      }
+      const deadline = deadlineAssessment(campaign, null, { totalRemainingMinutes: known ? remainingMinutes : null }, now, bufferMinutes);
+      return { watchRewards, remainingMinutes: known ? remainingMinutes : null, pendingClaims, inProgress, ...deadline };
+    }
+
+    function rankCampaignCandidates(candidates, { priorityOf = () => 0, now = Date.now(), activeGame = '', bufferMinutes = 2 } = {}) {
+      const active = text(activeGame).toLowerCase();
+      return [...(candidates || [])].map(item => {
+        const rawDeadline = number(item?.endMs);
+        const parsedDeadline = Date.parse(item?.campaignEndAt || item?.dropEndAt || item?.endAt || '');
+        const deadlineMs = rawDeadline !== null ? rawDeadline : (Number.isFinite(parsedDeadline) ? parsedDeadline : null);
+        const remaining = number(item?.sequenceRemainingMinutes ?? item?.remainingMinutes);
+        const minutesUntilDeadline = deadlineMs === null ? null : Math.max(0, Math.floor((deadlineMs - now) / 60000));
+        const safeBuffer = Math.max(0, Number(bufferMinutes) || 0);
+        const finishable = minutesUntilDeadline === null || remaining === null ? null : remaining + safeBuffer <= minutesUntilDeadline;
+        const marginMinutes = minutesUntilDeadline === null || remaining === null ? null : minutesUntilDeadline - remaining - safeBuffer;
+        return {
+          ...item,
+          sequencePriority: Number(priorityOf(item?.game)) || 0,
+          sequenceFinishable: finishable,
+          sequenceMarginMinutes: marginMinutes,
+          sequenceMinutesUntilDeadline: minutesUntilDeadline,
+          sequenceInProgress: Boolean(Number(item?.currentMinutes) > 0 || item?.sequenceInProgress),
+          sequenceActiveGame: Boolean(active && text(item?.game).toLowerCase() === active),
+        };
+      }).sort((a, b) => {
+        const feasibility = value => value === true ? 0 : value === null ? 1 : 2;
+        const feasibleDelta = feasibility(a.sequenceFinishable) - feasibility(b.sequenceFinishable);
+        if (feasibleDelta) return feasibleDelta;
+        if (b.sequencePriority !== a.sequencePriority) return b.sequencePriority - a.sequencePriority;
+        if (a.sequenceActiveGame !== b.sequenceActiveGame) return a.sequenceActiveGame ? -1 : 1;
+        const marginA = Number.isFinite(a.sequenceMarginMinutes) ? a.sequenceMarginMinutes : Number.MAX_SAFE_INTEGER;
+        const marginB = Number.isFinite(b.sequenceMarginMinutes) ? b.sequenceMarginMinutes : Number.MAX_SAFE_INTEGER;
+        if (marginA !== marginB) return marginA - marginB;
+        if (a.sequenceInProgress !== b.sequenceInProgress) return a.sequenceInProgress ? -1 : 1;
+        const endA = Number.isFinite(Number(a.endMs)) ? Number(a.endMs) : Number.MAX_SAFE_INTEGER;
+        const endB = Number.isFinite(Number(b.endMs)) ? Number(b.endMs) : Number.MAX_SAFE_INTEGER;
+        if (endA !== endB) return endA - endB;
+        const remA = number(a.sequenceRemainingMinutes ?? a.remainingMinutes);
+        const remB = number(b.sequenceRemainingMinutes ?? b.remainingMinutes);
+        if (remA !== null && remB !== null && remA !== remB) return remA - remB;
+        return text(a.game).localeCompare(text(b.game));
+      });
+    }
     function eligibility(campaign, drop, context = {}) {
       const now = context.now ?? Date.now();
       const result = (code, label, detail, extra = {}) => ({ code, label, detail, ...extra });
@@ -1089,14 +1165,31 @@ const ExtraPotionsDiagnostics = (() => {
       if (campaign.self?.isEligible === false || drop.self?.isEligible === false) return result('participation', 'Campaign Not Eligible', 'Twitch reports that this account is not eligible.');
       if (Number(drop.requiredSubs ?? drop.requiredSubscriptions ?? drop.requiredSubscriptionCount ?? drop.subscriptionRequirement?.requiredSubs ?? 0) > 0) return result('paid-requirement', 'Paid Reward Excluded', 'Dropper only assists with free watch rewards.');
       const plan = planPrerequisites(drop, campaign.timeBasedDrops || campaign.drops || []);
-      if (!plan.ready) return result(plan.reason, 'Previous Reward Required', plan.reason === 'prerequisite-required' ? 'Complete or claim the prerequisite shown for this reward.' : 'The prerequisite chain is incomplete or invalid.', { plan });
+      const deadline = deadlineAssessment(campaign, drop, plan, now);
+      const campaignPlan = campaignSequence(campaign, now);
+      if (!plan.ready) return result(plan.reason, 'Previous Reward Required', plan.reason === 'prerequisite-required' ? 'Complete or claim the prerequisite shown for this reward.' : 'The prerequisite chain is incomplete or invalid.', { plan, deadline, campaignPlan });
       const game = text(campaign.game?.displayName || campaign.game?.name || campaign.game).toLowerCase();
-      if (context.game && game && text(context.game).toLowerCase() !== game) return result('wrong-game', 'Stream Not Eligible', 'This stream is in a different game category.', { plan });
-      if (context.allowedChannels?.length && context.channel && !context.allowedChannels.map(x => text(x).toLowerCase()).includes(text(context.channel).toLowerCase())) return result('wrong-channel', 'Stream Not Eligible', "This stream does not meet the selected campaign's channel requirements.", { plan });
-      if (context.verified !== true) return result('unknown', 'Eligibility Not Verified', 'Dropper does not yet have enough information to verify this stream.', { plan });
-      return result('eligible', 'Eligible Stream', 'Twitch campaign or credited-progress evidence verifies this stream.', { plan, deadlineMs: end, estimateMinutes: plan.totalRemainingMinutes });
+      if (context.game && game && text(context.game).toLowerCase() !== game) return result('wrong-game', 'Stream Not Eligible', 'This stream is in a different game category.', { plan, deadline, campaignPlan });
+      if (context.allowedChannels?.length && context.channel && !context.allowedChannels.map(x => text(x).toLowerCase()).includes(text(context.channel).toLowerCase())) return result('wrong-channel', 'Stream Not Eligible', "This stream does not meet the selected campaign's channel requirements.", { plan, deadline, campaignPlan });
+      if (context.verified !== true) return result('unknown', 'Eligibility Not Verified', 'Dropper does not yet have enough information to verify this stream.', { plan, deadline, campaignPlan });
+      if (deadline.finishable === false) return result('deadline-risk', 'Deadline Risk', 'The verified watch requirement is longer than the remaining campaign window.', { plan, deadline, campaignPlan, deadlineMs: end, estimateMinutes: plan.totalRemainingMinutes });
+      return result('eligible', 'Eligible Stream', deadline.urgency === 'tight' ? 'This stream is eligible, but the reward deadline is close.' : 'Twitch campaign or credited-progress evidence verifies this stream.', { plan, deadline, campaignPlan, deadlineMs: end, estimateMinutes: plan.totalRemainingMinutes });
     }
-    return Object.freeze({ createIntent, createClaims, claimResponse, claimFailure, planPrerequisites, eligibility });
+
+    function claimPresentation(record) {
+      const outcome = record?.outcome;
+      const evidence = record?.evidence;
+      if (outcome === 'confirmed') return 'Reward Claimed';
+      if (outcome === 'already-claimed') return 'Already Claimed';
+      if (outcome === 'retryable') return 'Claim Retry Pending';
+      if (outcome === 'blocked') return 'Claim Needs Attention';
+      if (outcome === 'pending') return 'Claim Sent · Waiting For Twitch';
+      if (outcome === 'discarded') return 'Claim Context Changed';
+      if (outcome === 'unconfirmed' && evidence === 'timeout') return 'Claim Sent · Confirmation Unavailable';
+      return 'Claim Not Confirmed';
+    }
+
+    return Object.freeze({ createIntent, createClaims, claimResponse, claimFailure, planPrerequisites, deadlineAssessment, campaignSequence, rankCampaignCandidates, eligibility, claimPresentation });
   })();
   // END DROPPER ACTIVE VIEWING
 
@@ -1579,7 +1672,7 @@ const ExtraPotionsDiagnostics = (() => {
   function recordClaimOutcome(ledger, attempt, outcome, evidence) {
     const settled = ledger.settle(attempt.key, attempt.attemptId, outcome, evidence);
     if (!settled) return null;
-    const label = outcome === 'confirmed' ? 'Reward Claimed' : outcome === 'already-claimed' ? 'Already Claimed' : outcome === 'retryable' ? 'Claim Retry Pending' : outcome === 'blocked' ? 'Claim Needs Attention' : 'Claim Not Confirmed';
+    const label = DropperActiveViewing.claimPresentation(settled);
     if (outcome === 'confirmed' || outcome === 'already-claimed') {
       if (attempt.kind === 'bonus') lastBonusAt = Date.now();
       else lastDropAt = Date.now();
@@ -1696,7 +1789,7 @@ const ExtraPotionsDiagnostics = (() => {
     const output = ui?.shadow?.getElementById('tdh-claim-history');
     if (!output) return;
     const records = claimLedger().snapshot().slice(0, 20);
-    output.textContent = records.length ? records.map(record => `${new Date(record.at).toLocaleTimeString()} · ${record.kind === 'bonus' ? 'Bonus' : 'Drop'} · ${record.outcome} · ${record.evidence}`).join('\n') : 'No claim attempts recorded for this account.';
+    output.textContent = records.length ? records.map(record => `${new Date(record.at).toLocaleTimeString()} · ${record.kind === 'bonus' ? 'Bonus' : 'Drop'} · ${DropperActiveViewing.claimPresentation(record)} · ${record.evidence}`).join('\n') : 'No claim attempts recorded for this account.';
   }
 
   function campaignPriority(game) {
@@ -1736,8 +1829,17 @@ const ExtraPotionsDiagnostics = (() => {
     const output = ui?.shadow?.getElementById('tdh-reward-eligibility');
     if (!output) return;
     const state = activeRewardEligibility();
-    const estimate = Number.isFinite(state.estimateMinutes) ? ` Estimated remaining: ${state.estimateMinutes} min. Twitch-credited progress remains authoritative.` : '';
-    output.textContent = `${state.label}. ${state.detail}${estimate}`;
+    const estimate = Number.isFinite(state.estimateMinutes) ? ` Estimated reward time: ${state.estimateMinutes} min. Twitch-credited progress remains authoritative.` : '';
+    const deadline = state.deadline;
+    const deadlineText = deadline?.finishable === false
+      ? ` Deadline risk: ${deadline.requiredMinutes} min required with ${deadline.minutesUntilDeadline} min left.`
+      : Number.isFinite(deadline?.marginMinutes) && deadline.marginMinutes <= 15
+        ? ` Deadline margin: about ${Math.max(0, deadline.marginMinutes)} min.`
+        : '';
+    const campaignText = Number.isFinite(state.campaignPlan?.remainingMinutes)
+      ? ` Campaign watch remaining: ${state.campaignPlan.remainingMinutes} min.`
+      : '';
+    output.textContent = `${state.label}. ${state.detail}${estimate}${deadlineText}${campaignText}`;
   }
 
   // Viewing and Twitch network hooks are installed after all declarations so boot
@@ -6933,14 +7035,16 @@ const ExtraPotionsDiagnostics = (() => {
     }
 
     const incomplete = candidates.filter((item) => !dropProgressComplete(item));
-    const pool = preferWinnableDrops(incomplete, now);
+    const ranked = DropperActiveViewing.rankCampaignCandidates(incomplete, {
+      priorityOf: campaignPriority,
+      now,
+      activeGame: currentDrop?.game || "",
+    });
+    const viable = ranked.filter((item) => item.sequenceFinishable !== false);
+    const pool = viable.length ? viable : ranked;
     pool.sort((a, b) => {
-      const priority = campaignPriority(b.game) - campaignPriority(a.game);
-      if (priority) return priority;
-      if (a.endMs !== b.endMs) return a.endMs - b.endMs;
-      if ((b.currentMinutes > 0) !== (a.currentMinutes > 0)) return (b.currentMinutes > 0) - (a.currentMinutes > 0);
       if (Boolean(a.needsDropDetails) !== Boolean(b.needsDropDetails)) return a.needsDropDetails ? 1 : -1;
-      return a.remainingMinutes - b.remainingMinutes;
+      return 0;
     });
     return preferCurrentWinnableOpenDrop(pool) || pool[0] || null;
   }
@@ -6963,6 +7067,7 @@ const ExtraPotionsDiagnostics = (() => {
       const endMs = window.endMs || Number.MAX_SAFE_INTEGER;
       const prior = byKey.get(key);
       if (prior && prior.endMs <= endMs) continue;
+      const sequence = DropperActiveViewing.campaignSequence(campaign, now);
       byKey.set(key, {
         key,
         id: campaign?.id || "",
@@ -6972,13 +7077,17 @@ const ExtraPotionsDiagnostics = (() => {
         endAt: window.endAt || "",
         endMs,
         campaign,
+        sequenceRemainingMinutes: sequence.remainingMinutes,
+        sequenceFinishable: sequence.finishable,
+        sequenceMarginMinutes: sequence.marginMinutes,
+        sequenceInProgress: sequence.inProgress,
+        pendingClaims: sequence.pendingClaims,
       });
     }
-    return [...byKey.values()].sort((a, b) => {
-      const priority = campaignPriority(b.game) - campaignPriority(a.game);
-      if (priority) return priority;
-      if (a.endMs !== b.endMs) return a.endMs - b.endMs;
-      return cleanText(a.game).localeCompare(cleanText(b.game));
+    return DropperActiveViewing.rankCampaignCandidates([...byKey.values()], {
+      priorityOf: campaignPriority,
+      now,
+      activeGame: currentDrop?.game || "",
     });
   }
 
@@ -10722,6 +10831,13 @@ const ExtraPotionsDiagnostics = (() => {
       );
 
       if (login && gameMatched) {
+        const routing = readRoutingControllerSession();
+        const evidence = routing.candidateEvidence || {};
+        const campaignSupported = Boolean(
+          evidence.gqlCampaignSupported ||
+          evidence.gqlSessionCampaignMatched ||
+          evidence.gqlSessionDropMatched
+        );
         lastStreamVerification = {
           at: Date.now(),
           method: "credited-progress",
@@ -10731,7 +10847,7 @@ const ExtraPotionsDiagnostics = (() => {
           campaignKey: currentDrop?.campaignKey || currentDrop?.campaignId || null,
           proof: {
             gameMatched: true,
-            campaignSupported: false,
+            campaignSupported,
             progressConfirmed: true,
           },
           currentMinutes,
@@ -14640,6 +14756,11 @@ const ExtraPotionsDiagnostics = (() => {
             name: item.name,
             endAt: item.endAt || null,
             endMs: item.endMs || null,
+            priority: item.sequencePriority ?? campaignPriority(item.game),
+            finishable: item.sequenceFinishable ?? null,
+            remainingMinutes: item.sequenceRemainingMinutes ?? item.remainingMinutes ?? null,
+            marginMinutes: item.sequenceMarginMinutes ?? null,
+            inProgress: Boolean(item.sequenceInProgress),
           } : null;
           return {
             count: triplet.queue.length,
