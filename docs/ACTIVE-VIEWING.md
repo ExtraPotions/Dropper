@@ -1,6 +1,6 @@
 # Active-viewing implementation
 
-Development version: 3.3.0-dev.3. Baseline: Dropper 3.2.31.
+Development version: 3.3.0-dev.4. Baseline: Dropper 3.2.31.
 
 ## Behavior
 
@@ -93,3 +93,14 @@ Claim selector health is observational. A page that has no claimable reward is r
 Stream health now carries a recovery diagnosis that separates viewer pause, offline state, wrong game, eligibility uncertainty, buffering, delayed Twitch credit, and a true credit stall. These diagnostics do not grant navigation permission and therefore do not override the active-viewing safeguards introduced in dev.1.
 
 When the Web Locks API is unavailable, claim coordination now adds a short account-and-reward-scoped localStorage lease with a verification settle step. The established oldest-tab policy and persisted pending records remain in place. This is a stronger browser fallback but is still not represented as a transactional storage primitive.
+
+
+## 3.3.0-dev.4 bonus and recovery tranche
+
+A bonus page claim can now be confirmed by a narrow UI transition: Dropper must have clicked the specific safe bonus control, then Twitch must remove or invalidate that exact claimable control after the click. If the control remains claimable or the context changes, the attempt remains pending/unconfirmed and is not counted as confirmed.
+
+Mutation-driven claim scanning is coalesced to a five-second minimum interval. Direct/manual scans and initial watcher setup can still run immediately, which keeps response time predictable without letting Twitch's high-volume DOM mutations drive hundreds of scans per minute.
+
+Campaign priority diagnostics now say whether a value came from a saved preference or the default. Selecting Normal removes the saved override entirely.
+
+A verified credit stall no longer causes an immediate stream rotation. Dropper performs an urgent Twitch recheck, waits 30 seconds, performs one final recheck, waits another 30 seconds, and only then rotates if the stall is still present and automatic routing remains allowed.
