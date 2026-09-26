@@ -379,3 +379,30 @@ test('confirmed claim re-evaluates same-campaign claim-gated prerequisites', () 
   assert.match(source, /continueAfterConfirmedDropClaim\(attempt\)/);
   assert.match(source, /alreadyProgressingElsewhere/);
 });
+
+
+test('inventory claim candidates only include completed safe rewards in bounded deadline order', () => {
+  const campaigns = [
+    {
+      id: 'later', name: 'Later', endAt: '2026-09-27T00:00:00Z', game: { name: 'Later Game' },
+      timeBasedDrops: [
+        { id: 'later-ready', requiredMinutesWatched: 30, self: { currentMinutesWatched: 30, isClaimed: false, dropInstanceID: 'instance-later' } },
+        { id: 'later-incomplete', requiredMinutesWatched: 30, self: { currentMinutesWatched: 20, isClaimed: false, dropInstanceID: 'instance-incomplete' } },
+      ],
+    },
+    {
+      id: 'soon', name: 'Soon', endAt: '2026-09-26T00:00:00Z', game: { name: 'Soon Game' },
+      timeBasedDrops: [
+        { id: 'soon-first', requiredMinutesWatched: 15, self: { currentMinutesWatched: 15, isClaimed: false, dropInstanceID: 'instance-first' } },
+        { id: 'soon-claimed', requiredMinutesWatched: 15, self: { currentMinutesWatched: 15, isClaimed: true, dropInstanceID: 'instance-claimed' } },
+        { id: 'soon-sub', requiredMinutesWatched: 15, requiredSubscriptionCount: 1, self: { currentMinutesWatched: 15, isClaimed: false, dropInstanceID: 'instance-sub' } },
+        { id: 'soon-no-instance', requiredMinutesWatched: 15, self: { currentMinutesWatched: 15, isClaimed: false } },
+        { id: 'soon-second', requiredMinutesWatched: 15, self: { currentMinutesWatched: 15, isClaimed: false, dropInstanceID: 'instance-second' } },
+      ],
+    },
+  ];
+  const selected = active.inventoryClaimCandidates(campaigns, { limit: 2 });
+  assert.deepEqual(selected.map(item => item.id), ['soon-first', 'soon-second']);
+  assert.ok(selected.every(item => item.percent === 100 && item.remainingMinutes === 0 && item.inventorySweep === true));
+  assert.deepEqual(active.inventoryClaimCandidates(campaigns, { limit: 3, excludeRewardId: 'soon-first' }).map(item => item.id), ['soon-second', 'later-ready']);
+});
