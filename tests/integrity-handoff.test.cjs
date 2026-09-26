@@ -69,7 +69,8 @@ assert.match(source, /signature !== lastCampaignPageScanSignature/, "All Campaig
 assert.match(source, /maybeRecoverEmptyCatalog/, "an empty catalog after integrity failure opens All Campaigns");
 assert.match(source, /isPlaceholderDropName/, "empty Active drop placeholders do not lock routing");
 assert.match(source, /Do not proxy IntersectionObserver/, "Keep Tab Active does not force video IntersectionObserver remounts");
-assert.match(source, /VIDEO_SETTLE_MS/, "Keep Tab Active waits for a new video element to settle before forcing play");
+assert.match(source, /viewingIntent\.takeRecovery\(explicit\)/, "playback recovery requires intent permission and a bounded budget");
+assert.doesNotMatch(source, /defineConstProp\(DocProto|tmGuardedPause|new uw\.MouseEvent/, "active viewing does not fake focus, swallow pause, or simulate input");
 assert.doesNotMatch(source, /uw\.IntersectionObserver = IOProxy/, "Keep Tab Active no longer replaces IntersectionObserver");
 assert.match(source, /function ensureStreamMuted/, "Mute Opened Streams applies on same-tab Dropper navigations");
 assert.match(source, /function ensureStreamPlaying/, "Dropper resumes a paused player after it opens or switches streams");

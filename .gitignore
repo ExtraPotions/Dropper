@@ -1,3 +1,7 @@
 node_modules/
 .watch-profile/
 artifacts/diagnostics/
+test-artifacts/
+test-results.txt
+dropper-source.zip
+dropper-toolchain.tgz

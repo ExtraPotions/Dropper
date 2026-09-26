@@ -7,7 +7,7 @@
 <p align="center"><strong>Twitch Drops: Track and Redeem</strong></p>
 
 <p align="center">
-  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
+  Dropper is a browser-only Twitch companion for the streams you choose to watch. Track Twitch-credited reward progress, manage campaigns, collect earned rewards, and stay in control of playback and stream switching.
 </p>
 
 <p align="center">
@@ -22,10 +22,10 @@
 ## Install
 
 <p>
-  <a href="https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js?v=3.2.31">
+  <a href="https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js?v=3.3.0-dev.1">
     <img alt="Install Dropper" src="https://img.shields.io/badge/Install-Dropper-9147FF?style=flat-square">
   </a>
-    <img alt="Version 3.2.31" src="https://img.shields.io/badge/version-3.2.31-22C55E?style=flat-square">
+    <img alt="Version 3.3.0-dev.1" src="https://img.shields.io/badge/version-3.3.0-dev.1-22C55E?style=flat-square">
   <a href="https://github.com/ExtraPotions/Dropper/releases">
     <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/ExtraPotions/Dropper/total?style=flat-square&label=Downloads">
   </a>
@@ -40,6 +40,24 @@
 - Shows campaign, reward, streamer, category, watch-time, and progress details in one compact interface.
 - Lists open campaigns by game and lets you ignore selected games until their latest campaign ends.
 - Keeps campaign progress, routing state, and multi-tab coordination isolated per Twitch account.
+
+## Viewing and reward controls
+
+Manually selected channels are protected from automatic navigation. **Resume Playback** authorizes playback only; **Use Automatic Switching** permits routing without clearing a pause. The existing Skip Streamer confirmation remains an explicit choice. Pauses are retained through player replacements and reloads in the same tab. Fullscreen, picture-in-picture, and a hidden tab do not imply permission to resume or switch.
+
+**Keep Screen Awake** uses the browser's screen wake-lock capability during real playback where supported. Dropper does not override page visibility, focus, or native pause methods, and does not dispatch simulated activity.
+
+Claim History distinguishes sent attempts, confirmed rewards, already-claimed results, retryable failures, and unconfirmed results. A page click alone is never counted as a reward. Unknown responses and integrity/permission failures need attention rather than aggressive retries. Bonus clicks without authoritative confirmation remain unconfirmed. Up to 100 records are retained per account. Web Locks coordinate claims across tabs when available; the fallback leader check is advisory, not an atomic guarantee.
+
+Campaign priorities order eligible recommendations. Explicitly ineligible, disconnected, missing-prerequisite, and cyclic-prerequisite rewards are excluded. Unknown prerequisite timing is not converted into a precise total. Twitch-credited progress remains authoritative.
+
+## Optional support
+
+Dropper is free to use for personal, noncommercial purposes under its software license. Donations are optional and support continued development. All features remain available without donating, and donations do not change your license rights.
+
+## Implementation notes
+
+This feature set is implemented against Dropper's approved behavior specification. No implementation from twitch-autoclaim or TwitchDropsMiner is imported in this change. This is not a claim of a legally audited clean-room process. Existing licensing notices remain unchanged. No donation destination is configured.
 
 ## Screenshots
 

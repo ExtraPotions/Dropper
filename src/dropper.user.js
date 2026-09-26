@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.2.31
-// @description  A Twitch Drops companion for tracking watch time, monitoring progress, managing eligible streams, and redeeming rewards.
+// @version      3.3.0-dev.1
+// @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
 // @downloadURL  https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -24,7 +24,7 @@
 
 
 // Dropper Manager Metadata
-// Description: Track Twitch Drop progress, monitor watch time, auto-claim rewards, manage backup streams, and keep earning in the background.
+// Description: Track Twitch-credited progress, collect free earned rewards, and manage campaigns while respecting your playback and stream choices.
 // Tags: Twitch, Drops, Rewards
 
 
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.2.31";
+  const APP_VERSION = "3.3.0-dev.1";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -526,6 +526,11 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.0-dev.1": [
+      "Protects viewer pauses and selected streams; removes simulated visibility, focus, and activity.",
+      "Separates claim attempts from confirmed rewards with bounded retries, account-scoped history, and selector diagnostics.",
+      "Adds prerequisite checks, eligibility explanations, campaign priorities, and optional-support wording without changing the shared menu design."
+    ],
     "3.2.31": [
       "Improves diagnostics with separate progress-card, launcher, launcher-row, menu, and notice geometry.",
       "Forces each newly installed Dropper version to perform its own fresh update check and attributes resource errors to Dropper or the page."
@@ -779,7 +784,7 @@ const ExtraPotionsDiagnostics = (() => {
     keepTabActive: true,
     claimDrops: true,
     progressInTitle: true,
-    findNextStream: true,
+    findNextStream: false,
     muteRestarted: true,
     backgroundEarning: false,
     reduceMotion: false,
@@ -868,6 +873,232 @@ const ExtraPotionsDiagnostics = (() => {
     "moderator", "p", "popout", "prime", "privacy", "products", "search", "settings",
     "store", "subs", "subscriptions", "turbo", "user", "videos", "wallet",
   ]);
+
+  // BEGIN DROPPER ACTIVE VIEWING
+  // Original implementation of the approved Dropper feature specification.
+  // No twitch-autoclaim or TwitchDropsMiner implementation is included here.
+  const DropperActiveViewing = (() => {
+    const text = value => String(value ?? '').trim();
+    const number = value => value !== null && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
+    const terminal = new Set(['confirmed', 'already-claimed', 'blocked', 'unconfirmed', 'discarded']);
+    const outcomes = new Set(['pending', 'retryable', ...terminal]);
+    const evidenceKinds = new Set(['request', 'page-control', 'claim-result', 'inventory', 'timeout', 'network', 'permission', 'integrity', 'unknown', 'context-change']);
+    const claimKinds = new Set(['drop', 'bonus']);
+
+    function createIntent({ now = Date.now, load = () => null, save = () => {} } = {}) {
+      let state = null;
+      let generation = 0;
+      function persist() { try { save({ ...state }); } catch (_) {} }
+      function context(account, channel, automaticArrival = false) {
+        account = text(account).toLowerCase(); channel = text(channel).toLowerCase();
+        if (state && state.account === account && state.channel === channel) return false;
+        const sameAccount = state?.account === account;
+        const previous = sameAccount ? state : null;
+        let restored = null;
+        try { restored = load(account); } catch (_) {}
+        const saved = restored?.account === account && restored.channel === channel ? restored : null;
+        state = {
+          account, channel, paused: Boolean(saved?.paused),
+          pauseReason: saved?.paused ? (saved.pauseReason === 'viewer' ? 'viewer' : 'unknown') : '',
+          manualStream: Boolean(channel && !automaticArrival && saved?.manualStream !== false),
+          playback: 'unknown', changedAt: now(),
+          generation: ++generation,
+          recoveryAttempts: previous?.channel === channel ? previous.recoveryAttempts || 0 : 0,
+          lastRecoveryAt: 0,
+        };
+        persist();
+        return true;
+      }
+      function pause(knownViewer = false) {
+        if (!state?.channel) return;
+        state.paused = true;
+        if (knownViewer || state.pauseReason !== 'viewer') state.pauseReason = knownViewer ? 'viewer' : 'unknown';
+        state.playback = 'paused'; state.changedAt = now(); persist();
+      }
+      function resume({ explicit = false, remounted = false } = {}) {
+        if (!state) return false;
+        if (state.paused && (remounted || state.pauseReason === 'viewer') && !explicit) return false;
+        state.paused = false; state.pauseReason = ''; state.playback = 'playing';
+        state.recoveryAttempts = 0; state.lastRecoveryAt = 0; state.changedAt = now(); persist();
+        return true;
+      }
+      function observe(playback) {
+        if (!state) return;
+        const next = ['playing', 'paused', 'buffering', 'ended', 'error', 'unknown'].includes(playback) ? playback : 'unknown';
+        if (next !== state.playback) { state.playback = next; state.changedAt = now(); }
+      }
+      function allowSwitching() {
+        if (!state) return;
+        state.manualStream = false; state.changedAt = now(); persist();
+      }
+      function navigationAllowed(explicit = false) {
+        return Boolean(state && (explicit || (!state.paused && !state.manualStream)));
+      }
+      function takeRecovery(explicit = false) {
+        if (!state?.channel) return false;
+        if (!explicit && (state.paused || state.manualStream || state.playback === 'unknown')) return false;
+        if (!explicit && (state.recoveryAttempts >= 3 || (state.lastRecoveryAt && now() - state.lastRecoveryAt < 30000))) return false;
+        if (explicit) { state.paused = false; state.pauseReason = ''; }
+        state.recoveryAttempts += 1; state.lastRecoveryAt = now(); persist();
+        return true;
+      }
+      function snapshot() { return state ? { ...state } : { playback: 'unknown', paused: false, manualStream: false, generation }; }
+      return Object.freeze({ context, pause, resume, observe, allowSwitching, navigationAllowed, takeRecovery, snapshot });
+    }
+
+    // A synchronous, per-record store is used under the caller's reward lock.
+    // No asynchronous read/modify/write of a shared history array is performed.
+    function createClaims({ now = Date.now, read = () => [], put = () => {}, id = () => Math.random().toString(36).slice(2), limit = 100 } = {}) {
+      let records = new Map();
+      function refresh() {
+        try {
+          for (const raw of read() || []) {
+            if (!raw || !outcomes.has(raw.outcome) || !claimKinds.has(raw.kind) || !text(raw.key)) continue;
+            if (text(raw.key).length > 512 || text(raw.rewardId).length > 180 || text(raw.campaignId).length > 180) continue;
+            if (/https?:|[\r\n<>]/i.test(raw.key + (raw.rewardId || '') + (raw.campaignId || ''))) continue;
+            const record = {
+              key: text(raw.key), kind: raw.kind, rewardId: text(raw.rewardId), campaignId: text(raw.campaignId),
+              attemptId: text(raw.attemptId).slice(0, 100), at: Number(raw.at) || 0,
+              updatedAt: Number(raw.updatedAt) || 0, attempts: Math.max(1, Math.min(3, Number(raw.attempts) || 1)),
+              outcome: raw.outcome, evidence: evidenceKinds.has(raw.evidence) ? raw.evidence : 'unknown',
+              nextAttemptAt: Math.max(0, Number(raw.nextAttemptAt) || 0),
+            };
+            const existing = records.get(record.key);
+            if (!existing || Number(record.updatedAt || 0) >= Number(existing.updatedAt || 0)) records.set(record.key, record);
+          }
+        } catch (_) {}
+        const sorted = [...records.values()].sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt));
+        records = new Map(sorted.slice(0, limit).map(record => [record.key, record]));
+      }
+      function persist(record) {
+        record.updatedAt = now(); records.set(record.key, record);
+        try { put({ ...record }); } catch (_) {}
+        return { ...record };
+      }
+      function expire() {
+        refresh();
+        for (const record of records.values()) {
+          if (record.outcome === 'pending' && now() - record.at >= 45000) {
+            persist({ ...record, outcome: 'unconfirmed', evidence: 'timeout' });
+          }
+        }
+      }
+      function begin({ key, rewardId = '', campaignId = '', kind = 'drop', evidence = 'request' }) {
+        expire();
+        if (!claimKinds.has(kind) || !text(key) || key.length > 512 || /https?:|[\r\n<>]/i.test(key + rewardId + campaignId)) return null;
+        const prior = records.get(key);
+        if (prior && (prior.outcome !== 'retryable' || prior.attempts >= 3 || now() < prior.nextAttemptAt)) return null;
+        return persist({
+          key, rewardId: text(rewardId).slice(0, 180), campaignId: text(campaignId).slice(0, 180), kind,
+          attemptId: text(id()), at: now(), updatedAt: now(),
+          attempts: (prior?.attempts || 0) + 1, outcome: 'pending', evidence: evidenceKinds.has(evidence) ? evidence : 'request', nextAttemptAt: 0,
+        });
+      }
+      function settle(key, attemptId, outcome, evidence = 'unknown') {
+        refresh();
+        const record = records.get(key);
+        if (!record || record.attemptId !== attemptId || !outcomes.has(outcome) || outcome === 'pending') return null;
+        if (record.outcome === 'confirmed' || record.outcome === 'already-claimed' || record.outcome === 'discarded') return null;
+        // Authoritative inventory may resolve an earlier timeout. Other late
+        // responses must not reopen blocked/unknown records or repeat a count.
+        if (record.outcome !== 'pending' && !(outcome === 'confirmed' && evidence === 'inventory')) return null;
+        return persist({ ...record, outcome,
+          evidence: evidenceKinds.has(evidence) ? evidence : 'unknown',
+          nextAttemptAt: outcome === 'retryable' && record.attempts < 3 ? now() + 30000 * record.attempts : 0,
+        });
+      }
+      function snapshot() { expire(); return [...records.values()].sort((a, b) => b.updatedAt - a.updatedAt).map(record => ({ ...record })); }
+      return Object.freeze({ begin, settle, snapshot });
+    }
+
+    function claimResponse(row) {
+      if (Array.isArray(row?.errors) && row.errors.length) return { outcome: 'unconfirmed', evidence: 'unknown' };
+      const status = row?.data?.claimDropRewards?.status;
+      if (status === 'ELIGIBLE_FOR_ALL') return { outcome: 'confirmed', evidence: 'claim-result' };
+      if (status === 'DROP_INSTANCE_ALREADY_CLAIMED') return { outcome: 'already-claimed', evidence: 'claim-result' };
+      return { outcome: 'unconfirmed', evidence: 'unknown' };
+    }
+    function claimFailure(error) {
+      const message = text(error?.message || error);
+      if (/integrity/i.test(message)) return { outcome: 'blocked', evidence: 'integrity' };
+      if (/\b(?:401|403)\b|unauthorized|forbidden|permission/i.test(message)) return { outcome: 'blocked', evidence: 'permission' };
+      if (/\b(?:429|500|502|503|504)\b|network error|failed to fetch|timed?\s*out/i.test(message)) return { outcome: 'retryable', evidence: 'network' };
+      return { outcome: 'unconfirmed', evidence: 'unknown' };
+    }
+
+    function requirement(drop) {
+      if (drop?.self?.isClaimed === true) return 0;
+      const total = number(drop?.requiredMinutesWatched ?? drop?.requiredMinutes);
+      const current = number(drop?.self?.currentMinutesWatched ?? drop?.currentMinutes);
+      return total !== null && total > 0 && current !== null && current >= 0 ? Math.max(0, total - current) : null;
+    }
+    function planPrerequisites(drop, drops = [], timingModel = 'unknown') {
+      const byId = new Map(drops.filter(item => item?.id).map(item => [String(item.id), item]));
+      const visiting = new Set(); const visited = new Set(); const dependencies = [];
+      let issue = ''; let blocked = false;
+      function walk(node, depth) {
+        const key = text(node?.id);
+        if (depth > 64 || visiting.has(key)) { issue = 'cyclic-prerequisite'; return; }
+        if (visited.has(key)) return;
+        visiting.add(key);
+        for (const dependency of node?.preconditionDrops || []) {
+          const child = byId.get(text(dependency?.id));
+          if (!child) { issue ||= 'missing-prerequisite'; blocked = true; continue; }
+          walk(child, depth + 1);
+          const claimed = child.self?.isClaimed === true;
+          const remaining = requirement(child);
+          const explicitCompleted = dependency?.requirement === 'completed' || dependency?.requiresClaim === false;
+          const satisfied = claimed || (explicitCompleted && remaining === 0);
+          if (!satisfied) blocked = true;
+          if (!dependencies.some(item => item.id === text(child.id))) dependencies.push({
+            id: text(child.id), remainingMinutes: remaining,
+            claimed, satisfied,
+            requirement: explicitCompleted ? 'completed' : dependency?.requirement === 'claimed' || dependency?.requiresClaim === true ? 'claimed' : 'not-verified',
+          });
+        }
+        visiting.delete(key); visited.add(key);
+      }
+      walk(drop, 0);
+      const ownRemaining = requirement(drop);
+      const outstanding = dependencies.filter(item => !item.satisfied);
+      const known = ownRemaining !== null && outstanding.every(item => item.remainingMinutes !== null);
+      let totalRemaining = null;
+      if (!outstanding.length && !issue) totalRemaining = ownRemaining;
+      else if (known && !issue && timingModel === 'sequential') totalRemaining = ownRemaining + outstanding.reduce((sum, item) => sum + item.remainingMinutes, 0);
+      else if (known && !issue && timingModel === 'parallel') totalRemaining = Math.max(ownRemaining, ...outstanding.map(item => item.remainingMinutes));
+      return {
+        ready: !issue && (!blocked || drop?.self?.hasPreconditionsMet === true),
+        reason: issue || (blocked && drop?.self?.hasPreconditionsMet !== true ? 'prerequisite-required' : ''),
+        ownRemainingMinutes: ownRemaining, totalRemainingMinutes: totalRemaining,
+        timingModel: ['sequential', 'parallel'].includes(timingModel) ? timingModel : outstanding.length ? 'unknown' : 'single-reward',
+        dependencies,
+      };
+    }
+
+    function eligibility(campaign, drop, context = {}) {
+      const now = context.now ?? Date.now();
+      const result = (code, label, detail, extra = {}) => ({ code, label, detail, ...extra });
+      if (!campaign || !drop) return result('unknown', 'Eligibility Not Verified', 'Campaign or reward details are unavailable.');
+      const timestamps = [campaign.startAt, campaign.endAt, drop.startAt || campaign.startAt, drop.endAt || campaign.endAt].map(value => Date.parse(value));
+      if (timestamps.some(value => !Number.isFinite(value))) return result('unknown-window', 'Eligibility Not Verified', 'The campaign or reward time window is not verified.');
+      const start = Math.max(timestamps[0], timestamps[2]); const end = Math.min(timestamps[1], timestamps[3]);
+      if (end <= start) return result('unknown-window', 'Eligibility Not Verified', 'The campaign and reward time windows do not overlap.');
+      if (now < start) return result('not-started', 'Campaign Not Started', 'This reward is not available to earn yet.');
+      if (now >= end) return result('expired', 'Campaign Ended', 'This reward is no longer available to earn.');
+      if (campaign.self?.isAccountConnected === false || campaign.isAccountConnected === false) return result('account-link', 'Account Link Required', 'Link the required account through Twitch or the campaign provider.');
+      if (campaign.self?.isEligible === false || drop.self?.isEligible === false) return result('participation', 'Campaign Not Eligible', 'Twitch reports that this account is not eligible.');
+      if (Number(drop.requiredSubs ?? drop.requiredSubscriptions ?? drop.requiredSubscriptionCount ?? drop.subscriptionRequirement?.requiredSubs ?? 0) > 0) return result('paid-requirement', 'Paid Reward Excluded', 'Dropper only assists with free watch rewards.');
+      const plan = planPrerequisites(drop, campaign.timeBasedDrops || campaign.drops || []);
+      if (!plan.ready) return result(plan.reason, 'Previous Reward Required', plan.reason === 'prerequisite-required' ? 'Complete or claim the prerequisite shown for this reward.' : 'The prerequisite chain is incomplete or invalid.', { plan });
+      const game = text(campaign.game?.displayName || campaign.game?.name || campaign.game).toLowerCase();
+      if (context.game && game && text(context.game).toLowerCase() !== game) return result('wrong-game', 'Stream Not Eligible', 'This stream is in a different game category.', { plan });
+      if (context.allowedChannels?.length && context.channel && !context.allowedChannels.map(x => text(x).toLowerCase()).includes(text(context.channel).toLowerCase())) return result('wrong-channel', 'Stream Not Eligible', "This stream does not meet the selected campaign's channel requirements.", { plan });
+      if (context.verified !== true) return result('unknown', 'Eligibility Not Verified', 'Dropper does not yet have enough information to verify this stream.', { plan });
+      return result('eligible', 'Eligible Stream', 'Twitch campaign or credited-progress evidence verifies this stream.', { plan, deadlineMs: end, estimateMinutes: plan.totalRemainingMinutes });
+    }
+    return Object.freeze({ createIntent, createClaims, claimResponse, claimFailure, planPrerequisites, eligibility });
+  })();
+  // END DROPPER ACTIVE VIEWING
 
   const settings = loadSettings();
   const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
@@ -1089,7 +1320,427 @@ const ExtraPotionsDiagnostics = (() => {
     }
   }
 
-  // Keep-tab and Twitch network hooks are installed after all declarations so boot
+  const VIEWING_INTENT_KEY = 'dropper-viewing-intent-v1';
+  const VIEWING_NAVIGATION_KEY = 'dropper-viewing-navigation-v1';
+  const CLAIM_HISTORY_KEY = 'dropper-claim-history-v1';
+  const CAMPAIGN_PRIORITY_KEY = 'dropper-campaign-priority-v1';
+  let viewingAccount = storageAccountLogin();
+  let viewingVideo = null;
+  let videoMountedDuringPause = false;
+  let recentPlaybackControl = { action: '', at: 0 };
+  let viewingListenersInstalled = false;
+  let screenWakeLock = null;
+  let wakeLockPending = false;
+  let claimLedgerAccount = '';
+  let claimLedgerInstance = null;
+  let claimScanTimer = null;
+  let claimAnonymousSequence = 0;
+  const claimNodeIds = new WeakMap();
+  let lastAnonymousAttemptAt = { bonus: 0, drop: 0 };
+  let claimHealth = {};
+  let lastViewingNavigationBlock = '';
+  let explicitViewingNavigationUntil = 0;
+  const viewingIntent = DropperActiveViewing.createIntent({
+    load: account => {
+      try { return JSON.parse(sessionStorage.getItem(scopedSessionStorageKey(VIEWING_INTENT_KEY, account)) || 'null'); }
+      catch (_) { return null; }
+    },
+    save: state => {
+      try { sessionStorage.setItem(scopedSessionStorageKey(VIEWING_INTENT_KEY, state.account), JSON.stringify(state)); }
+      catch (_) { /* The in-memory pause hold remains authoritative in this tab. */ }
+    },
+  });
+
+  function resetViewingAccount(account) {
+    viewingAccount = account;
+    viewingVideo = null;
+    videoMountedDuringPause = false;
+    recentPlaybackControl = { action: '', at: 0 };
+    claimLedgerInstance = null;
+    claimLedgerAccount = '';
+    claimHealth = {};
+    lastAnonymousAttemptAt = { bonus: 0, drop: 0 };
+    lastViewingNavigationBlock = '';
+    explicitViewingNavigationUntil = 0;
+    lastDropAt = 0; lastBonusAt = 0; lastClaimAttemptAt = 0;
+    resetClaimReadyTimer();
+    currentDrop = readSession('tdh-drop', null);
+    lastProgress = readSession('tdh-progress', 0);
+    lastProgressAt = readSession('tdh-progress-at', Date.now());
+    lastInventoryCampaigns = [];
+    haveSeenInventorySnapshot = false;
+    lastInProgressKeys = new Set();
+    campaignCatalogCache = loadCampaignCatalogCache();
+    lastCampaignCatalog = campaignCatalogCache.campaigns;
+    lastCampaignCatalogAt = campaignCatalogCache.at;
+    campaignMemory = loadCampaignMemory();
+    ignoredCampaignGames = loadIgnoredCampaignGames();
+    activityLog = readSession(ACTIVITY_LOG_KEY, []);
+    lastStreamVerification = null;
+    lastSessionPoll = null;
+    clientIntegrity = { token: '', clientId: '', expiresAt: 0, transport: '', deviceId: '' };
+    watchClock = { login: '', started: 0, elapsed: 0, lastTick: 0 };
+    lastPath = location.pathname;
+    lastProgressReconcile = null;
+    twitchNetworkCapture = { integrity: '', integrityExpiresAt: 0, clientId: '', deviceId: '', sessionId: '', clientVersion: '', auth: '' };
+    nextGqlPollAt = 0;
+    try { tabChannel?.close(); } catch (_) {}
+    tabChannel = null;
+  }
+
+  function automaticViewingArrival(login = watchingLogin(), now = Date.now()) {
+    const requested = readSession(VIEWING_NAVIGATION_KEY, null);
+    return Boolean(requested && requested.channel === login && requested.until > now);
+  }
+
+  function syncViewingContext() {
+    const account = storageAccountLogin();
+    if (viewingAccount !== account) resetViewingAccount(account);
+    const login = watchingLogin() || '';
+    const automaticArrival = automaticViewingArrival(login);
+    const changed = viewingIntent.context(account, login, automaticArrival);
+    if (changed) {
+      viewingVideo = null;
+      lastViewingNavigationBlock = '';
+      recentPlaybackControl = { action: '', at: 0 };
+    }
+    const video = login ? streamVideoElement() : null;
+    if (video !== viewingVideo) {
+      viewingVideo = video;
+      videoMountedDuringPause = viewingIntent.snapshot().paused;
+    }
+    if (!video) viewingIntent.observe('unknown');
+    else if (video.ended) viewingIntent.observe('ended');
+    else if (video.error) viewingIntent.observe('error');
+    else if (video.paused) {
+      // An unrequested paused player is not permission to force playback.
+      if (!automaticArrival || viewingIntent.snapshot().paused) viewingIntent.pause(false);
+      else viewingIntent.observe('paused');
+    } else {
+      const held = viewingIntent.snapshot();
+      const explicitResume = recentPlaybackControl.action === 'resume' && Date.now() - recentPlaybackControl.at < 1500;
+      if (held.paused && (videoMountedDuringPause || held.pauseReason === 'viewer') && !explicitResume) {
+        // Preserve a known pause through a same-channel player replacement.
+        // This does not intercept or replace Twitch's media methods.
+        try { video.pause(); } catch (_) {}
+      } else viewingIntent.observe(video.readyState > 1 ? 'playing' : 'buffering');
+    }
+    return viewingIntent.snapshot();
+  }
+
+  function viewingNavigationAllowed(reason = '', explicit = false) {
+    const state = syncViewingContext();
+    const manualAction = explicit || reason === 'manual-stream-skip' || Date.now() < explicitViewingNavigationUntil;
+    if (viewingIntent.navigationAllowed(manualAction)) return true;
+    lastViewingNavigationBlock = state.paused ? 'Playback Paused' : 'Your Stream Is Selected';
+    return false;
+  }
+
+  function viewingStatus() {
+    const state = viewingIntent.snapshot();
+    if (state.paused) return state.pauseReason === 'viewer'
+      ? { label: 'Playback Paused', detail: 'Dropper will not resume playback or switch streams while your pause is active.' }
+      : { label: 'Playback Needs Attention', detail: 'Playback is paused. Resume it yourself or choose Resume Playback; Dropper will not guess why it stopped.' };
+    if (lastViewingNavigationBlock && state.manualStream) return { label: 'Your Stream Is Selected', detail: 'Campaign recommendations will not change this stream. Use Skip Streamer or enable automatic switching when ready.' };
+    return null;
+  }
+
+  function noteRequestedViewingNavigation(target) {
+    const channel = streamLoginFromUrl(target) || '';
+    if (channel) writeSession(VIEWING_NAVIGATION_KEY, { channel, until: Date.now() + 30000 });
+    else removeSession(VIEWING_NAVIGATION_KEY);
+  }
+
+  function installViewingIntent() {
+    if (viewingListenersInstalled) return;
+    viewingListenersInstalled = true;
+    syncViewingContext();
+    const editable = node => Boolean(node?.closest?.('input,textarea,select,[contenteditable="true"],[role="textbox"]'));
+    const control = event => {
+      if (!event.isTrusted || !watchingLogin() || editable(event.target)) return;
+      const video = streamVideoElement();
+      if (!video) return;
+      const keyboard = event.type === 'keydown';
+      if (keyboard && (event.altKey || event.ctrlKey || event.metaKey || event.repeat || ![' ', 'k', 'K'].includes(event.key))) return;
+      if (!keyboard && event.target !== video && !event.target?.closest?.('[data-a-target="player-play-pause-button"],[data-a-target="player-overlay-play-button"]')) return;
+      recentPlaybackControl = { action: video.paused ? 'resume' : 'pause', at: Date.now() };
+    };
+    const media = event => {
+      if (!watchingLogin() || event.target !== streamVideoElement()) return;
+      syncViewingContext();
+      const explicit = Date.now() - recentPlaybackControl.at < 1500;
+      if (event.type === 'pause' && !event.target.ended && !event.target.error) viewingIntent.pause(explicit && recentPlaybackControl.action === 'pause');
+      if (event.type === 'playing') {
+        if (viewingIntent.resume({ explicit: explicit && recentPlaybackControl.action === 'resume', remounted: videoMountedDuringPause })) {
+          videoMountedDuringPause = false;
+          removeSession(VIEWING_NAVIGATION_KEY);
+          lastViewingNavigationBlock = '';
+        } else { try { event.target.pause(); } catch (_) {} }
+      }
+      if (event.type === 'waiting' || event.type === 'stalled') viewingIntent.observe('buffering');
+      if (event.type === 'ended') viewingIntent.observe('ended');
+      if (event.type === 'error') viewingIntent.observe('error');
+      refreshViewingControls();
+      syncScreenWakeLock();
+    };
+    document.addEventListener('pointerdown', control, true);
+    document.addEventListener('keydown', control, true);
+    for (const type of ['pause', 'playing', 'waiting', 'stalled', 'ended', 'error']) document.addEventListener(type, media, true);
+    for (const type of ['fullscreenchange', 'enterpictureinpicture', 'leavepictureinpicture']) {
+      document.addEventListener(type, () => { syncViewingContext(); queueClaimScan(); refreshViewingControls(); }, true);
+    }
+    window.addEventListener('popstate', () => { syncViewingContext(); refreshViewingControls(); });
+    document.addEventListener('visibilitychange', syncScreenWakeLock);
+    window.addEventListener('pagehide', () => { try { screenWakeLock?.release(); } catch (_) {} screenWakeLock = null; });
+  }
+
+  async function syncScreenWakeLock() {
+    const shouldHold = Boolean(settings.keepTabActive && !document.hidden && watchingLogin() && streamVideoIsPlaying() && !viewingIntent.snapshot().paused);
+    if (!shouldHold) {
+      const lock = screenWakeLock; screenWakeLock = null;
+      try { await lock?.release(); } catch (_) {}
+      return;
+    }
+    if (screenWakeLock || wakeLockPending || !navigator.wakeLock?.request) return;
+    wakeLockPending = true;
+    try {
+      const lock = await navigator.wakeLock.request('screen');
+      if (settings.keepTabActive && !document.hidden && streamVideoIsPlaying() && !viewingIntent.snapshot().paused) {
+        screenWakeLock = lock;
+        lock.addEventListener('release', () => { if (screenWakeLock === lock) screenWakeLock = null; }, { once: true });
+      } else await lock.release();
+    } catch (_) { /* Unsupported or denied wake locks never affect playback. */ }
+    finally { wakeLockPending = false; }
+  }
+
+  function refreshViewingControls() {
+    if (!ui) return;
+    const state = viewingIntent.snapshot();
+    const message = viewingStatus();
+    const status = ui.shadow.getElementById('tdh-viewing-status');
+    if (status) status.textContent = message?.detail || (state.manualStream ? 'Your selected stream is protected from automatic navigation.' : 'Automatic navigation follows your stream settings.');
+    const resume = ui.shadow.getElementById('tdh-resume-playback');
+    if (resume) resume.hidden = !state.paused && state.playback === 'playing';
+    const automatic = ui.shadow.getElementById('tdh-allow-switching');
+    if (automatic) automatic.hidden = !state.manualStream && settings.findNextStream;
+  }
+
+  function claimContext() {
+    syncViewingContext();
+    return { channel: watchingLogin() || '', account: storageAccountLogin(), generation: viewingIntent.snapshot().generation, campaign: String(currentDrop?.campaignKey || currentDrop?.campaignId || '') };
+  }
+  function claimContextIsCurrent(context) {
+    return context.channel === (watchingLogin() || '') && context.account === storageAccountLogin() && context.generation === viewingIntent.snapshot().generation && context.campaign === String(currentDrop?.campaignKey || currentDrop?.campaignId || '');
+  }
+
+  function claimHistoryPrefix(account = storageAccountLogin()) {
+    return scopedLocalStorageKey(CLAIM_HISTORY_KEY, account) + ':record:';
+  }
+  function storedClaimRecords(account) {
+    const prefix = claimHistoryPrefix(account); const records = [];
+    try {
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (!key?.startsWith(prefix)) continue;
+        try { const record = JSON.parse(localStorage.getItem(key)); if (record) records.push({ key, record }); } catch (_) {}
+      }
+    } catch (_) {}
+    return records.sort((a, b) => Number(b.record.updatedAt || 0) - Number(a.record.updatedAt || 0));
+  }
+  function claimLedger() {
+    const account = storageAccountLogin();
+    if (claimLedgerInstance && claimLedgerAccount === account) return claimLedgerInstance;
+    claimLedgerAccount = account;
+    claimLedgerInstance = DropperActiveViewing.createClaims({
+      id: () => globalThis.crypto?.randomUUID?.() || `${TAB_ID}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      read: () => storedClaimRecords(account).slice(0, 100).map(item => item.record),
+      put: record => {
+        const prefix = claimHistoryPrefix(account);
+        localStorage.setItem(prefix + encodeURIComponent(record.key), JSON.stringify(record));
+        for (const stale of storedClaimRecords(account).slice(100)) localStorage.removeItem(stale.key);
+      },
+    });
+    return claimLedgerInstance;
+  }
+  function claimRecordKey(drop) {
+    const identity = String(drop?.id || drop?.dropInstanceID || '');
+    return identity ? `drop:${String(drop.campaignId || drop.campaignKey || '').toLowerCase()}:${identity}` : '';
+  }
+  async function withClaimLock(key, context, task) {
+    if (!claimContextIsCurrent(context)) return false;
+    if (navigator.locks?.request) {
+      return navigator.locks.request(`dropper-claim:${context.account}:${key}`, { ifAvailable: true }, lock => lock && claimContextIsCurrent(context) ? task() : false);
+    }
+    // Without Web Locks this is advisory leader coordination, not a cross-tab
+    // atomicity guarantee. The persisted pending record still suppresses repeats.
+    if (!isAutoRoutingController()) return false;
+    return task();
+  }
+  function recordClaimOutcome(ledger, attempt, outcome, evidence) {
+    const settled = ledger.settle(attempt.key, attempt.attemptId, outcome, evidence);
+    if (!settled) return null;
+    const label = outcome === 'confirmed' ? 'Reward Claimed' : outcome === 'already-claimed' ? 'Already Claimed' : outcome === 'retryable' ? 'Claim Retry Pending' : outcome === 'blocked' ? 'Claim Needs Attention' : 'Claim Not Confirmed';
+    if (outcome === 'confirmed' || outcome === 'already-claimed') {
+      if (attempt.kind === 'bonus') lastBonusAt = Date.now();
+      else lastDropAt = Date.now();
+      if (attempt.kind === 'drop' && attempt.key === claimRecordKey(currentDrop)) resetClaimReadyTimer();
+    }
+    logActivity('claim-result', label, { kind: attempt.kind, rewardId: attempt.rewardId || null, outcome, evidence });
+    setStatus(label);
+    if (outcome === 'confirmed') notifyUser(label);
+    for (const health of Object.values(claimHealth)) {
+      if (health.kind === attempt.kind) { health.lastOutcome = outcome; health.lastEvidence = evidence; health.lastResultAt = Date.now(); }
+    }
+    renderClaimHistory();
+    return settled;
+  }
+  function reconcileClaimHistory(campaigns) {
+    const ledger = claimLedger();
+    for (const record of ledger.snapshot()) {
+      if (record.kind !== 'drop' || !record.rewardId || !['pending', 'unconfirmed', 'retryable', 'blocked'].includes(record.outcome)) continue;
+      const campaign = (campaigns || []).find(item => String(item.id || '').toLowerCase() === record.campaignId.toLowerCase());
+      const drop = (campaign?.timeBasedDrops || campaign?.drops || []).find(item => String(item.id || '') === record.rewardId);
+      if (drop?.self?.isClaimed === true) recordClaimOutcome(ledger, record, 'confirmed', 'inventory');
+    }
+  }
+
+  const CLAIM_GROUPS = Object.freeze([
+    { id: 'bonus', kind: 'bonus', selector: BONUS_SELECTOR, applies: () => Boolean(watchingLogin()) },
+    { id: 'stream-drop', kind: 'drop', selector: DROP_CLAIM_SELECTOR, applies: () => Boolean(watchingLogin()) },
+    { id: 'inventory-drop', kind: 'drop', selector: DROP_CLAIM_SELECTOR, applies: () => isInventory() },
+  ]);
+  function isSafeClaimTarget(button, group) {
+    if (!button || button.tagName !== 'BUTTON' || !button.isConnected || button.disabled || button.getAttribute('aria-disabled') === 'true' || button.closest('[inert]')) return false;
+    const label = cleanText(`${button.getAttribute('aria-label') || ''} ${button.textContent || ''}`);
+    if (/\b(?:subscribe|subscription|gift|purchase|buy|redeem|spend)\b/i.test(label)) return false;
+    const bonusContainer = button.closest('.community-points-summary,[data-test-selector="community-points-summary"],[data-a-target="community-points-summary"]');
+    if (group.kind === 'bonus' && !bonusContainer && !button.querySelector('.claimable-bonus__icon')) return false;
+    const visible = Boolean(button.getClientRects().length && getComputedStyle(button).visibility !== 'hidden');
+    if (visible) return true;
+    return Boolean(group.kind === 'bonus' && document.fullscreenElement && bonusContainer && button.matches('button[aria-label="Claim Bonus"]') && button.querySelector('.claimable-bonus__icon'));
+  }
+  function claimTargetIdentity(button, group) {
+    if (group.kind === 'drop') {
+      const carrier = button.closest('[data-drop-id],[data-drop-instance-id]');
+      const rewardId = carrier?.getAttribute('data-drop-id') || '';
+      const instanceId = carrier?.getAttribute('data-drop-instance-id') || '';
+      for (const campaign of lastInventoryCampaigns) {
+        const reward = (campaign.timeBasedDrops || campaign.drops || []).find(item => (rewardId && item.id === rewardId) || (instanceId && item.self?.dropInstanceID === instanceId));
+        if (reward && !reward.self?.isClaimed) return { id: reward.id, campaignId: String(campaign.id || ''), campaignKey: campaignKey(campaign), dropInstanceID: reward.self?.dropInstanceID || '' };
+      }
+      if (!isInventory() && currentDrop?.id && dropProgressComplete(currentDrop)) return currentDrop;
+    }
+    if (!claimNodeIds.has(button)) claimNodeIds.set(button, `anonymous:${TAB_ID}:${++claimAnonymousSequence}`);
+    return { anonymous: claimNodeIds.get(button) };
+  }
+  function queuePageClaim(button, group) {
+    if (!isSafeClaimTarget(button, group)) return false;
+    const context = claimContext();
+    if (context.account === 'signed-out') return false;
+    const identity = claimTargetIdentity(button, group);
+    const key = identity.anonymous || claimRecordKey(identity);
+    if (!key) return false;
+    if (identity.anonymous && Date.now() - lastAnonymousAttemptAt[group.kind] < 1500) return false;
+    void withClaimLock(key, context, async () => {
+      if (!isSafeClaimTarget(button, group)) return false;
+      if (identity.anonymous && Date.now() - lastAnonymousAttemptAt[group.kind] < 1500) return false;
+      const ledger = claimLedger();
+      const attempt = ledger.begin({ key, rewardId: identity.id || '', campaignId: identity.campaignId || identity.campaignKey || '', kind: group.kind, evidence: 'page-control' });
+      if (!attempt) return false;
+      if (identity.anonymous) lastAnonymousAttemptAt[group.kind] = Date.now();
+      try {
+        button.click();
+        claimHealth[group.id] = { ...claimHealth[group.id], kind: group.kind, state: 'attempted', lastAttemptAt: Date.now() };
+        logActivity('claim-attempt', 'Claim Sent', { kind: group.kind, rewardId: identity.id || null, evidence: 'page-control' });
+        setStatus('Claim Sent · Waiting For Twitch');
+        queueGqlPollSoon('claim-confirmation', 1500);
+        renderClaimHistory();
+        return true;
+      } catch (_) {
+        if (claimContextIsCurrent(context)) recordClaimOutcome(ledger, attempt, 'unconfirmed', 'page-control');
+        return false;
+      }
+    }).catch(() => { claimHealth[group.id] = { ...claimHealth[group.id], kind: group.kind, state: 'detection-failed' }; });
+    return true;
+  }
+  function scanClaimGroups(root = document, kind = '') {
+    let queued = 0;
+    for (const group of CLAIM_GROUPS) {
+      if (kind && kind !== group.kind) continue;
+      const applicable = group.applies() && (group.kind === 'bonus' ? settings.claimBonus : settings.claimDrops);
+      claimHealth[group.id] = { ...claimHealth[group.id], kind: group.kind, applicable, state: applicable ? 'no-claimable-reward' : 'not-applicable', checkedAt: Date.now() };
+      if (!applicable) continue;
+      try {
+        const candidates = new Set();
+        for (const node of [...(root.matches?.(group.selector) ? [root] : []), ...(root.querySelectorAll?.(group.selector) || [])]) {
+          const button = node.closest?.('button');
+          if (button && isSafeClaimTarget(button, group)) candidates.add(button);
+        }
+        if (group.id === 'inventory-drop') {
+          for (const card of document.querySelectorAll('.inventory-max-width > div:not(:first-child)')) {
+            if (!card.querySelector('[role="progressbar"],[data-test-selector*="RewardPresentation"]')) continue;
+            for (const button of card.querySelectorAll('button')) if (isDropClaimButton(button) && isSafeClaimTarget(button, group)) candidates.add(button);
+          }
+        }
+        if (candidates.size) claimHealth[group.id].state = 'matched';
+        for (const button of candidates) if (queuePageClaim(button, group)) queued += 1;
+      } catch (_) { claimHealth[group.id].state = 'detection-failed'; }
+    }
+    return queued;
+  }
+  function queueClaimScan() {
+    if (claimScanTimer || (!settings.claimBonus && !settings.claimDrops)) return;
+    claimScanTimer = setTimeout(() => { claimScanTimer = null; scanClaimGroups(); }, 150);
+  }
+  function renderClaimHistory() {
+    const output = ui?.shadow?.getElementById('tdh-claim-history');
+    if (!output) return;
+    const records = claimLedger().snapshot().slice(0, 20);
+    output.textContent = records.length ? records.map(record => `${new Date(record.at).toLocaleTimeString()} · ${record.kind === 'bonus' ? 'Bonus' : 'Drop'} · ${record.outcome} · ${record.evidence}`).join('\n') : 'No claim attempts recorded for this account.';
+  }
+
+  function campaignPriority(game) {
+    try {
+      const value = Number(localStorage.getItem(scopedLocalStorageKey(CAMPAIGN_PRIORITY_KEY) + ':' + encodeURIComponent(normalizeGameName(game))) || 0);
+      return [-1, 0, 1].includes(value) ? value : 0;
+    } catch (_) { return 0; }
+  }
+  function setCampaignPriority(game, priority) {
+    if (![-1, 0, 1].includes(priority)) return;
+    try { localStorage.setItem(scopedLocalStorageKey(CAMPAIGN_PRIORITY_KEY) + ':' + encodeURIComponent(normalizeGameName(game)), String(priority)); } catch (_) {}
+  }
+  function dropperPreconditionsMet(drop, drops) {
+    return DropperActiveViewing.planPrerequisites(drop, drops).ready;
+  }
+  function activeRewardEligibility() {
+    const campaign = findCampaignForDrop(lastInventoryCampaigns, currentDrop) || findCampaignForDrop(lastCampaignCatalog, currentDrop);
+    const raw = (campaign?.timeBasedDrops || campaign?.drops || []).find(drop => drop.id === currentDrop?.id);
+    const info = watchingLogin() ? readStreamInfo() : {};
+    const proof = lastStreamVerification;
+    const verified = Boolean(proof && proof.channel === watchingLogin() && proof.campaignKey === currentDrop?.campaignKey && (proof.proof?.campaignSupported || proof.proof?.progressConfirmed));
+    return DropperActiveViewing.eligibility(campaign, raw, {
+      now: Date.now(), channel: watchingLogin(), game: campaign && gameNamesMatch(campaignGameName(campaign), info.game) ? campaignGameName(campaign) : info.game,
+      allowedChannels: campaign ? campaignAllowedChannels(campaign).map(item => item.login) : [], verified,
+    });
+  }
+
+
+  function pollContext() {
+    syncViewingContext();
+    return { account: storageAccountLogin(), path: location.pathname, generation: viewingIntent.snapshot().generation };
+  }
+  function pollContextIsCurrent(context) {
+    return context.account === storageAccountLogin() && context.path === location.pathname && context.generation === viewingIntent.snapshot().generation;
+  }
+  function refreshEligibilityControls() {
+    const output = ui?.shadow?.getElementById('tdh-reward-eligibility');
+    if (!output) return;
+    const state = activeRewardEligibility();
+    const estimate = Number.isFinite(state.estimateMinutes) ? ` Estimated remaining: ${state.estimateMinutes} min. Twitch-credited progress remains authoritative.` : '';
+    output.textContent = `${state.label}. ${state.detail}${estimate}`;
+  }
+
+  // Viewing and Twitch network hooks are installed after all declarations so boot
   // never runs inside a temporal dead zone for later `let` bindings (SPA re-entry).
   function startDropper() {
     try { localStorage.removeItem(scopedLocalStorageKey("dropper-temp-campaign-skips-v1")); } catch (_) { /* legacy cleanup */ }
@@ -1099,6 +1750,7 @@ const ExtraPotionsDiagnostics = (() => {
       try { removeSession(NAVIGATION_GUARD_KEY); } catch (_) { /* clear inherited pre-3.1 loop guard */ }
       try { removeSession(NAVIGATION_FLIGHT_KEY); } catch (_) { /* clear inherited pre-3.1 navigation flight */ }
     }
+    installViewingIntent();
     if (settings.keepTabActive) installKeepTabActive(page);
     installTwitchNetworkHooks(page);
     if (document.readyState === "loading") {
@@ -1293,6 +1945,7 @@ const ExtraPotionsDiagnostics = (() => {
     if (!settings.findNextStream || !currentDrop || dropProgressComplete(currentDrop)) return false;
     if (settings.queueEnabled && !settings.queueOnStall) return false;
     if (isAutoSwitchPaused()) return false;
+    if (!viewingNavigationAllowed("stall-recovery")) return false;
 
     const routing = readRoutingControllerSession();
     if (
@@ -2973,6 +3626,8 @@ const ExtraPotionsDiagnostics = (() => {
       return false;
     }
 
+    if (!viewingNavigationAllowed(reason)) { refreshViewingControls(); return false; }
+
     clearSyntheticWaitingDrop("Cleared empty Active drop before 3.1 routing");
     expireEndedOpenCampaigns(now);
     if (routingControllerReconcileActiveTarget(now)) return true;
@@ -3007,6 +3662,7 @@ const ExtraPotionsDiagnostics = (() => {
   async function heartbeat() {
     if (!ui) return;
     const now = Date.now();
+    syncViewingContext();
     lastHeartbeatAt = now;
     publishTabPresence();
     enforceUpdateReloadPending(now);
@@ -3015,6 +3671,11 @@ const ExtraPotionsDiagnostics = (() => {
     watchProgressTitle();
     ensureStreamMuted();
     ensureStreamPlaying();
+    void syncScreenWakeLock();
+    refreshViewingControls();
+    renderClaimHistory();
+    refreshEligibilityControls();
+    queueClaimScan();
 
     if (location.pathname !== lastPath) {
       lastPath = location.pathname;
@@ -3538,6 +4199,7 @@ const ExtraPotionsDiagnostics = (() => {
 
   function autoNavigateTwitch(url, reason = "automatic-routing") {
     if (!url || !isTrustedTwitchUrl(url)) return false;
+    if (!viewingNavigationAllowed(reason)) return false;
     if (!isAutoRoutingController()) {
       noteDeferredAutoRouting(reason || "automatic-routing");
       return false;
@@ -3625,6 +4287,8 @@ const ExtraPotionsDiagnostics = (() => {
     if (settings.muteRestarted && streamLoginFromUrl(target.href)) {
       requestMuteAfterNavigation(reason);
     }
+    noteRequestedViewingNavigation(target.href);
+    explicitViewingNavigationUntil = 0;
     location.assign(target.href);
     return true;
   }
@@ -3749,6 +4413,11 @@ const ExtraPotionsDiagnostics = (() => {
         displayName: campaign?.game?.displayName || "",
         slug: campaign?.game?.slug || "",
       },
+      ...(typeof campaign?.isAccountConnected === 'boolean' ? { isAccountConnected: campaign.isAccountConnected } : {}),
+      self: {
+        ...(typeof campaign?.self?.isAccountConnected === 'boolean' ? { isAccountConnected: campaign.self.isAccountConnected } : {}),
+        ...(typeof campaign?.self?.isEligible === 'boolean' ? { isEligible: campaign.self.isEligible } : {}),
+      },
       allow: {
         isEnabled: campaign?.allow?.isEnabled !== false,
         channels: (campaign?.allow?.channels || []).slice(0, 250).map((channel) => ({
@@ -3771,14 +4440,20 @@ const ExtraPotionsDiagnostics = (() => {
           drop?.subscriptionRequirement?.requiredSubs ??
           0
         ) || 0,
-        preconditionDrops: (drop?.preconditionDrops || []).map((item) => ({ id: item?.id || "" })),
+        preconditionDrops: (drop?.preconditionDrops || []).map((item) => ({
+          id: item?.id || "",
+          ...(['claimed', 'completed'].includes(item?.requirement) ? { requirement: item.requirement } : {}),
+          ...(typeof item?.requiresClaim === 'boolean' ? { requiresClaim: item.requiresClaim } : {}),
+        })),
         benefitEdges: [{ benefit: {
           name: drop?.benefitEdges?.[0]?.benefit?.name || drop?.name || "",
           imageAssetURL: drop?.benefitEdges?.[0]?.benefit?.imageAssetURL || "",
         } }],
         self: {
           isClaimed: Boolean(drop?.self?.isClaimed),
-          currentMinutesWatched: Number(drop?.self?.currentMinutesWatched || 0),
+          ...(typeof drop?.self?.hasPreconditionsMet === 'boolean' ? { hasPreconditionsMet: drop.self.hasPreconditionsMet } : {}),
+          ...(typeof drop?.self?.isEligible === 'boolean' ? { isEligible: drop.self.isEligible } : {}),
+          currentMinutesWatched: drop?.self?.currentMinutesWatched == null ? null : Number(drop.self.currentMinutesWatched),
           dropInstanceID: drop?.self?.dropInstanceID || "",
         },
       })),
@@ -5362,13 +6037,15 @@ const ExtraPotionsDiagnostics = (() => {
     const onPayload = (event) => {
       const detail = event?.detail;
       if (!detail || detail.secret !== secret) return;
+      if (!detail.requestScope || detail.requestScope.account !== storageAccountLogin() || detail.requestScope.path !== location.pathname) return;
+      syncViewingContext();
       handleInterceptedTwitchPayload(detail.url, detail.headers || {}, detail.json, detail.status);
     };
     try { uw.addEventListener(channel, onPayload, true); } catch (_) { /* ignore */ }
     try { window.addEventListener(channel, onPayload, true); } catch (_) { /* ignore */ }
 
     // Page-world inject keeps ad-blocker failures off the Dropper.user.js stack.
-    const injector = `(()=>{if(window.__tdhTwitchNetHooked)return;window.__tdhTwitchNetHooked=1;const C=${JSON.stringify(channel)},S=${JSON.stringify(secret)};const gql=u=>{try{const p=new URL(String(u||""),location.href);return p.hostname==="gql.twitch.tv"&&(p.pathname==="/gql"||p.pathname==="/integrity")}catch(e){return!1}};const emit=(u,h,j,s)=>{try{window.dispatchEvent(new CustomEvent(C,{detail:{secret:S,url:u,headers:h||{},json:j,status:s}}))}catch(e){}};const hdrs=h=>{const o={};if(!h)return o;if(typeof Headers!=="undefined"&&h instanceof Headers){h.forEach((v,k)=>{o[String(k).toLowerCase()]=String(v)});return o}if(Array.isArray(h)){for(const e of h){if(e&&e.length>=2)o[String(e[0]).toLowerCase()]=String(e[1])}return o}if(typeof h==="object"){for(const[k,v]of Object.entries(h)){if(v!=null)o[String(k).toLowerCase()]=String(v)}}return o};const urlOf=i=>typeof i==="string"?i:(i&&typeof i.url==="string"?i.url:String(i||""));const nf=window.fetch;if(typeof nf==="function"){window.fetch=function(i,n){const u=urlOf(i);if(!gql(u))return nf.apply(this,arguments);const rh=hdrs((n&&n.headers)||(i&&i.headers));return nf.apply(this,arguments).then(r=>{try{r.clone().json().then(j=>emit(u,rh,j,r.status)).catch(()=>{})}catch(e){}return r})}}const X=window.XMLHttpRequest;if(typeof X==="function"){const o=X.prototype.open,sH=X.prototype.setRequestHeader,s=X.prototype.send;X.prototype.open=function(m,u){this.__tdhUrl=String(u||"");this.__tdhHeaders={};return o.apply(this,arguments)};X.prototype.setRequestHeader=function(n,v){if(!this.__tdhHeaders)this.__tdhHeaders={};this.__tdhHeaders[String(n).toLowerCase()]=String(v);return sH.apply(this,arguments)};X.prototype.send=function(b){if(gql(this.__tdhUrl)){this.addEventListener("load",()=>{try{const t=this.responseText||"";emit(this.__tdhUrl,this.__tdhHeaders,t?JSON.parse(t):null,this.status)}catch(e){}},{once:!0})}return s.apply(this,arguments)}}})();`;
+    const injector = `(()=>{if(window.__tdhTwitchNetHooked)return;window.__tdhTwitchNetHooked=1;const C=${JSON.stringify(channel)},S=${JSON.stringify(secret)};const gql=u=>{try{const p=new URL(String(u||""),location.href);return p.hostname==="gql.twitch.tv"&&(p.pathname==="/gql"||p.pathname==="/integrity")}catch(e){return!1}};const scope=()=>{const c=document.cookie.split(";").map(x=>x.trim());const get=k=>{const v=c.find(x=>x.startsWith(k+"="));try{return v?decodeURIComponent(v.slice(k.length+1)):""}catch(e){return""}};return{account:(get("login")||get("name")||"signed-out").toLowerCase(),path:location.pathname}};const emit=(u,h,j,s,q)=>{try{window.dispatchEvent(new CustomEvent(C,{detail:{secret:S,url:u,headers:h||{},json:j,status:s,requestScope:q}}))}catch(e){}};const hdrs=h=>{const o={};if(!h)return o;if(typeof Headers!=="undefined"&&h instanceof Headers){h.forEach((v,k)=>{o[String(k).toLowerCase()]=String(v)});return o}if(Array.isArray(h)){for(const e of h){if(e&&e.length>=2)o[String(e[0]).toLowerCase()]=String(e[1])}return o}if(typeof h==="object"){for(const[k,v]of Object.entries(h)){if(v!=null)o[String(k).toLowerCase()]=String(v)}}return o};const urlOf=i=>typeof i==="string"?i:(i&&typeof i.url==="string"?i.url:String(i||""));const nf=window.fetch;if(typeof nf==="function"){window.fetch=function(i,n){const u=urlOf(i);if(!gql(u))return nf.apply(this,arguments);const rh=hdrs((n&&n.headers)||(i&&i.headers)),q=scope();return nf.apply(this,arguments).then(r=>{try{r.clone().json().then(j=>emit(u,rh,j,r.status,q)).catch(()=>{})}catch(e){}return r})}}const X=window.XMLHttpRequest;if(typeof X==="function"){const o=X.prototype.open,sH=X.prototype.setRequestHeader,s=X.prototype.send;X.prototype.open=function(m,u){this.__tdhUrl=String(u||"");this.__tdhHeaders={};return o.apply(this,arguments)};X.prototype.setRequestHeader=function(n,v){if(!this.__tdhHeaders)this.__tdhHeaders={};this.__tdhHeaders[String(n).toLowerCase()]=String(v);return sH.apply(this,arguments)};X.prototype.send=function(b){if(gql(this.__tdhUrl)){const q=scope();this.addEventListener("load",()=>{try{const t=this.responseText||"";emit(this.__tdhUrl,this.__tdhHeaders,t?JSON.parse(t):null,this.status,q)}catch(e){}},{once:!0})}return s.apply(this,arguments)}}})();`;
 
     twitchNetworkHookMode = "unavailable";
     try {
@@ -5675,6 +6352,14 @@ const ExtraPotionsDiagnostics = (() => {
       throw lastError || new Error("Twitch GQL unavailable");
     };
 
+    if (claimOnly) {
+      try {
+        const result = await send(CLIENT_IDS[0], { transport: preferredGqlTransports()[0] || 'page' });
+        recordDropperNetworkSuccess();
+        return result;
+      } catch (error) { recordDropperNetworkFailure(error); throw error; }
+    }
+
     try {
       const result = await tryClient(CLIENT_IDS[0]);
       recordDropperNetworkSuccess();
@@ -5814,7 +6499,9 @@ const ExtraPotionsDiagnostics = (() => {
     );
 
     let reason = "open";
-    if (excluded) reason = "excluded";
+    if (campaignOrDrop?.self?.isAccountConnected === false || campaignOrDrop?.isAccountConnected === false) reason = "account-link-required";
+    else if (campaignOrDrop?.self?.isEligible === false) reason = "participation-not-eligible";
+    else if (excluded) reason = "excluded";
     else if (ignored) reason = "ignored-game";
     else if (completed) reason = "completed";
     else if (status && !["ACTIVE", "TEST", "OPEN"].includes(status)) reason = "status-closed";
@@ -5973,6 +6660,7 @@ const ExtraPotionsDiagnostics = (() => {
 
   function campaignIsOpen(campaign, drop = null, now = Date.now()) {
     if (campaignIsExcluded(campaign) || campaignIsExcluded(drop)) return false;
+    if (campaign?.self?.isAccountConnected === false || campaign?.isAccountConnected === false || campaign?.self?.isEligible === false || drop?.self?.isEligible === false) return false;
     const status = cleanText(campaign?.status || "").toUpperCase();
     if (status && status !== "ACTIVE" && status !== "TEST") return false;
     const window = campaignWindow(campaign, drop);
@@ -6186,10 +6874,7 @@ const ExtraPotionsDiagnostics = (() => {
         if (required <= 0 || !campaignIsOpen(campaign, drop, now)) continue;
         if (current >= required) continue;
 
-        const preconditionsMet = (drop.preconditionDrops || []).every((item) => {
-          const other = drops.find((candidate) => candidate.id === item.id);
-          return dropPreconditionSatisfied(other);
-        });
+        const preconditionsMet = dropperPreconditionsMet(drop, drops);
         if (!preconditionsMet) continue;
 
         const window = campaignWindow(campaign, drop);
@@ -6250,6 +6935,8 @@ const ExtraPotionsDiagnostics = (() => {
     const incomplete = candidates.filter((item) => !dropProgressComplete(item));
     const pool = preferWinnableDrops(incomplete, now);
     pool.sort((a, b) => {
+      const priority = campaignPriority(b.game) - campaignPriority(a.game);
+      if (priority) return priority;
       if (a.endMs !== b.endMs) return a.endMs - b.endMs;
       if ((b.currentMinutes > 0) !== (a.currentMinutes > 0)) return (b.currentMinutes > 0) - (a.currentMinutes > 0);
       if (Boolean(a.needsDropDetails) !== Boolean(b.needsDropDetails)) return a.needsDropDetails ? 1 : -1;
@@ -6288,6 +6975,8 @@ const ExtraPotionsDiagnostics = (() => {
       });
     }
     return [...byKey.values()].sort((a, b) => {
+      const priority = campaignPriority(b.game) - campaignPriority(a.game);
+      if (priority) return priority;
       if (a.endMs !== b.endMs) return a.endMs - b.endMs;
       return cleanText(a.game).localeCompare(cleanText(b.game));
     });
@@ -6464,10 +7153,7 @@ const ExtraPotionsDiagnostics = (() => {
         const required = Number(drop.requiredMinutesWatched) || 0;
         const current = Number(self.currentMinutesWatched) || 0;
         if (required <= 0 || current >= required || !campaignIsOpen(campaign, drop, now)) continue;
-        const pre = (drop.preconditionDrops || []).every((item) => {
-          const other = drops.find((candidate) => candidate.id === item.id);
-          return dropPreconditionSatisfied(other);
-        });
+        const pre = dropperPreconditionsMet(drop, drops);
         if (!pre) continue;
         options.push({
           id: drop.id || "",
@@ -6529,13 +7215,13 @@ const ExtraPotionsDiagnostics = (() => {
           (!completedDropId && completedName && dropName === completedName && current >= required)
         );
         if (!justFinished) return drop;
-        // Keep the Drop in the campaign so prerequisites resolve, but treat it
-        // as finished so pickTimedDrop selects the next unfinished reward.
+        // Keep the finished reward for prerequisite resolution. Watch
+        // completion is not a claim, and must not fabricate that evidence.
         return {
           ...drop,
           self: {
             ...(drop.self || {}),
-            isClaimed: true,
+            isClaimed: Boolean(drop.self?.isClaimed),
             currentMinutesWatched: Math.max(current, required),
           },
         };
@@ -6565,10 +7251,7 @@ const ExtraPotionsDiagnostics = (() => {
         const current = Number(self.currentMinutesWatched) || 0;
         if (required <= 0 || !campaignIsOpen(campaign, drop, now)) continue;
 
-        const preconditionsMet = (drop.preconditionDrops || []).every((item) => {
-          const other = drops.find((candidate) => candidate.id === item.id);
-          return dropPreconditionSatisfied(other);
-        });
+        const preconditionsMet = dropperPreconditionsMet(drop, drops);
         if (!preconditionsMet) continue;
 
         next.push({
@@ -9244,6 +9927,7 @@ const ExtraPotionsDiagnostics = (() => {
   }
 
   async function fetchSessionDropState(channelId, channelLogin, campaigns = []) {
+    const requestContext = pollContext();
     const id = cleanText(channelId);
     const login = cleanText(channelLogin);
     const vars = sessionDropQueryVariables(id, login);
@@ -9275,6 +9959,7 @@ const ExtraPotionsDiagnostics = (() => {
       const ops = [{ op: "currentDrop", variables: vars }];
       if (id) ops.push({ op: "availableDrops", variables: { channelID: id } });
       const extra = await gql(ops);
+      if (!pollContextIsCurrent(requestContext)) return { sessionDrop: null, available: [] };
       available = id ? parseAvailableCampaigns(extra[1]) : [];
       sessionDrop = parseSessionDrop(extra[0], [...campaigns, ...available]);
       note.session = Boolean(sessionDrop);
@@ -9296,6 +9981,7 @@ const ExtraPotionsDiagnostics = (() => {
     } catch (error) {
       note.error = error?.message || String(error);
     }
+    if (!pollContextIsCurrent(requestContext)) return { sessionDrop: null, available: [] };
     lastSessionPoll = note;
     return { sessionDrop, available };
   }
@@ -9696,6 +10382,7 @@ const ExtraPotionsDiagnostics = (() => {
     return false;
   }
   async function pollGqlDrops() {
+    const requestContext = pollContext();
     lastGqlPollAt = Date.now();
     try {
       if (!getToken()) {
@@ -9709,6 +10396,7 @@ const ExtraPotionsDiagnostics = (() => {
       if (fetchDashboard) requests.push({ op: "viewerDropsDashboard" });
       if (login) requests.push({ op: "streamInfo", variables: { channel: login } });
       const first = await gql(requests);
+      if (!pollContextIsCurrent(requestContext)) return;
       lastGqlSuccessAt = Date.now();
       lastGqlError = "";
       let responseIndex = 0;
@@ -9730,6 +10418,7 @@ const ExtraPotionsDiagnostics = (() => {
       const discoveredCampaigns = extractCampaignCatalog(inventoryRow);
       if (discoveredCampaigns.length) rememberCampaignCatalog(discoveredCampaigns, "dropper-inventory-poll");
       applyInventorySnapshot(inventoryCampaigns, "dropper-in-progress-poll");
+      reconcileClaimHistory(inventoryCampaigns);
 
       // Live Inventory is authoritative for credited watch minutes. Apply the
       // active Inventory Drop immediately, even on category/search pages where
@@ -9748,6 +10437,7 @@ const ExtraPotionsDiagnostics = (() => {
       const channelId = stream?.id ? String(stream.id) : "";
       const gameName = stream?.stream?.game?.name || stream?.stream?.game?.displayName || "";
       const sessionState = await fetchSessionDropState(channelId, login, inventoryCampaigns);
+      if (!pollContextIsCurrent(requestContext)) return;
       let sessionDrop = sessionState.sessionDrop;
       let available = sessionState.available;
       updateRoutingCampaignSupportEvidence(login, available, sessionDrop);
@@ -9903,6 +10593,7 @@ const ExtraPotionsDiagnostics = (() => {
         refreshDropCard();
       }
     } catch (error) {
+      if (!pollContextIsCurrent(requestContext)) return;
       lastGqlError = error?.message || String(error);
       logActivity("poll-error", "Drop state refresh failed", { message: lastGqlError, reason: lastGqlReason || null });
       if (error.message === "Not logged in") {
@@ -10178,12 +10869,13 @@ const ExtraPotionsDiagnostics = (() => {
   function featureStatus() {
     const on = [];
     if (settings.claimBonus) on.push("bonus");
-    if (settings.keepTabActive) on.push("tab");
+    if (settings.keepTabActive) on.push("screen");
     if (settings.claimDrops) on.push("drops");
     return on.length ? `On: ${on.join(" · ")}` : "All features off";
   }
 
   function setStatus(text) {
+    text = viewingStatus()?.label || text;
     statusText = text;
     const node = ui?.shadow?.getElementById("tdh-status");
     if (node) node.textContent = text;
@@ -10205,91 +10897,48 @@ const ExtraPotionsDiagnostics = (() => {
     return true;
   }
 
-  function watchBonus() {
-    if (bonusClaimObserver || !settings.claimBonus) return;
-    const claim = (root = document) => {
-      if (!settings.claimBonus) return;
-      if (Date.now() - lastBonusAt < 1500) return;
-      if (clickMatch(root, BONUS_SELECTOR)) {
-        lastBonusAt = Date.now();
-        setStatus("Claimed Bonus Chest");
-        notifyUser("Bonus Chest Claimed");
-      }
-    };
-    claim();
-    bonusClaimObserver = new MutationObserver((mutations) => {
-      for (const { addedNodes } of mutations) {
-        for (const node of addedNodes) {
-          if (node instanceof Element) claim(node);
-        }
-      }
-    });
-    bonusClaimObserver.observe(document.documentElement, { childList: true, subtree: true });
-  }
+  function watchBonus() { syncClaimWatchers(); }
 
   function isDropClaimButton(button) {
-    const text = `${button.getAttribute("aria-label") || ""} ${button.textContent || ""}`.toLowerCase();
-    return /claim|領取|领取|받기|получить/.test(text);
+    const text = cleanText(button.getAttribute("aria-label") || button.textContent || "");
+    return /^(?:claim(?: (?:now|drop|reward))?|領取|领取|받기|получить)$/i.test(text);
   }
 
   async function claimDropViaGql(drop) {
     const instanceID = drop?.dropInstanceID;
-    if (!settings.claimDrops || !instanceID || drop?.isClaimed) return false;
-    if ((drop.currentMinutes || 0) < (drop.requiredMinutes || Infinity)) return false;
+    if (!settings.claimDrops || !instanceID || drop?.isClaimed || !dropProgressComplete(drop)) return false;
+    const context = claimContext();
+    if (context.account === 'signed-out') return false;
+    const key = claimRecordKey(drop);
+    if (!key) return false;
     try {
-      const result = await gql([{ op: "claimDrop", variables: { input: { dropInstanceID: instanceID } } }]);
-      const status = result[0]?.data?.claimDropRewards?.status || "";
-      if (/ELIGIBLE_FOR_ALL|DROP_INSTANCE_ALREADY_CLAIMED/i.test(status)) {
-        lastDropAt = Date.now();
-        resetClaimReadyTimer();
-        logActivity("claim", status === "DROP_INSTANCE_ALREADY_CLAIMED" ? "Drop already claimed" : `Claimed ${drop.name || "drop"}`, { game: drop.game || null });
-        setStatus(status === "DROP_INSTANCE_ALREADY_CLAIMED" ? "Drop already claimed" : `Claimed ${drop.name || "drop"}`);
-        scheduleNextGameAfterClaim(drop);
-        return true;
-      }
-    } catch (error) {
-      const message = error?.message || String(error);
-      const integrityRejected = /integrity/i.test(message);
-
-      logActivity("claim-error", "GQL claim attempt failed", {
-        drop: drop?.name || null,
-        game: drop?.game || null,
-        message,
-        integrityRejected,
-      });
-
-      if (integrityRejected) {
-        const alreadyOnInventory = isInventory();
-        const continueEarning = Boolean(settings.findNextStream && dropProgressComplete(drop));
-        lastClaimIntegrityFallback = {
-          at: Date.now(),
-          drop: drop?.name || null,
-          game: drop?.game || null,
-          alreadyOnInventory,
-          navigatedToInventory: !alreadyOnInventory && !continueEarning,
-        };
-
-        setStatus(
-          alreadyOnInventory
-            ? "Claim Ready · Waiting For Twitch Claim Control"
-            : continueEarning
-              ? "Drop Complete · Continuing To Next Campaign"
-              : "Claim Ready · Opening Twitch Drops Inventory"
-        );
-
-        logActivity("claim-fallback", "Using Twitch page claim control after integrity rejection", {
-          drop: drop?.name || null,
-          game: drop?.game || null,
-          alreadyOnInventory,
-          continueEarning,
-        });
-
-        if (!alreadyOnInventory && !continueEarning) {
-          routingControllerNavigate(INVENTORY_URL, "claim-integrity-fallback");
+      return await withClaimLock(key, context, async () => {
+        const ledger = claimLedger();
+        // An unidentified page attempt must settle before a second path sends
+        // a mutation for a possibly identical reward.
+        if (ledger.snapshot().some(record => record.kind === 'drop' && !record.rewardId && record.outcome === 'pending')) return false;
+        const attempt = ledger.begin({ key, rewardId: drop.id || '', campaignId: drop.campaignId || drop.campaignKey || '', kind: 'drop' });
+        if (!attempt) return false;
+        logActivity('claim-attempt', 'Claim Sent', { rewardId: attempt.rewardId, evidence: 'request' });
+        try {
+          const result = await gql([{ op: "claimDrop", variables: { input: { dropInstanceID: instanceID } } }]);
+          if (!claimContextIsCurrent(context)) { ledger.settle(key, attempt.attemptId, 'discarded', 'context-change'); return false; }
+          const outcome = DropperActiveViewing.claimResponse(result[0]);
+          recordClaimOutcome(ledger, attempt, outcome.outcome, outcome.evidence);
+          queueGqlPollSoon('claim-confirmation', 1500);
+          return outcome.outcome === 'confirmed' || outcome.outcome === 'already-claimed';
+        } catch (error) {
+          if (!claimContextIsCurrent(context)) { ledger.settle(key, attempt.attemptId, 'discarded', 'context-change'); return false; }
+          const outcome = DropperActiveViewing.claimFailure(error);
+          recordClaimOutcome(ledger, attempt, outcome.outcome, outcome.evidence);
+          if (outcome.evidence === 'integrity') {
+            lastClaimIntegrityFallback = { at: Date.now(), drop: drop.name || null, game: drop.game || null, alreadyOnInventory: isInventory(), navigatedToInventory: false };
+            setStatus('Claim Needs Attention · Use Twitch Claim Control');
+          }
+          return false;
         }
-      }
-    }
-    return false;
+      });
+    } catch (_) { return false; }
   }
 
   function maybeClaimCurrentDrop(drop) {
@@ -10307,60 +10956,24 @@ const ExtraPotionsDiagnostics = (() => {
 
   function claimDropButtons(root = document) {
     if (!settings.claimDrops) return 0;
-    if (campaignExpirySnapshot(lastInventoryCampaigns, currentDrop)?.overdue) return 0;
-    if (Date.now() - lastDropAt < 1200) return 0;
-    const buttons = new Set();
-    const knownNodes = [
-      ...(root.matches?.(DROP_CLAIM_SELECTOR) ? [root] : []),
-      ...root.querySelectorAll(DROP_CLAIM_SELECTOR),
-    ];
-    knownNodes.forEach((node) => {
-      const button = node.closest("button") || node;
-      if (button && !button.disabled) buttons.add(button);
-    });
-    if (isInventory()) {
-      document.querySelectorAll(".inventory-max-width > div:not(:first-child) button").forEach((button) => {
-        if (isDropClaimButton(button) && !button.disabled) buttons.add(button);
-      });
-    }
-    buttons.forEach((button) => button.click());
-    const claimed = buttons.size;
-    if (claimed) {
-      lastDropAt = Date.now();
-      resetClaimReadyTimer();
-      logActivity("claim", `Claimed ${claimed} Drop${claimed === 1 ? "" : "s"} via page controls`, { game: currentDrop?.game || null });
-      setStatus(`Claimed ${claimed} Drop${claimed === 1 ? "" : "s"}`);
-      notifyUser(`Claimed ${claimed} Drop${claimed === 1 ? "" : "s"}`);
-      if (dropProgressComplete(currentDrop)) scheduleNextGameAfterClaim(currentDrop);
-    }
-    return claimed;
+    return scanClaimGroups(root, 'drop');
   }
 
-  function watchDrops() {
-    if (dropClaimObserver || !settings.claimDrops) return;
-    claimDropButtons();
-    dropClaimObserver = new MutationObserver((mutations) => {
-      for (const { addedNodes } of mutations) {
-        for (const node of addedNodes) {
-          if (node instanceof Element) claimDropButtons(node);
-        }
-      }
-    });
-    dropClaimObserver.observe(document.documentElement, { childList: true, subtree: true });
-  }
+  function watchDrops() { syncClaimWatchers(); }
 
   function syncClaimWatchers() {
-    if (settings.claimBonus) watchBonus();
-    else if (bonusClaimObserver) {
-      bonusClaimObserver.disconnect();
-      bonusClaimObserver = null;
+    // One observer and one ledger own bonus and Drop page actions.
+    if (bonusClaimObserver) { bonusClaimObserver.disconnect(); bonusClaimObserver = null; }
+    if (!settings.claimBonus && !settings.claimDrops) {
+      dropClaimObserver?.disconnect(); dropClaimObserver = null;
+      clearTimeout(claimScanTimer); claimScanTimer = null;
+      return;
     }
-
-    if (settings.claimDrops) watchDrops();
-    else if (dropClaimObserver) {
-      dropClaimObserver.disconnect();
-      dropClaimObserver = null;
+    if (!dropClaimObserver && document.documentElement) {
+      dropClaimObserver = new MutationObserver(queueClaimScan);
+      dropClaimObserver.observe(document.documentElement, { childList: true, subtree: true });
     }
+    queueClaimScan();
   }
 
   function formatClock(ms) {
@@ -10386,19 +10999,16 @@ const ExtraPotionsDiagnostics = (() => {
   function noteWatching() {
     const login = watchingLogin();
     resetLastCheckedForStream(login);
-
-    const video = document.querySelector("video");
-    const playing = Boolean(video && !video.paused && video.readyState > 1);
-    if (!login || !playing) {
-      if (!login) watchClock = { login: "", started: 0 };
-      return;
-    }
-    if (watchClock.login !== login) watchClock = { login, started: Date.now() };
+    const now = Date.now();
+    if (watchClock.login !== login) watchClock = { login, started: now, elapsed: 0, lastTick: 0 };
+    if (!login || !streamVideoIsPlaying() || viewingIntent.snapshot().paused) { watchClock.lastTick = 0; return; }
+    if (watchClock.lastTick) watchClock.elapsed = (watchClock.elapsed || 0) + Math.min(HEARTBEAT_INTERVAL_MS * 2, now - watchClock.lastTick);
+    watchClock.lastTick = now;
   }
 
   function playerWatchLabel() {
-    if (!watchClock.started) return "";
-    return `Player playing ${formatClock(Date.now() - watchClock.started)}`;
+    if (!watchClock.login || !watchClock.elapsed) return "";
+    return `Player playing ${formatClock(watchClock.elapsed)}`;
   }
 
   function cleanText(value) {
@@ -10928,6 +11538,7 @@ const ExtraPotionsDiagnostics = (() => {
   }
 
   function findNextStream() {
+    if (!viewingNavigationAllowed("automatic-routing")) return;
     if (!isAutoRoutingController()) {
       noteDeferredAutoRouting("find-next-stream");
       return;
@@ -10968,8 +11579,7 @@ const ExtraPotionsDiagnostics = (() => {
       autoNavigateTwitch(href, "automatic-routing");
       return;
     }
-    const next = window.open(href, "tdh-drops-live");
-    if (settings.muteRestarted) muteWhenReady(next);
+    autoNavigateTwitch(href, "automatic-routing");
   }
 
   function requestMuteAfterNavigation(reason = "automatic-routing") {
@@ -11023,42 +11633,31 @@ const ExtraPotionsDiagnostics = (() => {
     }
   }
 
-  function ensureStreamPlaying() {
+  function ensureStreamPlaying(explicit = false) {
     if (!watchingLogin()) return false;
+    syncViewingContext();
     const video = streamVideoElement();
-    if (streamVideoIsPlaying(video)) return false;
-
-    let changed = false;
-    if (clickTwitchPlayerGate('[data-a-target="content-classification-gate-overlay-start-watching-button"]')) changed = true;
-    if (clickTwitchPlayerGate('[data-a-target="player-overlay-content-gate"]')) changed = true;
-
-    if (settings.muteRestarted && video && !video.muted) {
-      try {
-        video.muted = true;
-        video.volume = 0;
-        changed = true;
-      } catch (_) { /* ignore */ }
+    if (!video || streamVideoIsPlaying(video) || video.ended || video.error || video.readyState < 1) return false;
+    // Gates remain Twitch/user decisions. A paused or unknown player is never
+    // interpreted as authorization to start playback or open another stream.
+    if (!viewingIntent.takeRecovery(explicit)) return false;
+    if (explicit) {
+      videoMountedDuringPause = false;
+      recentPlaybackControl = { action: 'resume', at: Date.now() };
     }
-
-    if (video && video.paused && !video.ended && video.readyState > 0) {
-      try {
-        const playing = video.play();
-        if (playing && typeof playing.catch === "function") playing.catch(() => {});
-        changed = true;
-      } catch (_) { /* ignore */ }
+    try {
+      const playing = video.play();
+      if (playing && typeof playing.catch === 'function') playing.catch(() => {
+        viewingIntent.pause(false);
+        setStatus('Playback Needs Attention');
+        refreshViewingControls();
+      });
+      return true;
+    } catch (_) {
+      viewingIntent.pause(false);
+      refreshViewingControls();
+      return false;
     }
-
-    if (streamVideoIsPlaying(video)) return changed;
-
-    const playButton = twitchPlayControl();
-    const label = cleanText(playButton?.getAttribute("aria-label") || playButton?.textContent || "").toLowerCase();
-    if (playButton && /^(play|start watching)\b/.test(label)) {
-      try {
-        playButton.click();
-        changed = true;
-      } catch (_) { /* ignore */ }
-    }
-    return changed;
   }
 
   function ensureStreamMuted() {
@@ -11117,143 +11716,11 @@ const ExtraPotionsDiagnostics = (() => {
     setTimeout(() => clearInterval(timer), 20000);
   }
 
-  function installKeepTabActive(uw) {
-    // Idempotent: Tampermonkey re-injection or SPA remounts must not stack
-    // pause/play hooks — that remounts Twitch's player "Playing" listeners.
-    try {
-      if (uw.__tdhKeepTabActiveInstalled) return;
-      uw.__tdhKeepTabActiveInstalled = true;
-    } catch (_) {
-      /* ignore */
-    }
-
-    let lastUserGesture = 0;
-    let lastForcedPlayAt = 0;
-    let lastSeenVideo = null;
-    let lastVideoSeenAt = 0;
-    const FORCE_PLAY_COOLDOWN_MS = 20000;
-    const BOOT_GRACE_MS = 15000;
-    const VIDEO_SETTLE_MS = 12000;
-    const installedAt = Date.now();
-    const markGesture = () => {
-      lastUserGesture = Date.now();
-    };
-    const gestureEvents = ["pointerdown", "mousedown", "mouseup", "touchstart", "keydown", "click", "keypress"];
-    const attachGestures = () => {
-      gestureEvents.forEach((ev) => uw.addEventListener(ev, markGesture, { capture: true, passive: true }));
-    };
-    if (uw.document.readyState === "loading") {
-      uw.addEventListener("DOMContentLoaded", attachGestures, { once: true });
-    } else {
-      attachGestures();
-    }
-
-    const defineConstProp = (proto, prop, val) => {
-      try {
-        Object.defineProperty(proto, prop, {
-          configurable: true,
-          enumerable: true,
-          get: function tmKeepActive() {
-            return val;
-          },
-        });
-      } catch (_) {
-        /* ignore */
-      }
-    };
-    const DocProto = (uw.Document && uw.Document.prototype) || Document.prototype;
-    defineConstProp(DocProto, "hidden", false);
-    defineConstProp(DocProto, "webkitHidden", false);
-    defineConstProp(DocProto, "visibilityState", "visible");
-    try {
-      Object.defineProperty(DocProto, "hasFocus", { configurable: true, value: () => true });
-    } catch (_) {
-      /* ignore */
-    }
-
-    ["visibilitychange", "webkitvisibilitychange", "freeze", "pagehide"].forEach((type) => {
-      try {
-        uw.document.addEventListener(type, (ev) => ev.stopImmediatePropagation(), true);
-      } catch (_) {
-        /* ignore */
-      }
-    });
-
-    const HME = (uw.HTMLMediaElement || HTMLMediaElement).prototype;
-    const originalPause = HME.pause;
-    const originalPlay = HME.play;
-    const allowPause = () => Date.now() - lastUserGesture <= 1200;
-    const inBootGrace = () => Date.now() - installedAt < BOOT_GRACE_MS;
-    const forcePlay = (media) => {
-      if (!media || inBootGrace()) return;
-      if (media !== lastSeenVideo) {
-        lastSeenVideo = media;
-        lastVideoSeenAt = Date.now();
-        return;
-      }
-      if (Date.now() - lastVideoSeenAt < VIDEO_SETTLE_MS) return;
-      const now = Date.now();
-      if (now - lastForcedPlayAt < FORCE_PLAY_COOLDOWN_MS) return;
-      if (!media.paused || media.ended || media.readyState < 3) return;
-      lastForcedPlayAt = now;
-      try {
-        const playing = originalPlay.call(media);
-        if (playing && typeof playing.catch === "function") playing.catch(() => {});
-      } catch (_) {
-        /* ignore */
-      }
-    };
-    Object.defineProperty(HME, "pause", {
-      configurable: true,
-      value: function tmGuardedPause() {
-        if (allowPause() || inBootGrace()) return originalPause.apply(this, arguments);
-        // Swallow background pauses without re-calling play() or stopping the
-        // pause event. Forcing play / stopImmediatePropagation remounts Twitch's
-        // player and stacks "Playing" listeners (MaxListenersExceededWarning).
-        return undefined;
-      },
-    });
-
-    // Do not proxy IntersectionObserver — forcing video isIntersecting remounts
-    // the IVS player and stacks Playing listeners on every SPA navigation.
-
-    uw.setInterval(() => {
-      try {
-        uw.dispatchEvent(new uw.MouseEvent("mousemove", { bubbles: true }));
-      } catch (_) {
-        /* ignore */
-      }
-    }, 30000);
-
-    try {
-      uw.navigator.wakeLock?.request?.("screen").catch(() => {});
-    } catch (_) {
-      /* ignore */
-    }
-
-    let lastGateClick = 0;
-    const clickGate = (selector) => {
-      const now = Date.now();
-      if (now - lastGateClick < 3000) return;
-      const button = uw.document.querySelector(selector);
-      const target = button?.matches?.("button") ? button : button?.querySelector?.("button:not([disabled])");
-      if (target && !target.disabled) {
-        lastGateClick = now;
-        target.click();
-      }
-    };
-    // Twitch mutates its DOM continuously. A periodic targeted check is much
-    // cheaper than observing the full document subtree and all attributes.
-    uw.setInterval(() => {
-      try {
-        const video = uw.document.querySelector("video");
-        if (video) forcePlay(video);
-        clickGate('[data-a-target="content-classification-gate-overlay-start-watching-button"]');
-        clickGate('[data-a-target="player-overlay-content-gate"]');
-      } catch (_) {
-        /* ignore */
-      }
-    }, 20000);
+  function installKeepTabActive() {
+    // Compatibility entry point for the saved keepTabActive preference.
+    // Do not proxy IntersectionObserver, visibility, focus, or media methods.
+    installViewingIntent();
+    void syncScreenWakeLock();
   }
 
   function switchHtml(id, label, description, on) {
@@ -12011,8 +12478,8 @@ const ExtraPotionsDiagnostics = (() => {
           <div class="badge-only-progress-slot" id="tdh-badge-only-progress-slot" aria-label="Drop progress" hidden></div>
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-drops-body"><span class="fl-tool-title">Drops</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-drops-body">
             ${switchHtml("tdh-claim-drops", "Auto-Claim Drops", "", settings.claimDrops)}
-            ${switchHtml("tdh-claim-bonus", "Auto-Claim Bonus Chests", "Clicks Claim Bonus When The Chest Appears.", settings.claimBonus)}
-            ${switchHtml("tdh-keep-tab", "Keep Tab Active", "Keeps Twitch From Pausing Or Throttling In The Background. Reload After Changing.", settings.keepTabActive)}
+            ${switchHtml("tdh-claim-bonus", "Auto-Claim Bonus Chests", "Attempts Free Bonus Claims. A Click Is Not Counted As Confirmation.", settings.claimBonus)}
+            ${switchHtml("tdh-keep-tab", "Keep Screen Awake", "Requests A Screen Wake Lock During Actual Playback. Does Not Override Visibility Or Pauses.", settings.keepTabActive)}
             ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "", settings.hideTwitchSubscriptionPromos)}
             <div class="auth-required" id="tdh-auth-required" hidden>
               <span>Twitch Login Required</span>
@@ -12020,17 +12487,20 @@ const ExtraPotionsDiagnostics = (() => {
             </div>
             <details class="campaign-manager" id="tdh-open-campaigns">
               <summary><span class="campaign-manager-title">Open Campaigns</span><span class="campaign-manager-summary" id="tdh-open-campaign-summary">Loading…</span></summary>
-              <div class="campaign-manager-note">Check a game to ignore it. The choice refreshes automatically and expires after that game's latest open campaign ends.</div>
+              <div class="campaign-manager-note">Check a game to ignore it until its latest campaign ends. Priorities order recommendations without changing your selected stream.</div>
               <div class="campaign-game-list" id="tdh-open-campaign-list"></div>
             </details>
+            <div class="campaign-manager-note" id="tdh-reward-eligibility" role="status">Eligibility Not Verified</div>
             <button type="button" class="life-btn" id="tdh-toggle-inventory">Show Drops Inventory</button>
             <div class="compact-inventory" id="tdh-compact-inventory"><div class="inventory-head"><div><strong>Campaign Drops</strong><span id="tdh-inventory-game"></span></div></div><div class="inventory-list" id="tdh-inventory-list"></div></div>
           </div></section>
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-streams-body"><span class="fl-tool-title">Streams</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-streams-body">
             <div class="stream-subsection-label">Current Stream</div>
-            ${switchHtml("tdh-find-next", "Find Next Drops Stream", "Switches To Another Eligible Stream If Progress Stalls.", settings.findNextStream)}
+            <div class="campaign-manager-note" id="tdh-viewing-status" role="status"></div>
+            <div class="action-pair"><button type="button" class="life-btn" id="tdh-resume-playback">Resume Playback</button><button type="button" class="life-btn" id="tdh-allow-switching">Use Automatic Switching</button></div>
+            ${switchHtml("tdh-find-next", "Automatic Stream Switching", "Uses Eligible Alternatives Only When You Permit Switching. Manual Selections And Pauses Stay Protected.", settings.findNextStream)}
             ${switchHtml("tdh-mute-next", "Mute Opened Streams", "Mutes Streams Dropper Opens Or Switches To, Including Same-Tab Routing.", settings.muteRestarted)}
-            ${switchHtml("tdh-background-earning", "Background Earning Mode", "Monitors Twitch-Credited Minutes While The Stream Is In The Background.", settings.backgroundEarning)}
+            ${switchHtml("tdh-background-earning", "Background Progress Tracking", "Reports Actual Twitch Credit In Hidden Tabs Or Picture-in-Picture. Does Not Simulate Viewing.", settings.backgroundEarning)}
             <div class="mini-row"><span>Pause Auto-Switch</span><select class="select-lite" id="tdh-pause-switch"><option value="0">Off</option><option value="30">30 Min</option><option value="60">1 Hour</option><option value="120">2 Hours</option><option value="240">4 Hours</option><option value="480">8 Hours</option><option value="720">12 Hours</option><option value="1440">24 Hours</option></select></div>
             ${switchHtml("tdh-notifications", "Status Toasts", "Shows brief in-app Dropper messages for stream switches, campaign changes, and completed Drops.", settings.notifications)}
             <div class="stream-subsection-label with-divider">Routing & Backup</div>
@@ -12074,6 +12544,8 @@ const ExtraPotionsDiagnostics = (() => {
             <button type="button" class="life-btn" id="tdh-clear-activity">Clear Activity Log</button>
             <div class="action-pair"><button type="button" class="life-btn" id="tdh-refresh-now">Refresh Drop State</button>
             <button type="button" class="life-btn" id="tdh-reset-session">Reset Session State</button></div>
+            <details class="campaign-manager" id="tdh-claim-history-panel"><summary>Claim History</summary><pre id="tdh-claim-history" class="campaign-manager-note" style="white-space:pre-wrap;overflow-wrap:anywhere">No claim attempts recorded for this account.</pre></details>
+            <div class="campaign-manager-note" id="tdh-support-note">Donations are optional and support continued development. All features remain available without donating, and donations do not change your license rights.</div>
             <div class="diag" id="tdh-diagnostics" role="region" aria-label="Site and plugin diagnostics" tabindex="0"></div>
           </div></section>
         </aside>
@@ -12301,6 +12773,7 @@ const ExtraPotionsDiagnostics = (() => {
   }
 
   function skipCurrentStreamer() {
+    explicitViewingNavigationUntil = Date.now() + 15000;
     clearSkipStreamerArm();
     if (!isAutoRoutingController()) {
       noteDeferredAutoRouting("manual-stream-skip");
@@ -12714,6 +13187,20 @@ const ExtraPotionsDiagnostics = (() => {
       const campaignLabel = `${item.campaignCount} open campaign${item.campaignCount === 1 ? "" : "s"}`;
       meta.textContent = `${campaignLabel} · Latest ${formatCampaignEndLabel(item.latestEndAt, item.latestEndMs, now).toLowerCase()}`;
       copy.append(title, meta);
+      const priorityRow = document.createElement('label');
+      priorityRow.className = 'mini-row';
+      const priorityLabel = document.createElement('span'); priorityLabel.textContent = 'Priority';
+      const priority = document.createElement('select'); priority.className = 'select-lite';
+      priority.setAttribute('aria-label', `${item.game} campaign priority`);
+      for (const [value, label] of [[1, 'High'], [0, 'Normal'], [-1, 'Low']]) {
+        const option = document.createElement('option'); option.value = String(value); option.textContent = label; priority.append(option);
+      }
+      priority.value = String(campaignPriority(item.game));
+      priority.addEventListener('change', () => {
+        setCampaignPriority(item.game, Number(priority.value));
+        setStatus('Campaign Priority Saved · Your Stream Is Unchanged');
+      });
+      priorityRow.append(priorityLabel, priority); copy.append(priorityRow);
 
       const check = document.createElement("button");
       check.type = "button";
@@ -12952,6 +13439,9 @@ const ExtraPotionsDiagnostics = (() => {
     if (!getToken()) {
       label = "Login Required";
       cls += " warn";
+    } else if (viewingIntent.snapshot().paused) {
+      label = 'Paused';
+      cls += ' warn';
     } else if (currentDrop?.needsDropDetails) {
       label = "Details Pending";
       cls += " warn";
@@ -12992,7 +13482,7 @@ const ExtraPotionsDiagnostics = (() => {
     }
 
     if (reward) reward.textContent = currentDrop?.name || "Waiting For Drop";
-    const watched = watchClock.started ? formatClock(Date.now() - watchClock.started) : "";
+    const watched = watchClock.elapsed ? formatClock(watchClock.elapsed) : "";
     if (extra) extra.textContent = currentDrop
       ? currentDrop.needsDropDetails
         ? `Details Pending${watched ? ` · ${watched}` : ""}`
@@ -13178,6 +13668,15 @@ const ExtraPotionsDiagnostics = (() => {
 
   function bindDropperControls() {
     const s = ui.shadow;
+    s.getElementById('tdh-resume-playback')?.addEventListener('click', () => {
+      ensureStreamPlaying(true); refreshViewingControls();
+    });
+    s.getElementById('tdh-allow-switching')?.addEventListener('click', () => {
+      syncViewingContext(); viewingIntent.allowSwitching();
+      settings.findNextStream = true; saveSettings(); refreshViewingControls();
+    });
+    s.getElementById('tdh-claim-history-panel')?.addEventListener('toggle', renderClaimHistory);
+    refreshViewingControls(); refreshEligibilityControls(); renderClaimHistory();
     const inventory = s.getElementById("tdh-compact-inventory");
     refreshTwitchAuthStatus();
     s.getElementById("tdh-open-campaigns")?.addEventListener("toggle", (event) => {
@@ -14085,6 +14584,9 @@ const ExtraPotionsDiagnostics = (() => {
       deviceCaptured: Boolean(cookie("unique_id")),
       watchingLogin: watchingLogin(),
       currentDrop,
+      viewing: { ...viewingIntent.snapshot(), screenWakeLock: Boolean(screenWakeLock), navigationBlocked: lastViewingNavigationBlock || null },
+      claims: { history: claimLedger().snapshot(), selectors: claimHealth, crossTabLock: navigator.locks?.request ? 'web-locks' : 'advisory-leader', limit: 100 },
+      rewardEligibility: activeRewardEligibility(),
       rewardImage: (() => {
         const direct = dropBenefitImage(currentDrop);
         const resolved = rewardImageFromDrop(currentDrop);
@@ -14798,13 +15300,9 @@ const ExtraPotionsDiagnostics = (() => {
         settings[key] = !settings[key];
         saveSettings();
         if (key === "claimBonus" || key === "claimDrops") syncClaimWatchers();
-        if (key === "keepTabActive") setStatus("Reload The Page To Apply Keep Tab Active.");
-        if (key === "backgroundEarning" && settings.backgroundEarning && !settings.keepTabActive) {
-          settings.keepTabActive = true;
-          persistSettingsSnapshot();
-          renderSwitches();
-          notifyUser("Keep Tab Active Enabled. Reload Twitch To Apply Background Earning.");
-        }
+        if (key === "keepTabActive") void syncScreenWakeLock();
+        if (key === "findNextStream" && settings.findNextStream) { syncViewingContext(); viewingIntent.allowSwitching(); }
+        refreshViewingControls();
         if (key === "progressInTitle") updateTitle();
         if (key === "badgeOnly" || key === "customOpacity") applyAppearanceSettings();
         if (key === "reduceMotion") applyMotionSetting();

@@ -197,7 +197,7 @@ test('menu section titles do not carry redundant helper tips', () => {
   assert.match(source, /switchHtml\("tdh-claim-drops", "Auto-Claim Drops", "",/u);
   assert.match(source, /switchHtml\("tdh-reduce-motion", "Reduce Motion", "",/u);
   assert.match(source, /switchHtml\("tdh-notifications", "Status Toasts", "[^"]+",/u);
-  assert.match(source, /switchHtml\("tdh-keep-tab", "Keep Tab Active", "[^"]+",/u);
+  assert.match(source, /switchHtml\("tdh-keep-tab", "Keep Screen Awake", "[^"]+",/u);
   assert.match(source, /switchHtml\("tdh-badge-only", "Badge Only", "[^"]+",/u);
 });
 

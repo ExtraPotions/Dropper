@@ -143,7 +143,8 @@ assert.doesNotMatch(source, /return normalizedGameSlug\(gameName\);\s*\n\s*}/, "
 assert.match(source, /CLAIM_READY_GRACE_MS = 0;/, "completed Drops do not block the next earning target while waiting for claim");
 assert.match(source, /function dropPreconditionSatisfied\(drop\)/, "completed prerequisite Drops unlock routing without requiring claim");
 assert.doesNotMatch(source.slice(source.indexOf("  function pickNextOpenCampaignDrop"), source.indexOf("  function maybeAdvanceExpiredCampaign")), /return other\?\.self\?\.isClaimed;/, "campaign routing does not require prerequisite claims");
-assert.match(source, /continueEarning = Boolean\(settings\.findNextStream && dropProgressComplete\(drop\)\)/, "claim fallback does not interrupt continued earning");
+assert.match(source, /navigatedToInventory: false/, "claim integrity failures never force the viewer to leave the selected stream");
+assert.match(source, /dropperPreconditionsMet\(drop, drops\)/, "routing uses explicit prerequisite evidence rather than inferring a claim from minutes");
 const prerequisiteStart = source.indexOf("  function requiresSubscription");
 const prerequisiteEnd = source.indexOf("\n  function campaignKey", prerequisiteStart);
 const prerequisiteContext = {};
@@ -425,9 +426,9 @@ assert.equal(
 assert.equal(transitions.length, 0, "a locked sooner-campaign hunt is not reset to Delta Force");
 assert.equal(navigations.length, 0, "a locked sooner-campaign hunt does not restart from Twitch Home");
 
-assert.match(source, /__tdhKeepTabActiveInstalled/, "Keep Tab Active installs once per page");
-assert.match(source, /BOOT_GRACE_MS/, "Keep Tab Active waits through player boot before force-play");
-assert.match(source, /FORCE_PLAY_COOLDOWN_MS/, "Keep Tab Active debounces forced play calls");
+assert.match(source, /if \(viewingListenersInstalled\) return;/, "viewing observers install once per page");
+assert.match(source, /video\.readyState < 1/, "recovery does not act on an unready player");
+assert.match(source, /recoveryAttempts >= 3/, "automatic playback recovery has a finite budget");
 assert.match(source, /function installTwitchNetworkHooks/, "Dropper captures Twitch GQL traffic for Drop progress");
 assert.match(source, /pageHook: twitchNetworkHookMode/, "diagnostics expose whether Safari installed the page GQL hook");
 assert.match(source, /sessionPoll: lastSessionPoll/, "diagnostics expose the last session-minute poll");

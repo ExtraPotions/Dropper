@@ -14,6 +14,7 @@ assert.notEqual(stalledRecoveryStart, -1, 'stalled progress recovery decision is
 assert.notEqual(needsStreamStart, -1, 'active campaign routing decision is present');
 
 const stalledRecoveryContext = {
+  viewingNavigationAllowed: () => true,
   settings: { findNextStream: true, queueEnabled: true, queueOnStall: true },
   currentDrop: { currentMinutes: 75, requiredMinutes: 90 },
   dropProgressComplete: () => false,
@@ -54,14 +55,17 @@ stalledRecoveryContext.streamEarningHealthSnapshot = () => ({
   inVerificationGrace: false,
   progressAgeMs: 120001,
 });
-assert.equal(stalledRecoveryContext.stalledProgressNeedsRecovery(), true, 'a paused player recovers after the unhealthy 2-minute stall');
+stalledRecoveryContext.viewingNavigationAllowed = () => false;
+assert.equal(stalledRecoveryContext.stalledProgressNeedsRecovery(), false, 'a viewer pause remains protected beyond the old 2-minute stall');
+stalledRecoveryContext.viewingNavigationAllowed = () => true;
+assert.equal(stalledRecoveryContext.stalledProgressNeedsRecovery(), true, 'an authorized unhealthy stream can recover after the 2-minute stall');
 stalledRecoveryContext.streamEarningHealthSnapshot = () => ({
   healthy: false,
   videoPlaying: false,
   inVerificationGrace: false,
   progressAgeMs: 119999,
 });
-assert.equal(stalledRecoveryContext.stalledProgressNeedsRecovery(), false, 'a paused player does not recover before the 2-minute stall');
+assert.equal(stalledRecoveryContext.stalledProgressNeedsRecovery(), false, 'an authorized unhealthy stream does not recover before the 2-minute stall');
 stalledRecoveryContext.streamEarningHealthSnapshot = () => ({
   healthy: false,
   videoPlaying: false,

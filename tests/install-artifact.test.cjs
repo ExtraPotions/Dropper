@@ -18,7 +18,8 @@ test('dropper.user.js is a direct install with no @resource entries', () => {
   assert.match(install, /^\/\/ ==UserScript==/u);
   assert.match(install, /#tdh-settings-launcher/u);
   assert.match(install, /fl-tool-title">Drops</u);
-  assert.match(install, /@version\s+3.2.31/u);
+  const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+  assert.equal(install.match(/^\/\/ @version\s+(.+)$/m)?.[1]?.trim(), version);
   assert.match(install, /^\/\/ @icon\s+https:\/\/raw\.githubusercontent\.com\/ExtraPotions\/Dropper\/main\/assets\/dropper-launcher\.svg$/m);
   assert.doesNotMatch(install, /data:image\//u);
   assert.doesNotMatch(install, /^\/\/ @resource\s/m);

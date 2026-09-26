@@ -1,3 +1,11 @@
+## 3.3.0-dev.1 - Active-viewing development build
+
+- Preserve deliberate pauses and selected streams, including same-channel player remounts and reloads.
+- Replace visibility/focus/pause overrides and simulated activity with observation and an optional screen wake lock.
+- Use one claim coordinator with exact result handling, bounded retryable failures, account isolation, bounded history, and selector health.
+- Add prerequisite graph validation, explicit eligibility explanations, and campaign priorities without overriding viewing choices.
+- Apply browser-only and optional-donation wording. Preserve code/assets licenses and ExtraPotions chrome.
+
 # Changelog
 
 ## 3.2.31 — 2026-09-25

@@ -69,11 +69,12 @@ test('repository keeps only current docs, assets, and required build inputs', ()
 test('in-app release notes and update checker stay current-only but functional', () => {
   const source = loadDropperSource(root);
   const releaseNotesBlock = source.match(/const RELEASE_NOTES = \{([\s\S]*?)\};/u)?.[1] || '';
-  const versions = [...releaseNotesBlock.matchAll(/"(\d+\.\d+\.\d+)": \[/gu)].map((match) => match[1]);
-  assert.deepEqual(versions.slice(0, 3), ['3.2.31', '3.2.30', '3.2.29']);
-  assert.match(releaseNotesBlock, /"3.2.31": \[/u);
+  const currentVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+  const versions = [...releaseNotesBlock.matchAll(/"(\d+\.\d+\.\d+(?:-[\w.-]+)?)": \[/gu)].map((match) => match[1]);
+  assert.equal(versions[0], currentVersion, 'current development or stable version is first');
+  assert.deepEqual(versions.slice(1, 3), ['3.2.31', '3.2.30']);
   assert.doesNotMatch(releaseNotesBlock, /"3\.1\.32": \[/u);
-  const currentNotes = releaseNotesBlock.match(/"3\.2\.31": \[([\s\S]*?)\],/u)?.[1] || '';
+  const currentNotes = releaseNotesBlock.slice(releaseNotesBlock.indexOf(JSON.stringify(currentVersion))).split('],')[0];
   const bullets = [...currentNotes.matchAll(/"([^"]+)"/gu)];
   assert.ok(bullets.length >= 2 && bullets.length <= 5, 'current release notes stay concise');
 
@@ -96,7 +97,7 @@ test('unhealthy streams recover faster than healthy stalled streams', () => {
   const source = loadDropperSource(root);
   assert.match(source, /const UNHEALTHY_STREAM_STALLED_MS = 2 \* 60 \* 1000;/u);
   assert.match(source, /const HEALTHY_STREAM_STALLED_MS = 6 \* 60 \* 1000;/u);
-  assert.match(source, /function ensureStreamPlaying\(\)/u);
+  assert.match(source, /function ensureStreamPlaying\(explicit = false\)/u);
 });
 
 test('progress panel stays solid without auto-collapse fade timing', () => {
@@ -109,7 +110,7 @@ test('progress panel stays solid without auto-collapse fade timing', () => {
 test('README stays feature-focused without npm install guidance', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
   assert.match(readme, /## What Dropper Does/u);
-  assert.match(readme, /href="https:\/\/raw\.githubusercontent\.com\/ExtraPotions\/Dropper\/main\/dropper\.user\.js(?:\?v=[\d.]+)?"/u);
+  assert.match(readme, /href="https:\/\/raw\.githubusercontent\.com\/ExtraPotions\/Dropper\/main\/dropper\.user\.js(?:\?v=[\d.A-Za-z-]+)?"/u);
   assert.match(readme, /docs\/screenshots\/progress-panel\.png/u);
   assert.match(readme, /docs\/screenshots\/drops-menu\.png/u);
   assert.match(readme, /docs\/screenshots\/streams-menu\.png/u);

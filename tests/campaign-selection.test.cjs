@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const { loadDropperSource } = require("./load-source.cjs");
+const { loadDropperSource, loadActiveViewing } = require("./load-source.cjs");
 const source = loadDropperSource();
 
 const extractStart = source.indexOf("  function extractCampaignCatalog");
@@ -182,7 +182,10 @@ assert.equal(completedKeys.has("open-campaign"), false, "a campaign leaving one 
 
 const pickerStart = source.indexOf("  function requiresSubscription");
 const pickerEnd = source.indexOf("\n  function maybeAdvanceExpiredCampaign", pickerStart);
+const activeViewing = loadActiveViewing();
 const pickerContext = {
+  dropperPreconditionsMet: (drop, drops) => activeViewing.planPrerequisites(drop, drops).ready,
+  campaignPriority: () => 0,
   EXCLUDED_CATEGORY_SLUGS: new Set(["first-partners-collection"]),
   EXCLUDED_CAMPAIGN_NAMES: new Set(["first partners collection"]),
   CAMPAIGN_WINNABLE_BUFFER_MS: 3 * 60 * 1000,
@@ -636,7 +639,7 @@ const sameGameCampaign = {
       id: "drop-next",
       name: "Drop 1 - PRG Gated Signature Stones",
       requiredMinutesWatched: 30,
-      preconditionDrops: [{ id: "drop-done" }],
+      preconditionDrops: [{ id: "drop-done", requiresClaim: false }],
       self: { currentMinutesWatched: 0, isClaimed: false },
     },
   ],
@@ -647,7 +650,7 @@ const remainingSameGame = pickerContext.pickRemaining(
   "drop-done",
   "Finished Badge",
 );
-assert.equal(remainingSameGame?.id, "drop-next", "same-game continuation finds the next unfinished Drop after a claim");
+assert.equal(remainingSameGame?.id, "drop-next", "same-game continuation honors an explicit completed prerequisite requirement");
 assert.equal(remainingSameGame?.campaignKey || remainingSameGame?.campaignId, "mcoc-campaign", "same-game continuation keeps campaign identity");
 assert.equal(remainingSameGame?.requiredMinutes, 30, "same-game continuation preserves watch requirements");
 assert.equal(

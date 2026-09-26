@@ -12,3 +12,12 @@ function loadDropperSource(root = path.resolve(__dirname, '..')) {
 }
 
 module.exports = { loadDropperSource };
+
+function loadActiveViewing() {
+  const vm = require('node:vm');
+  const context = {};
+  const module = fs.readFileSync(path.join(__dirname, '../src/active-viewing.js'), 'utf8');
+  vm.runInNewContext(module + '\nthis.active = DropperActiveViewing;', context);
+  return context.active;
+}
+module.exports.loadActiveViewing = loadActiveViewing;
