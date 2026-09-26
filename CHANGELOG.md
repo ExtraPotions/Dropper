@@ -1,3 +1,10 @@
+## 3.3.0-dev.3 - 2026-09-25
+
+- Tracks claim-selector observations over time and distinguishes monitoring, recent observations, stale observations, and actual detection failures.
+- Adds explicit recovery diagnosis for viewer pause, offline streams, wrong categories, eligibility uncertainty, buffering, delayed credit, and stalled credit.
+- Adds an account-and-reward-scoped localStorage claim lease as the fallback when Web Locks are unavailable.
+- Preserves existing oldest-tab routing ownership and persisted pending-claim suppression while strengthening the fallback against duplicate cross-tab claims.
+
 ## 3.3.0-dev.2 - 2026-09-25
 
 - Adds deadline-aware campaign sequencing that moves known-unfinishable choices behind viable campaigns before applying personal priority, urgency, active progress, and remaining watch time.
