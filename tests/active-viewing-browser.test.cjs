@@ -22,6 +22,7 @@ const exposed = source.replace('  startDropper();\n})();', `
     continueClaim: continueAfterConfirmedDropClaim, sweep: sweepClaimReadyInventory, current: () => currentDrop,
     status: () => ({ viewing: viewingIntent.snapshot(), selectors: claimHealth }),
     activityStatus: dropActivityStatus, claimSummary: claimHealthSummary,
+    eligibilityCompact: eligibilityCompactPresentation,
     setFindNext: value => { settings.findNextStream = Boolean(value); },
     pauseIntent: () => { viewingIntent.pause(true); },
   };
@@ -448,4 +449,81 @@ test('claim history panel exposes a compact selector and sweep health summary', 
   assert.match(result.summary, /^Claims: none/);
   assert.match(result.summary, /Drop: monitoring/);
   assert.equal(result.rendered, result.summary);
+}));
+
+
+test('support heart replaces the permanent donation note and opens a compact popover', async () => fixture(async page => {
+  const before = await page.evaluate(() => {
+    window.dropperShow();
+    const root = document.getElementById('tdh-root').shadowRoot;
+    const button = root.getElementById('tdh-support-button');
+    const close = root.getElementById('tdh-rail-close');
+    const actions = button?.closest('.header-actions');
+    return {
+      button: Boolean(button),
+      close: Boolean(close),
+      siblings: actions ? [...actions.children].map(node => node.id || node.className) : [],
+      expanded: button?.getAttribute('aria-expanded'),
+      popoverHidden: root.getElementById('tdh-support-popover')?.hidden,
+      permanentNote: Boolean(root.getElementById('tdh-support-note')),
+    };
+  });
+  assert.equal(before.button, true);
+  assert.equal(before.close, true);
+  assert.equal(before.permanentNote, false);
+  assert.equal(before.expanded, 'false');
+  assert.equal(before.popoverHidden, true);
+  assert.equal(before.siblings.at(-1), 'tdh-rail-close');
+
+  const opened = await page.evaluate(() => {
+    const root = document.getElementById('tdh-root').shadowRoot;
+    root.getElementById('tdh-support-button').click();
+    const popover = root.getElementById('tdh-support-popover');
+    return {
+      hidden: popover.hidden,
+      text: popover.textContent.replace(/\s+/g, ' ').trim(),
+      expanded: root.getElementById('tdh-support-button').getAttribute('aria-expanded'),
+    };
+  });
+  assert.equal(opened.hidden, false);
+  assert.equal(opened.expanded, 'true');
+  assert.match(opened.text, /Support Dropper/);
+  assert.match(opened.text, /Donations are optional\. All features stay free\./);
+}));
+
+test('eligibility uses a compact expandable chip with concise state wording', async () => fixture(async page => {
+  const states = await page.evaluate(() => {
+    const t = window.__dropperTest;
+    return {
+      eligible: t.eligibilityCompact({ code: 'eligible', estimateMinutes: 88 }),
+      deadline: t.eligibilityCompact({ code: 'deadline-risk', estimateMinutes: 88 }),
+      account: t.eligibilityCompact({ code: 'account-link' }),
+      prerequisite: t.eligibilityCompact({ code: 'prerequisite-required' }),
+      wrong: t.eligibilityCompact({ code: 'wrong-channel' }),
+      unknown: t.eligibilityCompact({ code: 'unknown' }),
+    };
+  });
+  assert.deepEqual(states.eligible, { text: '✓ Eligible · 88 min remaining', tone: 'good' });
+  assert.deepEqual(states.deadline, { text: '⚠ Deadline Risk · 88 min needed', tone: 'bad' });
+  assert.equal(states.account.text, '⚠ Account Link Required');
+  assert.equal(states.prerequisite.text, '⚠ Previous Reward Required');
+  assert.equal(states.wrong.text, '⚠ Stream Not Eligible');
+  assert.equal(states.unknown.text, '? Eligibility Not Verified');
+
+  const dom = await page.evaluate(() => {
+    const root = document.getElementById('tdh-root').shadowRoot;
+    const details = root.getElementById('tdh-reward-eligibility');
+    return {
+      tag: details?.tagName,
+      open: details?.open,
+      summary: root.getElementById('tdh-eligibility-summary')?.textContent || '',
+      detail: root.getElementById('tdh-eligibility-detail')?.textContent || '',
+      oldNote: details?.classList.contains('campaign-manager-note') || false,
+    };
+  });
+  assert.equal(dom.tag, 'DETAILS');
+  assert.equal(dom.open, false);
+  assert.equal(dom.oldNote, false);
+  assert.ok(dom.summary.length > 0);
+  assert.ok(dom.detail.length > 0);
 }));
