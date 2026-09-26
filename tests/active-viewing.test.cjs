@@ -354,3 +354,19 @@ test('normal campaign priority removes explicit storage instead of persisting a 
   assert.match(source, /if \(priority === 0\) localStorage\.removeItem\(entry\.key\)/);
   assert.match(source, /prioritySource: campaignPriorityEntry\(item\.game\)\.explicit \? 'saved' : 'default'/);
 });
+
+
+test('stream routing ranks campaign evidence before viewer preference', () => {
+  assert.match(source, /function streamCandidateEvidence\(/);
+  assert.match(source, /live-campaign-allowed/);
+  assert.match(source, /live-drops-tagged/);
+  assert.match(source, /live-same-game/);
+  assert.match(extract('routingControllerFindStream'), /let candidate = candidates\[0\] \|\| null/);
+  assert.match(extract('discoverQueueCandidates'), /rankStreamCandidatesByEvidence/);
+});
+
+test('routing diagnostics retain evidence rank and label for the chosen stream', () => {
+  assert.match(source, /evidenceRank: candidate\.evidenceRank/);
+  assert.match(source, /evidenceLabel: candidate\.evidenceLabel/);
+  assert.match(source, /evidenceLabel: item\.evidenceLabel/);
+});
