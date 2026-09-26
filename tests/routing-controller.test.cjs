@@ -184,11 +184,12 @@ test('category cards without Drops badges use probationary verification', () => 
   const findStart = source.indexOf('  function routingControllerFindStream');
   const findEnd = source.indexOf('\n  function routingControllerOpenStream', findStart);
   const find = source.slice(findStart, findEnd);
-  assert.match(find, /const taggedCandidate = candidates\.find\(\(item\) => item\.dropsTagged === true\)/u);
-  assert.match(find, /const probationaryCandidate = candidates\.find\(\(item\) => item\.dropsTagged !== true\)/u);
+  assert.match(source, /function streamCandidateEvidence\(/u);
+  assert.match(source, /live-drops-tagged/u);
+  assert.match(source, /live-same-game/u);
+  assert.match(find, /let candidate = candidates\[0\] \|\| null/u);
   assert.match(find, /probationary: !\(visibleDropsProof \|\| campaignAclProof\)/u);
   assert.match(find, /probationary-stream/u);
-  assert.doesNotMatch(find, /\.filter\(\(candidate\) => candidate\.dropsTagged === true\)/u);
 
   const verifyStart = source.indexOf('  function routingControllerVerifyStream');
   const verifyEnd = source.indexOf('\n  function routingControllerEarning', verifyStart);
@@ -293,8 +294,9 @@ test('allow-list campaigns stay on permitted channels without Drops-tag probing'
   assert.match(classifier, /const campaignCompatible = !allowListPresent \|\| allowListMatch;/u);
   assert.match(classifier, /reason = "campaign-allow-list-match"/u);
   assert.match(classifier, /reason = "campaign-allow-list-mismatch"/u);
+  assert.match(source, /live-campaign-allowed/u);
   assert.doesNotMatch(classifier, /drops-tagged-campaign-probe/u);
-  assert.match(find, /source: "campaign-acl"/u);
+  assert.match(find, /source: ['"]campaign-acl['"]/u);
   assert.match(find, /navigationReason: campaignAclProof \? "campaign-acl-stream"/u);
   assert.doesNotMatch(find, /campaign-drops-probe/u);
 
