@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.0-dev.6
+// @version      3.3.0-dev.7
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.0-dev.6";
+  const APP_VERSION = "3.3.0-dev.7";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -424,6 +424,7 @@ const ExtraPotionsDiagnostics = (() => {
   const HANDOFF_STAGE_TIMEOUT_MS = 45 * 1000;
   const HEARTBEAT_INTERVAL_MS = 5000;
   const CLAIM_SCAN_MIN_INTERVAL_MS = 5000;
+  const INVENTORY_CLAIM_SWEEP_LIMIT = 3;
   const BONUS_CONFIRM_SETTLE_MS = 3000;
   const STALL_RECOVERY_RECHECK_MS = 30 * 1000;
   const STARTUP_NETWORK_QUIET_MS = 12 * 1000;
@@ -529,10 +530,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
-    "3.3.0-dev.6": [
-      "Re-evaluates the same campaign immediately after a confirmed Drop claim unlocks a claim-gated successor.",
-      "Keeps the current stream when it is still live in the same game and re-verifies the newly unlocked reward in place.",
-      "Avoids preempting a different campaign after that campaign has already begun earning credited progress."
+    "3.3.0-dev.7": [
+      "Sweeps completed unclaimed rewards already present in authoritative Twitch Inventory data through Dropper's existing claim lock and ledger.",
+      "Limits each inventory sweep to three rewards, orders by campaign deadline and reward order, and excludes subscription rewards or entries without claim instance IDs.",
+      "Keeps the currently watched earning reward on its existing claim path so background completed rewards cannot disturb active viewing."
     ],
 
     "3.2.31": [
@@ -1231,6 +1232,59 @@ const ExtraPotionsDiagnostics = (() => {
       }
       return Object.freeze({ run });
     }
+    function inventoryClaimCandidates(campaigns, { limit = 3, excludeRewardId = '' } = {}) {
+      const excluded = text(excludeRewardId);
+      const candidates = [];
+      for (const campaign of campaigns || []) {
+        const campaignId = text(campaign?.id);
+        const campaignKey = campaignId || text(campaign?.campaignKey);
+        const game = text(campaign?.game?.displayName || campaign?.game?.name || campaign?.game);
+        const endAt = text(campaign?.endAt);
+        const parsedEnd = endAt ? Date.parse(endAt) : NaN;
+        const endMs = Number.isFinite(parsedEnd) ? parsedEnd : Number.MAX_SAFE_INTEGER;
+        const drops = campaign?.timeBasedDrops || campaign?.drops || [];
+        drops.forEach((drop, dropOrder) => {
+          const self = drop?.self || {};
+          const rewardId = text(drop?.id);
+          if (excluded && rewardId && rewardId === excluded) return;
+          if (self.isClaimed === true || drop?.isClaimed === true) return;
+          const requiredSubs = Number(drop?.requiredSubs ?? drop?.requiredSubscriptions ?? drop?.requiredSubscriptionCount ?? drop?.subscriptionRequirement?.requiredSubs ?? 0) || 0;
+          if (requiredSubs > 0) return;
+          const required = number(drop?.requiredMinutesWatched ?? drop?.requiredMinutes);
+          const current = number(self.currentMinutesWatched ?? drop?.currentMinutes);
+          const instanceID = text(self.dropInstanceID || drop?.dropInstanceID);
+          if (!instanceID || required === null || required <= 0 || current === null || current < required) return;
+          candidates.push({
+            id: rewardId,
+            dropInstanceID: instanceID,
+            isClaimed: false,
+            name: text(drop?.name || drop?.benefitEdges?.[0]?.benefit?.name || 'Completed Drop'),
+            game,
+            campaignId,
+            campaignKey,
+            campaign: text(campaign?.name || game),
+            campaignStartAt: text(campaign?.startAt),
+            campaignEndAt: endAt,
+            dropStartAt: text(drop?.startAt),
+            dropEndAt: text(drop?.endAt),
+            endMs,
+            currentMinutes: current,
+            requiredMinutes: required,
+            remainingMinutes: 0,
+            percent: 100,
+            inventorySweep: true,
+            dropOrder,
+          });
+        });
+      }
+      candidates.sort((a, b) => {
+        if (a.endMs !== b.endMs) return a.endMs - b.endMs;
+        if (a.campaignKey !== b.campaignKey) return a.campaignKey.localeCompare(b.campaignKey);
+        return a.dropOrder - b.dropOrder;
+      });
+      const max = Math.max(0, Math.min(10, Number(limit) || 0));
+      return max ? candidates.slice(0, max) : [];
+    }
     function claimPresentation(record) {
       const outcome = record?.outcome;
       const evidence = record?.evidence;
@@ -1244,7 +1298,7 @@ const ExtraPotionsDiagnostics = (() => {
       return 'Claim Not Confirmed';
     }
 
-    return Object.freeze({ createIntent, createClaims, claimResponse, claimFailure, planPrerequisites, deadlineAssessment, campaignSequence, rankCampaignCandidates, eligibility, selectorHealth, recoveryDiagnosis, createLease, claimPresentation });
+    return Object.freeze({ createIntent, createClaims, claimResponse, claimFailure, planPrerequisites, deadlineAssessment, campaignSequence, rankCampaignCandidates, eligibility, selectorHealth, recoveryDiagnosis, createLease, inventoryClaimCandidates, claimPresentation });
   })();
   // END DROPPER ACTIVE VIEWING
 
@@ -1291,6 +1345,8 @@ const ExtraPotionsDiagnostics = (() => {
   let claimReadySince = 0;
   let claimReadySignature = "";
   let lastClaimIntegrityFallback = null;
+  let inventoryClaimSweepPromise = null;
+  let inventoryClaimSweepState = { at: 0, source: '', candidates: 0, selected: 0, confirmed: 0, reason: 'not-run' };
   let lastProgressReconcile = null;
   let lastSessionPoll = null;
   let twitchNetworkHookMode = "";
@@ -6288,6 +6344,8 @@ const ExtraPotionsDiagnostics = (() => {
       const discovered = extractCampaignCatalog({ data: { currentUser: { inventory: { dropCampaignsInProgress: inventoryCampaigns } } } });
       if (discovered.length) rememberCampaignCatalog(discovered, source);
       applyInventorySnapshot(inventoryCampaigns, source);
+      reconcileClaimHistory(inventoryCampaigns);
+      void queueInventoryClaimSweep(inventoryCampaigns, source);
     }
 
     const campaignPool = mergeCampaigns(
@@ -10821,6 +10879,7 @@ const ExtraPotionsDiagnostics = (() => {
       if (discoveredCampaigns.length) rememberCampaignCatalog(discoveredCampaigns, "dropper-inventory-poll");
       applyInventorySnapshot(inventoryCampaigns, "dropper-in-progress-poll");
       reconcileClaimHistory(inventoryCampaigns);
+      void queueInventoryClaimSweep(inventoryCampaigns, "inventory-poll");
 
       // Live Inventory is authoritative for credited watch minutes. Apply the
       // active Inventory Drop immediately, even on category/search pages where
@@ -11350,6 +11409,41 @@ const ExtraPotionsDiagnostics = (() => {
     } catch (_) { return false; }
   }
 
+  async function sweepClaimReadyInventory(campaigns, source = 'inventory') {
+    const state = { at: Date.now(), source, candidates: 0, selected: 0, confirmed: 0, reason: '' };
+    if (!settings.claimDrops) { state.reason = 'disabled'; inventoryClaimSweepState = state; return 0; }
+    if (storageAccountLogin() === 'signed-out') { state.reason = 'signed-out'; inventoryClaimSweepState = state; return 0; }
+    if (!isAutoRoutingController()) { state.reason = 'secondary-tab'; inventoryClaimSweepState = state; return 0; }
+    const candidates = DropperActiveViewing.inventoryClaimCandidates(campaigns, {
+      limit: INVENTORY_CLAIM_SWEEP_LIMIT,
+      excludeRewardId: currentDrop?.id || '',
+    });
+    state.candidates = candidates.length;
+    if (!candidates.length) { state.reason = 'none-ready'; inventoryClaimSweepState = state; return 0; }
+    for (const drop of candidates) {
+      if (storageAccountLogin() === 'signed-out' || !isAutoRoutingController()) { state.reason = 'context-changed'; break; }
+      state.selected += 1;
+      const accepted = await claimDropViaGql(drop);
+      if (accepted) state.confirmed += 1;
+    }
+    state.at = Date.now();
+    if (!state.reason) state.reason = state.confirmed ? 'claimed' : 'checked';
+    inventoryClaimSweepState = state;
+    logActivity('inventory-claim-sweep', `Checked ${state.selected} completed inventory reward${state.selected === 1 ? '' : 's'}`, {
+      source, candidates: state.candidates, selected: state.selected, confirmed: state.confirmed, limit: INVENTORY_CLAIM_SWEEP_LIMIT,
+    });
+    return state.confirmed;
+  }
+
+  function queueInventoryClaimSweep(campaigns, source = 'inventory') {
+    if (inventoryClaimSweepPromise) return inventoryClaimSweepPromise;
+    const snapshot = Array.isArray(campaigns) ? campaigns : [];
+    inventoryClaimSweepPromise = Promise.resolve()
+      .then(() => sweepClaimReadyInventory(snapshot, source))
+      .catch(() => 0)
+      .finally(() => { inventoryClaimSweepPromise = null; });
+    return inventoryClaimSweepPromise;
+  }
   function maybeClaimCurrentDrop(drop) {
     const now = Date.now();
     if (!drop?.dropInstanceID || now - lastDropAt < 1200) return;
@@ -15016,7 +15110,7 @@ const ExtraPotionsDiagnostics = (() => {
       watchingLogin: watchingLogin(),
       currentDrop,
       viewing: { ...viewingIntent.snapshot(), screenWakeLock: Boolean(screenWakeLock), navigationBlocked: lastViewingNavigationBlock || null },
-      claims: { history: claimLedger().snapshot(), selectors: claimSelectorHealthSnapshot(now), crossTabLock: navigator.locks?.request ? 'web-locks' : 'local-storage-lease', scanMinimumMs: CLAIM_SCAN_MIN_INTERVAL_MS, lastScanAt: lastClaimScanAt ? new Date(lastClaimScanAt).toISOString() : null, limit: 100 },
+      claims: { history: claimLedger().snapshot(), selectors: claimSelectorHealthSnapshot(now), crossTabLock: navigator.locks?.request ? 'web-locks' : 'local-storage-lease', scanMinimumMs: CLAIM_SCAN_MIN_INTERVAL_MS, lastScanAt: lastClaimScanAt ? new Date(lastClaimScanAt).toISOString() : null, inventorySweep: { ...inventoryClaimSweepState, at: inventoryClaimSweepState.at ? new Date(inventoryClaimSweepState.at).toISOString() : null, limit: INVENTORY_CLAIM_SWEEP_LIMIT }, limit: 100 },
       rewardEligibility: activeRewardEligibility(),
       rewardImage: (() => {
         const direct = dropBenefitImage(currentDrop);
