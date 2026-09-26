@@ -6133,7 +6133,7 @@ const ExtraPotionsDiagnostics = (() => {
           open = await enrichCampaignsWithDropDetails(open, `${source}-inventory`);
           open = openDashboardCampaigns(open);
           if (open.length) {
-            replaceCatalogFromDashboard(open, `${source}-inventory-fallback`);
+            rememberCampaignCatalog(open, `${source}-inventory-fallback`);
             clearGqlFailurePause(source);
             markCampaignPageImport(open.length, `${source}-inventory`, CAMPAIGN_PAGE_DISPLAY.GQL_INVENTORY);
             lastCampaignAuthImportError = "";
