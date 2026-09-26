@@ -1,3 +1,10 @@
+## 3.3.0-dev.12 - 2026-09-25
+
+- Anchors the Support Dropper popover to the full menu header instead of the heart-button wrapper.
+- Constrains the support popover width to the available menu header width so Narrow mode cannot overflow outside the menu.
+- Preserves the existing compact Ko-fi support interaction at Full, Compact, and Narrow widths.
+- Adds browser geometry coverage asserting the support popover remains inside the Narrow menu rectangle.
+
 ## 3.3.0-dev.11 - 2026-09-25
 
 - Connects the compact Support Dropper popover to https://ko-fi.com/expdare.
