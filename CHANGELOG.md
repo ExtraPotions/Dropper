@@ -1,3 +1,9 @@
+## 3.3.2 - 2026-09-25
+
+- Makes the Badge Only progress card use the same inner menu content width as Drops, Streams, Appearance, and System.
+- Removes the 3.3.1 outer-dock width override and its negative side-margin compensation.
+- Keeps Full, Compact, and Narrow responsible for the dock width while Badge Only inherits 100% of the dock content box.
+- Adds a release regression contract that rejects a return to outer-width padding bleed.
 ## 3.3.1 - 2026-09-25
 
 - Makes the Badge Only progress card use the same Full, Compact, and Narrow width calculation as the normal progress panel, menu, and update notice.
