@@ -1,6 +1,6 @@
 # Active-viewing implementation
 
-Development version: 3.3.0-dev.5. Baseline: Dropper 3.2.31.
+Development version: 3.3.0-dev.6. Baseline: Dropper 3.2.31.
 
 ## Behavior
 
@@ -113,3 +113,10 @@ Stream routing now uses an explicit evidence tier before viewer-count preference
 Lowest Viewers and Highest Viewers only break ties inside the same evidence tier, so a generic low-viewer stream cannot outrank a campaign-allow-listed channel. Any Eligible preserves its existing tie behavior after evidence quality is applied.
 
 The selected candidate's evidence rank and label are retained in routing diagnostics so a future live report can explain why Dropper chose a channel.
+
+
+## 3.3.0-dev.6 claim-gated reward tranche
+
+Watch completion and claim completion are now treated separately. A successor reward that only requires the previous reward to be completed can already advance at 100% watch progress. A successor that explicitly requires the previous reward to be claimed is re-evaluated only after Dropper receives confirmed or already-claimed evidence.
+
+The confirmed claim is applied to Dropper's in-memory campaign snapshots before prerequisite evaluation. If that unlocks another watch-time reward in the same campaign, it becomes the active target. When the currently viewed stream is still live in the same game, Dropper re-verifies it in place instead of navigating away. A different campaign that has already begun earning credited progress is not preempted.
