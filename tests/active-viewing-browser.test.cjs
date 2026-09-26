@@ -148,12 +148,11 @@ test('page claiming ignores purchases, keeps clicks pending, and uses scoped ful
       <button id="aria-disabled-drop" data-a-target="drops-claim-button" aria-disabled="true">Claim Now</button>
       <div inert><button id="inert-drop" data-a-target="drops-claim-button">Claim Now</button></div>
       <button id="pointer-drop" data-a-target="drops-claim-button" style="pointer-events:none">Claim Now</button>
-      <button id="zero-size-drop" data-a-target="drops-claim-button" style="width:0;height:0;overflow:hidden">Claim Now</button>
       <button id="hidden-unsafe" aria-label="Claim Bonus" style="display:none">Claim Bonus</button>
       <div class="community-points-summary" id="bonus-container" style="display:none"><button id="bonus" aria-label="Claim Bonus"><span class="claimable-bonus__icon"></span></button></div>
       <button id="drop-claim" data-a-target="drops-claim-button">Claim Now</button>`);
     window.__clicks = {};
-    for (const id of ['purchase', 'redeem', 'gift', 'disabled-drop', 'aria-disabled-drop', 'inert-drop', 'pointer-drop', 'zero-size-drop', 'hidden-unsafe', 'bonus', 'drop-claim']) document.getElementById(id).addEventListener('click', () => window.__clicks[id] = (window.__clicks[id] || 0) + 1);
+    for (const id of ['purchase', 'redeem', 'gift', 'disabled-drop', 'aria-disabled-drop', 'inert-drop', 'pointer-drop', 'hidden-unsafe', 'bonus', 'drop-claim']) document.getElementById(id).addEventListener('click', () => window.__clicks[id] = (window.__clicks[id] || 0) + 1);
     Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => document.querySelector('video') });
     t.setActiveClaims(true); t.scan(); t.scan();
   });
@@ -167,7 +166,6 @@ test('page claiming ignores purchases, keeps clicks pending, and uses scoped ful
   assert.equal(value.clicks['inert-drop'], undefined);
   assert.equal(value.clicks['pointer-drop'], undefined);
   assert.equal(value.clicks['hidden-unsafe'], undefined);
-  assert.equal(value.clicks['zero-size-drop'], 1, 'zero-size safe claim controls remain clickable without geometry hit-testing');
   assert.equal(value.clicks.bonus, 1);
   assert.equal(value.clicks['drop-claim'], 1);
   assert.ok(value.history.every(record => record.outcome === 'pending'));

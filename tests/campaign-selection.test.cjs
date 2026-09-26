@@ -1001,6 +1001,6 @@ assert.match(source, /const datedOpenCampaigns = campaigns\.filter\(\(campaign\)
 assert.match(source, /lastInventoryCampaigns = datedOpenCampaigns/u, "closed or expired Inventory campaigns cannot remain active progress sources");
 assert.match(source, /function activeCampaignAllowedChannels\(\)[\s\S]*campaignIsRoutingOpen\(currentDrop\)/u, "campaign allow lists are ignored once the active campaign is no longer dated-open");
 assert.match(source, /function channelSupportsTargetCampaign\([\s\S]*campaignIsRoutingOpen\(campaign, now\)/u, "channel campaign proof only accepts dated-open campaigns");
-assert.match(source, /function dropIdentityMatchesTarget\([\s\S]*targetCampaignOpen:[\s\S]*matchesTarget: Boolean\(targetRoutingState\.open/u, "session identity cannot match a closed or expired target");
+assert.match(source, /function dropIdentityMatchesTarget\([\s\S]*targetCampaignOpen:[\s\S]*matchesTarget: Boolean\([\s\S]*targetRoutingState\.open[\s\S]*exactDropMatched \|\| campaignFallbackMatched/u, "session identity cannot match a closed or expired target");
 assert.match(source, /function pruneStandbyCache\([\s\S]*campaignMemoryRoutingState/u, "standby cache purges entries whose campaign window is no longer open");
 assert.match(source, /activeCampaignRouting: \{\s*lifecycle: currentDrop \? campaignRoutingState\(currentDrop, now\) : null/u, "diagnostics expose the active campaign lifecycle decision");

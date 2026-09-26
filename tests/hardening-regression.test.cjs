@@ -15,6 +15,11 @@ test('claim selectors are centralized and unsafe automatic actions stay fail clo
   assert.match(source, /pointerEvents === 'none'/);
   assert.match(source, /subscribe\|subscription\|gift\|purchase\|buy\|redeem\|spend/);
   assert.match(source, /button\.closest\(TWITCH_DOM_SELECTORS\.bonusContainer\)/);
+  const renderedStart = source.indexOf('  function claimTargetRendered(');
+  const renderedEnd = source.indexOf('\n  function isSafeClaimTarget', renderedStart);
+  assert.notEqual(renderedStart, -1);
+  assert.notEqual(renderedEnd, -1);
+  assert.doesNotMatch(source.slice(renderedStart, renderedEnd), /getClientRects|getBoundingClientRect/, 'claim safety does not depend on geometry size');
 });
 
 test('same campaign but different known Drop IDs cannot feed locked reward progress', () => {
