@@ -1,3 +1,10 @@
+## 3.3.0-dev.13 - 2026-09-25
+
+- Restores exact reward metadata from known Inventory/catalog rows after reload when an identified Drop was left with a generic `Current drop` label.
+- Stops treating dated duration titles such as `1 Hour (Sep 25)` as generic card metadata while preserving filtering for plain duration-only labels.
+- Reuses persisted routing verification only when the same channel, campaign, Drop, and game identities match and recent Twitch GQL evidence is still fresh.
+- Keeps stale or identity-mismatched persisted proof fail-closed, and adds browser coverage for both metadata and eligibility reload reconciliation.
+
 ## 3.3.0-dev.12 - 2026-09-25
 
 - Anchors the Support Dropper popover to the full menu header instead of the heart-button wrapper.
