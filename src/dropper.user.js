@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.0-dev.7
+// @version      3.3.0-dev.8
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.0-dev.7";
+  const APP_VERSION = "3.3.0-dev.8";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -530,10 +530,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
-    "3.3.0-dev.7": [
-      "Sweeps completed unclaimed rewards already present in authoritative Twitch Inventory data through Dropper's existing claim lock and ledger.",
-      "Limits each inventory sweep to three rewards, orders by campaign deadline and reward order, and excludes subscription rewards or entries without claim instance IDs.",
-      "Keeps the currently watched earning reward on its existing claim path so background completed rewards cannot disturb active viewing."
+    "3.3.0-dev.8": [
+      "Keeps dashboard and All Campaigns data authoritative for catalog membership while Inventory remains authoritative for progress.",
+      "Prevents a one-campaign Inventory fallback from shrinking a previously populated campaign catalog after navigation or integrity fallback.",
+      "Still overlays authoritative Inventory watch progress onto matching catalog campaigns without inventing or removing unrelated campaigns."
     ],
 
     "3.2.31": [
