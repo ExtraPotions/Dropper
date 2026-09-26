@@ -535,3 +535,25 @@ test('eligibility uses a compact expandable chip with concise state wording', as
   assert.ok(dom.summary.length > 0);
   assert.ok(dom.detail.length > 0);
 }));
+
+
+test('support popover stays inside narrow menu bounds', async () => fixture(async page => {
+  const geometry = await page.evaluate(async () => {
+    window.dropperShow();
+    const t = window.__dropperTest;
+    t.setWidth('narrow');
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const root = document.getElementById('tdh-root').shadowRoot;
+    root.getElementById('tdh-support-button').click();
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    const menu = root.getElementById('tdh-tools-dock').getBoundingClientRect();
+    const popover = root.getElementById('tdh-support-popover').getBoundingClientRect();
+    return {
+      menu: { left: menu.left, right: menu.right, width: menu.width },
+      popover: { left: popover.left, right: popover.right, width: popover.width },
+    };
+  });
+  assert.ok(geometry.popover.left >= geometry.menu.left - 0.5);
+  assert.ok(geometry.popover.right <= geometry.menu.right + 0.5);
+  assert.ok(geometry.popover.width <= geometry.menu.width + 0.5);
+}));
