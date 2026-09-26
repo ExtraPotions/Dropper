@@ -4200,6 +4200,8 @@ const ExtraPotionsDiagnostics = (() => {
     if (!ui) return;
     const now = Date.now();
     syncViewingContext();
+    restoreCurrentDropMetadataFromKnownCampaigns();
+    restorePersistedRoutingVerification(now);
     lastHeartbeatAt = now;
     publishTabPresence();
     enforceUpdateReloadPending(now);
@@ -6021,7 +6023,6 @@ const ExtraPotionsDiagnostics = (() => {
     campaignCatalogCache = { at: lastCampaignCatalogAt, campaigns: lastCampaignCatalog };
     try { writeSession(CAMPAIGN_CATALOG_KEY, campaignCatalogCache); } catch (_) { /* ignore storage quota failures */ }
     rememberCampaignStates(lastCampaignCatalog, source);
-    restoreCurrentDropMetadataFromKnownCampaigns();
     if (firstCaptureThisPage || previousCount !== lastCampaignCatalog.length) {
       logActivity("campaign-catalog", `Saved ${lastCampaignCatalog.length} Twitch Drops campaigns`, { source });
     }
