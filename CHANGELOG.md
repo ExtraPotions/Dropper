@@ -1,3 +1,10 @@
+## 3.3.3 - 2026-09-26
+
+- Recognizes credited progress on manually selected streams independently of automatic routing.
+- Anchors startup verification to the selected stream rather than refreshing it on every poll.
+- Preserves manual playback and automatic-switching preferences.
+- Adds regression coverage for manual earning, paused playback, and verification timing.
+
 ## 3.3.2 - 2026-09-25
 
 - Makes the Badge Only progress card use the same inner menu content width as Drops, Streams, Appearance, and System.

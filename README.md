@@ -22,14 +22,18 @@
 ## Install
 
 <p>
-  <a href="https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js?v=3.3.2">
+  <a href="https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js?v=3.3.3">
     <img alt="Install Dropper" src="https://img.shields.io/badge/Install-Dropper-9147FF?style=flat-square">
   </a>
-    <img alt="Version 3.3.2" src="https://img.shields.io/badge/version-3.3.2?style=flat-square">
+    <img alt="Version 3.3.3" src="https://img.shields.io/badge/version-3.3.3?style=flat-square">
   <a href="https://github.com/ExtraPotions/Dropper/releases">
     <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/ExtraPotions/Dropper/total?style=flat-square&label=Downloads">
   </a>
 </p>
+
+## 3.3.3
+
+Confirmed Twitch progress now marks manually selected streams as earning even with automatic switching disabled. Routine polls no longer restart the initial verification timer.
 
 ## What Dropper Does
 

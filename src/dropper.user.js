@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.2
+// @version      3.3.3
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.2";
+  const APP_VERSION = "3.3.3";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -531,6 +531,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.3": [
+      "Recognizes confirmed progress on manually selected streams while automatic routing is disabled.",
+      "Keeps the initial verification deadline fixed across routine progress polls."
+    ],
     "3.3.2": [
       "Makes Badge Only progress match the menu section cards by using the dock content width instead of the outer dock width.",
       "Removes the 3.3.1 padding bleed so Full, Compact, and Narrow align with Drops, Streams, Appearance, and System."
@@ -14290,8 +14294,11 @@ const ExtraPotionsDiagnostics = (() => {
     // First-watch grace belongs to the routing/stream lifecycle. Routine GQL
     // session confirmations may refresh lastStreamVerification, but must not
     // restart the grace clock after the stream has already been established.
-    const graceAnchorAt = streamAnchorAt || verificationAt;
-    const graceAnchorSource = streamAnchorAt ? "routing-stream" : verificationAt ? "verification-fallback" : null;
+    const viewing = viewingIntent.snapshot();
+    const manualAnchorAt = viewing.manualStream && cleanText(viewing.channel).toLowerCase() === login
+      ? Number(viewing.changedAt || 0) : 0;
+    const graceAnchorAt = streamAnchorAt || manualAnchorAt || verificationAt;
+    const graceAnchorSource = streamAnchorAt ? "routing-stream" : manualAnchorAt ? "manual-stream" : verificationAt ? "verification-fallback" : null;
     const graceRemainingMs = graceAnchorAt
       ? Math.max(0, FIRST_WATCH_CREDIT_GRACE_MS - (now - graceAnchorAt))
       : 0;
@@ -14368,8 +14375,13 @@ const ExtraPotionsDiagnostics = (() => {
       Number(currentDrop?.currentMinutes || 0) > 0 &&
       timing.creditedProgressAgeMs <= UNHEALTHY_STREAM_DELAYED_MS
     );
+    const viewing = viewingIntent.snapshot();
+    const manualEarningVerified = Boolean(
+      viewing.manualStream && !viewing.paused && domVideoPlaying &&
+      creditedRecently && verificationProof.progressConfirmed
+    );
     const earningVerified = Boolean(
-      routingStreamMatches &&
+      (routingStreamMatches || manualEarningVerified) &&
       campaignVerified &&
       gameMatches
     );
@@ -14387,7 +14399,6 @@ const ExtraPotionsDiagnostics = (() => {
       )
     );
 
-    const viewing = viewingIntent.snapshot();
     const result = {
       login: login || null,
       live: Boolean(info.live),
@@ -14463,7 +14474,7 @@ const ExtraPotionsDiagnostics = (() => {
     } else if (routing.state === ROUTING_STATES.WAITING) {
       label = "Waiting";
       cls += " warn";
-    } else if (routing.state === ROUTING_STATES.EARNING && currentDrop) {
+    } else if ((routing.state === ROUTING_STATES.EARNING || health.earningVerified) && currentDrop) {
       const recoveryCode = health.recovery?.code || "healthy";
       if (health.inVerificationGrace) {
         label = settings.backgroundEarning ? "BG Earning" : "Earning";
