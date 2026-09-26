@@ -1,6 +1,6 @@
 # Active-viewing implementation
 
-Development version: 3.3.0-dev.9. Baseline: Dropper 3.2.31.
+Development version: 3.3.0-dev.10. Baseline: Dropper 3.2.31.
 
 ## Behavior
 
@@ -145,3 +145,12 @@ This preserves deadline planning, prerequisite context, next-campaign selection,
 Dropper's status text now distinguishes real stream activity from Inventory-only progress. When no stream is loaded, a current Drop is described with its game and credited watch progress plus the routing state, such as automatic switching off, finding, opening, verifying, waiting, or choosing an eligible stream. Inventory progress alone is never described as active earning.
 
 The existing Claim History details now contain one compact health line. It summarizes confirmed, pending, and attention-needed claim records, applicable Drop/Bonus/Inventory selector health, and the latest inventory-sweep result. This information stays inside System and does not add a new top-level panel or dashboard.
+
+
+## 3.3.0-dev.10 compact support and eligibility tranche
+
+The permanent donation paragraph has been removed from System. A small heart button now sits beside the menu Close control and opens a compact Support Dropper popover. The popover states that donations are optional and all features stay free. No payment destination is invented or embedded.
+
+Reward eligibility is now a compact expandable chip inside Drops. The collapsed state uses short labels such as "✓ Eligible · 88 min remaining", "⚠ Deadline Risk · 88 min needed", "⚠ Account Link Required", "⚠ Previous Reward Required", "⚠ Stream Not Eligible", or "? Eligibility Not Verified". Expanding the chip reveals the detailed eligibility explanation, timing estimate, deadline margin/risk, and campaign watch-time context when available.
+
+The verbose eligibility data remains available in Diagnostics. No new top-level panel or dashboard was added.
