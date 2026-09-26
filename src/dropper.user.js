@@ -1361,7 +1361,7 @@ const ExtraPotionsDiagnostics = (() => {
   let lastProgress = readSession("tdh-progress", 0);
   let lastProgressAt = readSession("tdh-progress-at", Date.now());
   let currentDrop = readSession("tdh-drop", null);
-  if (currentDrop && isDropCardMetadata(currentDrop.name)) {
+  if (currentDrop && isDropCardMetadata(currentDrop.name) && !cleanText(currentDrop.id)) {
     currentDrop = { ...currentDrop, name: "Current drop" };
   }
   let lastPath = "";
@@ -1447,6 +1447,7 @@ const ExtraPotionsDiagnostics = (() => {
       );
     }
   }
+  restoreCurrentDropMetadataFromKnownCampaigns();
   repairRoutingIdentity();
   let chatWidthObserver = null;
   let chatDomObserver = null;
@@ -1581,6 +1582,7 @@ const ExtraPotionsDiagnostics = (() => {
     campaignCatalogCache = loadCampaignCatalogCache();
     lastCampaignCatalog = campaignCatalogCache.campaigns;
     lastCampaignCatalogAt = campaignCatalogCache.at;
+    restoreCurrentDropMetadataFromKnownCampaigns();
     campaignMemory = loadCampaignMemory();
     ignoredCampaignGames = loadIgnoredCampaignGames();
     activityLog = readSession(ACTIVITY_LOG_KEY, []);
@@ -2116,12 +2118,75 @@ const ExtraPotionsDiagnostics = (() => {
   function dropperPreconditionsMet(drop, drops) {
     return DropperActiveViewing.planPrerequisites(drop, drops).ready;
   }
+  function persistedRoutingEligibilityProof(now = Date.now()) {
+    if (!currentDrop) return null;
+    const routing = readRoutingControllerSession();
+    if (routing.state !== ROUTING_STATES.EARNING) return null;
+
+    const login = cleanText(watchingLogin()).toLowerCase();
+    const targetStream = cleanText(routing.targetStream).toLowerCase();
+    const currentCampaignKey = cleanText(currentDrop.campaignKey || currentDrop.campaignId).toLowerCase();
+    const targetCampaignKey = cleanText(routing.targetCampaignKey).toLowerCase();
+    const currentDropId = cleanText(currentDrop.id).toLowerCase();
+    const targetDropId = cleanText(routing.targetDropId).toLowerCase();
+    if (!login || !targetStream || login !== targetStream) return null;
+    if (!currentCampaignKey || !targetCampaignKey || currentCampaignKey !== targetCampaignKey) return null;
+    if (!currentDropId || !targetDropId || currentDropId !== targetDropId) return null;
+
+    const targetGame = cleanText(currentDrop.game || routing.targetGame);
+    const routingGame = cleanText(routing.targetGame);
+    if (targetGame && routingGame && !gameNamesMatch(targetGame, routingGame)) return null;
+
+    const evidence = routing.candidateEvidence || {};
+    const evidenceAt = Number(evidence.gqlEvidenceAt || 0);
+    const evidenceAge = evidenceAt ? now - evidenceAt : Number.POSITIVE_INFINITY;
+    const evidenceTtl = Math.max(ROUTING_VERIFY_DEADLINE_MS, GQL_POLL_INTERVAL_MS * 2);
+    if (!evidenceAt || evidenceAge < -5000 || evidenceAge > evidenceTtl) return null;
+    const exactSessionMatch = Boolean(
+      evidence.gqlSessionDropMatched === true ||
+      evidence.gqlSessionCampaignMatched === true
+    );
+    if (evidence.gqlCampaignSupported !== true || !exactSessionMatch) return null;
+
+    return {
+      at: evidenceAt,
+      method: "routing-session-restored",
+      channel: login,
+      game: targetGame || null,
+      campaign: currentDrop.campaign || routing.targetCampaign || null,
+      campaignKey: currentCampaignKey,
+      proof: {
+        gameMatched: true,
+        campaignSupported: true,
+        progressConfirmed: false,
+        sessionRestored: true,
+        sessionMatched: true,
+      },
+      currentMinutes: Number(currentDrop.currentMinutes || 0),
+      requiredMinutes: Number(currentDrop.requiredMinutes || 0),
+      currentPercent: Number(currentDrop.percent || 0),
+    };
+  }
+
+  function restorePersistedRoutingVerification(now = Date.now()) {
+    if (lastStreamVerification) return false;
+    const restored = persistedRoutingEligibilityProof(now);
+    if (!restored) return false;
+    lastStreamVerification = restored;
+    return true;
+  }
+
   function activeRewardEligibility() {
     const campaign = findCampaignForDrop(lastInventoryCampaigns, currentDrop) || findCampaignForDrop(lastCampaignCatalog, currentDrop);
     const raw = (campaign?.timeBasedDrops || campaign?.drops || []).find(drop => drop.id === currentDrop?.id);
     const info = watchingLogin() ? readStreamInfo() : {};
-    const proof = lastStreamVerification;
-    const verified = Boolean(proof && proof.channel === watchingLogin() && proof.campaignKey === currentDrop?.campaignKey && (proof.proof?.campaignSupported || proof.proof?.progressConfirmed));
+    const proof = lastStreamVerification || persistedRoutingEligibilityProof();
+    const verified = Boolean(
+      proof &&
+      cleanText(proof.channel).toLowerCase() === cleanText(watchingLogin()).toLowerCase() &&
+      cleanText(proof.campaignKey).toLowerCase() === cleanText(currentDrop?.campaignKey || currentDrop?.campaignId).toLowerCase() &&
+      (proof.proof?.campaignSupported || proof.proof?.progressConfirmed)
+    );
     return DropperActiveViewing.eligibility(campaign, raw, {
       now: Date.now(), channel: watchingLogin(), game: campaign && gameNamesMatch(campaignGameName(campaign), info.game) ? campaignGameName(campaign) : info.game,
       allowedChannels: campaign ? campaignAllowedChannels(campaign).map(item => item.login) : [], verified,
@@ -2211,6 +2276,7 @@ const ExtraPotionsDiagnostics = (() => {
 
   function boot() {
     mountUi();
+    restorePersistedRoutingVerification();
     watchProgressTitle();
     syncClaimWatchers();
     setStatus(featureStatus());
@@ -5955,6 +6021,7 @@ const ExtraPotionsDiagnostics = (() => {
     campaignCatalogCache = { at: lastCampaignCatalogAt, campaigns: lastCampaignCatalog };
     try { writeSession(CAMPAIGN_CATALOG_KEY, campaignCatalogCache); } catch (_) { /* ignore storage quota failures */ }
     rememberCampaignStates(lastCampaignCatalog, source);
+    restoreCurrentDropMetadataFromKnownCampaigns();
     if (firstCaptureThisPage || previousCount !== lastCampaignCatalog.length) {
       logActivity("campaign-catalog", `Saved ${lastCampaignCatalog.length} Twitch Drops campaigns`, { source });
     }
@@ -7188,6 +7255,62 @@ const ExtraPotionsDiagnostics = (() => {
       }
     }
     return nameMatch;
+  }
+
+  function exactDropMetadataFromCampaigns(campaigns, activeDrop = currentDrop) {
+    if (!activeDrop || !Array.isArray(campaigns) || !campaigns.length) return null;
+    const wantedId = cleanText(activeDrop.id);
+    if (!wantedId) return null;
+    const campaign = findCampaignForDrop(campaigns, activeDrop);
+    if (!campaign) return null;
+    const raw = (campaign?.timeBasedDrops || campaign?.drops || []).find((drop) => cleanText(drop?.id) === wantedId);
+    if (!raw) return null;
+    const self = raw?.self || {};
+    const name = cleanText(raw?.name || raw?.benefitEdges?.[0]?.benefit?.name || "");
+    return {
+      name,
+      rewardImage: dropBenefitImage(raw),
+      dropInstanceID: cleanText(self.dropInstanceID || raw?.dropInstanceID || ""),
+      requiredMinutes: Number(raw?.requiredMinutesWatched || raw?.requiredMinutes || 0) || 0,
+    };
+  }
+
+  function restoreCurrentDropMetadataFromKnownCampaigns() {
+    if (!currentDrop) return false;
+    const sources = [lastInventoryCampaigns, lastCampaignCatalog];
+    let metadata = null;
+    for (const campaigns of sources) {
+      metadata = exactDropMetadataFromCampaigns(campaigns, currentDrop);
+      if (metadata?.name) break;
+    }
+    if (!metadata) return false;
+
+    const currentName = cleanText(currentDrop.name);
+    const replaceName = Boolean(
+      metadata.name &&
+      (
+        !currentName ||
+        /^current\s+drop$/i.test(currentName) ||
+        isPlaceholderDropLabel(currentName) ||
+        isDropCardMetadata(currentName)
+      )
+    );
+    const next = {
+      ...currentDrop,
+      name: replaceName ? metadata.name : currentDrop.name,
+      rewardImage: currentDrop.rewardImage || metadata.rewardImage || "",
+      dropInstanceID: currentDrop.dropInstanceID || metadata.dropInstanceID || "",
+      requiredMinutes: Number(currentDrop.requiredMinutes || 0) || metadata.requiredMinutes || 0,
+    };
+    if (
+      cleanText(next.name) === cleanText(currentDrop.name) &&
+      cleanText(next.rewardImage) === cleanText(currentDrop.rewardImage) &&
+      cleanText(next.dropInstanceID) === cleanText(currentDrop.dropInstanceID) &&
+      Number(next.requiredMinutes || 0) === Number(currentDrop.requiredMinutes || 0)
+    ) return false;
+    currentDrop = next;
+    writeSession("tdh-drop", currentDrop);
+    return true;
   }
 
   function campaignHasUnclaimedWatchDrops(campaign) {
@@ -11628,7 +11751,7 @@ const ExtraPotionsDiagnostics = (() => {
       /^(?:start|end) date\s*:/i.test(text) ||
       /^(?:starts?|ends?|expires?)(?:\s+in|\s*:)/i.test(text) ||
       /^(?:watch|watched)\s+\d+/i.test(text) ||
-      /^\d+\s*(?:minutes?|hours?)\b/i.test(text) ||
+      /^\d+\s*(?:minutes?|hours?)(?:\s+(?:watched|required|remaining))?$/i.test(text) ||
       /^(?:participating live channels?|go to a participating channel|connection required)\b/i.test(text);
   }
 
