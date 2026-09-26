@@ -1,6 +1,6 @@
 # Active-viewing implementation
 
-Development version: 3.3.0-dev.11. Baseline: Dropper 3.2.31.
+Development version: 3.3.0-dev.12. Baseline: Dropper 3.2.31.
 
 ## Behavior
 
@@ -161,3 +161,10 @@ The verbose eligibility data remains available in Diagnostics. No new top-level 
 The Support Dropper heart popover now includes an "Open Ko-fi" action pointing to https://ko-fi.com/expdare. The heart remains a non-navigating control that opens the compact confirmation popover first.
 
 The Ko-fi action opens in a separate tab with noopener and noreferrer protections. Support remains optional and does not alter access to any Dropper feature.
+
+
+## 3.3.0-dev.12 narrow support popover geometry
+
+The Support Dropper popover is now positioned relative to the full menu header instead of the small heart-button wrapper. Its width is capped by the available menu header width, so Narrow mode keeps the entire popover inside the Dropper menu.
+
+The Ko-fi confirmation flow and support wording are unchanged. Browser regression coverage verifies the popover's left edge, right edge, and width remain within the Narrow menu rectangle.
