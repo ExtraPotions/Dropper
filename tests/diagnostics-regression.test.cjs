@@ -68,6 +68,8 @@ assert.deepEqual(
   "campaign image alt text is not used as the reward name",
 );
 assert.equal(context.api.isDropCardMetadata("Drops Campaign Image"), true, "Twitch campaign image alt text is not a reward");
+assert.equal(context.api.isDropCardMetadata("1 Hour (Sep 25)"), false, "dated duration titles can be real Twitch reward names");
+assert.equal(context.api.isDropCardMetadata("60 Minutes"), true, "plain duration-only card copy remains metadata");
 const repaired = context.api.reconcileDropIdentity({
   percent: 99,
   name: "Drops Campaign Image",
