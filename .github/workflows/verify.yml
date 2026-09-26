@@ -38,6 +38,7 @@ jobs:
             dropper-source.zip
             dropper-toolchain.tgz
             test-results.txt
+            test-artifacts/
             dropper.user.js
           retention-days: 7
           if-no-files-found: error
