@@ -21,6 +21,8 @@ const exposed = source.replace('  startDropper();\n})();', `
     rankCandidates: rankStreamCandidatesByEvidence,
     continueClaim: continueAfterConfirmedDropClaim, sweep: sweepClaimReadyInventory, current: () => currentDrop,
     status: () => ({ viewing: viewingIntent.snapshot(), selectors: claimHealth }),
+    activityStatus: dropActivityStatus, claimSummary: claimHealthSummary,
+    setFindNext: value => { settings.findNextStream = Boolean(value); },
     pauseIntent: () => { viewingIntent.pause(true); },
   };
   startDropper();
@@ -411,4 +413,39 @@ test('inventory sweep claims completed rewards without leaving the active stream
   assert.equal(result.current.id, 'current-live');
   assert.equal(result.current.currentMinutes, 20);
   assert.equal(result.path, '/chosen_channel');
+}));
+
+
+test('off-stream status does not imply active earning when automatic switching is off', async () => fixture(async page => {
+  const d = data();
+  const result = await page.evaluate(({ drop, campaigns }) => {
+    const t = window.__dropperTest;
+    t.configure(drop, campaigns);
+    t.setFindNext(false);
+    history.pushState({}, '', '/');
+    t.sync();
+    const label = t.activityStatus(drop, '');
+    return { label, path: location.pathname };
+  }, d);
+  assert.equal(result.path, '/');
+  assert.match(result.label, /Fixture game · 60 \/ 60 min · Automatic switching off/);
+  assert.doesNotMatch(result.label, /Working toward/i);
+}));
+
+test('claim history panel exposes a compact selector and sweep health summary', async () => fixture(async page => {
+  const result = await page.evaluate(() => {
+    const t = window.__dropperTest;
+    t.setActiveClaims(true);
+    t.scan();
+    const root = document.getElementById('tdh-root').shadowRoot;
+    return {
+      summary: t.claimSummary(),
+      rendered: root.getElementById('tdh-claim-health')?.textContent || '',
+      panelCount: root.querySelectorAll('#tdh-claim-history-panel').length,
+    };
+  });
+  assert.equal(result.panelCount, 1);
+  assert.match(result.summary, /^Claims: none/);
+  assert.match(result.summary, /Drop: monitoring/);
+  assert.equal(result.rendered, result.summary);
 }));
