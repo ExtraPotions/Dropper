@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.0-dev.5
+// @version      3.3.0-dev.6
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.0-dev.5";
+  const APP_VERSION = "3.3.0-dev.6";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -529,10 +529,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
-    "3.3.0-dev.5": [
-      "Ranks live stream candidates by campaign evidence before applying viewer-count preference.",
-      "Prefers live campaign-allow-listed channels, then live Drops-tagged channels, then same-game probationary streams.",
-      "Exposes the chosen candidate evidence rank and label in routing and standby diagnostics."
+    "3.3.0-dev.6": [
+      "Re-evaluates the same campaign immediately after a confirmed Drop claim unlocks a claim-gated successor.",
+      "Keeps the current stream when it is still live in the same game and re-verifies the newly unlocked reward in place.",
+      "Avoids preempting a different campaign after that campaign has already begun earning credited progress."
     ],
 
     "3.2.31": [
