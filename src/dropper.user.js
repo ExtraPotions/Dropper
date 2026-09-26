@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.0-dev.3
+// @version      3.3.0-dev.4
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.0-dev.3";
+  const APP_VERSION = "3.3.0-dev.4";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -529,10 +529,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
-    "3.3.0-dev.3": [
-      "Tracks selector observations over time without treating an empty claim surface as a broken selector.",
-      "Adds explicit recovery diagnoses for offline, wrong-game, delayed-credit, stalled-credit, buffering, and viewer-paused states.",
-      "Uses an account-scoped localStorage claim lease when Web Locks are unavailable to reduce cross-tab duplicate claim attempts."
+    "3.3.0-dev.4": [
+      "Confirms a channel-point bonus when Twitch removes the exact claimed bonus control, while leaving ambiguous outcomes unconfirmed.",
+      "Throttles mutation-driven claim scans to a five-second floor and reports whether campaign priorities are saved preferences or defaults.",
+      "Adds two Twitch rechecks before a verified credit stall can rotate away from the active stream."
     ],
 
     "3.2.31": [
