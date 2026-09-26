@@ -351,6 +351,59 @@
       }
       return Object.freeze({ run });
     }
+    function inventoryClaimCandidates(campaigns, { limit = 3, excludeRewardId = '' } = {}) {
+      const excluded = text(excludeRewardId);
+      const candidates = [];
+      for (const campaign of campaigns || []) {
+        const campaignId = text(campaign?.id);
+        const campaignKey = campaignId || text(campaign?.campaignKey);
+        const game = text(campaign?.game?.displayName || campaign?.game?.name || campaign?.game);
+        const endAt = text(campaign?.endAt);
+        const parsedEnd = endAt ? Date.parse(endAt) : NaN;
+        const endMs = Number.isFinite(parsedEnd) ? parsedEnd : Number.MAX_SAFE_INTEGER;
+        const drops = campaign?.timeBasedDrops || campaign?.drops || [];
+        drops.forEach((drop, dropOrder) => {
+          const self = drop?.self || {};
+          const rewardId = text(drop?.id);
+          if (excluded && rewardId && rewardId === excluded) return;
+          if (self.isClaimed === true || drop?.isClaimed === true) return;
+          const requiredSubs = Number(drop?.requiredSubs ?? drop?.requiredSubscriptions ?? drop?.requiredSubscriptionCount ?? drop?.subscriptionRequirement?.requiredSubs ?? 0) || 0;
+          if (requiredSubs > 0) return;
+          const required = number(drop?.requiredMinutesWatched ?? drop?.requiredMinutes);
+          const current = number(self.currentMinutesWatched ?? drop?.currentMinutes);
+          const instanceID = text(self.dropInstanceID || drop?.dropInstanceID);
+          if (!instanceID || required === null || required <= 0 || current === null || current < required) return;
+          candidates.push({
+            id: rewardId,
+            dropInstanceID: instanceID,
+            isClaimed: false,
+            name: text(drop?.name || drop?.benefitEdges?.[0]?.benefit?.name || 'Completed Drop'),
+            game,
+            campaignId,
+            campaignKey,
+            campaign: text(campaign?.name || game),
+            campaignStartAt: text(campaign?.startAt),
+            campaignEndAt: endAt,
+            dropStartAt: text(drop?.startAt),
+            dropEndAt: text(drop?.endAt),
+            endMs,
+            currentMinutes: current,
+            requiredMinutes: required,
+            remainingMinutes: 0,
+            percent: 100,
+            inventorySweep: true,
+            dropOrder,
+          });
+        });
+      }
+      candidates.sort((a, b) => {
+        if (a.endMs !== b.endMs) return a.endMs - b.endMs;
+        if (a.campaignKey !== b.campaignKey) return a.campaignKey.localeCompare(b.campaignKey);
+        return a.dropOrder - b.dropOrder;
+      });
+      const max = Math.max(0, Math.min(10, Number(limit) || 0));
+      return max ? candidates.slice(0, max) : [];
+    }
     function claimPresentation(record) {
       const outcome = record?.outcome;
       const evidence = record?.evidence;
@@ -364,6 +417,6 @@
       return 'Claim Not Confirmed';
     }
 
-    return Object.freeze({ createIntent, createClaims, claimResponse, claimFailure, planPrerequisites, deadlineAssessment, campaignSequence, rankCampaignCandidates, eligibility, selectorHealth, recoveryDiagnosis, createLease, claimPresentation });
+    return Object.freeze({ createIntent, createClaims, claimResponse, claimFailure, planPrerequisites, deadlineAssessment, campaignSequence, rankCampaignCandidates, eligibility, selectorHealth, recoveryDiagnosis, createLease, inventoryClaimCandidates, claimPresentation });
   })();
   // END DROPPER ACTIVE VIEWING
