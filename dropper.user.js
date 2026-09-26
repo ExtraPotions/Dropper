@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.0
+// @version      3.3.1
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.0";
+  const APP_VERSION = "3.3.1";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -531,6 +531,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.1": [
+      "Makes Badge Only progress use the exact same Full, Compact, and Narrow width calculation as the normal progress panel and menu.",
+      "Compensates for the menu side padding so Badge Only no longer renders 18 px narrower than the selected panel width."
+    ],
     "3.3.0": [
       "Hardens automatic claim controls with centralized Twitch selectors and fail-closed safety checks.",
       "Separates campaign-level stream verification from exact reward identity so another Drop cannot advance the locked reward.",
@@ -14570,6 +14574,13 @@ const ExtraPotionsDiagnostics = (() => {
     return ["full", "compact", "narrow"].includes(normalized) ? normalized : "compact";
   }
 
+  function calculatedPanelWidth(mode = normalizedCollapsedPanelWidth()) {
+    if (mode === "narrow") return 220;
+    if (mode === "compact") return 260;
+    const full = parseFloat(getComputedStyle(ui.cluster).getPropertyValue("--dropper-width")) || 312;
+    return Math.max(280, Math.min(full, 340));
+  }
+
   function normalizedOpacityPercent(value = settings.opacityPercent) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return 85;
@@ -15040,11 +15051,7 @@ const ExtraPotionsDiagnostics = (() => {
   }
 
   function noticePanelWidth() {
-    const mode = normalizedCollapsedPanelWidth();
-    if (mode === "narrow") return 220;
-    if (mode === "compact") return 260;
-    const full = parseFloat(getComputedStyle(ui.cluster).getPropertyValue("--dropper-width")) || 312;
-    return Math.max(280, Math.min(full, 340));
+    return calculatedPanelWidth();
   }
 
   function positionMenuUpdateNotice() {
@@ -16047,10 +16054,8 @@ const ExtraPotionsDiagnostics = (() => {
     const progressCard = ui.shadow.getElementById("tdh-drop-card");
     const rowHeight = settings.badgeOnly ? 48 : Math.max(112, progressCard?.offsetHeight || 112);
     const panelMode = normalizedCollapsedPanelWidth();
-    const panelWidth =
-      panelMode === "narrow" ? 220 :
-      panelMode === "compact" ? 260 :
-      Math.max(280, Math.min(parseFloat(getComputedStyle(ui.cluster).getPropertyValue("--dropper-width")) || 312, 340));
+    const panelWidth = calculatedPanelWidth(panelMode);
+    const menuPanelWidth = Math.min(panelWidth, Math.max(0, window.innerWidth - 24));
     const launcherWidth = 48;
     const rowGap = settings.badgeOnly ? 0 : 8;
     const rowWidth = settings.badgeOnly ? launcherWidth : panelWidth + rowGap + launcherWidth;
@@ -16091,9 +16096,19 @@ const ExtraPotionsDiagnostics = (() => {
       progressStack.style.minHeight = `${rowHeight}px`;
     }
 
+    const badgeOnlySlot = ui.shadow.getElementById("tdh-badge-only-progress-slot");
     if (progressCard?.dataset.presentation === "page-card") {
       progressCard.style.setProperty("width", `${Math.min(panelWidth, Math.max(0, window.innerWidth - 80))}px`, "important");
       progressCard.style.setProperty("max-width", `calc(100vw - 80px)`, "important");
+      for (const property of ["left", "right", "top", "bottom"]) progressCard.style.removeProperty(property);
+    } else if (progressCard?.dataset.presentation === "menu-card" && badgeOnlySlot) {
+      // Match the menu outer width instead of its content box. The menu has
+      // 9 px side padding, which otherwise makes Badge Only 18 px too narrow.
+      badgeOnlySlot.style.setProperty("width", `${menuPanelWidth}px`, "important");
+      badgeOnlySlot.style.setProperty("margin-left", "-9px", "important");
+      badgeOnlySlot.style.setProperty("margin-right", "-9px", "important");
+      progressCard.style.setProperty("width", `${menuPanelWidth}px`, "important");
+      progressCard.style.setProperty("max-width", `${menuPanelWidth}px`, "important");
       for (const property of ["left", "right", "top", "bottom"]) progressCard.style.removeProperty(property);
     }
 
@@ -16104,7 +16119,7 @@ const ExtraPotionsDiagnostics = (() => {
     if (railOpen) {
       // Inline width from the previous mode must not determine the measured
       // height. Constrain the new width and inward space before positioning.
-      ui.dock.style.setProperty("width", `${Math.min(panelWidth, window.innerWidth - 24)}px`, "important");
+      ui.dock.style.setProperty("width", `${menuPanelWidth}px`, "important");
       const availableMenuHeight = anchor === "top"
         ? window.innerHeight - rowBottom - 16
         : rowTop - 16;
