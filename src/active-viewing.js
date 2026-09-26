@@ -314,7 +314,7 @@
 
     function recoveryDiagnosis(health, { delayedMs = 5 * 60 * 1000, stalledMs = 6 * 60 * 1000 } = {}) {
       if (!health?.login) return { code: 'no-stream', recoverable: false };
-      if (health.pauseReason === 'viewer' || health.paused === true) return { code: 'viewer-paused', recoverable: false };
+      if (health.pauseReason === 'viewer') return { code: 'viewer-paused', recoverable: false };
       if (health.live === false) return { code: 'offline', recoverable: true };
       if (health.gameMatches === false) return { code: 'wrong-game', recoverable: true };
       if (health.playback === 'error') return { code: 'playback-error', recoverable: true };

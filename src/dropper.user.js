@@ -532,9 +532,9 @@ const ExtraPotionsDiagnostics = (() => {
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
     "3.3.0-dev.14": [
-      "Restores exact Twitch reward metadata after reload instead of leaving identified rewards labeled Current drop.",
-      "Preserves dated duration reward names such as 1 Hour (Sep 25) while still filtering plain duration-only card metadata.",
-      "Reuses fresh exact persisted routing/GQL verification after same-account reload so routing, earning health, and eligibility remain consistent."
+      "Treats stale Twitch credit while the browser or Twitch tab is unfocused as a background delay instead of an automatic stall.",
+      "Rechecks Twitch credit for 30 seconds after focus returns before allowing stale credit to become a recoverable stall.",
+      "Keeps actual non-viewer playback stops recoverable and adds focus, visibility, and foreground-grace details to Diagnostics."
     ],
 
     "3.2.31": [
@@ -1196,7 +1196,7 @@ const ExtraPotionsDiagnostics = (() => {
 
     function recoveryDiagnosis(health, { delayedMs = 5 * 60 * 1000, stalledMs = 6 * 60 * 1000 } = {}) {
       if (!health?.login) return { code: 'no-stream', recoverable: false };
-      if (health.pauseReason === 'viewer' || health.paused === true) return { code: 'viewer-paused', recoverable: false };
+      if (health.pauseReason === 'viewer') return { code: 'viewer-paused', recoverable: false };
       if (health.live === false) return { code: 'offline', recoverable: true };
       if (health.gameMatches === false) return { code: 'wrong-game', recoverable: true };
       if (health.playback === 'error') return { code: 'playback-error', recoverable: true };

@@ -302,6 +302,7 @@ test('recovery diagnosis separates viewer intent, offline, eligibility, delay, a
   };
   expectDiagnosis(base, { code: 'healthy', recoverable: false });
   expectDiagnosis({ ...base, paused: true, pauseReason: 'viewer' }, { code: 'viewer-paused', recoverable: false });
+  expectDiagnosis({ ...base, paused: true, pauseReason: 'unknown', playback: 'paused' }, { code: 'playback-stopped', recoverable: true });
   expectDiagnosis({ ...base, live: false }, { code: 'offline', recoverable: true });
   expectDiagnosis({ ...base, gameMatches: false }, { code: 'wrong-game', recoverable: true });
   expectDiagnosis({ ...base, campaignVerified: false }, { code: 'eligibility-unverified', recoverable: false });
