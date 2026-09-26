@@ -14,7 +14,7 @@ const exposed = source.replace('  startDropper();\n})();', `
     navigation: viewingNavigationAllowed, refresh: refreshOpenCampaignList,
     setGql: fn => { gql = fn; },
     configure: (drop, campaigns) => { currentDrop = drop; lastInventoryCampaigns = campaigns; lastCampaignCatalog = campaigns; },
-    ignore: setCampaignGameIgnored, priority: campaignPriority,
+    ignore: setCampaignGameIgnored, priority: campaignPriority, pickNext: pickNextOpenCampaignDrop,
     setWidth: mode => { settings.collapsedPanelWidth = mode; applyAppearanceSettings(); },
     setActiveClaims: value => { settings.claimBonus = value; settings.claimDrops = value; syncClaimWatchers(); },
     status: () => ({ viewing: viewingIntent.snapshot(), selectors: claimHealth }),
@@ -195,4 +195,38 @@ test('campaign priority is account-scoped, does not navigate, and existing chrom
   assert.ok(page.url().endsWith('/chosen_channel'));
   await page.evaluate(() => { document.cookie = 'login=fixture-bob; path=/; domain=.twitch.tv'; window.__dropperTest.sync(); });
   assert.equal(await page.evaluate(() => window.__dropperTest.priority('Fixture game')), 0);
+}));
+
+
+test('known-unfinishable campaign cannot win even with high personal priority', async () => fixture(async page => {
+  const now = Date.now();
+  const iso = ms => new Date(ms).toISOString();
+  const campaigns = [
+    {
+      id: 'impossible', name: 'Impossible', status: 'ACTIVE',
+      startAt: iso(now - 60000), endAt: iso(now + 20 * 60000),
+      game: { name: 'Impossible Game', displayName: 'Impossible Game' },
+      timeBasedDrops: [{ id: 'i', name: 'Impossible reward', requiredMinutesWatched: 60, self: { currentMinutesWatched: 0, isClaimed: false } }],
+    },
+    {
+      id: 'viable', name: 'Viable', status: 'ACTIVE',
+      startAt: iso(now - 60000), endAt: iso(now + 90 * 60000),
+      game: { name: 'Viable Game', displayName: 'Viable Game' },
+      timeBasedDrops: [{ id: 'v', name: 'Viable reward', requiredMinutesWatched: 30, self: { currentMinutesWatched: 10, isClaimed: false } }],
+    },
+  ];
+  const result = await page.evaluate(campaigns => {
+    const t = window.__dropperTest;
+    t.configure(null, campaigns);
+    t.refresh();
+    const root = document.getElementById('tdh-root').shadowRoot;
+    const select = root.querySelector('[aria-label="Impossible Game campaign priority"]');
+    select.value = '1';
+    select.dispatchEvent(new Event('change'));
+    const pick = t.pickNext(campaigns, [], []);
+    return { game: pick?.game || '', priority: t.priority('Impossible Game'), url: location.pathname };
+  }, campaigns);
+  assert.equal(result.priority, 1);
+  assert.equal(result.game, 'Viable Game');
+  assert.equal(result.url, '/chosen_channel');
 }));
