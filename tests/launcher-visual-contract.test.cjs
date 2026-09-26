@@ -145,11 +145,13 @@ test('progress visibility preserves the badge-only controls', () => {
   assert.match(source, /function calculatedPanelWidth\(mode = normalizedCollapsedPanelWidth\(\)\)/u);
   assert.match(source, /const panelWidth = calculatedPanelWidth\(panelMode\);/u);
   assert.match(source, /const menuPanelWidth = Math\.min\(panelWidth, Math\.max\(0, window\.innerWidth - 24\)\);/u);
-  assert.match(source, /badgeOnlySlot\.style\.setProperty\("width", `\$\{menuPanelWidth\}px`, "important"\);/u);
-  assert.match(source, /badgeOnlySlot\.style\.setProperty\("margin-left", "-9px", "important"\);/u);
-  assert.match(source, /badgeOnlySlot\.style\.setProperty\("margin-right", "-9px", "important"\);/u);
-  assert.match(source, /progressCard\.style\.setProperty\("width", `\$\{menuPanelWidth\}px`, "important"\);/u);
+  assert.match(source, /badgeOnlySlot\.style\.setProperty\("width", "100%", "important"\);/u);
+  assert.match(source, /badgeOnlySlot\.style\.setProperty\("margin-left", "0", "important"\);/u);
+  assert.match(source, /badgeOnlySlot\.style\.setProperty\("margin-right", "0", "important"\);/u);
+  assert.match(source, /progressCard\.style\.setProperty\("width", "100%", "important"\);/u);
   assert.match(source, /ui\.dock\.style\.setProperty\("width", `\$\{menuPanelWidth\}px`, "important"\);/u);
+  assert.doesNotMatch(source, /badgeOnlySlot\.style\.setProperty\("margin-left", "-9px"/u);
+  assert.doesNotMatch(source, /badgeOnlySlot\.style\.setProperty\("margin-right", "-9px"/u);
   assert.doesNotMatch(source, /const firstProductSlot = dropper \? columns \* reservedRows : 0;/u);
 });
 
