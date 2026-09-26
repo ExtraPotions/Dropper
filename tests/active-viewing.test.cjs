@@ -208,7 +208,7 @@ test('donation wording and licenses are not feature gates', () => {
   assert.doesNotMatch(source, /donorEntitlement|premiumFeature|paywallEnabled/);
   assert.match(source, /tdh-support-button/);
   assert.match(source, /tdh-support-popover/);
-  assert.match(source, /Donations are optional\\. All features stay free\\./);
+  assert.ok(source.includes("Donations are optional. All features stay free."));
   assert.doesNotMatch(source, /id=\"tdh-support-note\"/);
 });
 
