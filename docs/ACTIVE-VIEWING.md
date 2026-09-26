@@ -1,6 +1,6 @@
 # Active-viewing implementation
 
-Development version: 3.3.0-dev.8. Baseline: Dropper 3.2.31.
+Development version: 3.3.0-dev.9. Baseline: Dropper 3.2.31.
 
 ## Behavior
 
@@ -138,3 +138,10 @@ Campaign membership and reward progress now have explicit ownership boundaries. 
 When the authenticated dashboard request is blocked and Dropper falls back to Inventory, that fallback now overlays progress onto matching catalog entries instead of replacing the catalog. If no broader catalog exists yet, the Inventory fallback may seed it, but once a richer catalog is present a short Inventory response cannot shrink it.
 
 This preserves deadline planning, prerequisite context, next-campaign selection, and campaign-manager completeness across Twitch navigation and integrity fallback while keeping Inventory progress authoritative.
+
+
+## 3.3.0-dev.9 status and claim-health presentation tranche
+
+Dropper's status text now distinguishes real stream activity from Inventory-only progress. When no stream is loaded, a current Drop is described with its game and credited watch progress plus the routing state, such as automatic switching off, finding, opening, verifying, waiting, or choosing an eligible stream. Inventory progress alone is never described as active earning.
+
+The existing Claim History details now contain one compact health line. It summarizes confirmed, pending, and attention-needed claim records, applicable Drop/Bonus/Inventory selector health, and the latest inventory-sweep result. This information stays inside System and does not add a new top-level panel or dashboard.
