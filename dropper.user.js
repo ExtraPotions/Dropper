@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.0-dev.9
+// @version      3.3.0-dev.10
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.0-dev.9";
+  const APP_VERSION = "3.3.0-dev.10";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -530,10 +530,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
-    "3.3.0-dev.9": [
-      "Uses accurate off-stream status text so Inventory progress never implies active earning when no stream is loaded.",
-      "Adds a compact Claim History health summary with claim counts, selector health, and the latest inventory-sweep result.",
-      "Keeps the health summary inside the existing System panel rather than adding another dashboard or changing Dropper chrome."
+    "3.3.0-dev.10": [
+      "Moves optional-support wording into a compact heart button beside Close and removes the permanent donation note from System.",
+      "Replaces the long eligibility paragraph with a one-line expandable chip such as Eligible · 88 min remaining or Deadline Risk · 88 min needed.",
+      "Keeps the full eligibility explanation available inside the expanded chip and in Diagnostics without changing Dropper's panel structure."
     ],
 
     "3.2.31": [
@@ -2136,10 +2136,46 @@ const ExtraPotionsDiagnostics = (() => {
   function pollContextIsCurrent(context) {
     return context.account === storageAccountLogin() && context.path === location.pathname && context.generation === viewingIntent.snapshot().generation;
   }
+  function eligibilityCompactPresentation(state) {
+    const estimate = Number.isFinite(state?.estimateMinutes) ? Math.max(0, Math.round(state.estimateMinutes)) : null;
+    switch (state?.code) {
+      case 'eligible':
+        return { text: `✓ Eligible${estimate !== null ? ` · ${estimate} min remaining` : ''}`, tone: 'good' };
+      case 'deadline-risk':
+        return { text: `⚠ Deadline Risk${estimate !== null ? ` · ${estimate} min needed` : ''}`, tone: 'bad' };
+      case 'account-link':
+        return { text: '⚠ Account Link Required', tone: 'warn' };
+      case 'prerequisite-required':
+      case 'prerequisite-unverified':
+      case 'prerequisite-missing':
+      case 'prerequisite-cycle':
+        return { text: '⚠ Previous Reward Required', tone: 'warn' };
+      case 'wrong-game':
+      case 'wrong-channel':
+        return { text: '⚠ Stream Not Eligible', tone: 'warn' };
+      case 'participation':
+        return { text: '⚠ Campaign Not Eligible', tone: 'bad' };
+      case 'not-started':
+        return { text: '• Campaign Not Started', tone: 'muted' };
+      case 'expired':
+        return { text: '• Campaign Ended', tone: 'muted' };
+      case 'paid-requirement':
+        return { text: '• Paid Reward Excluded', tone: 'muted' };
+      default:
+        return { text: '? Eligibility Not Verified', tone: 'muted' };
+    }
+  }
+
   function refreshEligibilityControls() {
-    const output = ui?.shadow?.getElementById('tdh-reward-eligibility');
-    if (!output) return;
+    const box = ui?.shadow?.getElementById('tdh-reward-eligibility');
+    const summary = ui?.shadow?.getElementById('tdh-eligibility-summary');
+    const detail = ui?.shadow?.getElementById('tdh-eligibility-detail');
+    if (!box || !summary || !detail) return;
     const state = activeRewardEligibility();
+    const compact = eligibilityCompactPresentation(state);
+    summary.textContent = compact.text;
+    box.dataset.tone = compact.tone;
+
     const estimate = Number.isFinite(state.estimateMinutes) ? ` Estimated reward time: ${state.estimateMinutes} min. Twitch-credited progress remains authoritative.` : '';
     const deadline = state.deadline;
     const deadlineText = deadline?.finishable === false
@@ -2150,7 +2186,7 @@ const ExtraPotionsDiagnostics = (() => {
     const campaignText = Number.isFinite(state.campaignPlan?.remainingMinutes)
       ? ` Campaign watch remaining: ${state.campaignPlan.remainingMinutes} min.`
       : '';
-    output.textContent = `${state.label}. ${state.detail}${estimate}${deadlineText}${campaignText}`;
+    detail.textContent = `${state.detail}${estimate}${deadlineText}${campaignText}`;
   }
 
   // Viewing and Twitch network hooks are installed after all declarations so boot
@@ -12546,9 +12582,31 @@ const ExtraPotionsDiagnostics = (() => {
       #tdh-tools-dock.fl-rail-open { display:block; height:max-content; min-height:0; max-height:none; }
       #tdh-tools-dock:focus { outline:none; }
       .menu-head {
-        display:grid; grid-template-columns:minmax(0,1fr) 30px;
+        display:grid; grid-template-columns:minmax(0,1fr) auto;
         align-items:start; gap:8px; width:100%;
       }
+      .header-actions { display:flex; align-items:flex-start; gap:5px; position:relative; }
+      .support-wrap { position:relative; }
+      #tdh-support-button, #tdh-rail-close {
+        width:30px; height:30px; min-width:30px; padding:0;
+        border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0;
+        cursor:pointer;
+      }
+      #tdh-support-button { display:grid; place-items:center; }
+      #tdh-support-button svg { width:15px; height:15px; fill:currentColor; }
+      #tdh-support-button:hover, #tdh-support-button:focus-visible {
+        border-color:var(--theme-accent); color:var(--theme-accent2); background:#211b2b; outline:none;
+      }
+      .support-popover {
+        position:absolute; z-index:14; top:35px; right:0; width:min(190px,calc(100vw - 36px));
+        box-sizing:border-box; padding:8px 9px;
+        border:1px solid color-mix(in srgb,var(--theme-accent) 46%,var(--theme-line));
+        border-radius:9px; background:var(--theme-panel); color:var(--theme-text);
+        box-shadow:0 10px 28px #0009;
+      }
+      .support-popover[hidden] { display:none; }
+      .support-popover strong { display:block; margin-bottom:3px; font-size:10px; }
+      .support-popover span { display:block; color:var(--theme-muted); font-size:8px; line-height:1.35; }
       .header-brand {
         display:grid; grid-template-columns:38px minmax(0,1fr);
         align-items:center; gap:8px; min-width:0; width:100%;
@@ -12575,12 +12633,8 @@ const ExtraPotionsDiagnostics = (() => {
         margin-top:2px; font-size:9px; line-height:1.2; color:#adadb8;
         white-space:normal; overflow-wrap:anywhere;
       }
-      #tdh-rail-close {
-        width:30px; height:30px; min-width:30px; padding:0; justify-self:end;
-        border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0;
-        cursor:pointer; font:18px/1 Arial,sans-serif;
-      }
-      #tdh-rail-close:hover { border-color:#9147ff; color:#fff; background:#211b2b; }
+      #tdh-rail-close { font:18px/1 Arial,sans-serif; }
+      #tdh-rail-close:hover, #tdh-rail-close:focus-visible { border-color:#9147ff; color:#fff; background:#211b2b; outline:none; }
       .header-divider { height:1px; width:100%; margin:5px 0; background:linear-gradient(90deg,transparent,#9147ff88 50%,transparent); }
       .update-notice {
         position:fixed; display:block; width:100%; max-width:calc(100vw - 24px); margin:0; padding:10px;
@@ -12899,6 +12953,30 @@ const ExtraPotionsDiagnostics = (() => {
       .campaign-manager-summary { flex:0 0 auto; font-size:8px; font-weight:700; color:var(--theme-muted); }
       .campaign-manager[open] > summary { border-bottom:1px solid var(--theme-line); }
       .campaign-manager-note { padding:6px 8px 3px; font-size:8px; line-height:1.35; color:var(--theme-muted); }
+      .eligibility-chip {
+        grid-column:1/-1; margin-top:6px;
+        border:1px solid color-mix(in srgb,var(--theme-line) 68%,var(--theme-accent) 32%);
+        border-radius:8px; background:var(--theme-panel); overflow:hidden;
+      }
+      .eligibility-chip > summary {
+        list-style:none; display:flex; align-items:center; gap:6px; min-height:28px;
+        box-sizing:border-box; padding:5px 8px; cursor:pointer;
+        color:var(--theme-text); font-size:9px; font-weight:800;
+      }
+      .eligibility-chip > summary::-webkit-details-marker { display:none; }
+      .eligibility-chip > summary::after {
+        content:"▸"; margin-left:auto; color:var(--theme-muted); font-size:9px; transition:.12s transform;
+      }
+      .eligibility-chip[open] > summary::after { transform:rotate(90deg); }
+      .eligibility-chip[data-tone="good"] { border-color:color-mix(in srgb,#3ac978 58%,var(--theme-line)); }
+      .eligibility-chip[data-tone="warn"] { border-color:color-mix(in srgb,#e2b34a 58%,var(--theme-line)); }
+      .eligibility-chip[data-tone="bad"] { border-color:color-mix(in srgb,#df5b65 58%,var(--theme-line)); }
+      .eligibility-chip[data-tone="muted"] { border-color:var(--theme-line); }
+      .eligibility-detail {
+        padding:0 8px 7px; border-top:1px solid var(--theme-line);
+        color:var(--theme-muted); font-size:8px; line-height:1.4;
+      }
+      .eligibility-detail[hidden] { display:none; }
       .campaign-game-list { max-height:240px; overflow:auto; padding:2px 7px 6px; }
       .campaign-game-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; min-height:36px; padding:6px 0; }
       .campaign-game-row + .campaign-game-row { border-top:1px solid #242429; }
@@ -13020,7 +13098,18 @@ const ExtraPotionsDiagnostics = (() => {
                 <div id="tdh-rail-subtitle">Twitch Drops: Track and Redeem</div>
               </div>
             </div>
-            <button type="button" id="tdh-rail-close" aria-label="Close">×</button>
+            <div class="header-actions">
+              <div class="support-wrap">
+                <button type="button" id="tdh-support-button" aria-label="Support Dropper" aria-expanded="false" aria-controls="tdh-support-popover" title="Support Dropper">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.2-4.35-9.55-8.45C.42 9.02 2.3 5 6.25 5c2.15 0 3.56 1.21 4.33 2.3C11.36 6.21 12.77 5 14.92 5c3.95 0 5.83 4.02 3.8 7.55C16.36 16.65 12 21 12 21Z"/></svg>
+                </button>
+                <div class="support-popover" id="tdh-support-popover" role="dialog" aria-label="Support Dropper" hidden>
+                  <strong>Support Dropper</strong>
+                  <span>Donations are optional. All features stay free.</span>
+                </div>
+              </div>
+              <button type="button" id="tdh-rail-close" aria-label="Close">×</button>
+            </div>
           </div>
           <div class="header-divider"></div>
           <div class="toast" id="tdh-toast" hidden></div>
@@ -13055,7 +13144,10 @@ const ExtraPotionsDiagnostics = (() => {
               <div class="campaign-manager-note">Check a game to ignore it until its latest campaign ends. Priorities order recommendations without changing your selected stream.</div>
               <div class="campaign-game-list" id="tdh-open-campaign-list"></div>
             </details>
-            <div class="campaign-manager-note" id="tdh-reward-eligibility" role="status">Eligibility Not Verified</div>
+            <details class="eligibility-chip" id="tdh-reward-eligibility" data-tone="muted">
+              <summary><span id="tdh-eligibility-summary" role="status">? Eligibility Not Verified</span></summary>
+              <div class="eligibility-detail" id="tdh-eligibility-detail">Dropper does not yet have enough information to verify this stream.</div>
+            </details>
             <button type="button" class="life-btn" id="tdh-toggle-inventory">Show Drops Inventory</button>
             <div class="compact-inventory" id="tdh-compact-inventory"><div class="inventory-head"><div><strong>Campaign Drops</strong><span id="tdh-inventory-game"></span></div></div><div class="inventory-list" id="tdh-inventory-list"></div></div>
           </div></section>
@@ -13110,7 +13202,6 @@ const ExtraPotionsDiagnostics = (() => {
             <div class="action-pair"><button type="button" class="life-btn" id="tdh-refresh-now">Refresh Drop State</button>
             <button type="button" class="life-btn" id="tdh-reset-session">Reset Session State</button></div>
             <details class="campaign-manager" id="tdh-claim-history-panel"><summary>Claim History</summary><div id="tdh-claim-health" class="campaign-manager-note">Claims: none</div><pre id="tdh-claim-history" class="campaign-manager-note" style="white-space:pre-wrap;overflow-wrap:anywhere">No claim attempts recorded for this account.</pre></details>
-            <div class="campaign-manager-note" id="tdh-support-note">Donations are optional and support continued development. All features remain available without donating, and donations do not change your license rights.</div>
             <div class="diag" id="tdh-diagnostics" role="region" aria-label="Site and plugin diagnostics" tabindex="0"></div>
           </div></section>
         </aside>
@@ -13204,13 +13295,35 @@ const ExtraPotionsDiagnostics = (() => {
       showCurrentChangelog();
       scheduleMenuDismiss();
     });
-    shadow.getElementById("tdh-rail-close").addEventListener("click", () => setRailOpen(false));
+    const supportButton = shadow.getElementById("tdh-support-button");
+    const supportPopover = shadow.getElementById("tdh-support-popover");
+    const closeSupportPopover = () => {
+      if (!supportPopover || !supportButton) return;
+      supportPopover.hidden = true;
+      supportButton.setAttribute("aria-expanded", "false");
+    };
+    supportButton?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const open = supportPopover?.hidden !== false;
+      if (!supportPopover) return;
+      supportPopover.hidden = !open;
+      supportButton.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+    shadow.getElementById("tdh-rail-close").addEventListener("click", () => {
+      closeSupportPopover();
+      setRailOpen(false);
+    });
     document.addEventListener("keydown", (event) => {
       if (event.altKey && (event.key === "g" || event.key === "G") && !event.repeat) { event.preventDefault(); setRailOpen(!railOpen, true); }
+      if (event.key === "Escape" && supportPopover?.hidden === false) { closeSupportPopover(); return; }
       if (event.key === "Escape" && railOpen) setRailOpen(false, true);
       if (!event.altKey && (event.key === "r" || event.key === "R") && railOpen) requestGqlPoll("keyboard-refresh", true);
     });
-    document.addEventListener("pointerdown", (event) => { if (railOpen && !event.composedPath().includes(host)) setRailOpen(false); });
+    document.addEventListener("pointerdown", (event) => {
+      const path = event.composedPath();
+      if (supportPopover?.hidden === false && !path.includes(supportButton) && !path.includes(supportPopover)) closeSupportPopover();
+      if (railOpen && !path.includes(host)) setRailOpen(false);
+    });
     return ui;
   }
 
