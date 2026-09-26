@@ -1,3 +1,10 @@
+## 3.3.0-dev.7 - 2026-09-25
+
+- Adds a bounded inventory-wide sweep for completed, unclaimed, non-subscription rewards already present in authoritative Twitch Inventory data.
+- Routes every swept reward through the existing claim lock, ledger, exact-result handling, and account-scoped coordination instead of creating a second claim engine.
+- Limits each sweep to three rewards and orders candidates by campaign deadline and reward order, while excluding entries without claim instance IDs.
+- Keeps the actively watched reward on its existing claim path so collecting older completed rewards cannot navigate away from or replace an earning stream.
+
 ## 3.3.0-dev.6 - 2026-09-25
 
 - Re-evaluates the same campaign after a confirmed or already-claimed Drop result so claim-gated successor rewards can unlock immediately.
