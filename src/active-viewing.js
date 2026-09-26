@@ -199,6 +199,77 @@
       };
     }
 
+    function deadlineAssessment(campaign, drop, plan, now = Date.now(), bufferMinutes = 2) {
+      const endMs = Date.parse(drop?.endAt || campaign?.endAt || '');
+      const deadlineMs = Number.isFinite(endMs) ? endMs : null;
+      const minutesUntilDeadline = deadlineMs === null ? null : Math.max(0, Math.floor((deadlineMs - now) / 60000));
+      const requiredMinutes = Number.isFinite(Number(plan?.totalRemainingMinutes)) ? Math.max(0, Number(plan.totalRemainingMinutes)) : null;
+      const safeBufferMinutes = Math.max(0, Number(bufferMinutes) || 0);
+      const finishable = minutesUntilDeadline === null || requiredMinutes === null ? null : requiredMinutes + safeBufferMinutes <= minutesUntilDeadline;
+      const marginMinutes = minutesUntilDeadline === null || requiredMinutes === null ? null : minutesUntilDeadline - requiredMinutes - safeBufferMinutes;
+      const urgency = finishable === false ? 'unfinishable' : marginMinutes === null ? 'unknown' : marginMinutes <= 15 ? 'tight' : marginMinutes <= 60 ? 'soon' : 'comfortable';
+      return { deadlineMs, minutesUntilDeadline, requiredMinutes, bufferMinutes: safeBufferMinutes, finishable, marginMinutes, urgency };
+    }
+
+    function campaignSequence(campaign, now = Date.now(), bufferMinutes = 2) {
+      const drops = campaign?.timeBasedDrops || campaign?.drops || [];
+      let remainingMinutes = 0, known = true, inProgress = false, pendingClaims = 0, watchRewards = 0;
+      for (const drop of drops) {
+        if (drop?.self?.isClaimed === true) continue;
+        const paid = Number(drop?.requiredSubs ?? drop?.requiredSubscriptions ?? drop?.requiredSubscriptionCount ?? drop?.subscriptionRequirement?.requiredSubs ?? 0) > 0;
+        if (paid) continue;
+        const total = number(drop?.requiredMinutesWatched ?? drop?.requiredMinutes);
+        if (total === null || total <= 0) continue;
+        watchRewards += 1;
+        const current = number(drop?.self?.currentMinutesWatched ?? drop?.currentMinutes);
+        if (current === null || current < 0) { known = false; continue; }
+        if (current > 0 && current < total) inProgress = true;
+        remainingMinutes += Math.max(0, total - current);
+        if (current >= total) pendingClaims += 1;
+      }
+      const deadline = deadlineAssessment(campaign, null, { totalRemainingMinutes: known ? remainingMinutes : null }, now, bufferMinutes);
+      return { watchRewards, remainingMinutes: known ? remainingMinutes : null, pendingClaims, inProgress, ...deadline };
+    }
+
+    function rankCampaignCandidates(candidates, { priorityOf = () => 0, now = Date.now(), activeGame = '', bufferMinutes = 2 } = {}) {
+      const active = text(activeGame).toLowerCase();
+      return [...(candidates || [])].map(item => {
+        const rawDeadline = number(item?.endMs);
+        const parsedDeadline = Date.parse(item?.campaignEndAt || item?.dropEndAt || item?.endAt || '');
+        const deadlineMs = rawDeadline !== null ? rawDeadline : (Number.isFinite(parsedDeadline) ? parsedDeadline : null);
+        const remaining = number(item?.sequenceRemainingMinutes ?? item?.remainingMinutes);
+        const minutesUntilDeadline = deadlineMs === null ? null : Math.max(0, Math.floor((deadlineMs - now) / 60000));
+        const safeBuffer = Math.max(0, Number(bufferMinutes) || 0);
+        const finishable = minutesUntilDeadline === null || remaining === null ? null : remaining + safeBuffer <= minutesUntilDeadline;
+        const marginMinutes = minutesUntilDeadline === null || remaining === null ? null : minutesUntilDeadline - remaining - safeBuffer;
+        return {
+          ...item,
+          sequencePriority: Number(priorityOf(item?.game)) || 0,
+          sequenceFinishable: finishable,
+          sequenceMarginMinutes: marginMinutes,
+          sequenceMinutesUntilDeadline: minutesUntilDeadline,
+          sequenceInProgress: Boolean(Number(item?.currentMinutes) > 0 || item?.sequenceInProgress),
+          sequenceActiveGame: Boolean(active && text(item?.game).toLowerCase() === active),
+        };
+      }).sort((a, b) => {
+        const feasibility = value => value === true ? 0 : value === null ? 1 : 2;
+        const feasibleDelta = feasibility(a.sequenceFinishable) - feasibility(b.sequenceFinishable);
+        if (feasibleDelta) return feasibleDelta;
+        if (b.sequencePriority !== a.sequencePriority) return b.sequencePriority - a.sequencePriority;
+        if (a.sequenceActiveGame !== b.sequenceActiveGame) return a.sequenceActiveGame ? -1 : 1;
+        const marginA = Number.isFinite(a.sequenceMarginMinutes) ? a.sequenceMarginMinutes : Number.MAX_SAFE_INTEGER;
+        const marginB = Number.isFinite(b.sequenceMarginMinutes) ? b.sequenceMarginMinutes : Number.MAX_SAFE_INTEGER;
+        if (marginA !== marginB) return marginA - marginB;
+        if (a.sequenceInProgress !== b.sequenceInProgress) return a.sequenceInProgress ? -1 : 1;
+        const endA = Number.isFinite(Number(a.endMs)) ? Number(a.endMs) : Number.MAX_SAFE_INTEGER;
+        const endB = Number.isFinite(Number(b.endMs)) ? Number(b.endMs) : Number.MAX_SAFE_INTEGER;
+        if (endA !== endB) return endA - endB;
+        const remA = number(a.sequenceRemainingMinutes ?? a.remainingMinutes);
+        const remB = number(b.sequenceRemainingMinutes ?? b.remainingMinutes);
+        if (remA !== null && remB !== null && remA !== remB) return remA - remB;
+        return text(a.game).localeCompare(text(b.game));
+      });
+    }
     function eligibility(campaign, drop, context = {}) {
       const now = context.now ?? Date.now();
       const result = (code, label, detail, extra = {}) => ({ code, label, detail, ...extra });
@@ -213,13 +284,30 @@
       if (campaign.self?.isEligible === false || drop.self?.isEligible === false) return result('participation', 'Campaign Not Eligible', 'Twitch reports that this account is not eligible.');
       if (Number(drop.requiredSubs ?? drop.requiredSubscriptions ?? drop.requiredSubscriptionCount ?? drop.subscriptionRequirement?.requiredSubs ?? 0) > 0) return result('paid-requirement', 'Paid Reward Excluded', 'Dropper only assists with free watch rewards.');
       const plan = planPrerequisites(drop, campaign.timeBasedDrops || campaign.drops || []);
-      if (!plan.ready) return result(plan.reason, 'Previous Reward Required', plan.reason === 'prerequisite-required' ? 'Complete or claim the prerequisite shown for this reward.' : 'The prerequisite chain is incomplete or invalid.', { plan });
+      const deadline = deadlineAssessment(campaign, drop, plan, now);
+      const campaignPlan = campaignSequence(campaign, now);
+      if (!plan.ready) return result(plan.reason, 'Previous Reward Required', plan.reason === 'prerequisite-required' ? 'Complete or claim the prerequisite shown for this reward.' : 'The prerequisite chain is incomplete or invalid.', { plan, deadline, campaignPlan });
       const game = text(campaign.game?.displayName || campaign.game?.name || campaign.game).toLowerCase();
-      if (context.game && game && text(context.game).toLowerCase() !== game) return result('wrong-game', 'Stream Not Eligible', 'This stream is in a different game category.', { plan });
-      if (context.allowedChannels?.length && context.channel && !context.allowedChannels.map(x => text(x).toLowerCase()).includes(text(context.channel).toLowerCase())) return result('wrong-channel', 'Stream Not Eligible', "This stream does not meet the selected campaign's channel requirements.", { plan });
-      if (context.verified !== true) return result('unknown', 'Eligibility Not Verified', 'Dropper does not yet have enough information to verify this stream.', { plan });
-      return result('eligible', 'Eligible Stream', 'Twitch campaign or credited-progress evidence verifies this stream.', { plan, deadlineMs: end, estimateMinutes: plan.totalRemainingMinutes });
+      if (context.game && game && text(context.game).toLowerCase() !== game) return result('wrong-game', 'Stream Not Eligible', 'This stream is in a different game category.', { plan, deadline, campaignPlan });
+      if (context.allowedChannels?.length && context.channel && !context.allowedChannels.map(x => text(x).toLowerCase()).includes(text(context.channel).toLowerCase())) return result('wrong-channel', 'Stream Not Eligible', "This stream does not meet the selected campaign's channel requirements.", { plan, deadline, campaignPlan });
+      if (context.verified !== true) return result('unknown', 'Eligibility Not Verified', 'Dropper does not yet have enough information to verify this stream.', { plan, deadline, campaignPlan });
+      if (deadline.finishable === false) return result('deadline-risk', 'Deadline Risk', 'The verified watch requirement is longer than the remaining campaign window.', { plan, deadline, campaignPlan, deadlineMs: end, estimateMinutes: plan.totalRemainingMinutes });
+      return result('eligible', 'Eligible Stream', deadline.urgency === 'tight' ? 'This stream is eligible, but the reward deadline is close.' : 'Twitch campaign or credited-progress evidence verifies this stream.', { plan, deadline, campaignPlan, deadlineMs: end, estimateMinutes: plan.totalRemainingMinutes });
     }
-    return Object.freeze({ createIntent, createClaims, claimResponse, claimFailure, planPrerequisites, eligibility });
+
+    function claimPresentation(record) {
+      const outcome = record?.outcome;
+      const evidence = record?.evidence;
+      if (outcome === 'confirmed') return 'Reward Claimed';
+      if (outcome === 'already-claimed') return 'Already Claimed';
+      if (outcome === 'retryable') return 'Claim Retry Pending';
+      if (outcome === 'blocked') return 'Claim Needs Attention';
+      if (outcome === 'pending') return 'Claim Sent · Waiting For Twitch';
+      if (outcome === 'discarded') return 'Claim Context Changed';
+      if (outcome === 'unconfirmed' && evidence === 'timeout') return 'Claim Sent · Confirmation Unavailable';
+      return 'Claim Not Confirmed';
+    }
+
+    return Object.freeze({ createIntent, createClaims, claimResponse, claimFailure, planPrerequisites, deadlineAssessment, campaignSequence, rankCampaignCandidates, eligibility, claimPresentation });
   })();
   // END DROPPER ACTIVE VIEWING
