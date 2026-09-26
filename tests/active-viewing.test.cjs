@@ -370,3 +370,12 @@ test('routing diagnostics retain evidence rank and label for the chosen stream',
   assert.match(source, /evidenceLabel: candidate\.evidenceLabel/);
   assert.match(source, /evidenceLabel: item\.evidenceLabel/);
 });
+
+
+test('confirmed claim re-evaluates same-campaign claim-gated prerequisites', () => {
+  assert.match(source, /function continueAfterConfirmedDropClaim\(/);
+  assert.match(source, /applyConfirmedDropClaim\(lastInventoryCampaigns, attempt\)/);
+  assert.match(source, /claim-unlocked-next-drop/);
+  assert.match(source, /continueAfterConfirmedDropClaim\(attempt\)/);
+  assert.match(source, /alreadyProgressingElsewhere/);
+});
