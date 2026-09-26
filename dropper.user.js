@@ -536,11 +536,6 @@ const ExtraPotionsDiagnostics = (() => {
       "Separates campaign-level stream verification from exact reward identity so another Drop cannot advance the locked reward.",
       "Adds focus-aware stall recovery, bounded retries, stale-state cleanup, and expanded release-gate regression coverage."
     ],
-    "3.3.0-dev.15": [
-      "Centralizes claim-related Twitch DOM selectors and strengthens fail-closed visibility checks for automatic claim controls.",
-      "Separates campaign-level stream verification from exact reward identity so a different Drop in the same campaign cannot advance the locked reward.",
-      "Expires stale routing sessions from storage and adds release-gate regression coverage for unsafe controls, identity mismatches, and bounded transient state."
-    ],
 
     "3.2.31": [
       "Improves diagnostics with separate progress-card, launcher, launcher-row, menu, and notice geometry.",
