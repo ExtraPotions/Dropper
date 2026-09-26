@@ -1740,6 +1740,89 @@ const ExtraPotionsDiagnostics = (() => {
     if (!isAutoRoutingController()) return false;
     return fallbackClaimLease.run(claimLeaseStorageKey(key, context.account), () => claimContextIsCurrent(context) ? task() : false);
   }
+  function applyConfirmedDropClaim(campaigns, attempt) {
+    const campaignId = cleanText(attempt?.campaignId).toLowerCase();
+    const rewardId = cleanText(attempt?.rewardId);
+    if (!campaignId || !rewardId) return campaigns || [];
+    return (campaigns || []).map(campaign => {
+      const key = cleanText(campaignKey(campaign) || campaign?.id).toLowerCase();
+      if (key !== campaignId && cleanText(campaign?.id).toLowerCase() !== campaignId) return campaign;
+      const drops = (campaign.timeBasedDrops || campaign.drops || []).map(drop => {
+        if (cleanText(drop?.id) !== rewardId) return drop;
+        return { ...drop, self: { ...(drop.self || {}), isClaimed: true } };
+      });
+      return { ...campaign, timeBasedDrops: drops, drops };
+    });
+  }
+
+  function continueAfterConfirmedDropClaim(attempt) {
+    if (attempt?.kind !== 'drop' || !attempt.rewardId || !attempt.campaignId) return false;
+    lastInventoryCampaigns = applyConfirmedDropClaim(lastInventoryCampaigns, attempt);
+    lastCampaignCatalog = applyConfirmedDropClaim(lastCampaignCatalog, attempt);
+    const pool = routingCampaignPool();
+    const campaignId = cleanText(attempt.campaignId).toLowerCase();
+    const campaign = pool.find(item => {
+      const key = cleanText(campaignKey(item) || item?.id).toLowerCase();
+      return key === campaignId || cleanText(item?.id).toLowerCase() === campaignId;
+    });
+    if (!campaign) return false;
+    const game = campaignGameName(campaign);
+    const next = pickTimedDrop([campaign], game);
+    if (!next || dropProgressComplete(next) || !dropFitsCampaignWindow(next)) return false;
+
+    const currentCampaign = cleanText(currentDrop?.campaignKey || currentDrop?.campaignId).toLowerCase();
+    const alreadyProgressingElsewhere = Boolean(
+      currentDrop &&
+      currentCampaign &&
+      currentCampaign !== campaignId &&
+      Number(currentDrop.currentMinutes || 0) > 0
+    );
+    if (alreadyProgressingElsewhere) return false;
+
+    adoptSelectedTargetDrop(next, 'claim-unlocked-next-drop');
+    const login = watchingLogin();
+    const info = login ? readStreamInfo() : null;
+    const sameLiveGame = Boolean(login && info?.live && info.game && gameNamesMatch(next.game || game, info.game));
+    const routing = readRoutingControllerSession();
+    if (sameLiveGame) {
+      transitionRoutingController(
+        ROUTING_STATES.VERIFY_STREAM,
+        {
+          ...routingControllerTargetFromDrop(next),
+          targetStream: login,
+          failedStreams: [],
+          candidateEvidence: routing.candidateEvidence || null,
+          verifyBaselineMinutes: Number(next.currentMinutes || 0),
+          verifyBaselinePercent: Number(next.percent || 0),
+          deadlineAt: Date.now() + ROUTING_VERIFY_DEADLINE_MS,
+        },
+        `Claim unlocked ${next.name || 'next Drop'} · verifying current stream`,
+      );
+      requestGqlPoll('claim-unlocked-next-drop', true);
+    } else if (settings.findNextStream) {
+      transitionRoutingController(
+        ROUTING_STATES.FIND_STREAM,
+        {
+          ...routingControllerTargetFromDrop(next),
+          targetStream: '',
+          failedStreams: [],
+          candidateEvidence: null,
+          deadlineAt: 0,
+        },
+        `Claim unlocked ${next.name || 'next Drop'} · finding an eligible stream`,
+      );
+    }
+    logActivity('claim-unlocked-reward', `Claim unlocked ${next.name || 'next Drop'} in the same campaign`, {
+      campaign: next.campaign || campaign.name || game || null,
+      campaignKey: next.campaignKey || next.campaignId || null,
+      claimedRewardId: attempt.rewardId,
+      nextRewardId: next.id || null,
+      sameLiveGame,
+    });
+    setStatus(`Claim Confirmed · Next Drop: ${next.name || 'Drop'}`);
+    queueGqlPollSoon('claim-unlocked-next-drop', 0);
+    return true;
+  }
   function recordClaimOutcome(ledger, attempt, outcome, evidence) {
     const settled = ledger.settle(attempt.key, attempt.attemptId, outcome, evidence);
     if (!settled) return null;
@@ -1747,7 +1830,10 @@ const ExtraPotionsDiagnostics = (() => {
     if (outcome === 'confirmed' || outcome === 'already-claimed') {
       if (attempt.kind === 'bonus') lastBonusAt = Date.now();
       else lastDropAt = Date.now();
-      if (attempt.kind === 'drop' && attempt.key === claimRecordKey(currentDrop)) resetClaimReadyTimer();
+      if (attempt.kind === 'drop') {
+        if (attempt.key === claimRecordKey(currentDrop)) resetClaimReadyTimer();
+        continueAfterConfirmedDropClaim(attempt);
+      }
     }
     logActivity('claim-result', label, { kind: attempt.kind, rewardId: attempt.rewardId || null, outcome, evidence });
     setStatus(label);
