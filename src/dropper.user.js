@@ -7032,11 +7032,19 @@ const ExtraPotionsDiagnostics = (() => {
     }
 
     const incomplete = candidates.filter((item) => !dropProgressComplete(item));
-    // Preserve the established shell safety window first: a campaign without
-    // reward details needs enough time left to justify inspection. Known
-    // unwinnable detailed rewards are filtered here whenever a viable option
+    // Preserve the established shell safety window first. A campaign without
+    // reward details and less than the minimum inspection window yields when
+    // any other candidate exists, while remaining a last-resort fallback.
+    const shellSafe = incomplete.filter((item) => {
+      if (!item.needsDropDetails) return true;
+      const endMs = Number(item.endMs || 0);
+      if (!Number.isFinite(endMs) || endMs <= 0 || endMs >= Number.MAX_SAFE_INTEGER / 2) return true;
+      return endMs - now - CAMPAIGN_WINNABLE_BUFFER_MS >= CAMPAIGN_SHELL_MIN_WINDOW_MS;
+    });
+    const inspectionPool = shellSafe.length ? shellSafe : incomplete;
+    // Known unwinnable detailed rewards are filtered whenever a viable option
     // exists. The shared ranker then applies personal priority and sequencing.
-    const winnablePool = preferWinnableDrops(incomplete, now);
+    const winnablePool = preferWinnableDrops(inspectionPool, now);
     const pool = DropperActiveViewing.rankCampaignCandidates(winnablePool, {
       priorityOf: campaignPriority,
       now,
