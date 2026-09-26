@@ -19,7 +19,7 @@ const exposed = source.replace('  startDropper();\n})();', `
     setActiveClaims: value => { settings.claimBonus = value; settings.claimDrops = value; syncClaimWatchers(); },
     queueScan: queueClaimScan, setPriority: setCampaignPriority, priorityEntry: campaignPriorityEntry,
     rankCandidates: rankStreamCandidatesByEvidence,
-    continueClaim: continueAfterConfirmedDropClaim, current: () => currentDrop,
+    continueClaim: continueAfterConfirmedDropClaim, sweep: sweepClaimReadyInventory, current: () => currentDrop,
     status: () => ({ viewing: viewingIntent.snapshot(), selectors: claimHealth }),
     pauseIntent: () => { viewingIntent.pause(true); },
   };
@@ -359,4 +359,56 @@ test('confirmed claim unlocks the next claim-gated reward in the same campaign',
   assert.equal(result.id, 'second-reward');
   assert.equal(result.campaignKey, 'claim-gated-campaign');
   assert.equal(result.minutes, 0);
+}));
+
+
+test('inventory sweep claims completed rewards without leaving the active stream', async () => fixture(async page => {
+  const now = Date.now();
+  const current = {
+    id: 'current-live', campaignId: 'current-campaign', campaignKey: 'current-campaign',
+    dropInstanceID: 'instance-current', name: 'Current live reward', game: 'Current Game',
+    requiredMinutes: 60, currentMinutes: 20, percent: 33,
+  };
+  const campaigns = [
+    {
+      id: 'current-campaign', name: 'Current Campaign', startAt: new Date(now - 60000).toISOString(), endAt: new Date(now + 4 * 3600000).toISOString(),
+      game: { name: 'Current Game', displayName: 'Current Game' },
+      timeBasedDrops: [{ id: 'current-live', name: 'Current live reward', requiredMinutesWatched: 60, self: { currentMinutesWatched: 20, isClaimed: false, dropInstanceID: 'instance-current' } }],
+    },
+    {
+      id: 'older-ready', name: 'Older Ready', startAt: new Date(now - 60000).toISOString(), endAt: new Date(now + 3600000).toISOString(),
+      game: { name: 'Other Game', displayName: 'Other Game' },
+      timeBasedDrops: [
+        { id: 'ready-a', name: 'Ready A', requiredMinutesWatched: 30, self: { currentMinutesWatched: 30, isClaimed: false, dropInstanceID: 'instance-a' } },
+        { id: 'ready-b', name: 'Ready B', requiredMinutesWatched: 30, self: { currentMinutesWatched: 30, isClaimed: false, dropInstanceID: 'instance-b' } },
+      ],
+    },
+  ];
+  await page.evaluate(({ current, campaigns }) => {
+    const t = window.__dropperTest;
+    t.configure(current, campaigns);
+    t.setActiveClaims(true);
+    window.__sweepCalls = [];
+    t.setGql(async requests => {
+      window.__sweepCalls.push(requests[0]?.variables?.input?.dropInstanceID || '');
+      return requests.map(() => ({ data: { claimDropRewards: { status: 'ELIGIBLE_FOR_ALL' } } }));
+    });
+  }, { current, campaigns });
+  const result = await page.evaluate(async campaigns => {
+    const t = window.__dropperTest;
+    const confirmed = await t.sweep(campaigns, 'browser-test');
+    return {
+      confirmed,
+      calls: window.__sweepCalls.slice(),
+      history: t.history().map(item => ({ rewardId: item.rewardId, outcome: item.outcome })),
+      current: t.current(),
+      path: location.pathname,
+    };
+  }, campaigns);
+  assert.equal(result.confirmed, 2);
+  assert.deepEqual(result.calls, ['instance-a', 'instance-b']);
+  assert.deepEqual(result.history.filter(item => item.outcome === 'confirmed').map(item => item.rewardId).sort(), ['ready-a', 'ready-b']);
+  assert.equal(result.current.id, 'current-live');
+  assert.equal(result.current.currentMinutes, 20);
+  assert.equal(result.path, '/chosen_channel');
 }));
