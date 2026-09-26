@@ -17,6 +17,7 @@ const exposed = source.replace('  startDropper();\n})();', `
     ignore: setCampaignGameIgnored, priority: campaignPriority, pickNext: pickNextOpenCampaignDrop,
     setWidth: mode => { settings.collapsedPanelWidth = mode; applyAppearanceSettings(); },
     setActiveClaims: value => { settings.claimBonus = value; settings.claimDrops = value; syncClaimWatchers(); },
+    queueScan: queueClaimScan, setPriority: setCampaignPriority, priorityEntry: campaignPriorityEntry,
     status: () => ({ viewing: viewingIntent.snapshot(), selectors: claimHealth }),
     pauseIntent: () => { viewingIntent.pause(true); },
   };
@@ -229,4 +230,58 @@ test('known-unfinishable campaign cannot win even with high personal priority', 
   assert.equal(result.priority, 1);
   assert.equal(result.game, 'Viable Game');
   assert.equal(result.url, '/chosen_channel');
+}));
+
+
+test('bonus control dismissal confirms the page claim after Twitch removes the claimed control', async () => fixture(async page => {
+  await page.evaluate(() => {
+    const t = window.__dropperTest;
+    t.setActiveClaims(false);
+    const container = document.createElement('div');
+    container.className = 'community-points-summary';
+    const button = document.createElement('button');
+    button.id = 'bonus-dismiss';
+    button.setAttribute('aria-label', 'Claim Bonus');
+    const icon = document.createElement('span');
+    icon.className = 'claimable-bonus__icon';
+    button.append(icon);
+    container.append(button);
+    document.body.append(container);
+    button.addEventListener('click', () => setTimeout(() => button.remove(), 50), { once: true });
+    t.setActiveClaims(true);
+    t.scan();
+  });
+  await page.waitForTimeout(3400);
+  const bonus = await page.evaluate(() => window.__dropperTest.history().find(record => record.kind === 'bonus'));
+  assert.equal(bonus?.outcome, 'confirmed');
+  assert.equal(bonus?.evidence, 'control-dismissed');
+}));
+
+test('mutation storms coalesce into the minimum claim scan interval', async () => fixture(async page => {
+  const before = await page.evaluate(() => {
+    const t = window.__dropperTest;
+    t.setActiveClaims(true);
+    t.scan();
+    return t.status().selectors.bonus?.checks || 0;
+  });
+  await page.evaluate(() => {
+    const t = window.__dropperTest;
+    for (let i = 0; i < 50; i++) t.queueScan('mutation');
+  });
+  await page.waitForTimeout(500);
+  const after = await page.evaluate(() => window.__dropperTest.status().selectors.bonus?.checks || 0);
+  assert.equal(after, before, 'no additional scan occurs before the five-second floor');
+}));
+
+test('campaign priority diagnostics distinguish saved preferences from the default', async () => fixture(async page => {
+  const result = await page.evaluate(() => {
+    const t = window.__dropperTest;
+    t.setPriority('Fixture Game', 1);
+    const saved = t.priorityEntry('Fixture Game');
+    t.setPriority('Fixture Game', 0);
+    const normal = t.priorityEntry('Fixture Game');
+    return { saved: { value: saved.value, explicit: saved.explicit }, normal: { value: normal.value, explicit: normal.explicit } };
+  });
+  assert.deepEqual(result.saved, { value: 1, explicit: true });
+  assert.deepEqual(result.normal, { value: 0, explicit: false });
 }));
