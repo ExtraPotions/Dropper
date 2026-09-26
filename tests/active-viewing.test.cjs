@@ -208,3 +208,73 @@ test('donation wording and licenses are not feature gates', () => {
   assert.doesNotMatch(source, /donorEntitlement|premiumFeature|paywallEnabled/);
   assert.match(source, /tdh-support-note/);
 });
+
+
+test('deadline assessment stays explicit about safe, tight, impossible, and unknown windows', () => {
+  const now = Date.parse('2026-09-25T12:00:00Z');
+  const campaign = { endAt: '2026-09-25T13:00:00Z' };
+  assert.equal(active.deadlineAssessment(campaign, null, { totalRemainingMinutes: 30 }, now).urgency, 'soon');
+  const tight = active.deadlineAssessment(campaign, null, { totalRemainingMinutes: 45 }, now);
+  assert.equal(tight.finishable, true);
+  assert.equal(tight.urgency, 'tight');
+  const impossible = active.deadlineAssessment(campaign, null, { totalRemainingMinutes: 59 }, now);
+  assert.equal(impossible.finishable, false);
+  assert.equal(impossible.urgency, 'unfinishable');
+  assert.equal(active.deadlineAssessment({}, null, { totalRemainingMinutes: 20 }, now).finishable, null);
+});
+
+test('campaign sequence sums free watch work and keeps claim-ready rewards visible', () => {
+  const now = Date.parse('2026-09-25T12:00:00Z');
+  const campaign = {
+    endAt: '2026-09-25T15:00:00Z',
+    timeBasedDrops: [
+      { id: 'a', requiredMinutesWatched: 60, self: { currentMinutesWatched: 30, isClaimed: false } },
+      { id: 'b', requiredMinutesWatched: 60, self: { currentMinutesWatched: 60, isClaimed: false } },
+      { id: 'c', requiredMinutesWatched: 60, self: { currentMinutesWatched: 0, isClaimed: true } },
+      { id: 'paid', requiredMinutesWatched: 60, requiredSubscriptionCount: 1, self: { currentMinutesWatched: 0, isClaimed: false } },
+    ],
+  };
+  const plan = active.campaignSequence(campaign, now);
+  assert.equal(plan.remainingMinutes, 30);
+  assert.equal(plan.pendingClaims, 1);
+  assert.equal(plan.inProgress, true);
+  assert.equal(plan.finishable, true);
+});
+
+test('campaign ranking rejects known impossible work before applying personal priority and urgency', () => {
+  const now = Date.parse('2026-09-25T12:00:00Z');
+  const ranked = active.rankCampaignCandidates([
+    { game: 'Impossible High', endMs: now + 30 * 60000, remainingMinutes: 60 },
+    { game: 'Normal Soon', endMs: now + 50 * 60000, remainingMinutes: 20 },
+    { game: 'High Later', endMs: now + 120 * 60000, remainingMinutes: 40 },
+  ], {
+    now,
+    priorityOf: game => game.includes('High') ? 1 : 0,
+  });
+  assert.equal(ranked[0].game, 'High Later');
+  assert.equal(ranked[1].game, 'Normal Soon');
+  assert.equal(ranked[2].game, 'Impossible High');
+  assert.equal(ranked[2].sequenceFinishable, false);
+});
+
+test('claim presentation distinguishes a sent claim without confirmation from a failure', () => {
+  assert.equal(active.claimPresentation({ outcome: 'unconfirmed', evidence: 'timeout' }), 'Claim Sent · Confirmation Unavailable');
+  assert.equal(active.claimPresentation({ outcome: 'blocked', evidence: 'integrity' }), 'Claim Needs Attention');
+  assert.equal(active.claimPresentation({ outcome: 'confirmed', evidence: 'inventory' }), 'Reward Claimed');
+});
+
+test('eligibility reports deadline risk without fabricating credited progress', () => {
+  const now = Date.parse('2026-09-25T12:00:00Z');
+  const drop = { id: 'r', requiredMinutesWatched: 60, self: { currentMinutesWatched: 5, isClaimed: false } };
+  const campaign = { id: 'c', startAt: '2026-09-25T11:00:00Z', endAt: '2026-09-25T12:30:00Z', game: { name: 'Game' }, timeBasedDrops: [drop] };
+  const result = active.eligibility(campaign, drop, { now, channel: 'chosen', game: 'Game', allowedChannels: ['chosen'], verified: true });
+  assert.equal(result.code, 'deadline-risk');
+  assert.equal(result.deadline.finishable, false);
+  assert.equal(result.plan.totalRemainingMinutes, 55);
+});
+
+test('Dropper routing consumes shared deadline-aware ranking and timeout wording', () => {
+  assert.match(extract('pickNextOpenCampaignDrop'), /rankCampaignCandidates/);
+  assert.match(source, /Claim Sent · Confirmation Unavailable/);
+  assert.match(source, /campaignSupported,/);
+});
