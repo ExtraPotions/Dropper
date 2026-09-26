@@ -1,3 +1,10 @@
+## 3.3.0-dev.8 - 2026-09-25
+
+- Keeps ViewerDropsDashboard and All Campaigns data authoritative for catalog membership while Twitch Inventory remains authoritative for reward progress.
+- Changes authenticated Inventory fallback from catalog replacement to progress overlay, preventing a short in-progress list from shrinking a richer saved catalog.
+- Preserves broader campaign membership across Twitch navigation, integrity fallback, and one-campaign Inventory responses.
+- Adds regression coverage proving Inventory fallback updates matching progress without removing dashboard or All Campaigns campaigns.
+
 ## 3.3.0-dev.7 - 2026-09-25
 
 - Adds a bounded inventory-wide sweep for completed, unclaimed, non-subscription rewards already present in authoritative Twitch Inventory data.
