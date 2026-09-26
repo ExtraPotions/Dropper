@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.0-dev.10
+// @version      3.3.0-dev.11
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.0-dev.10";
+  const APP_VERSION = "3.3.0-dev.11";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -530,10 +530,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
-    "3.3.0-dev.10": [
-      "Moves optional-support wording into a compact heart button beside Close and removes the permanent donation note from System.",
-      "Replaces the long eligibility paragraph with a one-line expandable chip such as Eligible · 88 min remaining or Deadline Risk · 88 min needed.",
-      "Keeps the full eligibility explanation available inside the expanded chip and in Diagnostics without changing Dropper's panel structure."
+    "3.3.0-dev.11": [
+      "Connects the Support Dropper heart popover to the official ExtraPotions Ko-fi page.",
+      "Keeps support optional, keeps every Dropper feature available without donating, and opens Ko-fi in a separate tab.",
+      "Preserves the compact support confirmation step so clicking the heart itself never navigates away from Twitch."
     ],
 
     "3.2.31": [
@@ -12607,6 +12607,16 @@ const ExtraPotionsDiagnostics = (() => {
       .support-popover[hidden] { display:none; }
       .support-popover strong { display:block; margin-bottom:3px; font-size:10px; }
       .support-popover span { display:block; color:var(--theme-muted); font-size:8px; line-height:1.35; }
+      .support-popover a {
+        display:flex; align-items:center; justify-content:center; min-height:26px; margin-top:7px; padding:0 9px;
+        border:1px solid color-mix(in srgb,var(--theme-accent) 58%,var(--theme-line));
+        border-radius:7px; background:color-mix(in srgb,var(--theme-panel) 76%,var(--theme-accent) 24%);
+        color:var(--theme-text); text-decoration:none; font-size:9px; font-weight:800;
+      }
+      .support-popover a:hover, .support-popover a:focus-visible {
+        border-color:var(--theme-accent2); outline:none;
+        background:color-mix(in srgb,var(--theme-panel) 66%,var(--theme-accent) 34%);
+      }
       .header-brand {
         display:grid; grid-template-columns:38px minmax(0,1fr);
         align-items:center; gap:8px; min-width:0; width:100%;
@@ -13106,6 +13116,7 @@ const ExtraPotionsDiagnostics = (() => {
                 <div class="support-popover" id="tdh-support-popover" role="dialog" aria-label="Support Dropper" hidden>
                   <strong>Support Dropper</strong>
                   <span>Donations are optional. All features stay free.</span>
+                  <a id="tdh-support-link" href="https://ko-fi.com/expdare" target="_blank" rel="noopener noreferrer">Open Ko-fi</a>
                 </div>
               </div>
               <button type="button" id="tdh-rail-close" aria-label="Close">×</button>
