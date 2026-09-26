@@ -402,7 +402,7 @@ test('inventory claim candidates only include completed safe rewards in bounded 
     },
   ];
   const selected = active.inventoryClaimCandidates(campaigns, { limit: 2 });
-  assert.deepEqual(selected.map(item => item.id), ['soon-first', 'soon-second']);
+  assert.deepEqual(Array.from(selected, item => item.id), ['soon-first', 'soon-second']);
   assert.ok(selected.every(item => item.percent === 100 && item.remainingMinutes === 0 && item.inventorySweep === true));
-  assert.deepEqual(active.inventoryClaimCandidates(campaigns, { limit: 3, excludeRewardId: 'soon-first' }).map(item => item.id), ['soon-second', 'later-ready']);
+  assert.deepEqual(Array.from(active.inventoryClaimCandidates(campaigns, { limit: 3, excludeRewardId: 'soon-first' }), item => item.id), ['soon-second', 'later-ready']);
 });
