@@ -1845,6 +1845,7 @@ const ExtraPotionsDiagnostics = (() => {
     return true;
   }
   function scanClaimGroups(root = document, kind = '') {
+    if (claimScanTimer) { clearTimeout(claimScanTimer); claimScanTimer = null; }
     lastClaimScanAt = Date.now();
     claimScanQueuedAt = 0;
     let queued = 0;
