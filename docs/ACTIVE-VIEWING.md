@@ -1,6 +1,6 @@
 # Active-viewing implementation
 
-Development version: 3.3.0-dev.6. Baseline: Dropper 3.2.31.
+Development version: 3.3.0-dev.7. Baseline: Dropper 3.2.31.
 
 ## Behavior
 
@@ -120,3 +120,12 @@ The selected candidate's evidence rank and label are retained in routing diagnos
 Watch completion and claim completion are now treated separately. A successor reward that only requires the previous reward to be completed can already advance at 100% watch progress. A successor that explicitly requires the previous reward to be claimed is re-evaluated only after Dropper receives confirmed or already-claimed evidence.
 
 The confirmed claim is applied to Dropper's in-memory campaign snapshots before prerequisite evaluation. If that unlocks another watch-time reward in the same campaign, it becomes the active target. When the currently viewed stream is still live in the same game, Dropper re-verifies it in place instead of navigating away. A different campaign that has already begun earning credited progress is not preempted.
+
+
+## 3.3.0-dev.7 inventory claim sweep tranche
+
+Dropper now checks authoritative Twitch Inventory snapshots for completed, unclaimed, non-subscription rewards beyond the currently watched Drop. Up to three claim-ready rewards are selected per sweep, ordered by campaign deadline and reward order. Candidates without a claim instance ID are ignored.
+
+The sweep does not introduce a second claim engine. Every selected reward runs through the same account-scoped claim lock, ledger, result parser, retry rules, history, and confirmation flow already used by the current Drop. Secondary tabs do not initiate sweeps.
+
+The reward currently being watched is excluded from the inventory sweep because it already has an immediate claim path. Confirmed background rewards therefore cannot replace or navigate away from a different campaign that is actively earning credited progress.
