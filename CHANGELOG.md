@@ -1,3 +1,10 @@
+## 3.3.0-dev.5 - 2026-09-25
+
+- Ranks automatic stream candidates by campaign evidence before viewer-count preference.
+- Prefers live campaign-allow-listed channels, then live Drops-tagged channels, then same-game probationary channels.
+- Keeps live evidence ahead of cached standby evidence while preserving Lowest Viewers, Highest Viewers, and Any Eligible tie behavior.
+- Adds candidate evidence rank and label to routing and queue diagnostics.
+
 ## 3.3.0-dev.4 - 2026-09-25
 
 - Confirms channel-point bonus claims when Twitch removes the exact claimed bonus control; ambiguous outcomes remain unconfirmed.
