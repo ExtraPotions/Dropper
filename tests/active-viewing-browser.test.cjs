@@ -173,14 +173,17 @@ test('campaign priority is account-scoped, does not navigate, and existing chrom
   const widths = [];
   for (const [mode, expected] of [['full', 312], ['compact', 260], ['narrow', 220]]) {
     await page.evaluate(mode => { const t = window.__dropperTest; t.setWidth(mode); window.dropperShow(); const h = document.getElementById('tdh-root').shadowRoot.querySelector('[data-panel="tdh-drops-body"]'); const b = document.getElementById('tdh-root').shadowRoot.getElementById('tdh-drops-body'); if (b.classList.contains('fl-tool-hidden')) h.click(); }, mode);
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(300);
     const box = await page.evaluate(() => {
       const root = document.getElementById('tdh-root').shadowRoot;
       const dock = root.getElementById('tdh-tools-dock'); const rect = dock.getBoundingClientRect();
-      return { width: rect.width, left: rect.left, right: rect.right, overflow: dock.scrollWidth - dock.clientWidth };
+      const row = root.querySelector('.badge-row').getBoundingClientRect();
+      return { width: rect.width, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, rowTop: row.top, rowBottom: row.bottom, overflow: dock.scrollWidth - dock.clientWidth };
     });
     widths.push(box.width); assert.ok(Math.abs(box.width - expected) <= 1, `${mode}: ${box.width}`);
     assert.ok(box.left >= 0 && box.right <= 1280); assert.ok(box.overflow <= 1, `${mode} content stays inside menu width`);
+    assert.ok(box.top >= 8 && box.bottom <= 892, `${mode} menu stays inside the viewport`);
+    assert.ok(box.bottom <= box.rowTop - 7 || box.top >= box.rowBottom + 7, `${mode} menu does not overlap the progress/launcher row: ${JSON.stringify(box)}`);
     fs.mkdirSync(path.join(__dirname, '../test-artifacts'), { recursive: true });
     await page.screenshot({ path: path.join(__dirname, `../test-artifacts/active-viewing-${mode}.png`) });
   }

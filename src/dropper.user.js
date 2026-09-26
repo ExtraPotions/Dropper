@@ -12593,6 +12593,23 @@ const ExtraPotionsDiagnostics = (() => {
     document.documentElement.appendChild(host);
     registerBadgeGrid(host, "dropper", 90);
     ui = { host, shadow, cluster: shadow.getElementById("tdh-cluster"), launcher: shadow.getElementById("tdh-settings-launcher"), dock: shadow.getElementById("tdh-tools-dock") };
+    // Text wrapping, width transitions, and nested panels can change the menu
+    // after the initial layout. Coalesce resize work without another poll loop.
+    let chromeLayoutFrame = 0;
+    const chromeResizeObserver = new ResizeObserver(() => {
+      if (!host.isConnected || ui?.host !== host) {
+        cancelAnimationFrame(chromeLayoutFrame);
+        chromeResizeObserver.disconnect();
+        return;
+      }
+      if (chromeLayoutFrame) return;
+      chromeLayoutFrame = requestAnimationFrame(() => {
+        chromeLayoutFrame = 0;
+        if (host.isConnected && ui?.host === host) layoutChrome();
+      });
+    });
+    chromeResizeObserver.observe(ui.dock);
+    chromeResizeObserver.observe(shadow.querySelector(".badge-row"));
     const updateNotice = shadow.getElementById("tdh-update-notice");
     if (updateNotice) {
       updateNotice.dataset.placement = "menu";
@@ -15082,19 +15099,24 @@ const ExtraPotionsDiagnostics = (() => {
     const rowTop = rowBox?.height ? rowBox.top : clusterTop;
     const rowBottom = rowBox?.height ? rowBox.bottom : clusterTop + rowHeight;
 
-    const menuHeight = railOpen ? ui.dock.offsetHeight || ui.dock.clientHeight || 280 : 0;
     if (railOpen) {
+      // Inline width from the previous mode must not determine the measured
+      // height. Constrain the new width and inward space before positioning.
+      ui.dock.style.setProperty("width", `${Math.min(panelWidth, window.innerWidth - 24)}px`, "important");
+      const availableMenuHeight = anchor === "top"
+        ? window.innerHeight - rowBottom - 16
+        : rowTop - 16;
+      ui.dock.style.maxHeight = `${Math.max(0, availableMenuHeight)}px`;
+      ui.dock.style.overflowY = "auto";
+      const menuHeight = ui.dock.offsetHeight || ui.dock.clientHeight || 0;
       const desiredMenuTop = anchor === "top"
         ? rowBottom + 8
         : rowTop - menuHeight - 8;
       const safeMenuTop = Math.max(8, Math.min(window.innerHeight - menuHeight - 8, desiredMenuTop));
-      ui.dock.style.setProperty("width", `${Math.min(panelWidth, window.innerWidth - 24)}px`, "important");
       ui.dock.style.right = "12px";
       ui.dock.style.left = "auto";
       ui.dock.style.top = `${safeMenuTop}px`;
       ui.dock.style.bottom = "auto";
-      ui.dock.style.maxHeight = `${Math.max(80, window.innerHeight - safeMenuTop - 8)}px`;
-      ui.dock.style.overflowY = "auto";
 
       document.documentElement.dataset.expDropperMenuOpen = "1";
       const previousTop = document.documentElement.style.getPropertyValue("--exp-dropper-menu-top");
