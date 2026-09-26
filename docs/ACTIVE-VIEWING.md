@@ -1,6 +1,6 @@
 # Active-viewing implementation
 
-Development version: 3.3.0-dev.1. Baseline: Dropper 3.2.31.
+Development version: 3.3.0-dev.2. Baseline: Dropper 3.2.31.
 
 ## Behavior
 
@@ -77,3 +77,10 @@ Dropper is free to use for personal, noncommercial purposes under its software
 license. Donations are optional and support continued development. All features
 remain available without donating, and donations do not change license rights.
 No payment integration or donation destination is included in this change.
+
+
+## 3.3.0-dev.2 campaign intelligence tranche
+
+Campaign ordering now moves a campaign with a known impossible watch window behind viable work. Among viable or unknown candidates, ordering considers personal game priority, the currently active game, deadline margin, in-progress state, campaign end time, and remaining watch time. Priority still does not grant navigation permission and cannot override a deliberate pause or manual stream choice.
+
+Eligibility reports reward-level deadline feasibility and campaign-wide remaining watch minutes when Twitch supplies enough data. These estimates never replace Twitch-credited progress. Timed-out page claims are described as "Claim Sent · Confirmation Unavailable" rather than as a rejection, and credited-progress verification carries forward current GQL campaign support when that evidence exists.
