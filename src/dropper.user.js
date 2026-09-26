@@ -2048,8 +2048,45 @@ const ExtraPotionsDiagnostics = (() => {
       health: DropperActiveViewing.selectorHealth(entry, now),
     }]));
   }
+  function claimHealthSummary(now = Date.now()) {
+    const records = claimLedger().snapshot();
+    const confirmed = records.filter(record => record.outcome === 'confirmed' || record.outcome === 'already-claimed').length;
+    const pending = records.filter(record => record.outcome === 'pending' || record.outcome === 'retryable').length;
+    const attention = records.filter(record => record.outcome === 'blocked' || record.outcome === 'unconfirmed').length;
+    const parts = [];
+    if (!records.length) parts.push('Claims: none');
+    else {
+      parts.push(`Claims: ${confirmed} confirmed`);
+      if (pending) parts.push(`${pending} pending`);
+      if (attention) parts.push(`${attention} needs attention`);
+    }
+
+    const labels = {
+      'monitoring': 'monitoring',
+      'observed': 'control observed',
+      'observed-recently': 'control seen recently',
+      'stale-observation': 'control not seen recently',
+      'action-pending': 'claim pending',
+      'degraded': 'detector degraded',
+    };
+    const health = claimSelectorHealthSnapshot(now);
+    for (const [id, entry] of Object.entries(health)) {
+      if (!entry?.applicable) continue;
+      const label = id === 'bonus' ? 'Bonus' : id === 'inventory-drop' ? 'Inventory' : 'Drop';
+      parts.push(`${label}: ${labels[entry.health?.status] || entry.health?.status || 'monitoring'}`);
+    }
+
+    const sweep = inventoryClaimSweepState || {};
+    if (sweep.reason === 'claimed') parts.push(`Inventory sweep: ${Number(sweep.confirmed || 0)} claimed`);
+    else if (sweep.reason === 'none-ready') parts.push('Inventory sweep: none ready');
+    else if (sweep.reason === 'secondary-tab') parts.push('Inventory sweep: managed by another tab');
+    else if (sweep.reason === 'disabled') parts.push('Inventory sweep: disabled');
+    return parts.join(' · ');
+  }
   function renderClaimHistory() {
     const output = ui?.shadow?.getElementById('tdh-claim-history');
+    const health = ui?.shadow?.getElementById('tdh-claim-health');
+    if (health) health.textContent = claimHealthSummary();
     if (!output) return;
     const records = claimLedger().snapshot().slice(0, 20);
     output.textContent = records.length ? records.map(record => `${new Date(record.at).toLocaleTimeString()} · ${record.kind === 'bonus' ? 'Bonus' : 'Drop'} · ${DropperActiveViewing.claimPresentation(record)} · ${record.evidence}`).join('\n') : 'No claim attempts recorded for this account.';
@@ -6386,10 +6423,10 @@ const ExtraPotionsDiagnostics = (() => {
           remainingMinutes: Math.max(0, requiredMinutes - minutes),
           dropInstanceID: matchingSession?.dropInstanceID || liveInventoryDrop.dropInstanceID || currentDrop.dropInstanceID || "",
         });
-        setStatus(`Working toward ${liveInventoryDrop.name || currentDrop.name}${watchingLogin() ? ` on ${watchingLogin()}` : ""}`);
+        setStatus(dropActivityStatus(liveInventoryDrop || currentDrop));
       } else if (sessionDrop && sessionIdentity.matchesTarget) {
         applyDrop(sessionDrop);
-        setStatus(`Working toward ${sessionDrop.name}${watchingLogin() ? ` on ${watchingLogin()}` : ""}`);
+        setStatus(dropActivityStatus(sessionDrop));
       } else if (sessionDrop) {
         reconcileDropProgress(sessionDrop, currentDrop, {
           inventoryLive: false,
@@ -6399,7 +6436,7 @@ const ExtraPotionsDiagnostics = (() => {
       }
     } else if (sessionDrop) {
       applyDrop(sessionDrop);
-      setStatus(`Working toward ${sessionDrop.name}${watchingLogin() ? ` on ${watchingLogin()}` : ""}`);
+      setStatus(dropActivityStatus(sessionDrop));
     }
 
     refreshDropCard();
@@ -11035,8 +11072,7 @@ const ExtraPotionsDiagnostics = (() => {
       // 3.1: GQL refresh updates data only. The routing controller decides what happens next.
 
       if (drop) {
-        const channelNote = login ? ` on ${login}` : "";
-        setStatus(`Working toward ${drop.name}${channelNote}`);
+        setStatus(dropActivityStatus(drop, login));
       } else if (login) {
         setStatus(`Watching ${login} · no drop progress yet`);
         if (!currentDrop) {
@@ -11340,6 +11376,31 @@ const ExtraPotionsDiagnostics = (() => {
     if (settings.keepTabActive) on.push("screen");
     if (settings.claimDrops) on.push("drops");
     return on.length ? `On: ${on.join(" · ")}` : "All features off";
+  }
+
+  function dropActivityStatus(drop = currentDrop, login = watchingLogin()) {
+    if (!drop) return featureStatus();
+    const reward = cleanText(drop.name || "Drop");
+    if (login) return `Working toward ${reward} on ${login}`;
+
+    const current = Number(drop.currentMinutes);
+    const required = Number(drop.requiredMinutes);
+    const progress = Number.isFinite(current) && Number.isFinite(required) && required > 0
+      ? `${Math.max(0, current)} / ${required} min`
+      : Number.isFinite(Number(drop.percent))
+        ? `${Math.max(0, Math.min(100, Number(drop.percent)))}%`
+        : "progress pending";
+    const subject = cleanText(drop.game || reward || "Drop");
+    const routing = readRoutingControllerSession();
+
+    if (!settings.findNextStream || routing.state === ROUTING_STATES.PAUSED) {
+      return `${subject} · ${progress} · Automatic switching off`;
+    }
+    if (routing.state === ROUTING_STATES.FIND_STREAM) return `Finding an eligible ${subject} stream · ${progress}`;
+    if (routing.state === ROUTING_STATES.OPEN_STREAM) return `Opening an eligible ${subject} stream · ${progress}`;
+    if (routing.state === ROUTING_STATES.VERIFY_STREAM) return `Verifying an eligible ${subject} stream · ${progress}`;
+    if (routing.state === ROUTING_STATES.WAITING) return `Waiting for an eligible ${subject} stream · ${progress}`;
+    return `${subject} · ${progress} · Choose an eligible stream`;
   }
 
   function setStatus(text) {
@@ -13047,7 +13108,7 @@ const ExtraPotionsDiagnostics = (() => {
             <button type="button" class="life-btn" id="tdh-clear-activity">Clear Activity Log</button>
             <div class="action-pair"><button type="button" class="life-btn" id="tdh-refresh-now">Refresh Drop State</button>
             <button type="button" class="life-btn" id="tdh-reset-session">Reset Session State</button></div>
-            <details class="campaign-manager" id="tdh-claim-history-panel"><summary>Claim History</summary><pre id="tdh-claim-history" class="campaign-manager-note" style="white-space:pre-wrap;overflow-wrap:anywhere">No claim attempts recorded for this account.</pre></details>
+            <details class="campaign-manager" id="tdh-claim-history-panel"><summary>Claim History</summary><div id="tdh-claim-health" class="campaign-manager-note">Claims: none</div><pre id="tdh-claim-history" class="campaign-manager-note" style="white-space:pre-wrap;overflow-wrap:anywhere">No claim attempts recorded for this account.</pre></details>
             <div class="campaign-manager-note" id="tdh-support-note">Donations are optional and support continued development. All features remain available without donating, and donations do not change your license rights.</div>
             <div class="diag" id="tdh-diagnostics" role="region" aria-label="Site and plugin diagnostics" tabindex="0"></div>
           </div></section>
