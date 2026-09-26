@@ -1,3 +1,11 @@
+## 3.3.0 - 2026-09-25
+
+- Finalizes the browser-only active-viewing Dropper rebuild with campaign discovery, priority and ignore controls, verified stream routing, automatic reward claiming, and account-scoped state.
+- Hardens automatic claim controls with centralized Twitch selectors, scoped fullscreen handling, duplicate-claim protection, and fail-closed purchase/redeem/gift filtering.
+- Separates campaign-level stream verification from exact reward identity so a different Drop in the same campaign cannot advance the locked reward when both Drop IDs are known.
+- Adds focus-aware stall handling, bounded recovery and navigation loops, stale-state expiration, network backoff/circuit protection, standby candidate caching, and multi-tab coordination.
+- Includes the final dev.15 release-gate regression suite covering selector safety, identity mismatches, account changes, claim retries, navigation loops, and browser behavior.
+
 ## 3.3.0-dev.15 - 2026-09-25
 
 - Centralizes claim-related Twitch DOM selectors into one internal registry and strengthens fail-closed visibility checks without rejecting safe zero-size React controls.
