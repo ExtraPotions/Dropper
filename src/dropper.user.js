@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.0-dev.2
+// @version      3.3.0-dev.3
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.0-dev.2";
+  const APP_VERSION = "3.3.0-dev.3";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -526,10 +526,10 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
-    "3.3.0-dev.2": [
-      "Uses deadline-aware campaign sequencing: known-unfinishable campaigns fall behind viable choices before personal priority, urgency, active progress, and remaining watch time are considered.",
-      "Adds reward and campaign deadline feasibility to eligibility diagnostics while keeping Twitch-credited progress authoritative.",
-      "Clarifies unconfirmed claim timeout wording and reconciles credited-progress verification with current GQL campaign evidence."
+    "3.3.0-dev.3": [
+      "Tracks selector observations over time without treating an empty claim surface as a broken selector.",
+      "Adds explicit recovery diagnoses for offline, wrong-game, delayed-credit, stalled-credit, buffering, and viewer-paused states.",
+      "Uses an account-scoped localStorage claim lease when Web Locks are unavailable to reduce cross-tab duplicate claim attempts."
     ],
 
     "3.2.31": [
