@@ -227,8 +227,9 @@
         remainingMinutes += Math.max(0, total - current);
         if (current >= total) pendingClaims += 1;
       }
-      const deadline = deadlineAssessment(campaign, null, { totalRemainingMinutes: known ? remainingMinutes : null }, now, bufferMinutes);
-      return { watchRewards, remainingMinutes: known ? remainingMinutes : null, pendingClaims, inProgress, ...deadline };
+      const knownRemaining = watchRewards > 0 && known ? remainingMinutes : null;
+      const deadline = deadlineAssessment(campaign, null, { totalRemainingMinutes: knownRemaining }, now, bufferMinutes);
+      return { watchRewards, remainingMinutes: knownRemaining, pendingClaims, inProgress, ...deadline };
     }
 
     function rankCampaignCandidates(candidates, { priorityOf = () => 0, now = Date.now(), activeGame = '', bufferMinutes = 2 } = {}) {
@@ -252,18 +253,18 @@
           sequenceActiveGame: Boolean(active && text(item?.game).toLowerCase() === active),
         };
       }).sort((a, b) => {
-        const feasibility = value => value === true ? 0 : value === null ? 1 : 2;
+        const feasibility = value => value === false ? 1 : 0;
         const feasibleDelta = feasibility(a.sequenceFinishable) - feasibility(b.sequenceFinishable);
         if (feasibleDelta) return feasibleDelta;
         if (b.sequencePriority !== a.sequencePriority) return b.sequencePriority - a.sequencePriority;
         if (a.sequenceActiveGame !== b.sequenceActiveGame) return a.sequenceActiveGame ? -1 : 1;
+        const endA = Number.isFinite(Number(a.endMs)) ? Number(a.endMs) : Number.MAX_SAFE_INTEGER;
+        const endB = Number.isFinite(Number(b.endMs)) ? Number(b.endMs) : Number.MAX_SAFE_INTEGER;
+        if (endA !== endB) return endA - endB;
         const marginA = Number.isFinite(a.sequenceMarginMinutes) ? a.sequenceMarginMinutes : Number.MAX_SAFE_INTEGER;
         const marginB = Number.isFinite(b.sequenceMarginMinutes) ? b.sequenceMarginMinutes : Number.MAX_SAFE_INTEGER;
         if (marginA !== marginB) return marginA - marginB;
         if (a.sequenceInProgress !== b.sequenceInProgress) return a.sequenceInProgress ? -1 : 1;
-        const endA = Number.isFinite(Number(a.endMs)) ? Number(a.endMs) : Number.MAX_SAFE_INTEGER;
-        const endB = Number.isFinite(Number(b.endMs)) ? Number(b.endMs) : Number.MAX_SAFE_INTEGER;
-        if (endA !== endB) return endA - endB;
         const remA = number(a.sequenceRemainingMinutes ?? a.remainingMinutes);
         const remB = number(b.sequenceRemainingMinutes ?? b.remainingMinutes);
         if (remA !== null && remB !== null && remA !== remB) return remA - remB;
