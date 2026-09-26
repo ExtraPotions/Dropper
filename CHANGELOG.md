@@ -1,3 +1,10 @@
+## 3.3.0-dev.6 - 2026-09-25
+
+- Re-evaluates the same campaign after a confirmed or already-claimed Drop result so claim-gated successor rewards can unlock immediately.
+- Keeps a live same-game stream in place and re-verifies the newly unlocked reward instead of navigating away unnecessarily.
+- Falls back to normal stream discovery when the current stream no longer matches the unlocked reward's game.
+- Does not preempt a different campaign that has already begun earning credited progress.
+
 ## 3.3.0-dev.5 - 2026-09-25
 
 - Ranks automatic stream candidates by campaign evidence before viewer-count preference.
