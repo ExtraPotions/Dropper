@@ -423,6 +423,9 @@ const ExtraPotionsDiagnostics = (() => {
   const ROUTING_CLAIM_FALLBACK_MS = 60 * 1000;
   const HANDOFF_STAGE_TIMEOUT_MS = 45 * 1000;
   const HEARTBEAT_INTERVAL_MS = 5000;
+  const CLAIM_SCAN_MIN_INTERVAL_MS = 5000;
+  const BONUS_CONFIRM_SETTLE_MS = 3000;
+  const STALL_RECOVERY_RECHECK_MS = 30 * 1000;
   const STARTUP_NETWORK_QUIET_MS = 12 * 1000;
   const STREAM_ROUTE_SETTLE_MS = 15 * 1000;
   const SKIP_STREAMER_ARM_MS = 3 * 1000;
@@ -883,7 +886,7 @@ const ExtraPotionsDiagnostics = (() => {
     const number = value => value !== null && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
     const terminal = new Set(['confirmed', 'already-claimed', 'blocked', 'unconfirmed', 'discarded']);
     const outcomes = new Set(['pending', 'retryable', ...terminal]);
-    const evidenceKinds = new Set(['request', 'page-control', 'claim-result', 'inventory', 'timeout', 'network', 'permission', 'integrity', 'unknown', 'context-change']);
+    const evidenceKinds = new Set(['request', 'page-control', 'control-dismissed', 'claim-result', 'inventory', 'timeout', 'network', 'permission', 'integrity', 'unknown', 'context-change']);
     const claimKinds = new Set(['drop', 'bonus']);
 
     function createIntent({ now = Date.now, load = () => null, save = () => {} } = {}) {
@@ -1479,6 +1482,8 @@ const ExtraPotionsDiagnostics = (() => {
   let claimLedgerAccount = '';
   let claimLedgerInstance = null;
   let claimScanTimer = null;
+  let lastClaimScanAt = 0;
+  let claimScanQueuedAt = 0;
   let claimAnonymousSequence = 0;
   const claimNodeIds = new WeakMap();
   let lastAnonymousAttemptAt = { bonus: 0, drop: 0 };
@@ -1504,6 +1509,8 @@ const ExtraPotionsDiagnostics = (() => {
     claimLedgerInstance = null;
     claimLedgerAccount = '';
     claimHealth = {};
+    lastClaimScanAt = 0;
+    claimScanQueuedAt = 0;
     lastAnonymousAttemptAt = { bonus: 0, drop: 0 };
     lastViewingNavigationBlock = '';
     explicitViewingNavigationUntil = 0;
@@ -1790,6 +1797,22 @@ const ExtraPotionsDiagnostics = (() => {
     if (!claimNodeIds.has(button)) claimNodeIds.set(button, `anonymous:${TAB_ID}:${++claimAnonymousSequence}`);
     return { anonymous: claimNodeIds.get(button) };
   }
+  function bonusControlStillClaimable(button) {
+    if (!button?.isConnected) return false;
+    const container = button.closest('.community-points-summary,[data-test-selector="community-points-summary"],[data-a-target="community-points-summary"]');
+    if (!container) return false;
+    if (!button.querySelector('.claimable-bonus__icon')) return false;
+    return isSafeClaimTarget(button, CLAIM_GROUPS[0]);
+  }
+  function confirmDismissedBonusControl(button, ledger, attempt, context) {
+    setTimeout(() => {
+      if (!claimContextIsCurrent(context)) return;
+      const current = ledger.snapshot().find(record => record.key === attempt.key && record.attemptId === attempt.attemptId);
+      if (!current || current.outcome !== 'pending') return;
+      if (bonusControlStillClaimable(button)) return;
+      recordClaimOutcome(ledger, attempt, 'confirmed', 'control-dismissed');
+    }, BONUS_CONFIRM_SETTLE_MS);
+  }
   function queuePageClaim(button, group) {
     if (!isSafeClaimTarget(button, group)) return false;
     const context = claimContext();
@@ -1807,6 +1830,7 @@ const ExtraPotionsDiagnostics = (() => {
       if (identity.anonymous) lastAnonymousAttemptAt[group.kind] = Date.now();
       try {
         button.click();
+        if (group.kind === 'bonus') confirmDismissedBonusControl(button, ledger, attempt, context);
         claimHealth[group.id] = { ...claimHealth[group.id], kind: group.kind, state: 'attempted', lastAttemptAt: Date.now() };
         logActivity('claim-attempt', 'Claim Sent', { kind: group.kind, rewardId: identity.id || null, evidence: 'page-control' });
         setStatus('Claim Sent · Waiting For Twitch');
@@ -1821,6 +1845,8 @@ const ExtraPotionsDiagnostics = (() => {
     return true;
   }
   function scanClaimGroups(root = document, kind = '') {
+    lastClaimScanAt = Date.now();
+    claimScanQueuedAt = 0;
     let queued = 0;
     for (const group of CLAIM_GROUPS) {
       if (kind && kind !== group.kind) continue;
@@ -1860,9 +1886,18 @@ const ExtraPotionsDiagnostics = (() => {
     }
     return queued;
   }
-  function queueClaimScan() {
-    if (claimScanTimer || (!settings.claimBonus && !settings.claimDrops)) return;
-    claimScanTimer = setTimeout(() => { claimScanTimer = null; scanClaimGroups(); }, 150);
+  function queueClaimScan(reason = 'mutation', immediate = false) {
+    if (!settings.claimBonus && !settings.claimDrops) return;
+    const now = Date.now();
+    const earliest = immediate ? now : Math.max(now, lastClaimScanAt + CLAIM_SCAN_MIN_INTERVAL_MS);
+    if (claimScanTimer && claimScanQueuedAt && claimScanQueuedAt <= earliest) return;
+    if (claimScanTimer) clearTimeout(claimScanTimer);
+    claimScanQueuedAt = earliest;
+    claimScanTimer = setTimeout(() => {
+      claimScanTimer = null;
+      claimScanQueuedAt = 0;
+      scanClaimGroups();
+    }, Math.max(0, earliest - now));
   }
   function claimSelectorHealthSnapshot(now = Date.now()) {
     return Object.fromEntries(Object.entries(claimHealth).map(([id, entry]) => [id, {
@@ -1877,15 +1912,25 @@ const ExtraPotionsDiagnostics = (() => {
     output.textContent = records.length ? records.map(record => `${new Date(record.at).toLocaleTimeString()} · ${record.kind === 'bonus' ? 'Bonus' : 'Drop'} · ${DropperActiveViewing.claimPresentation(record)} · ${record.evidence}`).join('\n') : 'No claim attempts recorded for this account.';
   }
 
-  function campaignPriority(game) {
+  function campaignPriorityEntry(game) {
+    const key = scopedLocalStorageKey(CAMPAIGN_PRIORITY_KEY) + ':' + encodeURIComponent(normalizeGameName(game));
     try {
-      const value = Number(localStorage.getItem(scopedLocalStorageKey(CAMPAIGN_PRIORITY_KEY) + ':' + encodeURIComponent(normalizeGameName(game))) || 0);
-      return [-1, 0, 1].includes(value) ? value : 0;
-    } catch (_) { return 0; }
+      const raw = localStorage.getItem(key);
+      if (raw == null) return { value: 0, explicit: false, key };
+      const value = Number(raw);
+      return { value: [-1, 0, 1].includes(value) ? value : 0, explicit: true, key };
+    } catch (_) { return { value: 0, explicit: false, key }; }
+  }
+  function campaignPriority(game) {
+    return campaignPriorityEntry(game).value;
   }
   function setCampaignPriority(game, priority) {
     if (![-1, 0, 1].includes(priority)) return;
-    try { localStorage.setItem(scopedLocalStorageKey(CAMPAIGN_PRIORITY_KEY) + ':' + encodeURIComponent(normalizeGameName(game)), String(priority)); } catch (_) {}
+    const entry = campaignPriorityEntry(game);
+    try {
+      if (priority === 0) localStorage.removeItem(entry.key);
+      else localStorage.setItem(entry.key, String(priority));
+    } catch (_) {}
   }
   function dropperPreconditionsMet(drop, drops) {
     return DropperActiveViewing.planPrerequisites(drop, drops).ready;
@@ -3456,6 +3501,9 @@ const ExtraPotionsDiagnostics = (() => {
           offlineSince: 0,
           verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
           verifyBaselinePercent: Number(currentDrop?.percent || 0),
+          recoveryStage: 0,
+          recoveryStartedAt: 0,
+          recoveryLastCheckAt: 0,
         },
         `Verified ${login || target} for ${session.targetCampaign || targetGame}`,
       );
@@ -3597,25 +3645,55 @@ const ExtraPotionsDiagnostics = (() => {
     }
 
     const health = streamEarningHealthSnapshot();
+    const recovery = health.recovery || { code: 'healthy', recoverable: false };
+    if (recovery.code !== 'credit-stalled' && (session.recoveryStage || session.recoveryStartedAt || session.recoveryLastCheckAt)) {
+      session = writeRoutingControllerSession({ ...session, recoveryStage: 0, recoveryStartedAt: 0, recoveryLastCheckAt: 0 });
+    }
+    if (recovery.code === 'credit-delayed') {
+      setStatus(`Twitch Credit Delayed · Holding ${login}`);
+      return false;
+    }
+    if (recovery.code === 'buffering') {
+      setStatus(`Playback Buffering · Holding ${login}`);
+      return false;
+    }
     const stallAnchor = Math.max(
       Number(lastProgressAt || 0),
       Number(session.earningStartedAt || session.enteredAt || now),
     );
     const stallMs = progressStallTimeoutMs(Boolean(health.healthy));
     if (
+      recovery.code === 'credit-stalled' &&
       settings.queueOnStall &&
       !isAutoSwitchPaused() &&
       stallAnchor &&
       now - stallAnchor >= stallMs
     ) {
+      const stage = Number(session.recoveryStage || 0);
+      if (!stage) {
+        requestGqlPoll('stall-recovery-recheck', true);
+        writeRoutingControllerSession({ ...session, recoveryStage: 1, recoveryStartedAt: now, recoveryLastCheckAt: now });
+        setStatus(`Credit Stalled · Rechecking Twitch Before Switching`);
+        return false;
+      }
+      if (stage === 1 && now - Number(session.recoveryStartedAt || now) >= STALL_RECOVERY_RECHECK_MS) {
+        requestGqlPoll('stall-recovery-final-check', true);
+        writeRoutingControllerSession({ ...session, recoveryStage: 2, recoveryLastCheckAt: now });
+        setStatus(`Credit Still Stalled · Final Twitch Check`);
+        return false;
+      }
+      if (stage < 2 || now - Number(session.recoveryLastCheckAt || now) < STALL_RECOVERY_RECHECK_MS) return false;
       return transitionRoutingController(
         ROUTING_STATES.FIND_STREAM,
         {
           failedStreams: routingControllerAddFailedStream(session, login),
           targetStream: "",
+          recoveryStage: 0,
+          recoveryStartedAt: 0,
+          recoveryLastCheckAt: 0,
           deadlineAt: 0,
         },
-        `No credited progress from ${login} before the earning deadline`,
+        `No credited progress from ${login} after two Twitch rechecks`,
       );
     }
 
@@ -3722,6 +3800,9 @@ const ExtraPotionsDiagnostics = (() => {
       navigationTarget: session.navigationTarget || null,
       navigationReason: session.navigationReason || null,
       candidateEvidence: session.candidateEvidence || null,
+      recoveryStage: Number(session.recoveryStage || 0),
+      recoveryStartedAt: session.recoveryStartedAt ? new Date(session.recoveryStartedAt).toISOString() : null,
+      recoveryLastCheckAt: session.recoveryLastCheckAt ? new Date(session.recoveryLastCheckAt).toISOString() : null,
       lastReason: session.lastReason || null,
     };
   }
@@ -11178,10 +11259,10 @@ const ExtraPotionsDiagnostics = (() => {
       return;
     }
     if (!dropClaimObserver && document.documentElement) {
-      dropClaimObserver = new MutationObserver(queueClaimScan);
+      dropClaimObserver = new MutationObserver(() => queueClaimScan('mutation'));
       dropClaimObserver.observe(document.documentElement, { childList: true, subtree: true });
     }
-    queueClaimScan();
+    queueClaimScan('watcher-sync', true);
   }
 
   function formatClock(ms) {
@@ -14819,7 +14900,7 @@ const ExtraPotionsDiagnostics = (() => {
       watchingLogin: watchingLogin(),
       currentDrop,
       viewing: { ...viewingIntent.snapshot(), screenWakeLock: Boolean(screenWakeLock), navigationBlocked: lastViewingNavigationBlock || null },
-      claims: { history: claimLedger().snapshot(), selectors: claimSelectorHealthSnapshot(now), crossTabLock: navigator.locks?.request ? 'web-locks' : 'local-storage-lease', limit: 100 },
+      claims: { history: claimLedger().snapshot(), selectors: claimSelectorHealthSnapshot(now), crossTabLock: navigator.locks?.request ? 'web-locks' : 'local-storage-lease', scanMinimumMs: CLAIM_SCAN_MIN_INTERVAL_MS, lastScanAt: lastClaimScanAt ? new Date(lastClaimScanAt).toISOString() : null, limit: 100 },
       rewardEligibility: activeRewardEligibility(),
       rewardImage: (() => {
         const direct = dropBenefitImage(currentDrop);
@@ -14845,6 +14926,7 @@ const ExtraPotionsDiagnostics = (() => {
         capturedAt: lastCampaignCatalogAt ? new Date(lastCampaignCatalogAt).toISOString() : null,
         ageSeconds: lastCampaignCatalogAt ? Math.max(0, Math.floor((now - lastCampaignCatalogAt) / 1000)) : null,
         persistedAcrossNavigation: Boolean(campaignCatalogCache.at && campaignCatalogCache.campaigns?.length),
+        priorities: listOpenCampaignGames(openCampaignManagementPool(now), now).map(item => ({ game: item.game, ...campaignPriorityEntry(item.game) })).filter(item => item.explicit).map(({ key, ...item }) => item),
         ignoredGames: Object.entries(ignoredCampaignGames.games || {}).map(([key, item]) => ({
           key,
           game: item?.game || key,
@@ -14858,6 +14940,7 @@ const ExtraPotionsDiagnostics = (() => {
             endAt: item.endAt || null,
             endMs: item.endMs || null,
             priority: item.sequencePriority ?? campaignPriority(item.game),
+            prioritySource: campaignPriorityEntry(item.game).explicit ? 'saved' : 'default',
             finishable: item.sequenceFinishable ?? null,
             remainingMinutes: item.sequenceRemainingMinutes ?? item.remainingMinutes ?? null,
             marginMinutes: item.sequenceMarginMinutes ?? null,
