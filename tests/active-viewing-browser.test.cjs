@@ -19,6 +19,7 @@ const exposed = source.replace('  startDropper();\n})();', `
     setActiveClaims: value => { settings.claimBonus = value; settings.claimDrops = value; syncClaimWatchers(); },
     queueScan: queueClaimScan, setPriority: setCampaignPriority, priorityEntry: campaignPriorityEntry,
     rankCandidates: rankStreamCandidatesByEvidence,
+    continueClaim: continueAfterConfirmedDropClaim, current: () => currentDrop,
     status: () => ({ viewing: viewingIntent.snapshot(), selectors: claimHealth }),
     pauseIntent: () => { viewingIntent.pause(true); },
   };
@@ -315,4 +316,47 @@ test('viewer-count preference only breaks ties within the same evidence tier', a
     ]).map(item => item.login);
   });
   assert.deepEqual(order, ['low-viewers-allowed', 'high-viewers-allowed', 'low-viewers-tagged']);
+}));
+
+
+test('confirmed claim unlocks the next claim-gated reward in the same campaign', async () => fixture(async page => {
+  const now = Date.now();
+  const campaign = {
+    id: 'claim-gated-campaign',
+    name: 'Claim Gated Campaign',
+    status: 'ACTIVE',
+    startAt: new Date(now - 60000).toISOString(),
+    endAt: new Date(now + 4 * 60 * 60 * 1000).toISOString(),
+    game: { name: 'Fixture game', displayName: 'Fixture game', slug: 'fixture-game' },
+    timeBasedDrops: [
+      {
+        id: 'first-reward',
+        name: 'First Reward',
+        requiredMinutesWatched: 30,
+        self: { currentMinutesWatched: 30, isClaimed: false },
+      },
+      {
+        id: 'second-reward',
+        name: 'Second Reward',
+        requiredMinutesWatched: 30,
+        preconditionDrops: [{ id: 'first-reward', requiresClaim: true }],
+        self: { currentMinutesWatched: 0, isClaimed: false },
+      },
+    ],
+  };
+  const result = await page.evaluate(campaign => {
+    const t = window.__dropperTest;
+    t.configure({
+      id: 'first-reward', campaignId: campaign.id, campaignKey: campaign.id,
+      name: 'First Reward', game: 'Fixture game', campaign: campaign.name,
+      requiredMinutes: 30, currentMinutes: 30, remainingMinutes: 0, percent: 100,
+    }, [campaign]);
+    const continued = t.continueClaim({ kind: 'drop', rewardId: 'first-reward', campaignId: campaign.id });
+    const current = t.current();
+    return { continued, id: current?.id || '', campaignKey: current?.campaignKey || '', minutes: current?.currentMinutes };
+  }, campaign);
+  assert.equal(result.continued, true);
+  assert.equal(result.id, 'second-reward');
+  assert.equal(result.campaignKey, 'claim-gated-campaign');
+  assert.equal(result.minutes, 0);
 }));
