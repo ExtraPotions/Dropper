@@ -1,3 +1,10 @@
+## 3.3.0-dev.4 - 2026-09-25
+
+- Confirms channel-point bonus claims when Twitch removes the exact claimed bonus control; ambiguous outcomes remain unconfirmed.
+- Adds a five-second floor to mutation-driven claim scans while preserving immediate watcher setup and direct/manual scans.
+- Distinguishes saved campaign priorities from the default and removes the storage key when Normal is selected.
+- Adds two bounded Twitch/GQL rechecks before a true credit stall can rotate to another stream.
+
 ## 3.3.0-dev.3 - 2026-09-25
 
 - Tracks claim-selector observations over time and distinguishes monitoring, recent observations, stale observations, and actual detection failures.
