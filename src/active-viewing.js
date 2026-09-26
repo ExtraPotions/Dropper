@@ -6,7 +6,7 @@
     const number = value => value !== null && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
     const terminal = new Set(['confirmed', 'already-claimed', 'blocked', 'unconfirmed', 'discarded']);
     const outcomes = new Set(['pending', 'retryable', ...terminal]);
-    const evidenceKinds = new Set(['request', 'page-control', 'claim-result', 'inventory', 'timeout', 'network', 'permission', 'integrity', 'unknown', 'context-change']);
+    const evidenceKinds = new Set(['request', 'page-control', 'control-dismissed', 'claim-result', 'inventory', 'timeout', 'network', 'permission', 'integrity', 'unknown', 'context-change']);
     const claimKinds = new Set(['drop', 'bonus']);
 
     function createIntent({ now = Date.now, load = () => null, save = () => {} } = {}) {
