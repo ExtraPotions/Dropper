@@ -291,7 +291,7 @@ test('allow-list campaigns prefer permitted channels but can verify Drops-tagged
   const classifierEnd = source.indexOf('\n  function routingCandidateDiagnosticsSnapshot', classifierStart);
   const classifier = source.slice(classifierStart, classifierEnd);
 
-  assert.match(classifier, /const campaignCompatible = !allowListPresent \\|\\| allowListMatch \\|\\| dropsTagged;/u);
+  assert.match(classifier, /const campaignCompatible = !allowListPresent \|\| allowListMatch \|\| dropsTagged;/u);
   assert.match(classifier, /reason = "campaign-allow-list-match"/u);
   assert.match(classifier, /reason = "drops-tagged-verification-fallback"/u);
   assert.match(classifier, /reason = "campaign-allow-list-mismatch"/u);
@@ -303,7 +303,7 @@ test('allow-list campaigns prefer permitted channels but can verify Drops-tagged
   const verifyStart = source.indexOf('  function routingControllerVerifyStream');
   const verifyEnd = source.indexOf('\n  function routingControllerEarning', verifyStart);
   const verify = source.slice(verifyStart, verifyEnd);
-  assert.match(verify, /campaignProof \\|\\|\\s*progressProof/u);
+  assert.match(verify, /campaignProof \|\|\s*progressProof/u);
   assert.doesNotMatch(verify, /not allowed by/u);
   assert.match(verify, /campaignVerified: true/u);
   assert.match(verify, /verifiedChannel: verificationLogin/u);
