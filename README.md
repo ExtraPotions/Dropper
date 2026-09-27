@@ -10,6 +10,14 @@ Track Twitch-credited progress, manage eligible streams, and claim available rew
 [![Code: PolyForm Noncommercial 1.0.0](docs/badges/code.svg)](LICENSE-CODE.md)
 [![Artwork and documentation: CC BY-NC-SA 4.0](docs/badges/assets.svg)](LICENSE-ASSETS.md)
 
+## Get started
+
+1. Install a userscript manager such as [Violentmonkey](https://violentmonkey.github.io/get-it/) or [Tampermonkey](https://www.tampermonkey.net/).
+2. [Install Dropper](https://github.com/ExtraPotions/Dropper/raw/refs/heads/main/dropper.user.js) and confirm in your userscript manager.
+3. Refresh Twitch and open the product launcher.
+
+Sign in to Twitch and open the Dropper launcher. Check Drops for progress and claim options, then Streams for stream-switching preferences. Twitch determines eligibility and credited watch time.
+
 ## What you can do
 
 - **Progress at a glance:** see the current reward, credited watch time, and earning status.
@@ -25,18 +33,10 @@ Screenshots show the current product with sample content.
 
 <table>
   <tr>
-    <td width="50%" valign="top" align="center"><a href="docs/screenshots/drops-menu.png"><img src="docs/screenshots/drops-menu.png" width="440" alt="Dropper: drop progress and claim controls"></a><br><strong>Drop progress and claim controls</strong></td>
-    <td width="50%" valign="top" align="center"><a href="docs/screenshots/streams-menu.png"><img src="docs/screenshots/streams-menu.png" width="440" alt="Dropper: stream switching and recovery"></a><br><strong>Stream switching and recovery</strong></td>
+    <td width="50%" valign="top" align="center"><a href="docs/screenshots/drops-menu.png"><img src="docs/screenshots/drops-menu.png" width="220" alt="Dropper: drop progress and claim controls"></a><br><strong>Drop progress and claim controls</strong></td>
+    <td width="50%" valign="top" align="center"><a href="docs/screenshots/streams-menu.png"><img src="docs/screenshots/streams-menu.png" width="220" alt="Dropper: stream switching and recovery"></a><br><strong>Stream switching and recovery</strong></td>
   </tr>
 </table>
-
-## Get started
-
-1. Install a userscript manager such as [Violentmonkey](https://violentmonkey.github.io/get-it/) or [Tampermonkey](https://www.tampermonkey.net/).
-2. [Install Dropper](https://github.com/ExtraPotions/Dropper/raw/refs/heads/main/dropper.user.js) and confirm in your userscript manager.
-3. Refresh Twitch and open the product launcher.
-
-Sign in to Twitch and open the Dropper launcher. Check Drops for progress and claim options, then Streams for stream-switching preferences. Twitch determines eligibility and credited watch time.
 
 ## Support
 
