@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.13
+// @version      3.3.14
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -463,7 +463,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.13";
+  const APP_VERSION = "3.3.14";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -639,6 +639,7 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.14": ["Refreshes candidate allow-list diagnostics when Twitch campaign metadata arrives after stream selection.","Keeps historical selection proof separate from the current campaign allow-list snapshot.","Updates allow-list evidence during verification and earning without changing routing decisions."],
     "3.3.13": ["Reports Drops-tagged fallback streams as Verification Pending while Twitch proof is still being checked.","Allows a non-allow-listed fallback stream to become Eligible after target-campaign GQL evidence or credited progress confirms it.","Keeps eligibility diagnostics aligned with the routing controller's verification state."],
     "3.3.12": ["Lets Drops-tagged same-game streams enter campaign verification when no campaign allow-list channel is live.","Keeps campaign allow-list matches highest priority and still requires GQL campaign evidence or credited progress before earning.","Binds successful fallback verification to the verified channel and keeps standby diagnostics aligned with routing."],
     "3.3.11": ["Lets every launcher move left, right, up, or down within the shared grid.","Persists the complete launcher order across reloads.","Adds Alt+Arrow keyboard reordering for the focused launcher."],
@@ -3863,14 +3864,54 @@ const ExtraPotionsTools = (() => {
     return false;
   }
 
+  function activeCampaignAllowListEvidence(channelLogin = watchingLogin()) {
+    if (!currentDrop || !campaignIsRoutingOpen(currentDrop)) return null;
+    const campaign = findCampaignForDrop(routingCampaignPool(), currentDrop);
+    if (!campaign || !campaignIsRoutingOpen(campaign) || !campaign.allow || typeof campaign.allow !== "object") return null;
+
+    const allowedChannels = campaignAllowedChannels(campaign);
+    const allowedLogins = new Set(
+      allowedChannels.map((channel) => cleanText(channel.login).toLowerCase()).filter(Boolean),
+    );
+    const login = cleanText(channelLogin).toLowerCase();
+    const present = campaign.allow.isEnabled !== false && allowedChannels.length > 0;
+    return {
+      campaignAllowListPresent: present,
+      campaignAllowListMatch: Boolean(present && login && allowedLogins.has(login)),
+      campaignAllowListSource: "active-campaign",
+    };
+  }
+
+  function syncRoutingCampaignAllowListEvidence(session = readRoutingControllerSession(), channelLogin = watchingLogin(), now = Date.now()) {
+    if (!session?.candidateEvidence) return session;
+    const current = session.candidateEvidence;
+    const snapshot = activeCampaignAllowListEvidence(channelLogin);
+    if (!snapshot) return session;
+    if (
+      current.campaignAllowListPresent === snapshot.campaignAllowListPresent &&
+      current.campaignAllowListMatch === snapshot.campaignAllowListMatch &&
+      current.campaignAllowListSource === snapshot.campaignAllowListSource
+    ) return session;
+
+    return writeRoutingControllerSession({
+      ...session,
+      candidateEvidence: {
+        ...current,
+        ...snapshot,
+        campaignAllowListUpdatedAt: now,
+      },
+    });
+  }
+
   function updateRoutingCampaignSupportEvidence(channelLogin, availableCampaigns, sessionDrop = null) {
-    const session = readRoutingControllerSession();
+    let session = readRoutingControllerSession();
     if (session.state !== ROUTING_STATES.VERIFY_STREAM) return false;
 
     const login = cleanText(channelLogin).toLowerCase();
     const target = cleanText(session.targetStream).toLowerCase();
     if (!login || !target || login !== target) return false;
     if (!currentDrop || !campaignIsRoutingOpen(currentDrop)) return false;
+    session = syncRoutingCampaignAllowListEvidence(session, login);
 
     const campaignSupport = channelSupportsTargetCampaign(availableCampaigns, session);
     const sessionGameMatches = Boolean(
@@ -3952,6 +3993,7 @@ const ExtraPotionsTools = (() => {
     const info = readStreamInfo();
     const streamGame = cleanText(info.game);
     const targetGame = cleanText(session.targetGame || currentDrop?.game);
+    session = syncRoutingCampaignAllowListEvidence(session, login || target, now);
     const gameMatches = Boolean(streamGame && targetGame && gameNamesMatch(targetGame, streamGame));
     const minutesAdvanced = Number(currentDrop?.currentMinutes || 0) > Number(session.verifyBaselineMinutes || 0);
     const percentAdvanced = Number(currentDrop?.percent || 0) > Number(session.verifyBaselinePercent || 0);
@@ -4124,6 +4166,7 @@ const ExtraPotionsTools = (() => {
     const login = cleanText(watchingLogin()).toLowerCase();
     const info = readStreamInfo();
     const targetGame = cleanText(session.targetGame || currentDrop.game);
+    session = syncRoutingCampaignAllowListEvidence(session, login, now);
     const allowedChannels = activeCampaignAllowedChannels();
     const allowedLogins = new Set(
       allowedChannels.map((channel) => cleanText(channel.login).toLowerCase()).filter(Boolean),
