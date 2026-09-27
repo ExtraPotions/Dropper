@@ -1,3 +1,9 @@
+## 3.3.14 — 2026-09-27
+
+- Refreshes candidate allow-list diagnostics when Twitch campaign metadata arrives after stream selection.
+- Keeps historical selection proof separate from the current campaign allow-list snapshot.
+- Updates allow-list evidence during verification and earning without changing routing decisions.
+
 ## 3.3.13 — 2026-09-27
 
 - Reports Drops-tagged fallback streams as Verification Pending while Twitch campaign proof is still being checked.
