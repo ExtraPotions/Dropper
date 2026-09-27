@@ -1,3 +1,9 @@
+## 3.3.13 — 2026-09-27
+
+- Reports Drops-tagged fallback streams as Verification Pending while Twitch campaign proof is still being checked.
+- Allows a non-allow-listed fallback stream to become Eligible after target-campaign GQL evidence or credited progress confirms it.
+- Keeps eligibility diagnostics and menu presentation aligned with the routing controller.
+
 ## 3.3.12 — 2026-09-27
 
 - Lets Drops-tagged same-game streams enter campaign verification when no campaign allow-list channel is live.
