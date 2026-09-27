@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.7
+// @version      3.3.8
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -466,7 +466,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.7";
+  const APP_VERSION = "3.3.8";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -642,6 +642,7 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.8": ["Balances the four System cards with equal collapsed heights and matching padding.","Preserves two columns in Full and Compact modes and one in Narrow mode.","Lets expanded cards grow naturally while remaining inside the menu.","Checks equal card heights and expanded content at all three menu widths."],
     "3.3.7": ["Restores a full-width two-column grid for System support and recovery cards.","Keeps compatibility, backups, waiting explanations, and playback history aligned in Full and Compact modes.","Uses one column in Narrow mode and keeps expanded cards inside the menu.","Adds browser coverage for collapsed and expanded cards at each menu width."],
     "3.3.6": ["Adds left-side section handles and visibility controls under System.","Keeps long menu content within the available viewport while preserving current player and progress behavior.","Refreshes the README and feature screenshots in a horizontal gallery.","Clarifies installation and the separate code and artwork licenses."],
     "3.3.5": ["Restores an initial Twitch mini-player through its native expansion control, with a manual restore action and viewer-control safeguards.","Preserves saved settings and adds local backups, rollback, and product compatibility details.","Explains waiting states using Twitch credit and playback evidence, and shows playback/navigation history.","Adds player presentation diagnostics and regression coverage."],
@@ -13228,8 +13229,9 @@ const ExtraPotionsTools = (() => {
       .fl-tool-body > :is(.fl-switch,.mini-row,.life-btn) { min-width:0; }
       .fl-tool-body > :is(.compact-inventory,.campaign-manager,.diag) { grid-column:1/-1; }
       #tdh-diagnostics-body { padding-bottom:2px; }
-      #tdh-diagnostics-body > [data-dropper-tools] { grid-column:1/-1; min-width:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; align-items:start; }
-      #tdh-diagnostics-body > [data-dropper-tools] > details { min-width:0; margin-top:0!important; overflow-wrap:anywhere; }
+      #tdh-diagnostics-body > [data-dropper-tools] { grid-column:1/-1; min-width:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; align-items:stretch; }
+      #tdh-diagnostics-body > [data-dropper-tools]:not(:has(> details[open])) { grid-auto-rows:1fr; }
+      #tdh-diagnostics-body > [data-dropper-tools] > details { min-width:0; margin-top:0!important; padding:8px!important; overflow-wrap:anywhere; }
       #tdh-diagnostics-body > [data-dropper-tools] :is(button,select) { max-width:100%; min-width:0; white-space:normal; }
       .cluster[data-panel-width="narrow"] #tdh-diagnostics-body > [data-dropper-tools] { grid-template-columns:minmax(0,1fr); }
       .fl-tool-hidden { display:none !important; }

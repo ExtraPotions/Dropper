@@ -28,11 +28,12 @@ test('System tools fill both columns and remain contained when expanded', async 
         return { columns:getComputedStyle(group).gridTemplateColumns.split(' ').length,
           fullWidth:Math.abs(rect.width-(body.width-20))<2,
           horizontal:group.scrollWidth-group.clientWidth,
-          cards:cards.map(c=>{const r=c.getBoundingClientRect();return {left:r.left,top:r.top,right:r.right};}) };
+          cards:cards.map(c=>{const r=c.getBoundingClientRect();return {left:r.left,top:r.top,right:r.right,height:r.height};}) };
       },{width,open});
       assert.equal(result.columns,width==='narrow'?1:2,JSON.stringify({width,open,result}));
       assert.ok(result.fullWidth,JSON.stringify(result));
       assert.ok(result.horizontal<=1,JSON.stringify(result));
+      if(!open)assert.ok(Math.max(...result.cards.map(c=>c.height))-Math.min(...result.cards.map(c=>c.height))<=1,JSON.stringify(result));
       if(width!=='narrow'){assert.ok(result.cards[1].left>result.cards[0].left);assert.equal(result.cards[1].top,result.cards[0].top);}
     }
   }

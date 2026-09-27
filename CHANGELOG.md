@@ -1,3 +1,10 @@
+## 3.3.8 — 2026-09-26
+
+- Balances the four System cards with equal collapsed heights and matching padding.
+- Preserves two columns in Full and Compact modes and one in Narrow mode.
+- Lets expanded cards grow naturally while remaining inside the menu.
+- Checks equal card heights and expanded content at all three menu widths.
+
 ## 3.3.7 — 2026-09-26
 
 - Restores a full-width two-column grid for System support and recovery cards.
