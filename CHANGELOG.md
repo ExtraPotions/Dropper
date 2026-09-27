@@ -1,3 +1,12 @@
+## Unreleased
+
+- Adds local settings backups, rollback, and current-page product compatibility.
+- Explains waiting states using Twitch credit, eligibility, and playback evidence.
+- Shows recent Dropper playback and navigation actions with their reasons.
+- Restores an initial Twitch mini-player through its native Expand Player control, with opt-out and a manual Restore Channel Player action.
+- Stops automatic layout recovery after viewer interaction, and respects pauses, hidden tabs, fullscreen, and browser picture-in-picture.
+- Records player presentation and dimensions in diagnostics; unknown controls remain untouched.
+
 ## 3.3.4 — 2026-09-26
 
 - Rechecks the saved mute preference before every mute attempt and cancels disabled requests.

@@ -30,6 +30,9 @@ const exposed = source.replace('  startDropper();\n})();', `
     clearVerification: () => { lastStreamVerification = null; },
     verification: () => lastStreamVerification,
     setFindNext: value => { settings.findNextStream = Boolean(value); },
+    backup: () => settingsRecovery.capture(settings, 'manual'),
+    restore: restoreSettingsBackup,
+    setTestTheme: value => { settings.uiTheme=value;saveSettings();applyAppearanceSettings(); },
     pauseIntent: () => { viewingIntent.pause(true); },
   };
   startDropper();
@@ -694,3 +697,6 @@ test('reload reconciliation restores exact reward metadata and persisted eligibi
   assert.equal(result.staleCode, 'unknown');
   assert.equal(result.mismatchCode, 'unknown');
 }));
+
+
+test('settings rollback immediately restores the native Dropper menu appearance',async()=>{await fixture(async page=>{const id=await page.evaluate(()=>__dropperTest.backup());await page.evaluate(()=>__dropperTest.setTestTheme('midnight'));assert.equal(await page.locator('#tdh-root').evaluate(n=>n.shadowRoot.querySelector('.cluster').dataset.uiTheme),'midnight');await page.evaluate(id=>__dropperTest.restore(id),id);assert.equal(await page.locator('#tdh-root').evaluate(n=>n.shadowRoot.querySelector('.cluster').dataset.uiTheme),'dropper');});});

@@ -55,6 +55,8 @@ async function minifyUserscript(inputPath, outputPath = DEFAULT_OUTPUT, options 
   if (path.resolve(inputPath) === DEFAULT_INPUT) {
     const shared = fs.readFileSync(path.join(ROOT, 'src/shared-diagnostics.js'), 'utf8').replace(/\r\n/g, '\n').trim();
     if (!source.includes(shared)) throw new Error('Shared diagnostics differ; run node scripts/sync-diagnostics.cjs');
+    const tools = fs.readFileSync(path.join(ROOT, 'src/shared-product-tools.js'), 'utf8').replace(/\r\n/g, '\n').trim();
+    if (!source.includes(tools)) throw new Error('Shared product tools differ; sync before building');
     const icon = source.match(/^\/\/ @icon\s+(.+)$/m)?.[1]?.trim();
     if (icon !== ICON_URL) throw new Error('Manager icon must reference the borderless launcher SVG');
     if (/data:image\//u.test(source)) throw new Error('Images must be referenced by URL instead of embedded data');

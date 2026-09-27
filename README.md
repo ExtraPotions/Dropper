@@ -88,3 +88,9 @@ Dropper is an independent project and is not affiliated with or endorsed by Twit
 ## 3.3.4 update
 
 Rechecks the saved mute preference before every mute attempt and cancels disabled requests. Preserves player volume when muting streams. Closes other ExtraPotions menus when opening Dropper and respects peer menus. Adds regression coverage for mute preferences and menu coordination.
+
+## Local development changes (unreleased)
+
+Adds local settings backups and rollback, current-page product compatibility, a waiting explanation grounded in credited progress, and playback/navigation history. Adds Restore Channel Player On Arrival and a manual Restore Channel Player action for Twitch’s in-page mini-player. Automatic restoration makes one expansion request in the first 30 seconds, only on the channel route, and stops after viewer interaction. It respects pause, opt-out, hidden tabs, fullscreen and browser picture-in-picture. Unknown or localized expand controls are left unchanged and reported in diagnostics.
+
+These changes are prepared locally. The stable installation links above still serve the published release.

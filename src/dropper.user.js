@@ -806,6 +806,7 @@ const ExtraPotionsDiagnostics = (() => {
     findNextStream: false,
     muteRestarted: true,
     backgroundEarning: false,
+    restoreChannelPlayer: true,
     reduceMotion: false,
     collapsedPanelWidth: "compact",
     uiTheme: "dropper",
@@ -1339,9 +1340,60 @@ const ExtraPotionsDiagnostics = (() => {
   })();
   // END DROPPER ACTIVE VIEWING
 
+  // BEGIN SHARED PRODUCT TOOLS
+// Shared, local-only recovery and compatibility controls.
+const ExtraPotionsTools = (() => {
+  const clone = value => JSON.parse(JSON.stringify(value));
+  function createSettingsRecovery({read,write,validate,limit=5}) {
+    function list() { try { const values=read(); return Array.isArray(values)?values.filter(v=>v&&typeof v.id==='string'&&v.settings&&typeof v.settings==='object').slice(0,limit).map(clone):[]; } catch {return [];} }
+    function capture(settings,reason='change') {
+      const clean=validate(clone(settings)); const entries=list();
+      if(entries[0]&&JSON.stringify(entries[0].settings)===JSON.stringify(clean))return entries[0].id;
+      const entry={id:globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random()}`,at:Date.now(),reason:String(reason).slice(0,80),settings:clean};
+      write([entry,...entries].slice(0,limit));return entry.id;
+    }
+    function restore(id){const entry=list().find(v=>v.id===id);if(!entry)throw Error('This backup is no longer available.');return validate(clone(entry.settings));}
+    return Object.freeze({list,capture,restore});
+  }
+  function compatibilitySnapshot(){
+    const rows=[];const warnings=[];const versions=new Set();
+    for(const id of ['dropper','shift','prisma','ward']){
+      const markers=[...document.querySelectorAll('[data-exp-diagnostics-product]')].filter(n=>n.dataset.expDiagnosticsProduct===id);
+      if(!markers.length)continue;
+      const productVersions=[...new Set(markers.map(n=>n.dataset.expProductVersion||'unknown'))];
+      const host=document.getElementById(id==='dropper'?'tdh-root':`exp-${id}-root`);
+      const core=host?.dataset.coreVersion||null;if(core)versions.add(core);
+      rows.push({id,versions:productVersions,core,instances:markers.length});
+      if(markers.length>1)warnings.push(`More than one ${id.toUpperCase()} instance is active.`);
+    }
+    if(versions.size>1)warnings.push('Different core versions are active. Update the products and reload this page.');
+    return {products:rows,warnings};
+  }
+  const button=(label,fn)=>{const b=document.createElement('button');b.type='button';b.className='life-btn action';b.textContent=label;b.addEventListener('click',fn);return b;};
+  function card(title){const d=document.createElement('details');d.className='exp-tools-card';d.style.cssText='border:1px solid var(--theme-line,var(--line,#777));border-radius:7px;padding:7px;margin-top:8px';const s=document.createElement('summary');s.textContent=title;d.append(s);return d;}
+  function createCompatibilityControls(){const d=card('Product compatibility'),out=document.createElement('div');out.setAttribute('aria-live','polite');function refresh(){out.replaceChildren();const value=compatibilitySnapshot();for(const p of value.products){const line=document.createElement('p');line.textContent=`${p.id.toUpperCase()} ${p.versions.join(', ')} · ${p.core?'core '+p.core:'native product UI'}`;out.append(line);}const status=document.createElement('p');status.textContent=value.warnings.join(' ')||'No mixed core versions or duplicate instances detected on this page.';out.append(status);const note=document.createElement('small');note.textContent='Only products running on this page are visible. This is not an online update check.';out.append(note);}d.addEventListener('toggle',()=>{if(d.open)refresh();});d.append(out,button('Refresh compatibility',refresh));return d;}
+  function createRecoveryControls({list,capture,restore,notify=()=>{}}){const d=card('Settings backups'),select=document.createElement('select'),status=document.createElement('p');select.setAttribute('aria-label','Settings backup');status.setAttribute('role','status');function refresh(){select.replaceChildren();for(const e of list()){const o=document.createElement('option');o.value=e.id;o.textContent=`${new Date(e.at).toLocaleString()} · ${e.reason}`;select.append(o);}select.disabled=!select.options.length;rollback.disabled=select.disabled;}const backup=button('Back up settings',()=>{try{capture();refresh();status.textContent='Settings backed up locally.';}catch(e){status.textContent=e.message;}});const rollback=button('Restore selected backup',()=>{try{if(!select.value)return;restore(select.value);refresh();status.textContent='Settings restored. The previous state was also backed up.';notify(status.textContent);}catch(e){status.textContent=e.message;}});d.addEventListener('toggle',()=>{if(d.open)refresh();});d.append(select,backup,rollback,status);refresh();return d;}
+  return Object.freeze({createSettingsRecovery,compatibilitySnapshot,createCompatibilityControls,createRecoveryControls});
+})();
+  // END SHARED PRODUCT TOOLS
+
+  function validateRecoverySettings(value) {
+    const out = {};
+    for (const [key, fallback] of Object.entries(DEFAULTS)) {
+      const candidate = value?.[key];
+      out[key] = candidate != null && typeof candidate === typeof fallback && Array.isArray(candidate) === Array.isArray(fallback) ? candidate : fallback;
+    }
+    return JSON.parse(JSON.stringify(out));
+  }
+  const settingsRecovery = ExtraPotionsTools.createSettingsRecovery({
+    read: () => JSON.parse(localStorage.getItem(SETTINGS_KEY + '-backups') || '[]'),
+    write: value => localStorage.setItem(SETTINGS_KEY + '-backups', JSON.stringify(value)),
+    validate: validateRecoverySettings,
+  });
   const settings = loadSettings();
   const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
   const PAGE_STARTED_AT = Date.now();
+  const playerPresentationRecovery = { attempted: false, viewerInteracted: false, lastResult: 'not-needed' };
   const TAB_ID = (() => {
     try {
       const key = scopedSessionStorageKey(TAB_ID_KEY);
@@ -1730,6 +1782,12 @@ const ExtraPotionsDiagnostics = (() => {
       refreshViewingControls();
       syncScreenWakeLock();
     };
+    const preserveLayoutChoice = event => {
+      if (!event.isTrusted || event.composedPath().some(node => node?.id === 'tdh-root')) return;
+      if (event.type === 'keydown' && !['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(event.key)) return;
+      playerPresentationRecovery.viewerInteracted = true;
+    };
+    for (const type of ['pointerdown','wheel','touchmove','keydown']) document.addEventListener(type, preserveLayoutChoice, {capture:true,passive:true});
     document.addEventListener('pointerdown', control, true);
     document.addEventListener('keydown', control, true);
     for (const type of ['pause', 'playing', 'waiting', 'stalled', 'ended', 'error']) document.addEventListener(type, media, true);
@@ -4305,6 +4363,7 @@ const ExtraPotionsDiagnostics = (() => {
     enforceAutoDismissDeadlines(now);
     noteWatching();
     watchProgressTitle();
+    restoreChannelPlayer();
     ensureStreamMuted();
     ensureStreamPlaying();
     void syncScreenWakeLock();
@@ -11615,6 +11674,9 @@ const ExtraPotionsDiagnostics = (() => {
       ) {
         stored.hideTwitchSubscriptionPromos = Boolean(stored.hideChatSubscriptionPromos);
       }
+      if (Object.keys(stored).length && localStorage.getItem(SETTINGS_KEY + '-backup-version') !== APP_VERSION) {
+        try { settingsRecovery.capture(stored, 'before-update'); localStorage.setItem(SETTINGS_KEY + '-backup-version', APP_VERSION); } catch (_) { /* Backup quota must not reset working settings. */ }
+      }
       delete stored.authToken;
       delete stored.hideChatSubscriptionPromos;
       delete stored.autoHideCard;
@@ -11626,6 +11688,9 @@ const ExtraPotionsDiagnostics = (() => {
   }
 
   function persistSettingsSnapshot() {
+    try { const previous = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+      if (JSON.stringify(previous) !== JSON.stringify(settings)) settingsRecovery.capture(previous, 'before-change');
+    } catch (_) { /* A full backup journal must not prevent saving preferences. */ }
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   }
 
@@ -12481,6 +12546,33 @@ const ExtraPotionsDiagnostics = (() => {
     return document.querySelector("video");
   }
 
+
+  function playerPresentationSnapshot() {
+    const video = streamVideoElement();
+    const root = video?.closest('[data-a-player-state="mini"]');
+    const bounds = video?.getBoundingClientRect();
+    return { mode: document.fullscreenElement ? 'fullscreen' : document.pictureInPictureElement ? 'browser-pip' : root ? 'twitch-mini' : video ? 'channel' : 'missing',
+      width: Math.round(bounds?.width || 0), height: Math.round(bounds?.height || 0),
+      expandControl: Boolean(root?.querySelector('button[aria-label="Expand Player"]')),
+      recovery: {...playerPresentationRecovery} };
+  }
+  function restoreChannelPlayer(explicit = false) {
+    const login = watchingLogin();
+    if (!login || location.pathname.toLowerCase().replace(/\/$/, '') !== '/' + login.toLowerCase()) return false;
+    if (document.fullscreenElement || document.pictureInPictureElement) return false;
+    if (!explicit && (!settings.restoreChannelPlayer || playerPresentationRecovery.attempted || playerPresentationRecovery.viewerInteracted || Date.now() - PAGE_STARTED_AT > 30000 || document.hidden || viewingIntent.snapshot().paused)) return false;
+    const mini = streamVideoElement()?.closest('[data-a-player-state="mini"]');
+    if (!mini) return false;
+    // Observed in Twitch's public player UI: this control restores the anchored player.
+    // It is deliberately scoped to the mini-player, not a generic expand/fullscreen button.
+    const expand = mini.querySelector('button[aria-label="Expand Player"]');
+    if (!expand || expand.disabled || !expand.getClientRects().length) {playerPresentationRecovery.lastResult='expand-control-unavailable';return false;}
+    playerPresentationRecovery.attempted = true;
+    try { expand.click(); playerPresentationRecovery.lastResult='expand-requested';
+      logActivity('playback','Requested normal channel player',{reason:explicit?'user-restore-channel-player':'mini-player-on-arrival'});return true;
+    } catch (_) {playerPresentationRecovery.lastResult='expand-failed';return false;}
+  }
+
   function streamVideoIsPlaying(video = streamVideoElement()) {
     return Boolean(video && !video.paused && !video.ended && video.readyState > 1);
   }
@@ -12517,8 +12609,10 @@ const ExtraPotionsDiagnostics = (() => {
     }
     try {
       const playing = video.play();
+      logActivity('playback', 'Requested playback resume', { reason: explicit ? 'user-resume' : 'authorized-recovery' });
       if (playing && typeof playing.catch === 'function') playing.catch(() => {
         viewingIntent.pause(false);
+        logActivity('playback', 'Playback resume was blocked', { reason: 'player-rejected' });
         setStatus('Playback Needs Attention');
         refreshViewingControls();
       });
@@ -12559,6 +12653,7 @@ const ExtraPotionsDiagnostics = (() => {
       // Keep the pending window briefly so Twitch's autoplay unmute can be re-applied.
       if (Date.now() - Number(pending.at || 0) > 12000) writeSession(MUTE_PENDING_KEY, null);
     }
+    if (changed) logActivity('playback', 'Muted a Dropper-opened stream', { reason: 'mute-opened-streams-enabled' });
     return changed;
   }
 
@@ -13438,6 +13533,8 @@ const ExtraPotionsDiagnostics = (() => {
             <div class="action-pair"><button type="button" class="life-btn" id="tdh-resume-playback">Resume Playback</button><button type="button" class="life-btn" id="tdh-allow-switching">Use Automatic Switching</button></div>
             ${switchHtml("tdh-find-next", "Automatic Stream Switching", "Uses Eligible Alternatives Only When You Permit Switching. Manual Selections And Pauses Stay Protected.", settings.findNextStream)}
             ${switchHtml("tdh-mute-next", "Mute Opened Streams", "Mutes Streams Dropper Opens Or Switches To, Including Same-Tab Routing.", settings.muteRestarted)}
+            ${switchHtml("tdh-restore-channel-player", "Restore Channel Player On Arrival", "Returns An Initial Twitch Mini-player To The Normal Channel View. Stops After You Interact With The Page.", settings.restoreChannelPlayer)}
+            <button id="tdh-restore-channel-player-now" type="button" class="life-btn">Restore Channel Player</button>
             ${switchHtml("tdh-background-earning", "Background Progress Tracking", "Reports Actual Twitch Credit In Hidden Tabs Or Picture-in-Picture. Does Not Simulate Viewing.", settings.backgroundEarning)}
             <div class="mini-row"><span>Pause Auto-Switch</span><select class="select-lite" id="tdh-pause-switch"><option value="0">Off</option><option value="30">30 Min</option><option value="60">1 Hour</option><option value="120">2 Hours</option><option value="240">4 Hours</option><option value="480">8 Hours</option><option value="720">12 Hours</option><option value="1440">24 Hours</option></select></div>
             ${switchHtml("tdh-notifications", "Status Toasts", "Shows brief in-app Dropper messages for stream switches, campaign changes, and completed Drops.", settings.notifications)}
@@ -14706,8 +14803,56 @@ const ExtraPotionsDiagnostics = (() => {
     requestAnimationFrame(layoutChrome);
   }
 
+
+  function waitingExplanation(health, hasDrop, switching) {
+    if (health.creditedRecently) return 'Twitch recently credited progress. A delayed page or video signal does not mean earning stopped.';
+    if (!hasDrop) return 'No active reward is selected. Open the campaign list and choose an eligible campaign.';
+    if (health.paused) return 'Playback is paused or needs your attention. Use Resume playback when you are ready.';
+    if (!health.login) return switching ? 'Waiting for an eligible stream to open.' : 'Open an eligible stream, or enable automatic switching.';
+    if (!health.campaignVerified) return 'Checking whether this stream qualifies for the selected campaign. A Drops tag alone is not confirmation.';
+    if (!health.gameMatches) return 'The stream category does not match the selected reward.';
+    if (health.inVerificationGrace) return 'The stream is still in its initial verification period. Waiting for Twitch to report progress.';
+    if (!health.domVideoPlaying) return 'The player is not reporting playback. Check the player for a pause, login prompt, or playback restriction.';
+    return 'The stream appears eligible. Waiting for the next progress update from Twitch.';
+  }
+  function restoreSettingsBackup(id) {
+    const next=settingsRecovery.restore(id);
+    settingsRecovery.capture(settings,'before-rollback');
+    Object.assign(settings,next);
+    pauseAutoSwitchUntil=Number(settings.pauseAutoSwitchUntil)||0;
+    saveSettings();
+    applyAppearanceSettings();applyMotionSetting();syncClaimWatchers();void syncScreenWakeLock();updateTitle();
+    if(settings.hideTwitchSubscriptionPromos)suppressTwitchSubscriptionPromos();else restoreTwitchSubscriptionPromos();
+    for(const [id,value] of [['tdh-collapsed-width',settings.collapsedPanelWidth],['tdh-queue-count',settings.queueCount],['tdh-queue-preference',settings.queuePreference],['tdh-pause-switch',settings.pauseAutoSwitchMinutes]]){const control=ui?.shadow.getElementById(id);if(control)control.value=String(value);}
+    refreshQueueList();refreshViewingControls();syncCompactState();layoutChrome();
+  }
+  function mountProductTools() {
+    const target = ui.shadow.getElementById('tdh-diagnostics-body');
+    if (!target || target.querySelector('[data-dropper-tools]')) return;
+    const container = document.createElement('div');container.dataset.dropperTools = '1';
+    container.append(ExtraPotionsTools.createCompatibilityControls(), ExtraPotionsTools.createRecoveryControls({
+      list: settingsRecovery.list, capture: () => settingsRecovery.capture(settings, 'manual'),
+      restore: restoreSettingsBackup, notify: setStatus,
+    }));
+    const details = document.createElement('details');details.style.cssText='border:1px solid var(--theme-line);border-radius:7px;padding:7px;margin-top:8px';
+    const title = document.createElement('summary');title.textContent='Why am I waiting?';
+    const text = document.createElement('p');text.setAttribute('role','status');
+    const refresh = document.createElement('button');refresh.type='button';refresh.className='life-btn';refresh.textContent='Refresh explanation';
+    const explain = () => { text.textContent=waitingExplanation(streamEarningHealthSnapshot(),Boolean(currentDrop),settings.findNextStream); };
+    details.addEventListener('toggle',()=>{if(details.open)explain();});refresh.addEventListener('click',explain);details.append(title,text,refresh);
+    const history = document.createElement('details');history.style.cssText=details.style.cssText;
+    const heading = document.createElement('summary');heading.textContent='Playback and navigation history';const entries=document.createElement('div');
+    const showHistory=()=>{entries.replaceChildren();const records=(Array.isArray(activityLog)?activityLog:[]).filter(e=>e.type==='playback'||e.type==='navigation').slice(-20).reverse();
+      for(const entry of records){const p=document.createElement('p');p.textContent=new Date(entry.at).toLocaleTimeString()+' · '+entry.message+(entry.meta?.reason?' · '+entry.meta.reason:'');entries.append(p);}
+      if(!records.length)entries.textContent='No Dropper playback or navigation actions recorded in this session.';};
+    history.addEventListener('toggle',()=>{if(history.open)showHistory();});const update=document.createElement('button');update.type='button';update.className='life-btn';update.textContent='Refresh history';update.addEventListener('click',showHistory);history.append(heading,entries,update);
+    container.append(details,history);target.append(container);
+  }
+
   function bindDropperControls() {
     const s = ui.shadow;
+    mountProductTools();
+    s.getElementById('tdh-restore-channel-player-now')?.addEventListener('click',()=>{ const requested=restoreChannelPlayer(true);setStatus(requested?'Channel player restore requested':'No compatible Twitch mini-player found on this channel page'); });
     s.getElementById('tdh-resume-playback')?.addEventListener('click', () => {
       ensureStreamPlaying(true); refreshViewingControls();
     });
@@ -15600,6 +15745,7 @@ const ExtraPotionsDiagnostics = (() => {
         tabCoordinationScoped: true,
       },
       topLevelContext: window.top === window.self,
+      playerPresentation: playerPresentationSnapshot(),
       headerVersionControl: Boolean(ui?.shadow?.getElementById("tdh-header-version")),
       launcherGrid: {
         slot: ui?.host?.dataset?.launcherSlot || null,
@@ -16362,6 +16508,7 @@ const ExtraPotionsDiagnostics = (() => {
       "tdh-progress-title": "progressInTitle", "tdh-find-next": "findNextStream", "tdh-mute-next": "muteRestarted",
       "tdh-background-earning": "backgroundEarning", "tdh-badge-only": "badgeOnly", "tdh-reduce-motion": "reduceMotion", "tdh-notifications": "notifications", "tdh-custom-opacity": "customOpacity",
       "tdh-hide-sub-promos": "hideTwitchSubscriptionPromos",
+      "tdh-restore-channel-player": "restoreChannelPlayer",
       "tdh-queue-enabled": "queueEnabled", "tdh-queue-stall": "queueOnStall", "tdh-queue-offline": "queueOnOffline", "tdh-queue-category": "queueOnCategoryChange",
     };
     Object.entries(map).forEach(([id, key]) => {
@@ -16392,6 +16539,7 @@ const ExtraPotionsDiagnostics = (() => {
       "tdh-progress-title": settings.progressInTitle, "tdh-find-next": settings.findNextStream, "tdh-mute-next": settings.muteRestarted,
       "tdh-background-earning": settings.backgroundEarning, "tdh-badge-only": settings.badgeOnly, "tdh-reduce-motion": settings.reduceMotion, "tdh-notifications": settings.notifications, "tdh-custom-opacity": settings.customOpacity,
       "tdh-hide-sub-promos": settings.hideTwitchSubscriptionPromos,
+      "tdh-restore-channel-player": settings.restoreChannelPlayer,
       "tdh-queue-enabled": settings.queueEnabled, "tdh-queue-stall": settings.queueOnStall, "tdh-queue-offline": settings.queueOnOffline, "tdh-queue-category": settings.queueOnCategoryChange,
     };
     Object.entries(map).forEach(([id, on]) => ui.shadow.getElementById(id)?.setAttribute("aria-checked", String(Boolean(on))));
