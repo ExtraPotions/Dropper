@@ -283,7 +283,7 @@ test('skipped streamer rotation can be manually cleared and resumed', () => {
 });
 
 
-test('allow-list campaigns stay on permitted channels without Drops-tag probing', () => {
+test('allow-list campaigns prefer permitted channels but can verify Drops-tagged fallbacks', () => {
   const start = source.indexOf('  function routingControllerFindStream');
   const end = source.indexOf('\n  function routingControllerOpenStream', start);
   const find = source.slice(start, end);
@@ -291,20 +291,28 @@ test('allow-list campaigns stay on permitted channels without Drops-tag probing'
   const classifierEnd = source.indexOf('\n  function routingCandidateDiagnosticsSnapshot', classifierStart);
   const classifier = source.slice(classifierStart, classifierEnd);
 
-  assert.match(classifier, /const campaignCompatible = !allowListPresent \|\| allowListMatch;/u);
+  assert.match(classifier, /const campaignCompatible = !allowListPresent \\|\\| allowListMatch \\|\\| dropsTagged;/u);
   assert.match(classifier, /reason = "campaign-allow-list-match"/u);
+  assert.match(classifier, /reason = "drops-tagged-verification-fallback"/u);
   assert.match(classifier, /reason = "campaign-allow-list-mismatch"/u);
   assert.match(source, /live-campaign-allowed/u);
-  assert.doesNotMatch(classifier, /drops-tagged-campaign-probe/u);
+  assert.match(source, /live-drops-tagged/u);
   assert.match(find, /source: ['"]campaign-acl['"]/u);
-  assert.match(find, /navigationReason: campaignAclProof \? "campaign-acl-stream"/u);
-  assert.doesNotMatch(find, /campaign-drops-probe/u);
+  assert.match(find, /drops-tagged-verification-stream/u);
 
   const verifyStart = source.indexOf('  function routingControllerVerifyStream');
   const verifyEnd = source.indexOf('\n  function routingControllerEarning', verifyStart);
   const verify = source.slice(verifyStart, verifyEnd);
-  assert.match(verify, /campaignProof \|\|\s*progressProof/u);
-  assert.match(verify, /not allowed by/u);
+  assert.match(verify, /campaignProof \\|\\|\\s*progressProof/u);
+  assert.doesNotMatch(verify, /not allowed by/u);
+  assert.match(verify, /campaignVerified: true/u);
+  assert.match(verify, /verifiedChannel: verificationLogin/u);
+
+  const earningStart = source.indexOf('  function routingControllerEarning');
+  const earningEnd = source.indexOf('\n  function routingControllerWaiting', earningStart);
+  const earning = source.slice(earningStart, earningEnd);
+  assert.match(earning, /verifiedCampaignEvidence/u);
+  assert.match(earning, /login === verifiedChannel/u);
 });
 
 test('allow-list wait state retries stream discovery instead of abandoning the active campaign', () => {

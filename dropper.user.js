@@ -3769,7 +3769,8 @@ const ExtraPotionsTools = (() => {
           campaignAclMatched: campaignAclProof,
           visibleInCategory: Boolean(candidate.visibleInCategory),
           categoryScoped: true,
-          probationary: !(visibleDropsProof || campaignAclProof),
+          probationary: !campaignAclProof,
+          verificationRequired: !campaignAclProof,
           campaignProbe: false,
           campaignAllowListPresent: Boolean(allowedChannels.length),
           campaignAllowListMatch: campaignAclProof,
@@ -3779,7 +3780,7 @@ const ExtraPotionsTools = (() => {
           seenAt: now,
         },
         navigationTarget: candidate.href,
-        navigationReason: campaignAclProof ? "campaign-acl-stream" : visibleDropsProof ? "qualified-stream" : "probationary-stream",
+        navigationReason: campaignAclProof ? "campaign-acl-stream" : visibleDropsProof ? "drops-tagged-verification-stream" : "probationary-stream",
         verifyBaselineMinutes: Number(currentDrop.currentMinutes || 0),
         verifyBaselinePercent: Number(currentDrop.percent || 0),
         deadlineAt: now + ROUTING_NAVIGATION_DEADLINE_MS,
@@ -3787,7 +3788,7 @@ const ExtraPotionsTools = (() => {
       campaignAclProof
         ? `Opening campaign-allowed stream ${candidate.login}`
         : visibleDropsProof
-          ? `Opening Drops-qualified stream ${candidate.login}`
+          ? `Opening Drops-tagged stream ${candidate.login} for campaign verification`
           : `Opening category stream ${candidate.login} for Drop verification`,
     );
     lastStreamSwitch = now;
@@ -3795,12 +3796,12 @@ const ExtraPotionsTools = (() => {
       campaignAclProof
         ? `Opening ${candidate.login} For ${session.targetCampaign || targetGame}`
         : visibleDropsProof
-          ? `Opening ${candidate.login} For ${targetGame} Drops`
+          ? `Opening ${candidate.login} · Verifying ${targetGame} Campaign`
           : `Opening ${candidate.login} · Verifying Drops Eligibility`,
     );
     routingControllerNavigate(
       candidate.href,
-      campaignAclProof ? "routing-open-campaign-acl-stream" : visibleDropsProof ? "routing-open-qualified-stream" : "routing-open-probationary-stream",
+      campaignAclProof ? "routing-open-campaign-acl-stream" : visibleDropsProof ? "routing-open-drops-verification-stream" : "routing-open-probationary-stream",
     );
     return next;
   }
@@ -3937,24 +3938,7 @@ const ExtraPotionsTools = (() => {
     const minutesAdvanced = Number(currentDrop?.currentMinutes || 0) > Number(session.verifyBaselineMinutes || 0);
     const percentAdvanced = Number(currentDrop?.percent || 0) > Number(session.verifyBaselinePercent || 0);
     const progressProof = minutesAdvanced || percentAdvanced;
-    const allowedChannels = activeCampaignAllowedChannels();
-    const allowedLogins = new Set(
-      allowedChannels.map((channel) => cleanText(channel.login).toLowerCase()).filter(Boolean),
-    );
     const verificationLogin = login || target;
-
-    if (allowedLogins.size && verificationLogin && !allowedLogins.has(verificationLogin)) {
-      return transitionRoutingController(
-        ROUTING_STATES.FIND_STREAM,
-        {
-          failedStreams: routingControllerAddFailedStream(session, verificationLogin),
-          targetStream: "",
-          candidateEvidence: null,
-          deadlineAt: 0,
-        },
-        `Rejected ${verificationLogin} · not allowed by ${session.targetCampaign || targetGame}`,
-      );
-    }
 
     if (login && target && login !== target) {
       if (session.deadlineAt && now >= session.deadlineAt) {
@@ -4028,6 +4012,13 @@ const ExtraPotionsTools = (() => {
         ROUTING_STATES.EARNING,
         {
           earningStartedAt: now,
+          candidateEvidence: {
+            ...(session.candidateEvidence || {}),
+            campaignVerified: true,
+            verifiedChannel: verificationLogin,
+            creditedProgressVerified: progressProof,
+            verifiedAt: now,
+          },
           deadlineAt: 0,
           mismatchSince: 0,
           offlineSince: 0,
@@ -4120,8 +4111,14 @@ const ExtraPotionsTools = (() => {
       allowedChannels.map((channel) => cleanText(channel.login).toLowerCase()).filter(Boolean),
     );
     const gameMatches = Boolean(info.game && targetGame && gameNamesMatch(targetGame, info.game));
+    const verifiedChannel = cleanText(session.candidateEvidence?.verifiedChannel).toLowerCase();
+    const verifiedCampaignEvidence = Boolean(
+      verifiedChannel &&
+      login === verifiedChannel &&
+      session.candidateEvidence?.campaignVerified === true
+    );
 
-    if (allowedLogins.size && login && !allowedLogins.has(login)) {
+    if (allowedLogins.size && login && !allowedLogins.has(login) && !verifiedCampaignEvidence) {
       return transitionRoutingController(
         ROUTING_STATES.FIND_STREAM,
         {
@@ -4130,7 +4127,7 @@ const ExtraPotionsTools = (() => {
           candidateEvidence: null,
           deadlineAt: 0,
         },
-        `Verified session invalidated · ${login} is not allowed by ${session.targetCampaign || targetGame}`,
+        `Verified session invalidated · ${login} is not verified for ${session.targetCampaign || targetGame}`,
       );
     }
 
@@ -9678,12 +9675,13 @@ const ExtraPotionsTools = (() => {
       const allowListMatch = Boolean(login && allowedLogins.has(login));
       const dropsTagged = item.dropsTagged === true;
       const temporarilySkipped = Boolean(login && skipped.has(login));
-      const campaignCompatible = !allowListPresent || allowListMatch;
+      const campaignCompatible = !allowListPresent || allowListMatch || dropsTagged;
       const routable = Boolean(!temporarilySkipped && campaignCompatible);
 
       let reason = "same-game-probationary";
       if (temporarilySkipped) reason = "temporary-skip";
       else if (allowListMatch) reason = "campaign-allow-list-match";
+      else if (allowListPresent && dropsTagged) reason = "drops-tagged-verification-fallback";
       else if (allowListPresent) reason = "campaign-allow-list-mismatch";
       else if (dropsTagged) reason = "drops-tagged";
 
@@ -9777,7 +9775,7 @@ const ExtraPotionsTools = (() => {
         if (!login || liveLogins.has(login)) return false;
         if (wantedGame && (!item.game || !gameNamesMatch(wantedGame, item.game))) return false;
         if (targetCampaignKey && item.campaignKey !== targetCampaignKey) return false;
-        if (allowListPresent && !activeAllowedLogins.has(login)) return false;
+        if (allowListPresent && !activeAllowedLogins.has(login) && item.dropsTagged !== true) return false;
         return true;
       })
       .map((item) => {
@@ -9822,9 +9820,10 @@ const ExtraPotionsTools = (() => {
           ? activeAllowedLogins.has(login)
           : Boolean(item.allowListMatch);
         const temporarilySkipped = Boolean(item.temporarilySkipped);
+        const dropsTagged = item.dropsTagged === true;
         const routable = Boolean(
           !temporarilySkipped &&
-          (!allowListPresent || allowListMatch)
+          (!allowListPresent || allowListMatch || dropsTagged)
         );
         return {
           login: item.login,
@@ -9835,9 +9834,13 @@ const ExtraPotionsTools = (() => {
           routable,
           reason: temporarilySkipped
             ? "temporary-skip"
-            : allowListPresent
-              ? allowListMatch ? "campaign-allow-list-match" : "campaign-allow-list-mismatch"
-              : item.reason || null,
+            : allowListMatch
+              ? "campaign-allow-list-match"
+              : allowListPresent && dropsTagged
+                ? "drops-tagged-verification-fallback"
+                : allowListPresent
+                  ? "campaign-allow-list-mismatch"
+                  : item.reason || null,
           evidenceRank: item.evidenceRank ?? streamCandidateEvidence({ ...item, allowListMatch, availability: 'live' }).rank,
           evidenceLabel: item.evidenceLabel || streamCandidateEvidence({ ...item, allowListMatch, availability: 'live' }).label,
           seenAt: item.seenAt ? new Date(item.seenAt).toISOString() : null,
@@ -14099,7 +14102,7 @@ const ExtraPotionsTools = (() => {
       if (!login || login === active || failed.has(login)) return false;
       if (wantedGame && (!item.game || !gameNamesMatch(wantedGame, item.game))) return false;
       if (wantedCampaign && item.campaignKey !== wantedCampaign) return false;
-      if (allowListPresent && !allowedLogins.has(login)) return false;
+      if (allowListPresent && !allowedLogins.has(login) && item.dropsTagged !== true) return false;
       return true;
     }).map((item) => ({
       ...item,
@@ -14170,7 +14173,8 @@ const ExtraPotionsTools = (() => {
         const candidateGame = cleanText(metadata.game || "");
         const candidateCampaignKey = cleanText(metadata.campaignKey || "");
         const allowListMatch = Boolean(login && allowedLogins.has(login));
-        if (allowListPresent && !allowListMatch) return;
+        const dropsTagged = metadata.dropsTagged === true;
+        if (allowListPresent && !allowListMatch && !dropsTagged) return;
         if (targetGame && (!candidateGame || !gameNamesMatch(targetGame, candidateGame))) return;
         if (targetCampaignKey && candidateCampaignKey && candidateCampaignKey !== targetCampaignKey) return;
 
