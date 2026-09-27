@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.9
+// @version      3.3.10
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -466,7 +466,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.9";
+  const APP_VERSION = "3.3.10";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -642,6 +642,7 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.10": ["Adds raised and inset menu surfaces so controls and cards no longer blend into one flat layer.","Uses accessible link, focus, and accent-text colors while keeping every existing Dropper palette intact.","Preserves existing saved palette choices and established base colors.","Adds computed theme-role regression coverage across the live menu."],
     "3.3.9": ["Compacts System menus and keeps menu width controls together on one row.","Groups existing menu preferences consistently while preserving saved settings.","Removes automatic Settings Backup and its restore controls.","Adds a Bitcoin donation option with address copying and wallet support."],
     "3.3.8": ["Balances the four System cards with equal collapsed heights and matching padding.","Preserves two columns in Full and Compact modes and one in Narrow mode.","Lets expanded cards grow naturally while remaining inside the menu.","Checks equal card heights and expanded content at all three menu widths."],
     "3.3.7": ["Restores a full-width two-column grid for System support and recovery cards.","Keeps compatibility, backups, waiting explanations, and playback history aligned in Full and Compact modes.","Uses one column in Narrow mode and keeps expanded cards inside the menu.","Adds browser coverage for collapsed and expanded cards at each menu width."],
@@ -953,6 +954,33 @@ const ExtraPotionsDiagnostics = (() => {
     { id:"twitch", name:"Twitch", swatch:"linear-gradient(135deg,#18181b 0 48%,#9147ff 48% 78%,#bf94ff 78% 100%)", canvas:"#111114", surface:"#19191e", primary:"#9147ff", companion:"#772ce8", counterpoint:"#bf94ff", interactive:"#bf94ff", bg:"#111114", panel:"#19191e", line:"#34343b", text:"#efeff1", muted:"#adadb8", accent:"#9147ff", accent2:"#bf94ff", skin:"linear-gradient(135deg,#9147ff,#bf94ff)", skinVertical:"linear-gradient(180deg,#9147ff,#bf94ff)", skinMode:"flat" },
     { id:"dropper", name:"Dropper gem", swatch:"linear-gradient(135deg,#0b0713 0 38%,#7a46c8 38% 69%,#2a8c9b 69% 100%)", canvas:"#0b0713", surface:"#171025", primary:"#7a46c8", companion:"#b14589", counterpoint:"#2a8c9b", interactive:"#9864dc", bg:"#0b0713", panel:"#171025", line:"#3c2850", text:"#e8ddf2", muted:"#aa98bb", accent:"#7a46c8", accent2:"#9864dc", skin:"linear-gradient(135deg,#7a46c8 0%,#b14589 52%,#2a8c9b 100%)", skinVertical:"linear-gradient(180deg,#7a46c8 0%,#b14589 52%,#2a8c9b 100%)" }
   ]);
+  const themeRgb = (value) => [1, 3, 5].map((index) => parseInt(value.slice(index, index + 2), 16));
+  const blendThemeColor = (from, to, amount) => `#${themeRgb(from).map((part, index) => Math.round(part + (themeRgb(to)[index] - part) * amount).toString(16).padStart(2, "0")).join("")}`;
+  const themeLuminance = (value) => {
+    const channels = themeRgb(value).map((part) => { const channel = part / 255; return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  };
+  const themeContrast = (one, two) => { const [light, dark] = [themeLuminance(one), themeLuminance(two)].sort((a, b) => b - a); return (light + 0.05) / (dark + 0.05); };
+  function readableThemeColor(candidate, background, fallback) {
+    if (themeContrast(candidate, background) >= 4.5) return candidate;
+    for (let amount = 0.15; amount <= 1; amount += 0.05) {
+      const lighter = blendThemeColor(candidate, "#ffffff", amount);
+      if (themeContrast(lighter, background) >= 4.5) return lighter;
+      const darker = blendThemeColor(candidate, "#000000", amount);
+      if (themeContrast(darker, background) >= 4.5) return darker;
+    }
+    return fallback;
+  }
+  function semanticTheme(theme) {
+    const onAccent = [theme.text, theme.bg, "#ffffff", "#000000"].sort((a, b) => themeContrast(b, theme.accent) - themeContrast(a, theme.accent))[0];
+    return {
+      raised: blendThemeColor(theme.panel, theme.text, 0.08),
+      inset: blendThemeColor(theme.bg, "#000000", 0.18),
+      link: readableThemeColor(theme.accent2, theme.panel, theme.text),
+      focus: theme.accent2,
+      onAccent,
+    };
+  }
   // Central registry for claim-related Twitch DOM assumptions. Keep selectors
   // here so Twitch UI changes have one fail-closed repair surface.
   const TWITCH_DOM_SELECTORS = Object.freeze({
@@ -12808,7 +12836,7 @@ const ExtraPotionsTools = (() => {
         position: fixed; right: 12px; z-index: 2147483600;
         display: flex; flex-direction: column-reverse; align-items: flex-end;
         width: max-content; max-width: calc(100vw - 24px); gap: 8px;
-        --theme-bg:#111114; --theme-panel:#19191e; --theme-line:#34343b; --theme-text:#efeff1; --theme-muted:#adadb8; --theme-accent:#9147ff; --theme-accent2:#bf94ff; --theme-skin:linear-gradient(135deg,#d9b5ff,#9b5af9,#7428e8); --theme-skin-vertical:linear-gradient(180deg,#d9b5ff,#9b5af9,#7428e8); --dropper-ui-opacity:1;
+        --theme-bg:#111114; --theme-panel:#19191e; --theme-raised:#2a2a31; --theme-inset:#0e0e10; --theme-line:#34343b; --theme-text:#efeff1; --theme-muted:#adadb8; --theme-accent:#9147ff; --theme-accent2:#bf94ff; --theme-link:#c6a4ff; --theme-focus:#bf94ff; --theme-onAccent:#111114; --theme-skin:linear-gradient(135deg,#d9b5ff,#9b5af9,#7428e8); --theme-skin-vertical:linear-gradient(180deg,#d9b5ff,#9b5af9,#7428e8); --dropper-ui-opacity:1;
         font: 13px/1.42 ui-sans-serif, system-ui, "Segoe UI", sans-serif; color: var(--theme-text);
       }
       .cluster.open-up { flex-direction: column; }
@@ -13279,21 +13307,23 @@ const ExtraPotionsTools = (() => {
       }
       #tdh-toggle-inventory,
       #tdh-refresh-campaign-data { grid-column:1/-1; }
-      .auth-advanced { margin-top:2px; border:1px solid var(--theme-line); border-radius:7px; background:var(--theme-bg); padding:6px 8px; }
+      .auth-advanced { margin-top:2px; border:1px solid var(--theme-line); border-radius:7px; background:var(--theme-inset); padding:6px 8px; }
       .auth-advanced > summary { cursor:pointer; list-style:none; color:var(--theme-muted); font-size:11px; font-weight:600; user-select:none; }
       .auth-advanced > summary::-webkit-details-marker { display:none; }
       .auth-advanced[open] > summary { margin-bottom:6px; color:var(--theme-text); }
       .auth-advanced-body { display:flex; flex-direction:column; gap:6px; }
       .auth-hint { color:var(--theme-muted); font-size:10px; line-height:1.35; }
-      .auth-input { width:100%; min-height:30px; border:1px solid var(--theme-line); border-radius:6px; background:var(--theme-panel); color:var(--theme-text); padding:6px 8px; font-size:11px; }
-      .auth-input:focus { outline:none; border-color:var(--theme-accent); }
+      .auth-input { width:100%; min-height:30px; border:1px solid var(--theme-line); border-radius:6px; background:var(--theme-inset); color:var(--theme-text); padding:6px 8px; font-size:11px; }
+      .auth-input:focus { outline:2px solid var(--theme-focus); outline-offset:2px; border-color:var(--theme-focus); }
       .theme-row { grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:28px; padding:6px 0; font-size:11px; }
       .exp-theme-swatch{box-sizing:border-box!important;flex:0 0 22px!important;width:22px!important;height:22px!important;min-width:22px!important;min-height:22px!important;max-width:22px!important;max-height:22px!important;padding:0!important;border-radius:5px!important}
       .exp-theme-swatches { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
       .exp-theme-swatch { appearance:none; width:18px; height:18px; min-width:18px; padding:0; border:2px solid var(--theme-line); border-radius:4px; box-sizing:border-box; cursor:pointer; }
       .exp-theme-swatch.is-on { border-color:var(--theme-text); box-shadow:0 0 0 2px var(--theme-accent); }
       .fl-tool-panel { border-color:var(--theme-line); background:var(--theme-panel); }
-      .fl-tool-body, .select-lite, .life-btn { border-color:var(--theme-line); background:var(--theme-bg); color:var(--theme-text); }
+      .fl-tool-body { border-color:var(--theme-line); background:var(--theme-bg); color:var(--theme-text); }
+      .select-lite, .life-btn { border-color:var(--theme-line); background:var(--theme-raised); color:var(--theme-text); }
+      .cluster a { color:var(--theme-link); }
       .fl-tool-chevron, #tdh-rail-subtitle, .compact-extra { color:var(--theme-muted); }
       .cluster[data-ui-theme="contrast"] .toggleSwitch { border:2px solid #fff; background:#050505; }
       .cluster[data-ui-theme="contrast"] .toggleSwitch::after { top:0; left:0; border:1px solid #050505; background:#fff; }
@@ -14843,6 +14873,8 @@ const ExtraPotionsTools = (() => {
     const theme = UI_THEMES.find((item) => item.id === settings.uiTheme) || UI_THEMES.at(-1);
     settings.uiTheme = theme.id;
     for (const key of ["bg", "panel", "line", "text", "muted", "accent", "accent2"]) ui.cluster.style.setProperty(`--theme-${key}`, theme[key]);
+    const semantic = semanticTheme(theme);
+    for (const key of ["raised", "inset", "link", "focus", "onAccent"]) ui.cluster.style.setProperty(`--theme-${key}`, semantic[key]);
     ui.cluster.style.setProperty("--theme-skin", theme.skin || theme.swatch);
     ui.cluster.style.setProperty("--theme-skin-vertical", theme.skinVertical || theme.skin || theme.swatch);
     ui.cluster.dataset.uiTheme = theme.id;

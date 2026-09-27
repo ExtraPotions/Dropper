@@ -119,6 +119,11 @@ test('pride theme computed contract exposes dataset and rainbow treatments', asy
         uiTheme: cluster?.dataset?.uiTheme || null,
         bg: styles(cluster)?.getPropertyValue('--theme-bg').trim(),
         accent: styles(cluster)?.getPropertyValue('--theme-accent').trim(),
+        raised: styles(cluster)?.getPropertyValue('--theme-raised').trim(),
+        inset: styles(cluster)?.getPropertyValue('--theme-inset').trim(),
+        link: styles(cluster)?.getPropertyValue('--theme-link').trim(),
+        focus: styles(cluster)?.getPropertyValue('--theme-focus').trim(),
+        onAccent: styles(cluster)?.getPropertyValue('--theme-onAccent').trim(),
         dividerBackground: styles(divider)?.backgroundImage || '',
         toggleBackground: styles(toggle)?.backgroundImage || '',
         activePanelBeforeBackground: activePanel ? getComputedStyle(activePanel, '::before').backgroundImage : '',
@@ -128,6 +133,12 @@ test('pride theme computed contract exposes dataset and rainbow treatments', asy
     assert.equal(computed.uiTheme, 'pride');
     assert.equal(computed.bg, PRIDE_PALETTE.bg);
     assert.equal(computed.accent, PRIDE_PALETTE.accent);
+    assert.match(computed.raised, /^#[0-9a-f]{6}$/u);
+    assert.match(computed.inset, /^#[0-9a-f]{6}$/u);
+    assert.match(computed.link, /^#[0-9a-f]{6}$/u);
+    assert.match(computed.focus, /^#[0-9a-f]{6}$/u);
+    assert.match(computed.onAccent, /^#[0-9a-f]{6}$/u);
+    assert.notEqual(computed.raised, PRIDE_PALETTE.panel);
     assert.match(computed.dividerBackground, /linear-gradient/u);
     assert.match(computed.dividerBackground, /200,\s*78,\s*102/u);
     assert.doesNotMatch(computed.toggleBackground, /linear-gradient/u);

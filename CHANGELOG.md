@@ -1,3 +1,10 @@
+## 3.3.10 — 2026-09-27
+
+- Adds raised and inset menu surfaces so controls and cards no longer blend into one flat layer.
+- Uses accessible link, focus, and accent-text colors while keeping every existing Dropper palette intact.
+- Preserves existing saved palette choices and established base colors.
+- Adds computed theme-role regression coverage across the live menu.
+
 ## 3.3.9 — 2026-09-26
 
 - Compacts System menus and keeps menu width controls together on one row.
