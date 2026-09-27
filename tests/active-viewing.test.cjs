@@ -184,7 +184,9 @@ test('eligibility reports explicit blocking evidence and does not infer stream s
   assert.equal(active.eligibility(c, r, ctx).code, 'eligible');
   assert.equal(active.eligibility(c, r, { ...ctx, verified: false }).code, 'unknown');
   assert.equal(active.eligibility(c, r, { ...ctx, game: 'Other' }).code, 'wrong-game');
-  assert.equal(active.eligibility(c, r, { ...ctx, channel: 'other' }).code, 'wrong-channel');
+  assert.equal(active.eligibility(c, r, { ...ctx, channel: 'other', verified: false }).code, 'wrong-channel');
+  assert.equal(active.eligibility(c, r, { ...ctx, channel: 'other', verified: false, verificationPending: true }).code, 'verification-pending');
+  assert.equal(active.eligibility(c, r, { ...ctx, channel: 'other', verified: true }).code, 'eligible');
   assert.equal(active.eligibility({ ...c, self: { isAccountConnected: false } }, r, ctx).code, 'account-link');
   assert.equal(active.eligibility(c, { ...r, requiredSubscriptionCount: 1 }, ctx).code, 'paid-requirement');
   assert.equal(active.eligibility({ ...c, endAt: '2026-09-24' }, r, ctx).code, 'expired');
