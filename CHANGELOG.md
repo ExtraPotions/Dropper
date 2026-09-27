@@ -1,3 +1,10 @@
+## 3.3.11 — 2026-09-27
+
+- Lets every launcher move left, right, up, or down within the shared grid.
+- Persists the complete launcher order across reloads.
+- Adds Alt+Arrow keyboard reordering for the focused launcher.
+- Keeps Dropper first only until the user chooses a different order.
+
 ## 3.3.10 — 2026-09-27
 
 - Adds raised and inset menu surfaces so controls and cards no longer blend into one flat layer.

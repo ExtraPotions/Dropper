@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.10
+// @version      3.3.11
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -449,24 +449,21 @@ const ExtraPotionsDiagnostics = (() => {
     const layout = () => {
       const columns = 3;
       let order=[];try{const saved=JSON.parse(localStorage.getItem(LAUNCHER_ORDER_KEY)||"[]");if(Array.isArray(saved))order=saved;}catch{}
-      const peers = [...document.querySelectorAll('[data-exp-product-launcher="1"]')].sort((a,b)=>{const ai=order.indexOf(a.dataset.productId),bi=order.indexOf(b.dataset.productId);if(a.dataset.productId!=="dropper"&&b.dataset.productId!=="dropper"&&ai!==bi){if(ai<0)return 1;if(bi<0)return -1;return ai-bi;}return Number(b.dataset.launcherPriority||0)-Number(a.dataset.launcherPriority||0)||(a.dataset.productId||'').localeCompare(b.dataset.productId||'');});
-      const dropper = peers.find((node) => node.dataset.productId === "dropper");
-      const products = peers.filter((node) => node !== dropper);
+      const peers = [...document.querySelectorAll('[data-exp-product-launcher="1"]')].sort((a,b)=>{const ai=order.indexOf(a.dataset.productId),bi=order.indexOf(b.dataset.productId);if(ai!==bi){if(ai<0)return 1;if(bi<0)return -1;return ai-bi;}const ap=a.dataset.productId==="dropper"?Number.MAX_SAFE_INTEGER:Number(a.dataset.launcherPriority||0),bp=b.dataset.productId==="dropper"?Number.MAX_SAFE_INTEGER:Number(b.dataset.launcherPriority||0);return bp-ap||(a.dataset.productId||'').localeCompare(b.dataset.productId||'');});
       const assign = (node, slot, span = 1) => {
         const row = Math.floor(slot / columns);
         const column = slot % columns;
         node.dataset.launcherSlot = String(slot); node.dataset.launcherRow = String(row); node.dataset.launcherColumn = String(column); node.dataset.launcherSpan = String(span);
         node.style.setProperty('--exp-launcher-x', `${column * 56}px`); node.style.setProperty('--exp-launcher-y', `${row * 56}px`); node.style.setProperty('--exp-launcher-offset', `${row * 56}px`);
       };
-      if (dropper) assign(dropper, 0);
-      products.forEach((node, index) => assign(node, (dropper ? 1 : 0) + index));
-      try{localStorage.setItem(LAUNCHER_ORDER_KEY,JSON.stringify(products.map((node)=>node.dataset.productId).filter(Boolean)));}catch{}
+      peers.forEach((node, index) => assign(node, index));
+      try{localStorage.setItem(LAUNCHER_ORDER_KEY,JSON.stringify(peers.map((node)=>node.dataset.productId).filter(Boolean)));}catch{}
     };
     const refresh = () => requestAnimationFrame(() => { layout(); layoutChrome(); layoutFloatingNotices(); });
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.10";
+  const APP_VERSION = "3.3.11";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -642,6 +639,7 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.11": ["Lets every launcher move left, right, up, or down within the shared grid.","Persists the complete launcher order across reloads.","Adds Alt+Arrow keyboard reordering for the focused launcher."],
     "3.3.10": ["Adds raised and inset menu surfaces so controls and cards no longer blend into one flat layer.","Uses accessible link, focus, and accent-text colors while keeping every existing Dropper palette intact.","Preserves existing saved palette choices and established base colors.","Adds computed theme-role regression coverage across the live menu."],
     "3.3.9": ["Compacts System menus and keeps menu width controls together on one row.","Groups existing menu preferences consistently while preserving saved settings.","Removes automatic Settings Backup and its restore controls.","Adds a Bitcoin donation option with address copying and wallet support."],
     "3.3.8": ["Balances the four System cards with equal collapsed heights and matching padding.","Preserves two columns in Full and Compact modes and one in Narrow mode.","Lets expanded cards grow naturally while remaining inside the menu.","Checks equal card heights and expanded content at all three menu widths."],
@@ -16466,30 +16464,40 @@ const ExtraPotionsTools = (() => {
   }
 
   function bindDrag() {
+    let startX = 0;
     let startY = 0;
-    let startGridDelta = 0;
+    let order = [];
     let didDrag = false;
     let activePointerId = null;
     ui.launcher.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) return;
       activePointerId = event.pointerId;
+      startX = event.clientX;
       startY = event.clientY;
-      startGridDelta = launcherGridDelta;
+      try { order = JSON.parse(localStorage.getItem(LAUNCHER_ORDER_KEY) || "[]"); } catch { order = []; }
+      if (!Array.isArray(order)) order = [];
+      if (!order.includes("dropper")) order.push("dropper");
       didDrag = false;
       ui.launcher.classList.remove("is-dragging");
       event.preventDefault();
     });
     document.addEventListener("pointermove", (event) => {
       if (event.pointerId !== activePointerId) return;
-      const delta = event.clientY - startY;
-      if (Math.abs(delta) > 4 && !didDrag) {
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) > 4 && !didDrag) {
         didDrag = true;
         ui.launcher.classList.add("is-dragging");
       }
       if (!didDrag) return;
       event.preventDefault();
-      launcherGridDelta = startGridDelta + delta;
-      localStorage.setItem(LAUNCHER_GRID_DELTA_KEY, String(launcherGridDelta));
+      const from = order.indexOf("dropper");
+      const offset = Math.abs(dx) > Math.abs(dy) ? Math.round(-dx / 56) : Math.round(dy / 56) * 3;
+      const to = Math.max(0, Math.min(order.length - 1, from + offset));
+      const next = [...order];
+      next.splice(from, 1);
+      next.splice(to, 0, "dropper");
+      localStorage.setItem(LAUNCHER_ORDER_KEY, JSON.stringify(next));
       document.dispatchEvent(new CustomEvent("exp-core:coordination", { detail: { type: "launcher-grid-moved", productId: "dropper" } }));
       layoutChrome();
     }, { passive: false });
@@ -16506,6 +16514,24 @@ const ExtraPotionsTools = (() => {
       event.stopImmediatePropagation();
       didDrag = false;
     }, true);
+    ui.launcher.title = "Drag left, right, up, or down to reorder. Alt+Arrow keys also reorder.";
+    ui.launcher.addEventListener("keydown", (event) => {
+      if (!event.altKey || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+      event.preventDefault();
+      let next = [];
+      try { next = JSON.parse(localStorage.getItem(LAUNCHER_ORDER_KEY) || "[]"); } catch {}
+      if (!Array.isArray(next)) next = [];
+      if (!next.includes("dropper")) next.push("dropper");
+      const from = next.indexOf("dropper");
+      const offset = { ArrowLeft: 1, ArrowRight: -1, ArrowUp: -3, ArrowDown: 3 }[event.key];
+      const to = Math.max(0, Math.min(next.length - 1, from + offset));
+      next = [...next];
+      next.splice(from, 1);
+      next.splice(to, 0, "dropper");
+      localStorage.setItem(LAUNCHER_ORDER_KEY, JSON.stringify(next));
+      document.dispatchEvent(new CustomEvent("exp-core:coordination", { detail: { type: "launcher-grid-moved", productId: "dropper" } }));
+      ui.launcher.focus();
+    });
   }
 
   function clearMenuDismissTimer() {

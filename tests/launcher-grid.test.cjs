@@ -35,6 +35,7 @@ function loadGridCoordinator() {
     'addEventListener',
     'layoutChrome',
     'CustomEvent',
+    'LAUNCHER_ORDER_KEY',
     `${functionSource}\nreturn registerBadgeGrid;`,
   )(
     () => {},
@@ -44,6 +45,7 @@ function loadGridCoordinator() {
     () => {},
     () => {},
     CustomEvent,
+    'exp:v3:launcher-order',
   );
 
   const createPeer = (id, priority, reservedRows) => {
@@ -58,7 +60,7 @@ function loadGridCoordinator() {
     return node;
   };
 
-  return { createPeer, register };
+  return { createPeer, localStorage, register };
 }
 
 function placement(node) {
@@ -87,4 +89,20 @@ test('Dropper progress and badge-only mode preserve the same compact grid', () =
   assert.deepEqual(placement(shift), { slot: '1', row: '0', column: '1', span: '1' });
   assert.deepEqual(placement(prisma), { slot: '2', row: '0', column: '2', span: '1' });
   assert.deepEqual(placement(ward), { slot: '3', row: '1', column: '0', span: '1' });
+});
+
+test('saved order can move Dropper into any grid cell', () => {
+  const { createPeer, localStorage, register } = loadGridCoordinator();
+  const dropper = createPeer('dropper', 90);
+  const shift = createPeer('shift', 100);
+  const prisma = createPeer('prisma', 80);
+  const ward = createPeer('ward', 60);
+  localStorage.setItem(
+    'exp:v3:launcher-order',
+    JSON.stringify(['shift', 'prisma', 'ward', 'dropper']),
+  );
+  register(dropper, 'dropper', 90);
+  register(dropper, 'dropper', 90);
+  assert.deepEqual(placement(shift), { slot: '0', row: '0', column: '0', span: '1' });
+  assert.deepEqual(placement(dropper), { slot: '3', row: '1', column: '0', span: '1' });
 });
