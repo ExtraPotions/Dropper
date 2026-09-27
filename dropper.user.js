@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.4
+// @version      3.3.5
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.4";
+  const APP_VERSION = "3.3.5";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -531,6 +531,7 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.5": ["Restores an initial Twitch mini-player through its native expansion control, with a manual restore action and viewer-control safeguards.","Preserves saved settings and adds local backups, rollback, and product compatibility details.","Explains waiting states using Twitch credit and playback evidence, and shows playback/navigation history.","Adds player presentation diagnostics and regression coverage."],
     "3.3.4": ["Rechecks the saved mute preference before every mute attempt and cancels disabled requests.","Preserves player volume when muting streams.","Closes other ExtraPotions menus when opening Dropper and respects peer menus.","Adds regression coverage for mute preferences and menu coordination."],
     "3.3.3": [
       "Recognizes confirmed progress on manually selected streams while automatic routing is disabled.",

@@ -1,11 +1,9 @@
-## Unreleased
+## 3.3.5 — 2026-09-26
 
-- Adds local settings backups, rollback, and current-page product compatibility.
-- Explains waiting states using Twitch credit, eligibility, and playback evidence.
-- Shows recent Dropper playback and navigation actions with their reasons.
-- Restores an initial Twitch mini-player through its native Expand Player control, with opt-out and a manual Restore Channel Player action.
-- Stops automatic layout recovery after viewer interaction, and respects pauses, hidden tabs, fullscreen, and browser picture-in-picture.
-- Records player presentation and dimensions in diagnostics; unknown controls remain untouched.
+- Restores an initial Twitch mini-player through its native expansion control, with a manual restore action and viewer-control safeguards.
+- Preserves saved settings and adds local backups, rollback, and product compatibility details.
+- Explains waiting states using Twitch credit and playback evidence, and shows playback/navigation history.
+- Adds player presentation diagnostics and regression coverage.
 
 ## 3.3.4 — 2026-09-26
 

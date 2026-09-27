@@ -22,16 +22,16 @@
 ## Install
 
 <p>
-  <a href="https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js?v=3.3.4">
+  <a href="https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js?v=3.3.5">
     <img alt="Install Dropper" src="https://img.shields.io/badge/Install-Dropper-9147FF?style=flat-square">
   </a>
-    <img alt="Version 3.3.4" src="https://img.shields.io/badge/version-3.3.4?style=flat-square">
+    <img alt="Version 3.3.5" src="https://img.shields.io/badge/version-3.3.5?style=flat-square">
   <a href="https://github.com/ExtraPotions/Dropper/releases">
     <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/ExtraPotions/Dropper/total?style=flat-square&label=Downloads">
   </a>
 </p>
 
-## 3.3.4
+## 3.3.5
 
 Confirmed Twitch progress now marks manually selected streams as earning even with automatic switching disabled. Routine polls no longer restart the initial verification timer.
 
@@ -85,12 +85,12 @@ See [NOTICE.md](NOTICE.md) for the split-license notice.
 
 Dropper is an independent project and is not affiliated with or endorsed by Twitch.
 
-## 3.3.4 update
+## 3.3.5 update
 
 Rechecks the saved mute preference before every mute attempt and cancels disabled requests. Preserves player volume when muting streams. Closes other ExtraPotions menus when opening Dropper and respects peer menus. Adds regression coverage for mute preferences and menu coordination.
 
-## Local development changes (unreleased)
+## Recovery and inspection tools
 
 Adds local settings backups and rollback, current-page product compatibility, a waiting explanation grounded in credited progress, and playback/navigation history. Adds Restore Channel Player On Arrival and a manual Restore Channel Player action for Twitch’s in-page mini-player. Automatic restoration makes one expansion request in the first 30 seconds, only on the channel route, and stops after viewer interaction. It respects pause, opt-out, hidden tabs, fullscreen and browser picture-in-picture. Unknown or localized expand controls are left unchanged and reported in diagnostics.
 
-These changes are prepared locally. The stable installation links above still serve the published release.
+These features are included in version 3.3.5.
