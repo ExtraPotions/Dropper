@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.12
+// @version      3.3.13
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -463,7 +463,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.12";
+  const APP_VERSION = "3.3.13";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -639,6 +639,7 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.13": ["Reports Drops-tagged fallback streams as Verification Pending while Twitch proof is still being checked.","Allows a non-allow-listed fallback stream to become Eligible after target-campaign GQL evidence or credited progress confirms it.","Keeps eligibility diagnostics aligned with the routing controller's verification state."],
     "3.3.12": ["Lets Drops-tagged same-game streams enter campaign verification when no campaign allow-list channel is live.","Keeps campaign allow-list matches highest priority and still requires GQL campaign evidence or credited progress before earning.","Binds successful fallback verification to the verified channel and keeps standby diagnostics aligned with routing."],
     "3.3.11": ["Lets every launcher move left, right, up, or down within the shared grid.","Persists the complete launcher order across reloads.","Adds Alt+Arrow keyboard reordering for the focused launcher."],
     "3.3.10": ["Adds raised and inset menu surfaces so controls and cards no longer blend into one flat layer.","Uses accessible link, focus, and accent-text colors while keeping every existing Dropper palette intact.","Preserves existing saved palette choices and established base colors.","Adds computed theme-role regression coverage across the live menu."],
@@ -1341,7 +1342,13 @@ const ExtraPotionsDiagnostics = (() => {
       if (!plan.ready) return result(plan.reason, 'Previous Reward Required', plan.reason === 'prerequisite-required' ? 'Complete or claim the prerequisite shown for this reward.' : 'The prerequisite chain is incomplete or invalid.', { plan, deadline, campaignPlan });
       const game = text(campaign.game?.displayName || campaign.game?.name || campaign.game).toLowerCase();
       if (context.game && game && text(context.game).toLowerCase() !== game) return result('wrong-game', 'Stream Not Eligible', 'This stream is in a different game category.', { plan, deadline, campaignPlan });
-      if (context.allowedChannels?.length && context.channel && !context.allowedChannels.map(x => text(x).toLowerCase()).includes(text(context.channel).toLowerCase())) return result('wrong-channel', 'Stream Not Eligible', "This stream does not meet the selected campaign's channel requirements.", { plan, deadline, campaignPlan });
+      const allowedLogins = (context.allowedChannels || []).map(x => text(x).toLowerCase()).filter(Boolean);
+      const channelLogin = text(context.channel).toLowerCase();
+      const channelMismatch = Boolean(allowedLogins.length && channelLogin && !allowedLogins.includes(channelLogin));
+      if (channelMismatch && context.verified !== true && context.verificationPending === true) {
+        return result('verification-pending', 'Verification Pending', 'Dropper is waiting for Twitch campaign evidence or credited progress for this Drops-tagged stream.', { plan, deadline, campaignPlan });
+      }
+      if (channelMismatch && context.verified !== true) return result('wrong-channel', 'Stream Not Eligible', "This stream does not meet the selected campaign's channel requirements.", { plan, deadline, campaignPlan });
       if (context.verified !== true) return result('unknown', 'Eligibility Not Verified', 'Dropper does not yet have enough information to verify this stream.', { plan, deadline, campaignPlan });
       if (deadline.finishable === false) return result('deadline-risk', 'Deadline Risk', 'The verified watch requirement is longer than the remaining campaign window.', { plan, deadline, campaignPlan, deadlineMs: end, estimateMinutes: plan.totalRemainingMinutes });
       return result('eligible', 'Eligible Stream', deadline.urgency === 'tight' ? 'This stream is eligible, but the reward deadline is close.' : 'Twitch campaign or credited-progress evidence verifies this stream.', { plan, deadline, campaignPlan, deadlineMs: end, estimateMinutes: plan.totalRemainingMinutes });
@@ -2425,17 +2432,25 @@ const ExtraPotionsTools = (() => {
   function activeRewardEligibility() {
     const campaign = findCampaignForDrop(lastInventoryCampaigns, currentDrop) || findCampaignForDrop(lastCampaignCatalog, currentDrop);
     const raw = (campaign?.timeBasedDrops || campaign?.drops || []).find(drop => drop.id === currentDrop?.id);
-    const info = watchingLogin() ? readStreamInfo() : {};
+    const currentLogin = watchingLogin();
+    const info = currentLogin ? readStreamInfo() : {};
     const proof = lastStreamVerification || persistedRoutingEligibilityProof();
     const verified = Boolean(
       proof &&
-      cleanText(proof.channel).toLowerCase() === cleanText(watchingLogin()).toLowerCase() &&
+      cleanText(proof.channel).toLowerCase() === cleanText(currentLogin).toLowerCase() &&
       cleanText(proof.campaignKey).toLowerCase() === cleanText(currentDrop?.campaignKey || currentDrop?.campaignId).toLowerCase() &&
       (proof.proof?.campaignSupported || proof.proof?.progressConfirmed)
     );
+    const routing = readRoutingControllerSession();
+    const verificationPending = Boolean(
+      routing.state === ROUTING_STATES.VERIFY_STREAM &&
+      currentLogin &&
+      cleanText(routing.targetStream).toLowerCase() === cleanText(currentLogin).toLowerCase() &&
+      routing.candidateEvidence?.verificationRequired === true
+    );
     return DropperActiveViewing.eligibility(campaign, raw, {
-      now: Date.now(), channel: watchingLogin(), game: campaign && gameNamesMatch(campaignGameName(campaign), info.game) ? campaignGameName(campaign) : info.game,
-      allowedChannels: campaign ? campaignAllowedChannels(campaign).map(item => item.login) : [], verified,
+      now: Date.now(), channel: currentLogin, game: campaign && gameNamesMatch(campaignGameName(campaign), info.game) ? campaignGameName(campaign) : info.game,
+      allowedChannels: campaign ? campaignAllowedChannels(campaign).map(item => item.login) : [], verified, verificationPending,
     });
   }
 
@@ -2461,6 +2476,8 @@ const ExtraPotionsTools = (() => {
       case 'prerequisite-missing':
       case 'prerequisite-cycle':
         return { text: '⚠ Previous Reward Required', tone: 'warn' };
+      case 'verification-pending':
+        return { text: '• Verification Pending', tone: 'warn' };
       case 'wrong-game':
       case 'wrong-channel':
         return { text: '⚠ Stream Not Eligible', tone: 'warn' };
