@@ -1,3 +1,10 @@
+## 3.3.4 — 2026-09-26
+
+- Rechecks the saved mute preference before every mute attempt and cancels disabled requests.
+- Preserves player volume when muting streams.
+- Closes other ExtraPotions menus when opening Dropper and respects peer menus.
+- Adds regression coverage for mute preferences and menu coordination.
+
 ## 3.3.3 - 2026-09-26
 
 - Recognizes credited progress on manually selected streams independently of automatic routing.

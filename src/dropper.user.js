@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.3
+// @version      3.3.4
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -355,7 +355,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.3";
+  const APP_VERSION = "3.3.4";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -531,6 +531,7 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.4": ["Rechecks the saved mute preference before every mute attempt and cancels disabled requests.","Preserves player volume when muting streams.","Closes other ExtraPotions menus when opening Dropper and respects peer menus.","Adds regression coverage for mute preferences and menu coordination."],
     "3.3.3": [
       "Recognizes confirmed progress on manually selected streams while automatic routing is disabled.",
       "Keeps the initial verification deadline fixed across routine progress polls."
@@ -2375,6 +2376,9 @@ const ExtraPotionsDiagnostics = (() => {
       syncDropperWidthToChat();
       layoutChrome();
     }, { passive: true });
+    document.addEventListener("exp-core:menu-open", () => {
+      if (railOpen && document.documentElement.getAttribute("data-exp-open-menu") !== "dropper") setRailOpen(false, false);
+    });
     window.addEventListener("storage", (event) => {
       if (event.key !== scopedLocalStorageKey(IGNORED_CAMPAIGN_GAMES_KEY)) return;
       ignoredCampaignGames = loadIgnoredCampaignGames();
@@ -11627,6 +11631,7 @@ const ExtraPotionsDiagnostics = (() => {
 
   function saveSettings() {
     persistSettingsSnapshot();
+    if (!settings.muteRestarted) writeSession(MUTE_PENDING_KEY, null);
     setStatus(featureStatus());
     renderSwitches();
   }
@@ -12438,8 +12443,17 @@ const ExtraPotionsDiagnostics = (() => {
     autoNavigateTwitch(href, "automatic-routing");
   }
 
+  function muteOpenedStreamsEnabled() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+      if (typeof stored.muteRestarted === 'boolean') settings.muteRestarted = stored.muteRestarted;
+    } catch (_) { /* keep the current preference when storage is unavailable */ }
+    if (!settings.muteRestarted) writeSession(MUTE_PENDING_KEY, null);
+    return Boolean(settings.muteRestarted);
+  }
+
   function requestMuteAfterNavigation(reason = "automatic-routing") {
-    if (!settings.muteRestarted) return;
+    if (!muteOpenedStreamsEnabled()) return;
     writeSession(MUTE_PENDING_KEY, {
       at: Date.now(),
       reason: String(reason || ""),
@@ -12517,7 +12531,7 @@ const ExtraPotionsDiagnostics = (() => {
   }
 
   function ensureStreamMuted() {
-    if (!settings.muteRestarted) return false;
+    if (!muteOpenedStreamsEnabled()) return false;
     const pending = mutePendingSnapshot();
     if (!pending) return false;
     if (!watchingLogin()) return false;
@@ -12527,7 +12541,6 @@ const ExtraPotionsDiagnostics = (() => {
     if (video && !video.muted) {
       try {
         video.muted = true;
-        video.volume = 0;
         changed = true;
       } catch (_) { /* ignore */ }
     }
@@ -12550,14 +12563,14 @@ const ExtraPotionsDiagnostics = (() => {
   }
 
   function muteWhenReady(win) {
-    if (!win) return;
+    if (!win || !muteOpenedStreamsEnabled()) return;
     requestMuteAfterNavigation("popup-stream");
     const timer = setInterval(() => {
+      if (!muteOpenedStreamsEnabled()) { clearInterval(timer); return; }
       try {
         const video = win.document?.querySelector("video");
         if (video) {
           video.muted = true;
-          video.volume = 0;
           const button = win.document.querySelector(
             '[data-a-target="player-mute-unmute-button"], button[aria-label^="Mute"], button[aria-label^="Unmute"]',
           );
@@ -16262,6 +16275,8 @@ const ExtraPotionsDiagnostics = (() => {
 
     if (open) {
       document.documentElement.dataset.expDropperMenuOpen = "1";
+      document.documentElement.setAttribute("data-exp-open-menu", "dropper");
+      document.dispatchEvent(new Event("exp-core:menu-open"));
       scheduleMenuDismiss();
       refreshTwitchAuthStatus();
     } else {

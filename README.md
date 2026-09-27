@@ -22,16 +22,16 @@
 ## Install
 
 <p>
-  <a href="https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js?v=3.3.3">
+  <a href="https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js?v=3.3.4">
     <img alt="Install Dropper" src="https://img.shields.io/badge/Install-Dropper-9147FF?style=flat-square">
   </a>
-    <img alt="Version 3.3.3" src="https://img.shields.io/badge/version-3.3.3?style=flat-square">
+    <img alt="Version 3.3.4" src="https://img.shields.io/badge/version-3.3.4?style=flat-square">
   <a href="https://github.com/ExtraPotions/Dropper/releases">
     <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/ExtraPotions/Dropper/total?style=flat-square&label=Downloads">
   </a>
 </p>
 
-## 3.3.3
+## 3.3.4
 
 Confirmed Twitch progress now marks manually selected streams as earning even with automatic switching disabled. Routine polls no longer restart the initial verification timer.
 
@@ -84,3 +84,7 @@ See [NOTICE.md](NOTICE.md) for the split-license notice.
 ## Disclaimer
 
 Dropper is an independent project and is not affiliated with or endorsed by Twitch.
+
+## 3.3.4 update
+
+Rechecks the saved mute preference before every mute attempt and cancels disabled requests. Preserves player volume when muting streams. Closes other ExtraPotions menus when opening Dropper and respects peer menus. Adds regression coverage for mute preferences and menu coordination.
