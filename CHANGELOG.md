@@ -1,3 +1,10 @@
+## 3.3.7 — 2026-09-26
+
+- Restores a full-width two-column grid for System support and recovery cards.
+- Keeps compatibility, backups, waiting explanations, and playback history aligned in Full and Compact modes.
+- Uses one column in Narrow mode and keeps expanded cards inside the menu.
+- Adds browser coverage for collapsed and expanded cards at each menu width.
+
 ## 3.3.6 — 2026-09-26
 
 - Adds left-side section handles and visibility controls under System.
