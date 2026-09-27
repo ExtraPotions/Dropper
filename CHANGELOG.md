@@ -1,3 +1,10 @@
+## 3.3.6 — 2026-09-26
+
+- Adds left-side section handles and visibility controls under System.
+- Keeps long menu content within the available viewport while preserving current player and progress behavior.
+- Refreshes the README and feature screenshots in a horizontal gallery.
+- Clarifies installation and the separate code and artwork licenses.
+
 ## 3.3.5 — 2026-09-26
 
 - Restores an initial Twitch mini-player through its native expansion control, with a manual restore action and viewer-control safeguards.

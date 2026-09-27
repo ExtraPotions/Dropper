@@ -136,11 +136,12 @@ test('pride theme computed contract exposes dataset and rainbow treatments', asy
   }
 });
 
-test('Badge Only places the live progress card above the Drops section', async () => {
+for (const viewport of [{width:1280,height:900},{width:360,height:480}]) for (const anchor of ['top','bottom']) {
+test(`Badge Only keeps progress in the menu at ${viewport.width}px with a ${anchor} launcher`, async () => {
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-    await page.addInitScript(() => { window.GM_xmlhttpRequest = () => {}; });
+    const page = await browser.newPage({ viewport });
+    await page.addInitScript(anchor => { window.GM_xmlhttpRequest = () => {}; localStorage.setItem('exp:v3:launcher-grid-delta',anchor==='top'?'-10000':'4'); }, anchor);
     await page.route('https://www.twitch.tv/**', (route) => route.fulfill({
       status: 200,
       contentType: 'text/html',
@@ -160,7 +161,13 @@ test('Badge Only places the live progress card above the Drops section', async (
       const card = shadow.getElementById('tdh-drop-card');
       const dropsBody = shadow.getElementById('tdh-drops-body');
       const launcher = shadow.getElementById('tdh-settings-launcher');
+      const cardBox=card.getBoundingClientRect(),slotBox=slot.getBoundingClientRect();
+      const headerBox=shadow.querySelector('[data-panel="tdh-drops-body"]').getBoundingClientRect();
       return {
+        inFlow:getComputedStyle(card).position === 'relative',
+        insideSlot:cardBox.top>=slotBox.top && cardBox.bottom<=slotBox.bottom+1 && cardBox.left>=slotBox.left && cardBox.right<=slotBox.right+1,
+        aboveHeader:cardBox.bottom<=headerBox.top+1,
+
         parent: card.parentElement.id,
         slotParent: slot.parentElement.id,
         slotAboveDrops: slot.nextElementSibling?.querySelector?.('[data-panel="tdh-drops-body"]') != null,
@@ -172,6 +179,7 @@ test('Badge Only places the live progress card above the Drops section', async (
       };
     });
     assert.deepEqual(facts, {
+      inFlow:true, insideSlot:true, aboveHeader:true,
       parent: 'tdh-badge-only-progress-slot',
       slotParent: 'tdh-tools-dock',
       slotAboveDrops: true,
@@ -181,10 +189,21 @@ test('Badge Only places the live progress card above the Drops section', async (
       cardVisible: true,
       launcherRow: 'badge-row',
     });
+    const restored = await page.evaluate(() => {
+      const shadow=document.getElementById('tdh-root').shadowRoot;
+      shadow.querySelector('[data-panel="tdh-progress-body"]').click();
+      shadow.getElementById('tdh-badge-only').click();
+      const card=shadow.getElementById('tdh-drop-card');
+      return {inLauncher:card.parentElement.classList.contains('badge-row'),position:getComputedStyle(card).position};
+    });
+    assert.deepEqual(restored,{inLauncher:true,position:'relative'});
+
   } finally {
     await browser.close();
   }
 });
+
+}
 
 test('the changelog notice stays fixed inside the viewport', async () => {
   const browser = await chromium.launch({ headless: true });

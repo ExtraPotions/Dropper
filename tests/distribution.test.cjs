@@ -72,7 +72,8 @@ test('in-app release notes and update checker stay current-only but functional',
   const currentVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
   const versions = [...releaseNotesBlock.matchAll(/"(\d+\.\d+\.\d+(?:-[\w.-]+)?)": \[/gu)].map((match) => match[1]);
   assert.equal(versions[0], currentVersion, 'current development or stable version is first');
-  assert.deepEqual(versions.slice(1, 3), ['3.3.4', '3.3.3']);
+  const changelogVersions = [...fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8').matchAll(/^## (\d+\.\d+\.\d+)/gm)].map(match => match[1]);
+  assert.deepEqual(versions.slice(0, 3), changelogVersions.slice(0, 3));
   assert.doesNotMatch(releaseNotesBlock, /"3\.1\.32": \[/u);
   const currentNotes = releaseNotesBlock.slice(releaseNotesBlock.indexOf(JSON.stringify(currentVersion))).split('],')[0];
   const bullets = [...currentNotes.matchAll(/"([^"]+)"/gu)];
@@ -109,13 +110,14 @@ test('progress panel stays solid without auto-collapse fade timing', () => {
 
 test('README stays feature-focused without npm install guidance', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-  assert.match(readme, /## What Dropper Does/u);
-  assert.match(readme, /href="https:\/\/raw\.githubusercontent\.com\/ExtraPotions\/Dropper\/main\/dropper\.user\.js(?:\?v=[\d.A-Za-z-]+)?"/u);
-  assert.match(readme, /docs\/screenshots\/progress-panel\.png/u);
+  assert.match(readme, /## What you can do/u);
+  assert.match(readme, /https:\/\/github\.com\/ExtraPotions\/Dropper\/raw\/refs\/heads\/main\/dropper\.user\.js/u);
   assert.match(readme, /docs\/screenshots\/drops-menu\.png/u);
   assert.match(readme, /docs\/screenshots\/streams-menu\.png/u);
-  assert.match(readme, /docs\/screenshots\/appearance-menu\.png/u);
-  assert.match(readme, /docs\/screenshots\/diagnostics-menu\.png/u);
+  assert.match(readme, /<table>[\s\S]*<tr>[\s\S]*<td[\s\S]*<td/u);
+  assert.match(readme, /LICENSE-CODE\.md/u);
+  assert.match(readme, /LICENSE-ASSETS\.md/u);
+  assert.doesNotMatch(readme, /^#{1,6} .*?(Technical|Development|Changelog|Diagnostics)/imu);
   assert.doesNotMatch(readme, /all_menus_expanded/u);
   assert.doesNotMatch(readme, /npm (install|test|run)/iu);
   assert.doesNotMatch(readme, /node_modules/iu);

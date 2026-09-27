@@ -53,6 +53,8 @@ function readableInstall(source) {
 async function minifyUserscript(inputPath, outputPath = DEFAULT_OUTPUT, options = {}) {
   const source = fs.readFileSync(inputPath, 'utf8').replace(/\r\n/g, '\n');
   if (path.resolve(inputPath) === DEFAULT_INPUT) {
+    const arrangement = fs.readFileSync(path.join(ROOT, 'src/shared-menu-arrangement.js'), 'utf8').replace(/\r\n/g, '\n').trim();
+    if (!source.includes(arrangement)) throw new Error('Shared menu arrangement differs from the embedded source');
     const shared = fs.readFileSync(path.join(ROOT, 'src/shared-diagnostics.js'), 'utf8').replace(/\r\n/g, '\n').trim();
     if (!source.includes(shared)) throw new Error('Shared diagnostics differ; run node scripts/sync-diagnostics.cjs');
     const tools = fs.readFileSync(path.join(ROOT, 'src/shared-product-tools.js'), 'utf8').replace(/\r\n/g, '\n').trim();

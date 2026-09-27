@@ -1,96 +1,52 @@
-<p align="center">
-  <img src="assets/dropper-launcher.svg" width="128" height="128" alt="Dropper icon">
-</p>
+<p align="center"><img src="assets/dropper-launcher.svg" width="128" height="128" alt="Dropper icon"></p>
 
-<h1 align="center">Dropper</h1>
+# Dropper
 
-<p align="center"><strong>Twitch Drops: Track and Redeem</strong></p>
+**Follow your Twitch Drops from watch time to reward**
 
-<p align="center">
-  Dropper is a browser-only Twitch companion for the streams you choose to watch. Track Twitch-credited reward progress, manage campaigns, collect earned rewards, and stay in control of playback and stream switching.
-</p>
+Track Twitch-credited progress, manage eligible streams, and claim available rewards from a compact menu.
 
-<p align="center">
-  <img alt="Violentmonkey Supported" src="https://img.shields.io/badge/Violentmonkey-Supported-7C3AED?style=flat-square">
-  <img alt="Tampermonkey Supported" src="https://img.shields.io/badge/Tampermonkey-Supported-00A67E?style=flat-square">
-  <img alt="Chrome Supported" src="https://img.shields.io/badge/Chrome-Supported-F9AB00?style=flat-square&logo=googlechrome&logoColor=000000">
-  <img alt="Firefox Supported" src="https://img.shields.io/badge/Firefox-Supported-FF7139?style=flat-square&logo=firefoxbrowser&logoColor=white">
-  <img alt="PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/Code-PolyForm%20NC%201.0.0-6B7280?style=flat-square">
-  <img alt="CC BY-NC-SA 4.0" src="https://img.shields.io/badge/Assets-CC%20BY--NC--SA%204.0-1769AA?style=flat-square">
-</p>
+[![Install Dropper](docs/badges/install.svg)](https://github.com/ExtraPotions/Dropper/raw/refs/heads/main/dropper.user.js)
+[![Code: PolyForm Noncommercial 1.0.0](docs/badges/code.svg)](LICENSE-CODE.md)
+[![Artwork and documentation: CC BY-NC-SA 4.0](docs/badges/assets.svg)](LICENSE-ASSETS.md)
 
-## Install
+## What you can do
 
-<p>
-  <a href="https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js?v=3.3.5">
-    <img alt="Install Dropper" src="https://img.shields.io/badge/Install-Dropper-9147FF?style=flat-square">
-  </a>
-    <img alt="Version 3.3.5" src="https://img.shields.io/badge/version-3.3.5?style=flat-square">
-  <a href="https://github.com/ExtraPotions/Dropper/releases">
-    <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/ExtraPotions/Dropper/total?style=flat-square&label=Downloads">
-  </a>
-</p>
+- **Progress at a glance:** see the current reward, credited watch time, and earning status.
+- **Claims:** optionally claim available Drops and channel-point bonus chests automatically.
+- **Stream management:** find eligible streams and recover when a stream goes offline, changes category, or stops progressing.
+- **Campaign browsing:** explore open campaigns and ignore games you do not want to follow.
+- **Your preferred layout:** keep progress by the launcher or use Badge Only to place it at the top of the menu.
+- **Your controls:** choose menu colors, move the launcher, and rearrange sections from System.
 
-## 3.3.5
+## See it in action
 
-Confirmed Twitch progress now marks manually selected streams as earning even with automatic switching disabled. Routine polls no longer restart the initial verification timer.
-
-## What Dropper Does
-
-- Tracks Twitch-credited Drop progress and watch time in real time.
-- Can auto-claim available rewards and channel point bonus chests without blocking watch progression.
-- Finds, verifies, and switches to eligible Drops streams when needed.
-- Maintains backup stream candidates and recovers from stalled, offline, or category-changed streams.
-- Shows campaign, reward, streamer, category, watch-time, and progress details in one compact interface.
-- Lists open campaigns by game and lets you ignore selected games until their latest campaign ends.
-- Keeps campaign progress, routing state, and multi-tab coordination isolated per Twitch account.
-
-## Viewing and reward controls
-
-Manually selected channels are protected from automatic navigation. **Resume Playback** authorizes playback only; **Use Automatic Switching** permits routing without clearing a pause. The existing Skip Streamer confirmation remains an explicit choice. Pauses are retained through player replacements and reloads in the same tab. Fullscreen, picture-in-picture, and a hidden tab do not imply permission to resume or switch.
-
-**Keep Screen Awake** uses the browser's screen wake-lock capability during real playback where supported. Dropper does not override page visibility, focus, or native pause methods, and does not dispatch simulated activity.
-
-Claim History distinguishes sent attempts, confirmed rewards, already-claimed results, retryable failures, and unconfirmed results. A page click alone is never counted as a reward. Unknown responses and integrity/permission failures need attention rather than aggressive retries. Bonus clicks without authoritative confirmation remain unconfirmed. Up to 100 records are retained per account. Web Locks coordinate claims across tabs when available; the fallback leader check is advisory, not an atomic guarantee.
-
-Campaign priorities order eligible recommendations. Explicitly ineligible, disconnected, missing-prerequisite, and cyclic-prerequisite rewards are excluded. Unknown prerequisite timing is not converted into a precise total. Twitch-credited progress remains authoritative.
-
-## Optional support
-
-Dropper is free to use for personal, noncommercial purposes under its software license. Donations are optional and support continued development. All features remain available without donating, and donations do not change your license rights.
-
-## Implementation notes
-
-This feature set is implemented against Dropper's approved behavior specification. No implementation from twitch-autoclaim or TwitchDropsMiner is imported in this change. This is not a claim of a legally audited clean-room process. Existing licensing notices remain unchanged. No donation destination is configured.
-
-## Screenshots
+Screenshots show the current product with sample content.
 
 <table>
-  <tr><th width="20%">Progress panel</th><th width="20%">Drops</th><th width="20%">Streams</th><th width="20%">Appearance</th><th width="20%">Diagnostics</th></tr>
-  <tr><td align="center"><img src="docs/screenshots/progress-panel.png" width="180" alt="Dropper progress panel in the Twitch theme at full width"></td><td align="center"><img src="docs/screenshots/drops-menu.png" width="180" alt="Dropper Drops menu expanded in the Twitch theme at full width"></td><td align="center"><img src="docs/screenshots/streams-menu.png" width="180" alt="Dropper Streams menu expanded in the Twitch theme at full width"></td><td align="center"><img src="docs/screenshots/appearance-menu.png" width="180" alt="Dropper Appearance menu expanded in the Twitch theme at full width"></td><td align="center"><img src="docs/screenshots/diagnostics-menu.png" width="180" alt="Dropper Diagnostics menu expanded in the Twitch theme at full width"></td></tr>
+  <tr>
+    <td width="50%" valign="top" align="center"><a href="docs/screenshots/drops-menu.png"><img src="docs/screenshots/drops-menu.png" width="440" alt="Dropper: drop progress and claim controls"></a><br><strong>Drop progress and claim controls</strong></td>
+    <td width="50%" valign="top" align="center"><a href="docs/screenshots/streams-menu.png"><img src="docs/screenshots/streams-menu.png" width="440" alt="Dropper: stream switching and recovery"></a><br><strong>Stream switching and recovery</strong></td>
+  </tr>
 </table>
 
-## Diagnostics and product compatibility
+## Get started
 
-Use **Show Diagnostics** / **Hide Diagnostics**, then **Copy Diagnostics** when troubleshooting. Reports include **Page**, **Technical**, **Console**, and **Plugin** sections, identify active ExtraPotions products and visible conflicts on the current page, and are never uploaded automatically.
+1. Install a userscript manager such as [Violentmonkey](https://violentmonkey.github.io/get-it/) or [Tampermonkey](https://www.tampermonkey.net/).
+2. [Install Dropper](https://github.com/ExtraPotions/Dropper/raw/refs/heads/main/dropper.user.js) and confirm in your userscript manager.
+3. Refresh Twitch and open the product launcher.
+
+Sign in to Twitch and open the Dropper launcher. Check Drops for progress and claim options, then Streams for stream-switching preferences. Twitch determines eligibility and credited watch time.
+
+## Support
+
+[Support development](https://ko-fi.com/expdare). Donations are optional. All features remain available without donating.
 
 ## License
 
-**Code:** [PolyForm Noncommercial License 1.0.0](LICENSE-CODE.md)  
+**Code:** [PolyForm Noncommercial License 1.0.0](LICENSE-CODE.md)<br>
 **Artwork and documentation:** [CC BY-NC-SA 4.0](LICENSE-ASSETS.md)
 
-See [NOTICE.md](NOTICE.md) for the split-license notice.
-
-## Disclaimer
+## About
 
 Dropper is an independent project and is not affiliated with or endorsed by Twitch.
-
-## 3.3.5 update
-
-Rechecks the saved mute preference before every mute attempt and cancels disabled requests. Preserves player volume when muting streams. Closes other ExtraPotions menus when opening Dropper and respects peer menus. Adds regression coverage for mute preferences and menu coordination.
-
-## Recovery and inspection tools
-
-Adds local settings backups and rollback, current-page product compatibility, a waiting explanation grounded in credited progress, and playback/navigation history. Adds Restore Channel Player On Arrival and a manual Restore Channel Player action for Twitch’s in-page mini-player. Automatic restoration makes one expansion request in the first 30 seconds, only on the channel route, and stops after viewer interaction. It respects pause, opt-out, hidden tabs, fullscreen and browser picture-in-picture. Unknown or localized expand controls are left unchanged and reported in diagnostics.
-
-These features are included in version 3.3.5.
