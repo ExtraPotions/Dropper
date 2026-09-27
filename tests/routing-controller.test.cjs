@@ -352,3 +352,19 @@ test('candidate diagnostics explain live and cached routability', () => {
   assert.match(source, /streamCandidates: routingCandidateDiagnosticsSnapshot\(now\)/u);
   assert.match(source, /queueCandidateDetails:/u);
 });
+
+
+test('fallback verification is reflected in active eligibility presentation', () => {
+  const eligibilityStart = source.indexOf('  function activeRewardEligibility');
+  const eligibilityEnd = source.indexOf('\n\n  function pollContext', eligibilityStart);
+  const eligibility = source.slice(eligibilityStart, eligibilityEnd);
+  assert.match(eligibility, /routing\.state === ROUTING_STATES\.VERIFY_STREAM/u);
+  assert.match(eligibility, /candidateEvidence\?\.verificationRequired === true/u);
+  assert.match(eligibility, /verificationPending/u);
+
+  const presentationStart = source.indexOf('  function eligibilityCompactPresentation');
+  const presentationEnd = source.indexOf('\n\n  function refreshEligibilityControls', presentationStart);
+  const presentation = source.slice(presentationStart, presentationEnd);
+  assert.match(presentation, /case 'verification-pending'/u);
+  assert.match(presentation, /Verification Pending/u);
+});
