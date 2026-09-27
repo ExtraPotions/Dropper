@@ -368,3 +368,28 @@ test('fallback verification is reflected in active eligibility presentation', ()
   assert.match(presentation, /case 'verification-pending'/u);
   assert.match(presentation, /Verification Pending/u);
 });
+
+
+test('refreshes candidate allow-list diagnostics after campaign metadata arrives', () => {
+  assert.match(source, /function activeCampaignAllowListEvidence\(channelLogin = watchingLogin\(\)\)/u);
+  assert.match(source, /campaignAllowListSource: "active-campaign"/u);
+  assert.match(source, /function syncRoutingCampaignAllowListEvidence/u);
+  assert.match(source, /campaignAllowListUpdatedAt: now/u);
+
+  const gqlStart = source.indexOf('  function updateRoutingCampaignSupportEvidence');
+  const gqlEnd = source.indexOf('\n  function requestFinalVerificationPoll', gqlStart);
+  assert.match(source.slice(gqlStart, gqlEnd), /syncRoutingCampaignAllowListEvidence\(session, login\)/u);
+
+  const verifyStart = source.indexOf('  function routingControllerVerifyStream');
+  const verifyEnd = source.indexOf('\n  function routingControllerEarning', verifyStart);
+  assert.match(source.slice(verifyStart, verifyEnd), /syncRoutingCampaignAllowListEvidence\(session, login \|\| target, now\)/u);
+
+  const earningStart = source.indexOf('  function routingControllerEarning');
+  const earningEnd = source.indexOf('\n  function routingControllerWaiting', earningStart);
+  assert.match(source.slice(earningStart, earningEnd), /syncRoutingCampaignAllowListEvidence\(session, login, now\)/u);
+
+  const helperStart = source.indexOf('  function syncRoutingCampaignAllowListEvidence');
+  const helperEnd = source.indexOf('\n  function updateRoutingCampaignSupportEvidence', helperStart);
+  const helper = source.slice(helperStart, helperEnd);
+  assert.doesNotMatch(helper, /campaignAclMatched\s*:/u);
+});
