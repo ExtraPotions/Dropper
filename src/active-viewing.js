@@ -290,7 +290,13 @@
       if (!plan.ready) return result(plan.reason, 'Previous Reward Required', plan.reason === 'prerequisite-required' ? 'Complete or claim the prerequisite shown for this reward.' : 'The prerequisite chain is incomplete or invalid.', { plan, deadline, campaignPlan });
       const game = text(campaign.game?.displayName || campaign.game?.name || campaign.game).toLowerCase();
       if (context.game && game && text(context.game).toLowerCase() !== game) return result('wrong-game', 'Stream Not Eligible', 'This stream is in a different game category.', { plan, deadline, campaignPlan });
-      if (context.allowedChannels?.length && context.channel && !context.allowedChannels.map(x => text(x).toLowerCase()).includes(text(context.channel).toLowerCase())) return result('wrong-channel', 'Stream Not Eligible', "This stream does not meet the selected campaign's channel requirements.", { plan, deadline, campaignPlan });
+      const allowedLogins = (context.allowedChannels || []).map(x => text(x).toLowerCase()).filter(Boolean);
+      const channelLogin = text(context.channel).toLowerCase();
+      const channelMismatch = Boolean(allowedLogins.length && channelLogin && !allowedLogins.includes(channelLogin));
+      if (channelMismatch && context.verified !== true && context.verificationPending === true) {
+        return result('verification-pending', 'Verification Pending', 'Dropper is waiting for Twitch campaign evidence or credited progress for this Drops-tagged stream.', { plan, deadline, campaignPlan });
+      }
+      if (channelMismatch && context.verified !== true) return result('wrong-channel', 'Stream Not Eligible', "This stream does not meet the selected campaign's channel requirements.", { plan, deadline, campaignPlan });
       if (context.verified !== true) return result('unknown', 'Eligibility Not Verified', 'Dropper does not yet have enough information to verify this stream.', { plan, deadline, campaignPlan });
       if (deadline.finishable === false) return result('deadline-risk', 'Deadline Risk', 'The verified watch requirement is longer than the remaining campaign window.', { plan, deadline, campaignPlan, deadlineMs: end, estimateMinutes: plan.totalRemainingMinutes });
       return result('eligible', 'Eligible Stream', deadline.urgency === 'tight' ? 'This stream is eligible, but the reward deadline is close.' : 'Twitch campaign or credited-progress evidence verifies this stream.', { plan, deadline, campaignPlan, deadlineMs: end, estimateMinutes: plan.totalRemainingMinutes });
