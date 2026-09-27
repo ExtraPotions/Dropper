@@ -50,7 +50,7 @@ const ExpMenuArrangement = (() => {
       });
       onChange();
     }
-    function update() { if (!recovery.body.contains(editor)) recovery.body.append(editor); }
+    function update() { const target = recovery.body.querySelector('[data-exp-system-tools]') || recovery.body; if (editor.parentElement !== target) target.append(editor); }
     for (const entry of entries) {
       entry.section.dataset.expArrangeSection = entry.key;
       const grip = document.createElement('button'); grip.type = 'button'; grip.className = 'exp-section-grip'; grip.textContent = '⠿';

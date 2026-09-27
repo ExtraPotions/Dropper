@@ -1,3 +1,10 @@
+## 3.3.9 — 2026-09-26
+
+- Compacts System menus and keeps menu width controls together on one row.
+- Groups existing menu preferences consistently while preserving saved settings.
+- Removes automatic Settings Backup and its restore controls.
+- Adds a Bitcoin donation option with address copying and wallet support.
+
 ## 3.3.8 — 2026-09-26
 
 - Balances the four System cards with equal collapsed heights and matching padding.

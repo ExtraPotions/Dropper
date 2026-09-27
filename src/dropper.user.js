@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.8
+// @version      3.3.9
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -88,7 +88,7 @@ const ExpMenuArrangement = (() => {
       });
       onChange();
     }
-    function update() { if (!recovery.body.contains(editor)) recovery.body.append(editor); }
+    function update() { const target = recovery.body.querySelector('[data-exp-system-tools]') || recovery.body; if (editor.parentElement !== target) target.append(editor); }
     for (const entry of entries) {
       entry.section.dataset.expArrangeSection = entry.key;
       const grip = document.createElement('button'); grip.type = 'button'; grip.className = 'exp-section-grip'; grip.textContent = '⠿';
@@ -466,7 +466,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.8";
+  const APP_VERSION = "3.3.9";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -642,6 +642,7 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.9": ["Compacts System menus and keeps menu width controls together on one row.","Groups existing menu preferences consistently while preserving saved settings.","Removes automatic Settings Backup and its restore controls.","Adds a Bitcoin donation option with address copying and wallet support."],
     "3.3.8": ["Balances the four System cards with equal collapsed heights and matching padding.","Preserves two columns in Full and Compact modes and one in Narrow mode.","Lets expanded cards grow naturally while remaining inside the menu.","Checks equal card heights and expanded content at all three menu widths."],
     "3.3.7": ["Restores a full-width two-column grid for System support and recovery cards.","Keeps compatibility, backups, waiting explanations, and playback history aligned in Full and Compact modes.","Uses one column in Narrow mode and keeps expanded cards inside the menu.","Adds browser coverage for collapsed and expanded cards at each menu width."],
     "3.3.6": ["Adds left-side section handles and visibility controls under System.","Keeps long menu content within the available viewport while preserving current player and progress behavior.","Refreshes the README and feature screenshots in a horizontal gallery.","Clarifies installation and the separate code and artwork licenses."],
@@ -1456,19 +1457,21 @@ const ExtraPotionsDiagnostics = (() => {
   // END DROPPER ACTIVE VIEWING
 
   // BEGIN SHARED PRODUCT TOOLS
-// Shared, local-only recovery and compatibility controls.
+// Shared, local-only compatibility controls.
 const ExtraPotionsTools = (() => {
-  const clone = value => JSON.parse(JSON.stringify(value));
-  function createSettingsRecovery({read,write,validate,limit=5}) {
-    function list() { try { const values=read(); return Array.isArray(values)?values.filter(v=>v&&typeof v.id==='string'&&v.settings&&typeof v.settings==='object').slice(0,limit).map(clone):[]; } catch {return [];} }
-    function capture(settings,reason='change') {
-      const clean=validate(clone(settings)); const entries=list();
-      if(entries[0]&&JSON.stringify(entries[0].settings)===JSON.stringify(clean))return entries[0].id;
-      const entry={id:globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random()}`,at:Date.now(),reason:String(reason).slice(0,80),settings:clean};
-      write([entry,...entries].slice(0,limit));return entry.id;
-    }
-    function restore(id){const entry=list().find(v=>v.id===id);if(!entry)throw Error('This backup is no longer available.');return validate(clone(entry.settings));}
-    return Object.freeze({list,capture,restore});
+  function placeDonationPanel(panel, trigger){
+    trigger.closest('.menu-head,.ward-header,header')?.after(panel);
+    panel.style.cssText='position:static!important;width:100%!important;max-width:100%!important;margin:7px 0;box-shadow:none';
+  }
+  function createBitcoinDonation(){
+    const address='bc1qg4xq63mwu63qc5dnqugk3qtxvulv5p3frjayna8ey8tu8ey4wpxsg92hv3';
+    const details=document.createElement('details');details.className='exp-bitcoin-donation';details.style.cssText='margin-top:7px;min-width:0';
+    const summary=document.createElement('summary');summary.textContent='₿ Bitcoin';summary.style.cssText='cursor:pointer;font-weight:700;padding:6px;border:1px solid var(--theme-line);border-radius:7px';
+    const code=document.createElement('code');code.textContent=address;code.setAttribute('aria-label','Bitcoin donation address');code.style.cssText='display:block;overflow-wrap:anywhere;word-break:break-all;user-select:all;margin:7px 0;font-size:11px;line-height:1.4';
+    const status=document.createElement('p');status.setAttribute('role','status');status.style.cssText='margin:5px 0 0;font-size:10px';
+    const copy=button('Copy Bitcoin address',async()=>{try{await navigator.clipboard.writeText(address);status.textContent='Bitcoin address copied.';}catch{status.textContent='Select and copy the address above.';}});copy.style.cssText='width:100%;min-width:0;white-space:normal;border-radius:7px';
+    const wallet=document.createElement('a');wallet.href='bitcoin:'+address;wallet.textContent='Open Bitcoin wallet';
+    details.append(summary,code,copy,wallet,status);return details;
   }
   function compatibilitySnapshot(){
     const rows=[];const warnings=[];const versions=new Set();
@@ -1487,24 +1490,10 @@ const ExtraPotionsTools = (() => {
   const button=(label,fn)=>{const b=document.createElement('button');b.type='button';b.className='life-btn action';b.textContent=label;b.addEventListener('click',fn);return b;};
   function card(title){const d=document.createElement('details');d.className='exp-tools-card';d.style.cssText='border:1px solid var(--theme-line,var(--line,#777));border-radius:7px;padding:7px;margin-top:8px';const s=document.createElement('summary');s.textContent=title;d.append(s);return d;}
   function createCompatibilityControls(){const d=card('Product compatibility'),out=document.createElement('div');out.setAttribute('aria-live','polite');function refresh(){out.replaceChildren();const value=compatibilitySnapshot();for(const p of value.products){const line=document.createElement('p');line.textContent=`${p.id.toUpperCase()} ${p.versions.join(', ')} · ${p.core?'core '+p.core:'native product UI'}`;out.append(line);}const status=document.createElement('p');status.textContent=value.warnings.join(' ')||'No mixed core versions or duplicate instances detected on this page.';out.append(status);const note=document.createElement('small');note.textContent='Only products running on this page are visible. This is not an online update check.';out.append(note);}d.addEventListener('toggle',()=>{if(d.open)refresh();});d.append(out,button('Refresh compatibility',refresh));return d;}
-  function createRecoveryControls({list,capture,restore,notify=()=>{}}){const d=card('Settings backups'),select=document.createElement('select'),status=document.createElement('p');select.setAttribute('aria-label','Settings backup');status.setAttribute('role','status');function refresh(){select.replaceChildren();for(const e of list()){const o=document.createElement('option');o.value=e.id;o.textContent=`${new Date(e.at).toLocaleString()} · ${e.reason}`;select.append(o);}select.disabled=!select.options.length;rollback.disabled=select.disabled;}const backup=button('Back up settings',()=>{try{capture();refresh();status.textContent='Settings backed up locally.';}catch(e){status.textContent=e.message;}});const rollback=button('Restore selected backup',()=>{try{if(!select.value)return;restore(select.value);refresh();status.textContent='Settings restored. The previous state was also backed up.';notify(status.textContent);}catch(e){status.textContent=e.message;}});d.addEventListener('toggle',()=>{if(d.open)refresh();});d.append(select,backup,rollback,status);refresh();return d;}
-  return Object.freeze({createSettingsRecovery,compatibilitySnapshot,createCompatibilityControls,createRecoveryControls});
+  return Object.freeze({placeDonationPanel,createBitcoinDonation,compatibilitySnapshot,createCompatibilityControls});
 })();
   // END SHARED PRODUCT TOOLS
 
-  function validateRecoverySettings(value) {
-    const out = {};
-    for (const [key, fallback] of Object.entries(DEFAULTS)) {
-      const candidate = value?.[key];
-      out[key] = candidate != null && typeof candidate === typeof fallback && Array.isArray(candidate) === Array.isArray(fallback) ? candidate : fallback;
-    }
-    return JSON.parse(JSON.stringify(out));
-  }
-  const settingsRecovery = ExtraPotionsTools.createSettingsRecovery({
-    read: () => JSON.parse(localStorage.getItem(SETTINGS_KEY + '-backups') || '[]'),
-    write: value => localStorage.setItem(SETTINGS_KEY + '-backups', JSON.stringify(value)),
-    validate: validateRecoverySettings,
-  });
   const settings = loadSettings();
   const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
   const PAGE_STARTED_AT = Date.now();
@@ -11789,9 +11778,6 @@ const ExtraPotionsTools = (() => {
       ) {
         stored.hideTwitchSubscriptionPromos = Boolean(stored.hideChatSubscriptionPromos);
       }
-      if (Object.keys(stored).length && localStorage.getItem(SETTINGS_KEY + '-backup-version') !== APP_VERSION) {
-        try { settingsRecovery.capture(stored, 'before-update'); localStorage.setItem(SETTINGS_KEY + '-backup-version', APP_VERSION); } catch (_) { /* Backup quota must not reset working settings. */ }
-      }
       delete stored.authToken;
       delete stored.hideChatSubscriptionPromos;
       delete stored.autoHideCard;
@@ -11803,9 +11789,6 @@ const ExtraPotionsTools = (() => {
   }
 
   function persistSettingsSnapshot() {
-    try { const previous = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
-      if (JSON.stringify(previous) !== JSON.stringify(settings)) settingsRecovery.capture(previous, 'before-change');
-    } catch (_) { /* A full backup journal must not prevent saving preferences. */ }
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   }
 
@@ -12998,12 +12981,12 @@ const ExtraPotionsTools = (() => {
       .queue-switches>.fl-switch{grid-column:2;display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:space-between!important;gap:10px;min-width:0;padding:5px 0!important;text-align:left!important}
       .queue-switches>.fl-switch>span:first-child{display:block;flex:1 1 auto;width:auto!important;min-width:0!important;min-height:0!important;white-space:normal!important;word-break:normal!important;overflow-wrap:normal!important;line-height:1.25;text-align:left}
       .queue-switches>.fl-switch>.toggleSwitch{flex:0 0 34px;margin-left:auto}
-      #tdh-collapsed-width{box-sizing:border-box;width:104px;min-width:0!important;max-width:104px!important;flex:0 1 104px}
+      #tdh-collapsed-width{box-sizing:border-box;width:100%;margin:0;min-width:0!important;max-width:104px!important;flex:0 1 104px}
       #tdh-progress-body{padding-bottom:5px}
       #tdh-progress-body>.fl-switch,
       #tdh-progress-body>.mini-row{padding:4px 0}
-      #tdh-progress-body>.mini-row:has(#tdh-collapsed-width){grid-column:1/-1;align-items:center;flex-wrap:wrap}
-      #tdh-progress-body>.mini-row:has(#tdh-collapsed-width)>span{flex:1 1 120px;min-width:0;white-space:normal;overflow-wrap:normal}
+      #tdh-diagnostics-body>.mini-row:has(#tdh-collapsed-width){grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,104px);align-items:center;gap:8px}
+      #tdh-diagnostics-body>.mini-row:has(#tdh-collapsed-width)>span{flex:1 1 120px;min-width:0;white-space:normal;overflow-wrap:normal}
       #tdh-progress-body>.theme-row{min-height:22px;padding:3px 0;gap:6px}
       #tdh-progress-body .exp-theme-swatches{gap:3px;flex-wrap:nowrap;min-width:0}
       #tdh-progress-body .exp-theme-swatch{flex:0 0 18px!important;width:18px!important;height:18px!important;min-width:18px!important;min-height:18px!important;max-width:18px!important;max-height:18px!important;border-radius:4px!important}
@@ -13013,9 +12996,6 @@ const ExtraPotionsTools = (() => {
       .cluster[data-panel-width="narrow"] #tdh-progress-body>.theme-row{gap:0}
       .cluster[data-panel-width="compact"] #tdh-progress-body .exp-theme-swatches,
       .cluster[data-panel-width="narrow"] #tdh-progress-body .exp-theme-swatches{width:100%;justify-content:space-between}
-      .cluster[data-panel-width="narrow"] #tdh-progress-body>.mini-row:has(#tdh-collapsed-width){flex-direction:column;align-items:stretch;gap:4px}
-      .cluster[data-panel-width="narrow"] #tdh-progress-body>.mini-row:has(#tdh-collapsed-width)>span{flex:0 0 auto;width:100%}
-      .cluster[data-panel-width="narrow"] #tdh-collapsed-width{width:100%;max-width:100%!important;flex:0 0 auto;margin:0}
       .cluster[data-panel-width="narrow"] #tdh-progress-body>.theme-row{gap:4px}
       .cluster[data-panel-width="narrow"] #tdh-progress-body .exp-theme-swatch{flex-basis:16px!important;width:16px!important;height:16px!important;min-width:16px!important;min-height:16px!important;max-width:16px!important;max-height:16px!important}
       .appearance-separator{grid-column:1/-1;width:100%;border:0;border-top:1px solid var(--theme-line,#34343b);margin:3px 0 1px}
@@ -13231,7 +13211,9 @@ const ExtraPotionsTools = (() => {
       #tdh-diagnostics-body { padding-bottom:2px; }
       #tdh-diagnostics-body > [data-dropper-tools] { grid-column:1/-1; min-width:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; align-items:stretch; }
       #tdh-diagnostics-body > [data-dropper-tools]:not(:has(> details[open])) { grid-auto-rows:1fr; }
-      #tdh-diagnostics-body > [data-dropper-tools] > details { min-width:0; margin-top:0!important; padding:8px!important; overflow-wrap:anywhere; }
+      #tdh-diagnostics-body>[data-dropper-tools]>details[open]{grid-column:1/-1!important}
+      #tdh-diagnostics-body>[data-dropper-tools]>details:not([open]){grid-column:auto!important}
+      #tdh-diagnostics-body > [data-dropper-tools] > details { min-width:0; margin-top:0!important; padding:7px!important; border:1px solid var(--theme-line);border-radius:7px;overflow-wrap:anywhere; }
       #tdh-diagnostics-body > [data-dropper-tools] :is(button,select) { max-width:100%; min-width:0; white-space:normal; }
       .cluster[data-panel-width="narrow"] #tdh-diagnostics-body > [data-dropper-tools] { grid-template-columns:minmax(0,1fr); }
       .fl-tool-hidden { display:none !important; }
@@ -13659,7 +13641,7 @@ const ExtraPotionsTools = (() => {
             <button id="tdh-restore-channel-player-now" type="button" class="life-btn">Restore Channel Player</button>
             ${switchHtml("tdh-background-earning", "Background Progress Tracking", "Reports Actual Twitch Credit In Hidden Tabs Or Picture-in-Picture. Does Not Simulate Viewing.", settings.backgroundEarning)}
             <div class="mini-row"><span>Pause Auto-Switch</span><select class="select-lite" id="tdh-pause-switch"><option value="0">Off</option><option value="30">30 Min</option><option value="60">1 Hour</option><option value="120">2 Hours</option><option value="240">4 Hours</option><option value="480">8 Hours</option><option value="720">12 Hours</option><option value="1440">24 Hours</option></select></div>
-            ${switchHtml("tdh-notifications", "Status Toasts", "Shows brief in-app Dropper messages for stream switches, campaign changes, and completed Drops.", settings.notifications)}
+            ${switchHtml("tdh-notifications", "Menu notifications", "Shows brief in-app Dropper messages for stream switches, campaign changes, and completed Drops.", settings.notifications)}
             <div class="stream-subsection-label with-divider">Routing & Backup</div>
             ${switchHtml("tdh-queue-enabled", "Maintain Backup Streams", "Keeps A Short List Of Eligible Backup Drops Channels Ready.", settings.queueEnabled)}
             <div class="mini-row"><span>Standby Streams</span><select class="select-lite" id="tdh-queue-count"><option value="1">1</option><option value="3">3</option><option value="5">5</option></select></div>
@@ -13682,10 +13664,10 @@ const ExtraPotionsTools = (() => {
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-progress-body"><span class="fl-tool-title">Appearance</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-progress-body">
             ${switchHtml("tdh-progress-title", "Show Progress In Tab", "", settings.progressInTitle)}
             ${switchHtml("tdh-badge-only", "Badge Only", "Keeps Only The Dropper Badge On The Page And Shows Progress At The Top Of The Drops Menu.", settings.badgeOnly)}
-            ${switchHtml("tdh-reduce-motion", "Reduce Motion", "", settings.reduceMotion)}
+            ${switchHtml("tdh-reduce-motion", "Reduce motion", "", settings.reduceMotion)}
             <hr class="appearance-separator">
             ${themeSwatchesHtml()}
-            <div class="mini-row"><span>Panel + Menu Width</span><select class="select-lite" id="tdh-collapsed-width"><option value="full">Full</option><option value="compact">Compact</option><option value="narrow">Narrow</option></select></div>
+            <div class="mini-row"><span>Menu width</span><select class="select-lite" id="tdh-collapsed-width"><option value="full">Full</option><option value="compact">Compact</option><option value="narrow">Narrow</option></select></div>
             ${switchHtml("tdh-custom-opacity", "Custom Opacity", "Makes Dropper panels translucent while keeping the launcher fully visible.", settings.customOpacity)}
             <div class="opacity-row" id="tdh-opacity-row"${settings.customOpacity ? "" : " hidden"}>
               <span id="tdh-opacity-label">Opacity</span>
@@ -13798,6 +13780,8 @@ const ExtraPotionsTools = (() => {
     });
     const supportButton = shadow.getElementById("tdh-support-button");
     const supportPopover = shadow.getElementById("tdh-support-popover");
+    supportPopover?.append(ExtraPotionsTools.createBitcoinDonation());
+    if(supportPopover && supportButton) ExtraPotionsTools.placeDonationPanel(supportPopover,supportButton);
     const closeSupportPopover = () => {
       if (!supportPopover || !supportButton) return;
       supportPopover.hidden = true;
@@ -14938,25 +14922,11 @@ const ExtraPotionsTools = (() => {
     if (!health.domVideoPlaying) return 'The player is not reporting playback. Check the player for a pause, login prompt, or playback restriction.';
     return 'The stream appears eligible. Waiting for the next progress update from Twitch.';
   }
-  function restoreSettingsBackup(id) {
-    const next=settingsRecovery.restore(id);
-    settingsRecovery.capture(settings,'before-rollback');
-    Object.assign(settings,next);
-    pauseAutoSwitchUntil=Number(settings.pauseAutoSwitchUntil)||0;
-    saveSettings();
-    applyAppearanceSettings();applyMotionSetting();syncClaimWatchers();void syncScreenWakeLock();updateTitle();
-    if(settings.hideTwitchSubscriptionPromos)suppressTwitchSubscriptionPromos();else restoreTwitchSubscriptionPromos();
-    for(const [id,value] of [['tdh-collapsed-width',settings.collapsedPanelWidth],['tdh-queue-count',settings.queueCount],['tdh-queue-preference',settings.queuePreference],['tdh-pause-switch',settings.pauseAutoSwitchMinutes]]){const control=ui?.shadow.getElementById(id);if(control)control.value=String(value);}
-    refreshQueueList();refreshViewingControls();syncCompactState();layoutChrome();
-  }
   function mountProductTools() {
     const target = ui.shadow.getElementById('tdh-diagnostics-body');
     if (!target || target.querySelector('[data-dropper-tools]')) return;
     const container = document.createElement('div');container.dataset.dropperTools = '1';
-    container.append(ExtraPotionsTools.createCompatibilityControls(), ExtraPotionsTools.createRecoveryControls({
-      list: settingsRecovery.list, capture: () => settingsRecovery.capture(settings, 'manual'),
-      restore: restoreSettingsBackup, notify: setStatus,
-    }));
+    container.append(ExtraPotionsTools.createCompatibilityControls());
     const details = document.createElement('details');details.style.cssText='border:1px solid var(--theme-line);border-radius:7px;padding:7px;margin-top:8px';
     const title = document.createElement('summary');title.textContent='Why am I waiting?';
     const text = document.createElement('p');text.setAttribute('role','status');
@@ -14964,12 +14934,22 @@ const ExtraPotionsTools = (() => {
     const explain = () => { text.textContent=waitingExplanation(streamEarningHealthSnapshot(),Boolean(currentDrop),settings.findNextStream); };
     details.addEventListener('toggle',()=>{if(details.open)explain();});refresh.addEventListener('click',explain);details.append(title,text,refresh);
     const history = document.createElement('details');history.style.cssText=details.style.cssText;
-    const heading = document.createElement('summary');heading.textContent='Playback and navigation history';const entries=document.createElement('div');
+    const heading = document.createElement('summary');heading.textContent='Activity history';const entries=document.createElement('div');
     const showHistory=()=>{entries.replaceChildren();const records=(Array.isArray(activityLog)?activityLog:[]).filter(e=>e.type==='playback'||e.type==='navigation').slice(-20).reverse();
       for(const entry of records){const p=document.createElement('p');p.textContent=new Date(entry.at).toLocaleTimeString()+' · '+entry.message+(entry.meta?.reason?' · '+entry.meta.reason:'');entries.append(p);}
       if(!records.length)entries.textContent='No Dropper playback or navigation actions recorded in this session.';};
     history.addEventListener('toggle',()=>{if(history.open)showHistory();});const update=document.createElement('button');update.type='button';update.className='life-btn';update.textContent='Refresh history';update.addEventListener('click',showHistory);history.append(heading,entries,update);
+    const maintenance = document.createElement('details');
+    const maintenanceTitle = document.createElement('summary');maintenanceTitle.textContent='Maintenance';maintenance.append(maintenanceTitle);
+    const actions = document.createElement('div');actions.className='action-pair';maintenance.append(actions);
+    for (const id of ['tdh-refresh-campaign-data','tdh-clear-activity','tdh-refresh-now','tdh-reset-session']) actions.append(ui.shadow.getElementById(id));
+    for (const empty of target.querySelectorAll(':scope>.action-pair:empty,:scope>.action-separator')) empty.remove();
+    const preferences=document.createElement('details');const preferencesTitle=document.createElement('summary');preferencesTitle.textContent='Menu preferences';preferences.append(preferencesTitle,ui.shadow.getElementById('tdh-notifications').closest('.fl-switch'));
+    const width=ui.shadow.getElementById('tdh-collapsed-width');width.setAttribute('aria-label','Menu width');target.prepend(width.closest('.mini-row'));
+    container.prepend(preferences,maintenance);history.append(ui.shadow.getElementById('tdh-claim-history-panel'));
     container.append(details,history);target.append(container);
+    const editor=target.querySelector('.exp-menu-editor');if(editor)container.append(editor);
+    container.dataset.expSystemTools='1';
   }
 
   function bindDropperControls() {

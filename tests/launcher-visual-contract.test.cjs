@@ -204,8 +204,8 @@ test('menu section titles do not carry redundant helper tips', () => {
   assert.doesNotMatch(source, /id="tdh-skip-stream"/u);
   assert.match(source, /const labelClass = tip \? "fl-switch-text has-tooltip" : "fl-switch-text";/u);
   assert.match(source, /switchHtml\("tdh-claim-drops", "Auto-Claim Drops", "",/u);
-  assert.match(source, /switchHtml\("tdh-reduce-motion", "Reduce Motion", "",/u);
-  assert.match(source, /switchHtml\("tdh-notifications", "Status Toasts", "[^"]+",/u);
+  assert.match(source, /switchHtml\("tdh-reduce-motion", "Reduce motion", "",/u);
+  assert.match(source, /switchHtml\("tdh-notifications", "Menu notifications", "[^"]+",/u);
   assert.match(source, /switchHtml\("tdh-keep-tab", "Keep Screen Awake", "[^"]+",/u);
   assert.match(source, /switchHtml\("tdh-badge-only", "Badge Only", "[^"]+",/u);
 });
