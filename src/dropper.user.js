@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.11
+// @version      3.3.12
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -463,7 +463,7 @@ const ExtraPotionsDiagnostics = (() => {
     document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
     document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
   }
-  const APP_VERSION = "3.3.11";
+  const APP_VERSION = "3.3.12";
   ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -639,6 +639,7 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.12": ["Lets Drops-tagged same-game streams enter campaign verification when no campaign allow-list channel is live.","Keeps campaign allow-list matches highest priority and still requires GQL campaign evidence or credited progress before earning.","Binds successful fallback verification to the verified channel and keeps standby diagnostics aligned with routing."],
     "3.3.11": ["Lets every launcher move left, right, up, or down within the shared grid.","Persists the complete launcher order across reloads.","Adds Alt+Arrow keyboard reordering for the focused launcher."],
     "3.3.10": ["Adds raised and inset menu surfaces so controls and cards no longer blend into one flat layer.","Uses accessible link, focus, and accent-text colors while keeping every existing Dropper palette intact.","Preserves existing saved palette choices and established base colors.","Adds computed theme-role regression coverage across the live menu."],
     "3.3.9": ["Compacts System menus and keeps menu width controls together on one row.","Groups existing menu preferences consistently while preserving saved settings.","Removes automatic Settings Backup and its restore controls.","Adds a Bitcoin donation option with address copying and wallet support."],

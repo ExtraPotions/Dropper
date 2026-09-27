@@ -1,3 +1,11 @@
+## 3.3.12 — 2026-09-27
+
+- Lets Drops-tagged same-game streams enter campaign verification when no campaign allow-list channel is live.
+- Keeps campaign allow-list matches highest priority.
+- Still requires target-campaign GQL evidence or credited progress before entering earning state.
+- Binds fallback verification to the verified channel so proof cannot carry across streamer changes.
+- Keeps routing, standby, queue, and diagnostics candidate qualification aligned.
+
 ## 3.3.11 — 2026-09-27
 
 - Lets every launcher move left, right, up, or down within the shared grid.
