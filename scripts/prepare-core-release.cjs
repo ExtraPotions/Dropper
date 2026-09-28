@@ -50,14 +50,19 @@ source = replaceRequired(
   `const APP_VERSION = "${next}";`,
   'Dropper APP_VERSION',
 );
+const releaseEntry = `    "${next}": ["Updates the shared foundation to exp-core ${coreVersion}.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],\n`;
+const releaseMarker = /const RELEASE_NOTES = \{\n/;
+if (!releaseMarker.test(source)) throw new Error('Could not locate Dropper RELEASE_NOTES');
+source = source.replace(releaseMarker, match => match + releaseEntry);
 write('src/dropper.user.js', source);
 
 let changelog = read('CHANGELOG.md');
-const heading = `## ${next} - ${date}\n\n`;
+const heading = `## ${next} — ${date}\n\n`;
 const body = [
   `- Updates the shared foundation to exp-core ${coreVersion}.`,
   '- Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.',
   '- Leaves Dropper Twitch routing, campaign, claim, and playback behavior unchanged.',
+  '- Keeps the standalone userscript distribution while Core remains the single shared source.',
   '',
 ].join('\n');
 if (!changelog.startsWith(`## ${next} `)) changelog = heading + body + '\n' + changelog;
