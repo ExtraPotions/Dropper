@@ -35,6 +35,13 @@ test('Dropper delegates shared launcher and notice infrastructure to exp-core', 
   assert.match(template, /ExtraPotionsCore\.compareVersions\(a, b\)/u);
 });
 
+test('Dropper uses the public Core API for shared tool services', () => {
+  assert.doesNotMatch(template, /ExtraPotionsTools\./u);
+  assert.match(template, /ExtraPotionsCore\.createBitcoinDonation\(\)/u);
+  assert.match(template, /ExtraPotionsCore\.placeDonationPanel\(/u);
+  assert.match(template, /ExtraPotionsCore\.createCompatibilityControls\(\)/u);
+});
+
 test('obsolete shared source copies stay removed', () => {
   for (const file of ['shared-diagnostics.js','shared-product-tools.js','shared-menu-arrangement.js']) {
     assert.equal(fs.existsSync(path.join(root, 'src', file)), false, file);
