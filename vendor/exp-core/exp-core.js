@@ -1640,7 +1640,7 @@ const ExpMenuArrangement = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.3.14';
+  const version = '3.3.15';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -2338,10 +2338,17 @@ const ExtraPotionsCore = (() => {
   function createReleaseUpdateChecker(options = {}) {
     const productId = String(options.productId || '').toLowerCase();
     const repository = String(options.repository || '');
-    const currentVersion = String(options.currentVersion || '');
+    const resolveCurrentVersion = typeof options.currentVersion === 'function'
+      ? () => String(options.currentVersion() || '')
+      : () => String(options.currentVersion || '');
     const enabled = typeof options.enabled === 'function' ? options.enabled : () => true;
     const onError = typeof options.onError === 'function' ? options.onError : () => {};
-    if (!productId || !repository || !currentVersion) throw new Error('Incomplete update checker configuration');
+    if (!productId || !repository) throw new Error('Incomplete update checker configuration');
+    function getCurrentVersion() {
+      const currentVersion = resolveCurrentVersion();
+      if (!currentVersion) throw new Error('Update checker current version unavailable');
+      return currentVersion;
+    }
 
     const ENDPOINT = String(options.endpoint || ('https://api.github.com/repos/' + repository + '/releases/latest'));
     const CACHE_KEY = 'exp:v3:' + productId + ':update-cache';
@@ -2389,6 +2396,7 @@ const ExtraPotionsCore = (() => {
       return next;
     }
     function snapshot(state, stateName) {
+      const currentVersion = getCurrentVersion();
       const next = normalize(state);
       const latest = String(next.lastRemoteVersion || '');
       return {
@@ -2422,6 +2430,7 @@ const ExtraPotionsCore = (() => {
       });
     }
     async function check(force = false) {
+      const currentVersion = getCurrentVersion();
       let state = normalize(readState());
       if (!enabled() && !force) return snapshot(state, 'disabled');
 
@@ -2488,7 +2497,7 @@ const ExtraPotionsCore = (() => {
     }
     function status() { return snapshot(readState()); }
     return Object.freeze({
-      CURRENT_VERSION: currentVersion,
+      get CURRENT_VERSION() { return getCurrentVersion(); },
       ENDPOINT,
       CHECK_INTERVAL,
       check,
@@ -2652,8 +2661,10 @@ const ExtraPotionsCore = (() => {
   function createProductServices(options = {}) {
     const productId = String(options.productId || '').toLowerCase();
     const repository = String(options.repository || '');
-    const currentVersion = String(options.currentVersion || '');
-    if (!productId || !repository || !currentVersion) throw new Error('Incomplete product services configuration');
+    const currentVersion = options.currentVersion;
+    if (!productId || !repository || (typeof currentVersion !== 'function' && !String(currentVersion || ''))) {
+      throw new Error('Incomplete product services configuration');
+    }
     const lifecycle = createProductLifecycle(api);
     const diagnostics = Object.freeze({
       createDiagnosticsReport,
