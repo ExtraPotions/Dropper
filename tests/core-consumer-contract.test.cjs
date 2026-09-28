@@ -26,6 +26,15 @@ test('Dropper assembles the complete pinned exp-core bundle before product code'
   assert.ok(assembled.indexOf(core) < assembled.indexOf('const SETTINGS_KEY = "tdh-settings-v3"'));
 });
 
+test('Dropper delegates shared launcher and notice infrastructure to exp-core', () => {
+  assert.doesNotMatch(template, /function protectLauncherHost\s*\(/u);
+  assert.match(template, /ExtraPotionsCore\.registerLauncher\(host, \{ productId, priority \}\)/u);
+  assert.match(template, /ExtraPotionsCore\.registerDiagnosticsProduct\(productId, APP_VERSION, host\)/u);
+  assert.match(template, /ExtraPotionsCore\.claimNotice\("dropper", changeId\)/u);
+  assert.match(template, /ExtraPotionsCore\.layoutFloatingNotices\(\)/u);
+  assert.match(template, /ExtraPotionsCore\.compareVersions\(a, b\)/u);
+});
+
 test('obsolete shared source copies stay removed', () => {
   for (const file of ['shared-diagnostics.js','shared-product-tools.js','shared-menu-arrangement.js']) {
     assert.equal(fs.existsSync(path.join(root, 'src', file)), false, file);

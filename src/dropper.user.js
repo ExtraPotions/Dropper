@@ -45,105 +45,19 @@
   const LEGACY_LAUNCHER_GRID_DELTA_KEY = "tdh-launcher-grid-delta-v3";
   const LAUNCHER_GRID_DELTA_KEY = "exp:v3:launcher-grid-delta";
   const LAUNCHER_ORDER_KEY = "exp:v3:launcher-order";
-  function protectLauncherHost(host) {
-    host = host?.getRootNode?.().host || host;
-    if (!host || host.nodeType !== 1) return () => {};
-    host.dataset.expOwned = '1';
-    ExtraPotionsDiagnostics.registerProduct('dropper', APP_VERSION, host);
-    const shadow = host.shadowRoot;
-    const hostCss = `:host{all:initial!important;position:fixed!important;top:0!important;left:0!important;right:auto!important;bottom:auto!important;display:block!important;width:0!important;height:0!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;border:0!important;overflow:visible!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;z-index:2147483647!important;isolation:isolate!important;transform:none!important;filter:none!important;clip:auto!important;clip-path:none!important;contain:none!important;content-visibility:visible!important;mix-blend-mode:normal!important}`;
-    let protectionSheet = null;
-    let protectionStyle = null;
-    let repairing = false;
-    const installHostCss = () => {
-      if (!shadow) return;
-      try {
-        const current = shadow.adoptedStyleSheets;
-        if (protectionSheet && current?.includes?.(protectionSheet)) return;
-        const view = host.ownerDocument?.defaultView || window;
-        const Sheet = view.CSSStyleSheet || (typeof CSSStyleSheet === 'function' ? CSSStyleSheet : null);
-        if (typeof Sheet === 'function' && Sheet.prototype?.replaceSync && current && typeof current[Symbol.iterator] === 'function') {
-          if (!protectionSheet) {
-            protectionSheet = new Sheet();
-            protectionSheet.replaceSync(hostCss);
-          }
-          if (![...current].includes(protectionSheet)) shadow.adoptedStyleSheets = [...current, protectionSheet];
-          return;
-        }
-      } catch {}
-      if (!protectionStyle) {
-        protectionStyle = document.createElement('style');
-        protectionStyle.dataset.expHostProtection = '1';
-        protectionStyle.textContent = hostCss;
-      }
-      if (!protectionStyle.isConnected) {
-        try { shadow.prepend(protectionStyle); } catch {}
-      }
-    };
-    const ensure = () => {
-      if (repairing) return;
-      repairing = true;
-      try {
-        const root = document.documentElement;
-        if (root && host.parentNode !== root) root.append(host);
-        if (host.hidden) host.hidden = false;
-        host.removeAttribute('hidden');
-        host.removeAttribute('inert');
-        if (host.getAttribute('aria-hidden') === 'true') host.removeAttribute('aria-hidden');
-        installHostCss();
-        if (typeof host.showPopover === 'function') {
-          if (host.getAttribute('popover') !== 'manual') host.setAttribute('popover', 'manual');
-          let open = false;
-          try { open = host.matches(':popover-open'); } catch {}
-          if (!open) { try { host.showPopover(); } catch {} }
-        }
-      } catch {}
-      repairing = false;
-    };
-    ensure();
-    const hostObserver = new MutationObserver(() => queueMicrotask(ensure));
-    hostObserver.observe(host, { attributes: true, attributeFilter: ['hidden', 'inert', 'aria-hidden', 'popover'] });
-    const rootObserver = new MutationObserver(() => {
-      if (host.parentNode !== document.documentElement) queueMicrotask(ensure);
-    });
-    rootObserver.observe(document.documentElement, { childList: true });
-    const timer = setInterval(ensure, 2000);
-    const onToggle = () => queueMicrotask(ensure);
-    host.addEventListener('toggle', onToggle);
-    return () => {
-      hostObserver.disconnect();
-      rootObserver.disconnect();
-      clearInterval(timer);
-      host.removeEventListener('toggle', onToggle);
-      if (protectionSheet && shadow?.adoptedStyleSheets) {
-        try { shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets].filter((sheet) => sheet !== protectionSheet); } catch {}
-      }
-      try { protectionStyle?.remove(); } catch {}
-    };
-  }
-
   function registerBadgeGrid(host, productId, priority) {
-    protectLauncherHost(host);
-    host.dataset.expProductLauncher = "1"; host.dataset.productId = productId; host.dataset.launcherPriority = String(priority);
-    const layout = () => {
-      const columns = 3;
-      let order=[];try{const saved=JSON.parse(localStorage.getItem(LAUNCHER_ORDER_KEY)||"[]");if(Array.isArray(saved))order=saved;}catch{}
-      const peers = [...document.querySelectorAll('[data-exp-product-launcher="1"]')].sort((a,b)=>{const ai=order.indexOf(a.dataset.productId),bi=order.indexOf(b.dataset.productId);if(ai!==bi){if(ai<0)return 1;if(bi<0)return -1;return ai-bi;}const ap=a.dataset.productId==="dropper"?Number.MAX_SAFE_INTEGER:Number(a.dataset.launcherPriority||0),bp=b.dataset.productId==="dropper"?Number.MAX_SAFE_INTEGER:Number(b.dataset.launcherPriority||0);return bp-ap||(a.dataset.productId||'').localeCompare(b.dataset.productId||'');});
-      const assign = (node, slot, span = 1) => {
-        const row = Math.floor(slot / columns);
-        const column = slot % columns;
-        node.dataset.launcherSlot = String(slot); node.dataset.launcherRow = String(row); node.dataset.launcherColumn = String(column); node.dataset.launcherSpan = String(span);
-        node.style.setProperty('--exp-launcher-x', `${column * 56}px`); node.style.setProperty('--exp-launcher-y', `${row * 56}px`); node.style.setProperty('--exp-launcher-offset', `${row * 56}px`);
-      };
-      peers.forEach((node, index) => assign(node, index));
-      try{localStorage.setItem(LAUNCHER_ORDER_KEY,JSON.stringify(peers.map((node)=>node.dataset.productId).filter(Boolean)));}catch{}
-    };
-    const refresh = () => requestAnimationFrame(() => { layout(); layoutChrome(); layoutFloatingNotices(); });
-    document.addEventListener('exp-core:coordination', refresh); addEventListener('resize', refresh, { passive:true }); layout();
-    document.dispatchEvent(new CustomEvent('exp-core:coordination',{detail:{type:'launcher-added',productId}}));
+    ExtraPotionsCore.registerDiagnosticsProduct(productId, APP_VERSION, host);
+    ExtraPotionsCore.registerLauncher(host, { productId, priority });
+    const refreshProductChrome = () => requestAnimationFrame(() => {
+      layoutChrome();
+      ExtraPotionsCore.layoutFloatingNotices();
+    });
+    document.addEventListener("exp-core:coordination", refreshProductChrome);
+    addEventListener("resize", refreshProductChrome, { passive: true });
+    ExtraPotionsCore.layout();
   }
   const APP_VERSION = "3.3.15";
-  ExtraPotionsDiagnostics.registerProduct("dropper", APP_VERSION);
+  ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
   const UPDATE_STATE_KEY = "dropper-update-state-v2";
@@ -151,41 +65,11 @@
   const UPDATE_CHECK_LEASE_MS = 30 * 1000;
 
   function claimNotice(changeId) {
-    const key = NOTICE_KEY_PREFIX + String(changeId || "change");
-    try {
-      if (localStorage.getItem(key) === "1") return false;
-      localStorage.setItem(key, "1");
-    } catch (_) { /* best effort */ }
-    return true;
+    return ExtraPotionsCore.claimNotice("dropper", changeId);
   }
 
   function layoutFloatingNotices() {
-    const launchers = [...document.querySelectorAll('[data-exp-product-launcher="1"][data-product-id]')]
-      .map((host) => host.shadowRoot?.querySelector('[data-exp-part="launcher"],.ward-launcher,.launcher,#tdh-settings-launcher'))
-      .filter(Boolean)
-      .map((node) => node.getBoundingClientRect())
-      .filter((box) => box.width && box.height);
-    const notices = [...document.querySelectorAll('[data-exp-product-launcher="1"][data-product-id]')]
-      .flatMap((host) => [...(host.shadowRoot?.querySelectorAll('[data-exp-floating-notice="1"]') || [])].map((notice) => ({ host, notice })))
-      .filter(({ notice }) => !notice.hidden && notice.dataset.placement !== "menu" && notice.getClientRects().length)
-      .sort((a, b) => Number(a.host.dataset.launcherSlot || 0) - Number(b.host.dataset.launcherSlot || 0) || a.host.dataset.productId.localeCompare(b.host.dataset.productId));
-    if (!launchers.length || !notices.length) return;
-    const anchor = document.documentElement.dataset.expLauncherAnchor === "top" ? "top" : "bottom";
-    const gridTop = Math.min(...launchers.map((box) => box.top));
-    const gridBottom = Math.max(...launchers.map((box) => box.bottom));
-    const gridRight = Math.max(...launchers.map((box) => box.right));
-    let cursor = anchor === "top" ? gridBottom + 8 : gridTop - 8;
-    for (const { notice } of notices) {
-      const width = Math.min(notice.offsetWidth || notice.scrollWidth || 260, Math.max(0, innerWidth - 24));
-      const height = notice.offsetHeight || notice.scrollHeight || 72;
-      const top = anchor === "top" ? cursor : cursor - height;
-      notice.style.setProperty("width", `${width}px`, "important");
-      notice.style.setProperty("left", `${Math.max(8, Math.min(innerWidth - width - 8, gridRight - width))}px`, "important");
-      notice.style.setProperty("right", "auto", "important");
-      notice.style.setProperty("top", `${Math.max(8, Math.min(innerHeight - height - 8, top))}px`, "important");
-      notice.style.setProperty("bottom", "auto", "important");
-      cursor = anchor === "top" ? top + height + 8 : top - 8;
-    }
+    ExtraPotionsCore.layoutFloatingNotices();
   }
   const NEXT_GAME_KEY = "dropper-next-game-after-claim";
   const ROUTING_SESSION_KEY = "dropper-routing-session-v310";
@@ -15287,11 +15171,7 @@
     checkCachedUpdateNotice();
   }
 
-  function compareVersions(a, b) {
-    const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
-    for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) { const diff = (pa[i] || 0) - (pb[i] || 0); if (diff) return diff; }
-    return 0;
-  }
+  const compareVersions = (a, b) => ExtraPotionsCore.compareVersions(a, b);
 
   function scheduleUpdateCheck(force = false) {
     if (typeof GM_xmlhttpRequest !== "function") return;
