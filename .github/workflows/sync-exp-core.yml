@@ -1,0 +1,64 @@
+name: Sync exp-core
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional exp-core tag, for example v3.3.13. Blank uses latest release."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-exp-core
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Sync latest released Core
+        env:
+          REQUESTED_CORE_TAG: ${{ inputs.tag || '' }}
+        run: node scripts/sync-exp-core.cjs "$REQUESTED_CORE_TAG"
+      - name: Detect Core changes
+        id: changed
+        shell: bash
+        run: |
+          if git diff --quiet -- vendor/exp-core; then
+            echo "value=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install browser runtime
+        if: steps.changed.outputs.value == 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Verify pinned Core
+        if: steps.changed.outputs.value == 'true'
+        run: node scripts/verify-exp-core-pin.cjs
+      - name: Rebuild and test consumer
+        if: steps.changed.outputs.value == 'true'
+        run: npm test
+      - name: Commit synchronized Core
+        if: steps.changed.outputs.value == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$(tr -d '\r\n' < vendor/exp-core/PIN)"
+          git add -A
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "Sync exp-core $tag"
+          git push origin HEAD:main
