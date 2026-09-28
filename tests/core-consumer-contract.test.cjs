@@ -22,9 +22,8 @@ test('Dropper assembles the complete pinned exp-core bundle before product code'
   const core = readCoreBundle(root);
   const assembled = assembleDropperSource(template, root);
   assert.ok(assembled.includes(core));
-  assert.match(assembled, /const CoreFoundation = \(\(\) =>/u);
   assert.match(assembled, /const ExtraPotionsCore = \(\(\) =>/u);
-  assert.ok(assembled.indexOf('const ExtraPotionsCore = (() =>') < assembled.indexOf('const SETTINGS_KEY = "tdh-settings-v3"'));
+  assert.ok(assembled.indexOf(core) < assembled.indexOf('const SETTINGS_KEY = "tdh-settings-v3"'));
 });
 
 test('obsolete shared source copies stay removed', () => {
