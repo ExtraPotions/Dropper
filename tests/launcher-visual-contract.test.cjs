@@ -48,9 +48,9 @@ test('campaign navigation strip is gone and does not change progress geometry', 
   assert.match(source, /#tdh-drop-card \{position:relative!important;[\s\S]*?cursor:default!important;/u);
 });
 
-test('menu focus does not paint an outer browser outline', () => {
+test('menu focus suppresses the browser outline while retaining the themed outer border', () => {
   assert.match(source, /#tdh-tools-dock:focus \{ outline:none; \}/u);
-  assert.match(source, /#tdh-tools-dock \{[^}]*border:0;/u);
+  assert.match(source, /#tdh-tools-dock \{[^}]*border:1px solid var\(--theme-line\);/u);
 });
 
 test('Dropper progress starts at twelve o clock and advances clockwise', () => {

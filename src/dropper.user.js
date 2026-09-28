@@ -639,6 +639,7 @@ const ExtraPotionsDiagnostics = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.15": ["Adds the themed outer menu border shared across the ExtraPotions suite.","Keeps border colors tied to the active menu palette without changing Twitch routing behavior.","Includes the 3.3.12 through 3.3.14 fallback eligibility and allow-list diagnostic fixes."],
     "3.3.14": ["Refreshes candidate allow-list diagnostics when Twitch campaign metadata arrives after stream selection.","Keeps historical selection proof separate from the current campaign allow-list snapshot.","Updates allow-list evidence during verification and earning without changing routing decisions."],
     "3.3.13": ["Reports Drops-tagged fallback streams as Verification Pending while Twitch proof is still being checked.","Allows a non-allow-listed fallback stream to become Eligible after target-campaign GQL evidence or credited progress confirms it.","Keeps eligibility diagnostics aligned with the routing controller's verification state."],
     "3.3.12": ["Lets Drops-tagged same-game streams enter campaign verification when no campaign allow-list channel is live.","Keeps campaign allow-list matches highest priority and still requires GQL campaign evidence or credited progress before earning.","Binds successful fallback verification to the verified channel and keeps standby diagnostics aligned with routing."],

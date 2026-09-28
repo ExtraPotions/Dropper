@@ -3,6 +3,7 @@
 - Adds the themed outer menu border shared across the ExtraPotions suite.
 - Keeps border colors tied to the active menu palette without changing Twitch routing behavior.
 - Publishes the completed 3.3.12 through 3.3.14 fallback eligibility and allow-list diagnostic fixes.
+- Keeps launcher placement, progress geometry, and menu focus behavior unchanged.
 
 ## 3.3.14 — 2026-09-27
 
