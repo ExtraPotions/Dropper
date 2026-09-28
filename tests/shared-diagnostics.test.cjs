@@ -1,7 +1,8 @@
 'use strict';
-const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const test=require('node:test'),assert=require('node:assert/strict');
 const {chromium}=require('playwright');
-const source=fs.readFileSync(path.join(__dirname,'../src/shared-diagnostics.js'),'utf8');
+const { readCoreModule }=require('../scripts/core-modules.cjs');
+const source=readCoreModule('diagnostics');
 async function setup(t){const browser=await chromium.launch({headless:true});t.after(()=>browser.close());const page=await browser.newPage();await page.route('**/*',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><html><body><h1>PRIVATE_BODY_TEXT</h1><input value="PRIVATE_FIELD_VALUE"></body></html>'}));await page.goto('https://fixture.test/PRIVATE_PATH?token=PRIVATE_QUERY');return page;}
 async function install(page,id='ward'){await page.addScriptTag({content:`(()=>{${source}\nwindow.diags ||= {}; window.diags['${id}']=ExtraPotionsDiagnostics; ExtraPotionsDiagnostics.registerProduct('${id}','1.2.3');})();`});}
 test('four diagnostic sections preserve state and capture redacted console plus runtime errors without altering logging',async t=>{
