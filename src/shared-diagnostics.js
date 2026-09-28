@@ -150,10 +150,32 @@ const ExtraPotionsDiagnostics = (() => {
       privacy: { pageText: 'excluded', formValues: 'excluded', urlPathsAndQueries: 'excluded', resourceUrls: 'excluded', cookiesAndStorage: 'excluded; sanitized plugin state supplied separately' } };
     const environment = { hostname: location.hostname, topLevelContext: window.top === window.self, visibility: document.visibilityState, online: navigator.onLine, language: navigator.language, userAgent: navigator.userAgent, viewport: { width: innerWidth, height: innerHeight, pixelRatio: devicePixelRatio } };
     const rect = n => { const b = n.getBoundingClientRect(); return { width: b.width, height: b.height, x: b.x, y: b.y, visible: !!n.getClientRects().length && getComputedStyle(n).visibility !== 'hidden' }; };
-    const ui = { mounted: !!host?.isConnected, menuWidth: host?.dataset.menuWidth || null,
+    const first = selector => shadow?.querySelector(selector) || null;
+    const visibleFirst = selector => [...(shadow?.querySelectorAll(selector) || [])].find(n => !n.hidden && n.getClientRects().length) || first(selector);
+    const progressCard = first('#tdh-drop-card,[data-exp-part="progress-card"]');
+    const launcher = first('[data-exp-part="launcher"],.ward-launcher,.launcher,#tdh-settings-launcher');
+    const launcherRow = first('[data-exp-part="launcher-row"],.badge-row');
+    const menu = first('[data-exp-part="dock"],#tdh-tools-dock,.panel,.ward');
+    const notice = visibleFirst('#tdh-update-notice,[data-exp-update-notice],.update-notice,.changelog');
+    const uiGeometry = {
+      progressCardRect: progressCard ? rect(progressCard) : null,
+      launcherRect: launcher ? rect(launcher) : null,
+      launcherRowRect: launcherRow ? rect(launcherRow) : null,
+      menuRect: menu ? rect(menu) : null,
+      noticeRect: notice ? rect(notice) : null,
+    };
+    const ui = {
+      mounted: !!host?.isConnected,
+      menuWidthMode: host?.dataset.menuWidth || null,
+      uiGeometry,
+      progressPanelWidth: progressCard ? Math.round(progressCard.getBoundingClientRect().width) : null,
+      launcherRowWidth: launcherRow ? Math.round(launcherRow.getBoundingClientRect().width) : null,
+      menuWidth: menu ? Math.round(menu.getBoundingClientRect().width) : null,
+      noticeWidth: notice && !notice.hidden ? Math.round(notice.getBoundingClientRect().width) : null,
       surfaces: [...(shadow?.querySelectorAll('.panel,.ward,#tdh-tools-dock,[data-exp-part="dock"]') || [])].map(rect),
       categories: [...(shadow?.querySelectorAll('.route,.nav-item,.fl-tool-header') || [])].map(n => ({ name: redact(n.textContent.trim()), expanded: n.getAttribute('aria-expanded') })),
-      swatches: [...(shadow?.querySelectorAll('.exp-theme-swatch') || [])].map(n => ({ name: n.getAttribute('aria-label'), selected: n.getAttribute('aria-pressed'), ...rect(n) })) };
+      swatches: [...(shadow?.querySelectorAll('.exp-theme-swatch') || [])].map(n => ({ name: n.getAttribute('aria-label'), selected: n.getAttribute('aria-pressed'), ...rect(n) })),
+    };
     let manager = null;
     try { if (typeof GM_info === 'object') manager = { name: GM_info.scriptHandler || null, version: GM_info.version || null, injectInto: GM_info.injectInto || null }; } catch {}
     return { ...data, report: `${product} Diagnostics`, schemaVersion: 3, generatedAt: new Date().toISOString(), page,
