@@ -40,10 +40,23 @@ test('Dropper uses the public Core API for shared tool services', () => {
   assert.match(template, /ExtraPotionsCore\.createBitcoinDonation\(\)/u);
   assert.match(template, /ExtraPotionsCore\.placeDonationPanel\(/u);
   assert.match(template, /ExtraPotionsCore\.createCompatibilityControls\(\)/u);
+  assert.match(template, /ExtraPotionsCore\.createDiagnosticsReport\(/u);
+  assert.doesNotMatch(template, /ExtraPotionsDiagnostics\.createReport/u);
 });
 
 test('obsolete shared source copies stay removed', () => {
   for (const file of ['shared-diagnostics.js','shared-product-tools.js','shared-menu-arrangement.js']) {
     assert.equal(fs.existsSync(path.join(root, 'src', file)), false, file);
   }
+});
+
+test('private Core globals disappear once the public API is available', () => {
+  const pin = fs.readFileSync(path.join(root, 'vendor', 'exp-core', 'PIN'), 'utf8').trim().replace(/^v/, '');
+  const parts = pin.split('.').map(Number);
+  const modern = parts[0] > 3 || (parts[0] === 3 && (parts[1] > 3 || (parts[1] === 3 && parts[2] >= 13)));
+  if (!modern) return;
+  assert.doesNotMatch(template, /ExtraPotionsDiagnostics\./u);
+  assert.doesNotMatch(template, /ExpMenuArrangement\./u);
+  assert.match(template, /ExtraPotionsCore\.bindDiagnosticsControls/u);
+  assert.match(template, /ExtraPotionsCore\.mountMenuArrangement/u);
 });
