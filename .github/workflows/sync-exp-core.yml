@@ -57,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="$(tr -d '\r\n' < vendor/exp-core/PIN)"
-          git add -A
+          git add vendor/exp-core/PIN vendor/exp-core/exp-core.js vendor/exp-core/manifest.json
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m "Sync exp-core $tag"
