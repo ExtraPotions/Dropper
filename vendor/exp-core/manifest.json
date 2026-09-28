@@ -1,74 +1,17 @@
 {
-  "coreVersion": "3.3.12",
+  "coreVersion": "3.3.13",
   "source": {
-    "source": "ExtraPotions/Dropper",
-    "sourceVersion": "3.3.15",
-    "behaviorSourceVersion": "3.3.15",
-    "behaviorParity": [
-      "launcher-and-menu-badge-sizing",
-      "launcher-host-protection",
-      "menu-width-notices",
-      "badge-only-menu-content-width",
-      "version-scoped-update-checks",
-      "diagnostic-resource-attribution",
-      "diagnostic-ui-geometry",
-      "support-control-chrome"
-    ],
-    "commit": "8540fc3c94883d76eb4c1f8d6056d6227e8373a3",
-    "path": "dropper.user.js",
-    "sha256": "438fa8c0468f58181429ab17b1a44c803b51365d130ab6aef430f7df09536de8",
-    "entries": [
-      {
-        "name": "PRIDE_RAINBOW",
-        "kind": "constant",
-        "startLine": 946,
-        "endLine": 946
-      },
-      {
-        "name": "PRIDE_RAINBOW_VERTICAL",
-        "kind": "constant",
-        "startLine": 947,
-        "endLine": 947
-      },
-      {
-        "name": "CRIMSON_THEME",
-        "kind": "constant",
-        "startLine": 948,
-        "endLine": 948
-      },
-      {
-        "name": "UI_THEMES",
-        "kind": "constant",
-        "startLine": 949,
-        "endLine": 958
-      },
-      {
-        "name": "css",
-        "kind": "function",
-        "startLine": 12894,
-        "endLine": 13645
-      },
-      {
-        "name": "protectLauncherHost",
-        "kind": "function",
-        "startLine": 369,
-        "endLine": 444
-      },
-      {
-        "name": "compareVersions",
-        "kind": "function",
-        "startLine": 15649,
-        "endLine": 15653
-      }
-    ]
+    "source": "ExtraPotions/exp-core",
+    "sourceVersion": "3.3.13",
+    "architecture": "core-native"
   },
-  "bundleSha256": "191ee11f6eb34fc3d4e0fe6b39653443d38c18997f4b1aac318123483b0d12a0",
+  "bundleSha256": "28d1544dbe80220236f3d3f3b7b526a2bf527e7e5be6da031e42ac3ad53e7927",
   "files": {
-    "dropper-reference.js": "f6e0c6510337ffa4f4942c8f6b070231687a2769dff62456f34eac7ab17bc507",
-    "diagnostic-report.js": "605abdecadfd11e7bf89d9937b67bc2a5eb2faa2f495035ca2505f3986ab5989",
+    "foundation.js": "6d9d8540ab1e750cc0f256da71fe7d575bfd55633ef7e45f40b0c8aff5002c56",
+    "diagnostic-report.js": "9d1c588495e07e411262184a8263a3d03d0e3dbc7f45c7ff71898a7f3c131861",
     "lifecycle.js": "50a3584b708d155ce03c7d1a622d9be4f8345e91f6c4c71f8c42dc98f1ed5691",
     "product-tools.js": "e9b774ab0891b17fcb58696281dd8b092d9e0ae0d8e53d0111b39d6fdc768b96",
     "menu-arrangement.js": "f93f40f3263f90f5fd48d007d4a14cab62cc65b50fc54aa96289fa5458f2f910",
-    "runtime.js": "187ac3aea0d32b6d59f3616be5d755caf2d92fb880562982e8eab0c7dd4894e3"
+    "runtime.js": "552a5ca81316405476d4211d322f997c789720944f14b11bbbf73950e013ddf2"
   }
 }

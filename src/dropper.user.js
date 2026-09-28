@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.15
+// @version      3.3.16
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -56,7 +56,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.15";
+  const APP_VERSION = "3.3.16";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -202,6 +202,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.16": ["Updates the shared foundation to exp-core 3.3.13.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.15": ["Adds the themed outer menu border shared across the ExtraPotions suite.","Keeps border colors tied to the active menu palette without changing Twitch routing behavior.","Includes the 3.3.12 through 3.3.14 fallback eligibility and allow-list diagnostic fixes."],
     "3.3.14": ["Refreshes candidate allow-list diagnostics when Twitch campaign metadata arrives after stream selection.","Keeps historical selection proof separate from the current campaign allow-list snapshot.","Updates allow-list evidence during verification and earning without changing routing decisions."],
     "3.3.13": ["Reports Drops-tagged fallback streams as Verification Pending while Twitch proof is still being checked.","Allows a non-allow-listed fallback stream to become Eligible after target-campaign GQL evidence or credited progress confirms it.","Keeps eligibility diagnostics aligned with the routing controller's verification state."],
@@ -13377,7 +13378,7 @@
     bindDrag();
     bindSwitches();
     bindPanels();
-    ExpMenuArrangement.mount({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { try { localStorage.setItem(LAUNCHER_ORDER_KEY,"[]");localStorage.setItem(LAUNCHER_GRID_DELTA_KEY,"0"); } catch {} document.dispatchEvent(new CustomEvent("exp-core:coordination",{detail:{type:"launcher-grid-moved",productId:"dropper"}})); } });
+    ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { try { localStorage.setItem(LAUNCHER_ORDER_KEY,"[]");localStorage.setItem(LAUNCHER_GRID_DELTA_KEY,"0"); } catch {} document.dispatchEvent(new CustomEvent("exp-core:coordination",{detail:{type:"launcher-grid-moved",productId:"dropper"}})); } });
     bindMenuInactivity();
     bindDropperControls();
     renderSwitches();
@@ -14664,7 +14665,7 @@
       setTimeout(() => { event.currentTarget.textContent = "Clear Skipped Streamers"; }, 1600);
     });
     const diag = s.getElementById("tdh-diagnostics");
-    ExtraPotionsDiagnostics.bindControls({
+    ExtraPotionsCore.bindDiagnosticsControls({
       show: s.getElementById("tdh-diagnostics-toggle"), copy: s.getElementById("tdh-copy-diagnostics"), output: diag,
       getReport: () => JSON.parse(diagnosticsText()),
       onShow: opening => { if (opening) lastSubmenuId = "diagnostics"; requestAnimationFrame(layoutChrome); },

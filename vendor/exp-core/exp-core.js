@@ -1,5 +1,5 @@
-// Generated from the approved Dropper v3.3.15 install artifact. Do not edit.
-const DropperReference = (() => {
+// Native exp-core foundation. Shared UI primitives are owned and maintained here.
+const CoreFoundation = (() => {
 const LAUNCHER_ORDER_KEY = "exp:v3:launcher-order";
 const LAUNCHER_GRID_DELTA_KEY = "exp:v3:launcher-grid-delta";
 const PRIDE_RAINBOW = "linear-gradient(90deg,#c84e66,#d07840,#be9f37,#3b8a5f,#3d79a6,#7455a4)";
@@ -1048,8 +1048,8 @@ const ExtraPotionsDiagnostics = (() => {
     removeEventListener('error', onError, true); removeEventListener('unhandledrejection', onRejection);
     for (const marker of registrations.values()) marker.remove();
   }
-  // Dropper is the source of truth: Show/Hide first, Copy second, transient
-  // Diagnostics Copied / Copy Failed feedback, and fresh reports per action.
+  // Core owns the shared diagnostics interaction contract: Show/Hide first, Copy second,
+  // transient Diagnostics Copied / Copy Failed feedback, and fresh reports per action.
   function bindControls({ show, copy, output, getReport, notify = () => {}, onShow = () => {}, onCopy = () => {} }) {
     let timer, generation = 0;
     output.hidden = true; output.setAttribute('role', 'region');
@@ -1636,12 +1636,12 @@ const ExpMenuArrangement = (() => {
   return Object.freeze({ mount });
 })();
 
-// Product-neutral host for the code extracted from Dropper 3.3.15.
-// Product engines own their settings, content, and actions. Core owns shared UI.
+// Product-neutral shared runtime. Product engines own their settings, content, and actions.
+// exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.3.12';
-  const sourceVersion = '3.3.15';
+  const version = '3.3.13';
+  const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
   const gridProtocol = 'exp-launcher-grid-v3';
@@ -1721,7 +1721,7 @@ const ExtraPotionsCore = (() => {
     'tdh-opacity-range': 'opacity-range', 'tdh-opacity-value': 'opacity-value'
   };
   const canonicalCss = Object.entries(partIds).reduce((css, [id, part]) =>
-    css.replaceAll('#' + id, '[data-exp-part="' + part + '"]'), DropperReference.css())
+    css.replaceAll('#' + id, '[data-exp-part="' + part + '"]'), CoreFoundation.css())
     .replaceAll('.cluster', '.exp-core-theme');
   const compositionCss = `
     [data-exp-part="dock"]{box-sizing:border-box;overflow-x:hidden;overscroll-behavior:contain}
@@ -1819,7 +1819,7 @@ const ExtraPotionsCore = (() => {
   function menuPalette(host) {
     if (host?.dataset.productId === 'dropper') {
       const selected = host.shadowRoot?.querySelector('#tdh-cluster')?.dataset.uiTheme;
-      const theme = DropperReference.UI_THEMES.find(item => item.id === selected);
+      const theme = CoreFoundation.UI_THEMES.find(item => item.id === selected);
       if (theme) return semanticTheme(theme);
     }
     try {
@@ -1977,7 +1977,7 @@ const ExtraPotionsCore = (() => {
     const backdropStyle = host.shadowRoot ? injectStyle(host.shadowRoot,
       ':host::backdrop{all:initial!important;display:none!important;background:transparent!important;pointer-events:none!important}',
       { expLauncherBackdrop: '1' }) : null;
-    const stopProtect = DropperReference.protectLauncherHost(host);
+    const stopProtect = CoreFoundation.protectLauncherHost(host);
     let frame = 0;
     const refresh = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; layoutGrid(); controllers.get(host)?.layout(); }); };
     document.addEventListener('exp-core:coordination', refresh);
@@ -1988,8 +1988,8 @@ const ExtraPotionsCore = (() => {
     return dispose;
   }
   function themes(productTheme) {
-    const common = DropperReference.UI_THEMES.filter(t => !['twitch', 'dropper'].includes(t.id));
-    return Object.freeze([...common, DropperReference.CRIMSON_THEME, ...(productTheme ? [productTheme] : [DropperReference.UI_THEMES.at(-1)])].map(t => { const theme = semanticTheme(t); return Object.freeze({ ...theme, vars: Object.fromEntries(tokenNames.map(k => [k, theme[k]])) }); }));
+    const common = CoreFoundation.UI_THEMES.filter(t => !['twitch', 'dropper'].includes(t.id));
+    return Object.freeze([...common, CoreFoundation.CRIMSON_THEME, ...(productTheme ? [productTheme] : [CoreFoundation.UI_THEMES.at(-1)])].map(t => { const theme = semanticTheme(t); return Object.freeze({ ...theme, vars: Object.fromEntries(tokenNames.map(k => [k, theme[k]])) }); }));
   }
   function createThemeSwatches({ container, themes: choices, value, onChange = () => {} }) {
     const root = resolveShadowRoot(container);
@@ -2049,8 +2049,8 @@ const ExtraPotionsCore = (() => {
     dismiss.addEventListener('click',hide);versionButton?.addEventListener('click',versionClick);addEventListener('resize',layout,{passive:true});document.addEventListener('exp-core:coordination',coordination);
     return Object.freeze({show,hide,toggle,layout,setMenuOpen,destroy(){destroyed=true;clearTimer();unregisterNotice();dismiss.removeEventListener('click',hide);versionButton?.removeEventListener('click',versionClick);removeEventListener('resize',layout);document.removeEventListener('exp-core:coordination',coordination);}});
   }
-  // Core-owned update and changelog cards use Dropper's menu-width notice
-  // geometry directly. The legacy floating-notice coordinator remains exported
+  // Core-owned update and changelog cards use the canonical menu-width notice
+  // geometry. The legacy floating-notice coordinator remains exported
   // for compatibility, but it no longer owns these product notices.
   function createMenuNotice(options = {}) {
     const { shadow, panel, notice, versionButton = null } = options;
@@ -2396,7 +2396,7 @@ const ExtraPotionsCore = (() => {
         latest: latest || null,
         state: stateName || next.state || 'idle',
         current: currentVersion,
-        available: Boolean(latest && DropperReference.compareVersions(latest, currentVersion) > 0),
+        available: Boolean(latest && CoreFoundation.compareVersions(latest, currentVersion) > 0),
         details: next.details.slice(0, 4),
         checkedForVersion: next.checkedForVersion || null,
         lastRemoteVersion: latest || null,
@@ -2465,7 +2465,7 @@ const ExtraPotionsCore = (() => {
         state.lastError = '';
         state.details = releaseDetails(payload.body);
         state.state = 'checked';
-        if (DropperReference.compareVersions(latest, currentVersion) > 0) {
+        if (CoreFoundation.compareVersions(latest, currentVersion) > 0) {
           state.availableVersion = latest;
           state.availableAt = Date.now();
         } else {
@@ -2493,7 +2493,7 @@ const ExtraPotionsCore = (() => {
       CHECK_INTERVAL,
       check,
       status,
-      compare: DropperReference.compareVersions,
+      compare: CoreFoundation.compareVersions,
     });
   }
 
@@ -2616,7 +2616,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function createDiagnosticsReport(product, details = {}) {
-    return ExtraPotionsDiagnostics.createReport(product, details, { version, source: 'Dropper', sourceVersion });
+    return ExtraPotionsDiagnostics.createReport(product, details, { version, source: 'exp-core', sourceVersion });
   }
   function downloadDiagnostics(report) {
     const name=`${String(report.report||'Diagnostics').toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
@@ -2648,6 +2648,6 @@ const ExtraPotionsCore = (() => {
   if(document.documentElement)startGrid();else addEventListener('DOMContentLoaded',startGrid,{once:true});
   document.addEventListener('exp-core:coordination',scheduleGrid);
   addEventListener('resize',scheduleGrid,{passive:true});
-  const api = Object.freeze({...ExtraPotionsTools,version,sourceVersion,protocol,gridProtocol,reference:DropperReference,css:canonicalCss,themes,create,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),registerLauncher,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,menuWidthForMode,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct:ExtraPotionsDiagnostics.registerProduct,productCompatibility:ExtraPotionsDiagnostics.compatibility,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,compareVersions:DropperReference.compareVersions});
+  const api = Object.freeze({...ExtraPotionsTools,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),registerLauncher,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,menuWidthForMode,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct:ExtraPotionsDiagnostics.registerProduct,productCompatibility:ExtraPotionsDiagnostics.compatibility,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,compareVersions:CoreFoundation.compareVersions});
   return api;
 })();
