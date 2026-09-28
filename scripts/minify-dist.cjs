@@ -10,6 +10,7 @@ const DEFAULT_INPUT = path.join(ROOT, 'src', 'dropper.user.js');
 const DEFAULT_OUTPUT = path.join(ROOT, 'dropper.user.js');
 const MINIFY_THRESHOLD_BYTES = 2 * 1024 * 1024;
 const ICON_URL = 'https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg';
+const VENDORED_CORE = path.join(ROOT, 'vendor', 'exp-core', 'exp-core.js');
 
 function splitHeader(source) {
   const end = source.indexOf('// ==/UserScript==');
@@ -53,11 +54,15 @@ function readableInstall(source) {
 async function minifyUserscript(inputPath, outputPath = DEFAULT_OUTPUT, options = {}) {
   const source = fs.readFileSync(inputPath, 'utf8').replace(/\r\n/g, '\n');
   if (path.resolve(inputPath) === DEFAULT_INPUT) {
+    const vendoredCore = fs.readFileSync(VENDORED_CORE, 'utf8').replace(/\r\n/g, '\n');
     const arrangement = fs.readFileSync(path.join(ROOT, 'src/shared-menu-arrangement.js'), 'utf8').replace(/\r\n/g, '\n').trim();
+    if (!vendoredCore.includes(arrangement)) throw new Error('Shared menu arrangement differs from pinned exp-core');
     if (!source.includes(arrangement)) throw new Error('Shared menu arrangement differs from the embedded source');
     const shared = fs.readFileSync(path.join(ROOT, 'src/shared-diagnostics.js'), 'utf8').replace(/\r\n/g, '\n').trim();
+    if (!vendoredCore.includes(shared)) throw new Error('Shared diagnostics differ from pinned exp-core');
     if (!source.includes(shared)) throw new Error('Shared diagnostics differ; run node scripts/sync-diagnostics.cjs');
     const tools = fs.readFileSync(path.join(ROOT, 'src/shared-product-tools.js'), 'utf8').replace(/\r\n/g, '\n').trim();
+    if (!vendoredCore.includes(tools)) throw new Error('Shared product tools differ from pinned exp-core');
     if (!source.includes(tools)) throw new Error('Shared product tools differ; sync before building');
     const icon = source.match(/^\/\/ @icon\s+(.+)$/m)?.[1]?.trim();
     if (icon !== ICON_URL) throw new Error('Manager icon must reference the borderless launcher SVG');

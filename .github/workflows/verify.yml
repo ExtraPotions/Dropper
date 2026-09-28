@@ -19,6 +19,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Verify pinned exp-core
+        run: node scripts/verify-exp-core-pin.cjs
       - name: Run regression suite
         shell: bash
         run: |
