@@ -19,6 +19,14 @@ function replaceRequired(text, pattern, replacement, label) {
   if (next === text) throw new Error(`Could not update ${label}`);
   return next;
 }
+function atLeastVersion(version, minimum) {
+  const parse = (value) => String(value).split('.').map(Number);
+  const a = parse(version), b = parse(minimum);
+  for (let i = 0; i < 3; i += 1) {
+    if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+  }
+  return true;
+}
 
 const pkg = JSON.parse(read('package.json'));
 const previous = pkg.version;
@@ -37,6 +45,14 @@ if (lock.packages?.['']) lock.packages[''].version = next;
 write('package-lock.json', JSON.stringify(lock, null, 2) + '\n');
 
 let source = read('src/dropper.user.js');
+if (atLeastVersion(coreVersion, '3.3.13')) {
+  source = source
+    .replace(/ExtraPotionsDiagnostics\.bindControls/g, 'ExtraPotionsCore.bindDiagnosticsControls')
+    .replace(/ExpMenuArrangement\.mount/g, 'ExtraPotionsCore.mountMenuArrangement');
+  if (/ExtraPotionsDiagnostics\.|ExpMenuArrangement\./.test(source)) {
+    throw new Error('Dropper still references private exp-core globals after Core API cutover');
+  }
+}
 source = replaceRequired(
   source,
   /^\/\/ @version\s+\S+/m,
