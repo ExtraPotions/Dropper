@@ -84,7 +84,7 @@ jobs:
             { print }
           ' CHANGELOG.md > release-notes.md
           sha256sum dropper.user.js > SHA256SUMS
-          (cd assets && sha256sum dropper-launcher.svg) >> ../SHA256SUMS
+          (cd assets && sha256sum dropper-launcher.svg) >> SHA256SUMS
           gh release create "$tag" dropper.user.js assets/dropper-launcher.svg SHA256SUMS \
             --target "$(git rev-parse HEAD)" \
             --title "Dropper $tag" \
