@@ -2908,8 +2908,6 @@ const ExtraPotionsCore = (() => {
   ExtraPotionsCore.registerSuiteProduct?.({
     productId: "dropper",
     productVersion: APP_VERSION,
-    role: "flagship",
-    capabilities: ["twitch.drops", "twitch.campaigns", "twitch.progress", "twitch.claims", "twitch.stream-management"],
   });
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
