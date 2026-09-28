@@ -65,3 +65,27 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m "Release Dropper $version"
           git push origin HEAD:main
+
+      - name: Publish Core-driven release
+        if: steps.changed.outputs.value == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag is already published."
+            exit 0
+          fi
+          awk '
+            /^## / { section += 1; if (section > 3) exit }
+            { print }
+          ' CHANGELOG.md > release-notes.md
+          sha256sum dropper.user.js > SHA256SUMS
+          (cd assets && sha256sum dropper-launcher.svg) >> ../SHA256SUMS
+          gh release create "$tag" dropper.user.js assets/dropper-launcher.svg SHA256SUMS \
+            --target "$(git rev-parse HEAD)" \
+            --title "Dropper $tag" \
+            --notes-file release-notes.md
