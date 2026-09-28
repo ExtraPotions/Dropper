@@ -1,0 +1,34 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { assembleDropperSource, readCoreBundle } = require('../scripts/core-modules.cjs');
+
+const root = path.resolve(__dirname, '..');
+const template = fs.readFileSync(path.join(root, 'src', 'dropper.user.js'), 'utf8');
+
+test('Dropper has one complete pinned Core injection point and no shared shadow blocks', () => {
+  assert.equal((template.match(/BEGIN EXP CORE/gu) || []).length, 1);
+  assert.equal((template.match(/END EXP CORE/gu) || []).length, 1);
+  assert.doesNotMatch(template, /BEGIN SHARED (?:MENU ARRANGEMENT|DIAGNOSTICS|PRODUCT TOOLS)/u);
+  assert.doesNotMatch(template, /const ExtraPotionsDiagnostics = \(\(\) =>/u);
+  assert.doesNotMatch(template, /const ExtraPotionsTools = \(\(\) =>/u);
+  assert.doesNotMatch(template, /const ExpMenuArrangement = \(\(\) =>/u);
+});
+
+test('Dropper assembles the complete pinned exp-core bundle before product code', () => {
+  const core = readCoreBundle(root);
+  const assembled = assembleDropperSource(template, root);
+  assert.ok(assembled.includes(core));
+  assert.match(assembled, /const CoreFoundation = \(\(\) =>/u);
+  assert.match(assembled, /const ExtraPotionsCore = \(\(\) =>/u);
+  assert.ok(assembled.indexOf('const ExtraPotionsCore = (() =>') < assembled.indexOf('const SETTINGS_KEY = "tdh-settings-v3"'));
+});
+
+test('obsolete shared source copies stay removed', () => {
+  for (const file of ['shared-diagnostics.js','shared-product-tools.js','shared-menu-arrangement.js']) {
+    assert.equal(fs.existsSync(path.join(root, 'src', file)), false, file);
+  }
+});

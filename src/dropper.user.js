@@ -35,13 +35,9 @@
   // frames duplicates heartbeats, update checks, DOM scans, and network work.
   if (window.top !== window.self) return;
 
-  // BEGIN SHARED MENU ARRANGEMENT
-// populated from pinned exp-core: menuArrangement
-  // END SHARED MENU ARRANGEMENT
-
-  // BEGIN SHARED DIAGNOSTICS
-// populated from pinned exp-core: diagnostics
-  // END SHARED DIAGNOSTICS
+  // BEGIN EXP CORE
+// populated from pinned vendor/exp-core/exp-core.js
+  // END EXP CORE
 
   const SETTINGS_KEY = "tdh-settings-v3";
   const ACCOUNT_SCOPE_OWNER_KEY = "dropper-account-scope-owner-v1";
@@ -1174,10 +1170,6 @@
     return Object.freeze({ createIntent, createClaims, claimResponse, claimFailure, planPrerequisites, deadlineAssessment, campaignSequence, rankCampaignCandidates, eligibility, selectorHealth, recoveryDiagnosis, createLease, inventoryClaimCandidates, claimPresentation });
   })();
   // END DROPPER ACTIVE VIEWING
-
-  // BEGIN SHARED PRODUCT TOOLS
-// populated from pinned exp-core: productTools
-  // END SHARED PRODUCT TOOLS
 
   const settings = loadSettings();
   const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
