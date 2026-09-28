@@ -188,7 +188,7 @@ test('category cards without Drops badges use probationary verification', () => 
   assert.match(source, /live-drops-tagged/u);
   assert.match(source, /live-same-game/u);
   assert.match(find, /let candidate = candidates\[0\] \|\| null/u);
-  assert.match(find, /probationary: !\(visibleDropsProof \|\| campaignAclProof\)/u);
+  assert.match(find, /probationary: !campaignAclProof/u);
   assert.match(find, /probationary-stream/u);
 
   const verifyStart = source.indexOf('  function routingControllerVerifyStream');
