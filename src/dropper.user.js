@@ -57,10 +57,6 @@
     ExtraPotionsCore.layout();
   }
   const APP_VERSION = "3.3.20";
-  ExtraPotionsCore.registerSuiteProduct?.({
-    productId: "dropper",
-    productVersion: APP_VERSION,
-  });
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
