@@ -13398,8 +13398,8 @@
     });
     const supportButton = shadow.getElementById("tdh-support-button");
     const supportPopover = shadow.getElementById("tdh-support-popover");
-    supportPopover?.append(ExtraPotionsTools.createBitcoinDonation());
-    if(supportPopover && supportButton) ExtraPotionsTools.placeDonationPanel(supportPopover,supportButton);
+    supportPopover?.append(ExtraPotionsCore.createBitcoinDonation());
+    if(supportPopover && supportButton) ExtraPotionsCore.placeDonationPanel(supportPopover,supportButton);
     const closeSupportPopover = () => {
       if (!supportPopover || !supportButton) return;
       supportPopover.hidden = true;
@@ -14547,7 +14547,7 @@
     const target = ui.shadow.getElementById('tdh-diagnostics-body');
     if (!target || target.querySelector('[data-dropper-tools]')) return;
     const container = document.createElement('div');container.dataset.dropperTools = '1';
-    container.append(ExtraPotionsTools.createCompatibilityControls());
+    container.append(ExtraPotionsCore.createCompatibilityControls());
     const details = document.createElement('details');details.style.cssText='border:1px solid var(--theme-line);border-radius:7px;padding:7px;margin-top:8px';
     const title = document.createElement('summary');title.textContent='Why am I waiting?';
     const text = document.createElement('p');text.setAttribute('role','status');
