@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Optional exp-core tag, for example v3.3.13. Blank uses latest release."
+        description: "Optional exp-core tag. Blank uses the latest published Core release."
         required: false
         type: string
 
@@ -19,73 +19,11 @@ concurrency:
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Sync latest released Core
-        env:
-          REQUESTED_CORE_TAG: ${{ inputs.tag || '' }}
-        run: node scripts/sync-exp-core.cjs "$REQUESTED_CORE_TAG"
-      - name: Detect Core changes
-        id: changed
-        shell: bash
-        run: |
-          if git diff --quiet -- vendor/exp-core; then
-            echo "value=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=true" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Prepare consumer patch release
-        if: steps.changed.outputs.value == 'true'
-        run: node scripts/prepare-core-release.cjs
-      - name: Install browser runtime
-        if: steps.changed.outputs.value == 'true'
-        run: npx playwright install --with-deps chromium
-      - name: Verify pinned Core
-        if: steps.changed.outputs.value == 'true'
-        run: node scripts/verify-exp-core-pin.cjs
-      - name: Rebuild and test consumer
-        if: steps.changed.outputs.value == 'true'
-        run: npm test
-      - name: Commit Core-driven patch release
-        if: steps.changed.outputs.value == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="$(node -p "require('./package.json').version")"
-          git add -A
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m "Release Dropper $version"
-          git push origin HEAD:main
-
-      - name: Publish Core-driven release
-        if: steps.changed.outputs.value == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="$(node -p "require('./package.json').version")"
-          tag="v$version"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "$tag is already published."
-            exit 0
-          fi
-          awk '
-            /^## / { section += 1; if (section > 3) exit }
-            { print }
-          ' CHANGELOG.md > release-notes.md
-          sha256sum dropper.user.js > SHA256SUMS
-          (cd assets && sha256sum dropper-launcher.svg) >> SHA256SUMS
-          gh release create "$tag" dropper.user.js assets/dropper-launcher.svg SHA256SUMS \
-            --target "$(git rev-parse HEAD)" \
-            --title "Dropper $tag" \
-            --notes-file release-notes.md
+    uses: ExtraPotions/exp-core/.github/workflows/consumer-rollout.yml@main
+    with:
+      tag: ${{ inputs.tag || '' }}
+      product: Dropper
+      node-version: "22"
+      script-asset: dropper.user.js
+      icon-asset: assets/dropper-launcher.svg
+      release-sections: 3
