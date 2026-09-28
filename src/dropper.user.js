@@ -13234,8 +13234,13 @@
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-drops-body"><span class="fl-tool-title">Drops</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-drops-body">
             ${switchHtml("tdh-claim-drops", "Auto-Claim Drops", "", settings.claimDrops)}
             ${switchHtml("tdh-claim-bonus", "Auto-Claim Bonus Chests", "Attempts Free Bonus Claims. A Click Is Not Counted As Confirmation.", settings.claimBonus)}
-            ${switchHtml("tdh-keep-tab", "Keep Screen Awake", "Requests A Screen Wake Lock During Actual Playback. Does Not Override Visibility Or Pauses.", settings.keepTabActive)}
-            ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "", settings.hideTwitchSubscriptionPromos)}
+            <details class="auth-advanced">
+              <summary>Page behavior</summary>
+              <div class="auth-advanced-body">
+                ${switchHtml("tdh-keep-tab", "Keep Screen Awake", "Requests A Screen Wake Lock During Actual Playback. Does Not Override Visibility Or Pauses.", settings.keepTabActive)}
+                ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "", settings.hideTwitchSubscriptionPromos)}
+              </div>
+            </details>
             <div class="auth-required" id="tdh-auth-required" hidden>
               <span>Twitch Login Required</span>
               <button type="button" class="life-btn" id="tdh-twitch-login">Open Twitch Login</button>
@@ -13257,30 +13262,39 @@
             <div class="campaign-manager-note" id="tdh-viewing-status" role="status"></div>
             <div class="action-pair"><button type="button" class="life-btn" id="tdh-resume-playback">Resume Playback</button><button type="button" class="life-btn" id="tdh-allow-switching">Use Automatic Switching</button></div>
             ${switchHtml("tdh-find-next", "Automatic Stream Switching", "Uses Eligible Alternatives Only When You Permit Switching. Manual Selections And Pauses Stay Protected.", settings.findNextStream)}
-            ${switchHtml("tdh-mute-next", "Mute Opened Streams", "Mutes Streams Dropper Opens Or Switches To, Including Same-Tab Routing.", settings.muteRestarted)}
-            ${switchHtml("tdh-restore-channel-player", "Restore Channel Player On Arrival", "Returns An Initial Twitch Mini-player To The Normal Channel View. Stops After You Interact With The Page.", settings.restoreChannelPlayer)}
-            <button id="tdh-restore-channel-player-now" type="button" class="life-btn">Restore Channel Player</button>
-            ${switchHtml("tdh-background-earning", "Background Progress Tracking", "Reports Actual Twitch Credit In Hidden Tabs Or Picture-in-Picture. Does Not Simulate Viewing.", settings.backgroundEarning)}
-            <div class="mini-row"><span>Pause Auto-Switch</span><select class="select-lite" id="tdh-pause-switch"><option value="0">Off</option><option value="30">30 Min</option><option value="60">1 Hour</option><option value="120">2 Hours</option><option value="240">4 Hours</option><option value="480">8 Hours</option><option value="720">12 Hours</option><option value="1440">24 Hours</option></select></div>
-            ${switchHtml("tdh-notifications", "Menu notifications", "Shows brief in-app Dropper messages for stream switches, campaign changes, and completed Drops.", settings.notifications)}
-            <div class="stream-subsection-label with-divider">Routing & Backup</div>
-            ${switchHtml("tdh-queue-enabled", "Maintain Backup Streams", "Keeps A Short List Of Eligible Backup Drops Channels Ready.", settings.queueEnabled)}
-            <div class="mini-row"><span>Standby Streams</span><select class="select-lite" id="tdh-queue-count"><option value="1">1</option><option value="3">3</option><option value="5">5</option></select></div>
-            <div class="queue-switches">
-              <div class="queue-switches-label">Skip On</div>
-              ${switchHtml("tdh-queue-stall", "Stall", "Switches The Current Tab When Credited Progress Stalls.", settings.queueOnStall)}
-              ${switchHtml("tdh-queue-offline", "Offline", "Switches The Current Tab When The Active Stream Goes Offline.", settings.queueOnOffline)}
-              ${switchHtml("tdh-queue-category", "Category Change", "Finds A Replacement Stream If The Current Channel Changes Away From The Active Drop Game.", settings.queueOnCategoryChange)}
-            </div>
-            <div class="mini-row"><span>Channel Preference</span><select class="select-lite" id="tdh-queue-preference"><option>Any Eligible</option><option>Lowest Viewers</option><option>Highest Viewers</option></select></div>
-            <details class="queue-collapsible" id="tdh-queue-details">
-              <summary class="queue-summary-head">
-                <div><strong>Active + Standby</strong><span id="tdh-queue-summary"></span></div>
-                <span class="queue-summary-chevron" aria-hidden="true">▸</span>
-              </summary>
-              <div class="inventory-list" id="tdh-queue-list"></div>
+            <details class="auth-advanced">
+              <summary>Playback options</summary>
+              <div class="auth-advanced-body">
+                ${switchHtml("tdh-mute-next", "Mute Opened Streams", "Mutes Streams Dropper Opens Or Switches To, Including Same-Tab Routing.", settings.muteRestarted)}
+                ${switchHtml("tdh-restore-channel-player", "Restore Channel Player On Arrival", "Returns An Initial Twitch Mini-player To The Normal Channel View. Stops After You Interact With The Page.", settings.restoreChannelPlayer)}
+                <button id="tdh-restore-channel-player-now" type="button" class="life-btn">Restore Channel Player</button>
+                ${switchHtml("tdh-background-earning", "Background Progress Tracking", "Reports Actual Twitch Credit In Hidden Tabs Or Picture-in-Picture. Does Not Simulate Viewing.", settings.backgroundEarning)}
+                <div class="mini-row"><span>Pause Auto-Switch</span><select class="select-lite" id="tdh-pause-switch"><option value="0">Off</option><option value="30">30 Min</option><option value="60">1 Hour</option><option value="120">2 Hours</option><option value="240">4 Hours</option><option value="480">8 Hours</option><option value="720">12 Hours</option><option value="1440">24 Hours</option></select></div>
+                ${switchHtml("tdh-notifications", "Menu notifications", "Shows brief in-app Dropper messages for stream switches, campaign changes, and completed Drops.", settings.notifications)}
+              </div>
             </details>
-            <button type="button" class="life-btn" id="tdh-clear-skipped-streamers" data-help="Clears The Temporary Streamer Rotation And Immediately Retries Discovery When Waiting.">Clear Skipped Streamers</button>
+            <details class="auth-advanced">
+              <summary>Routing & backup</summary>
+              <div class="auth-advanced-body">
+                ${switchHtml("tdh-queue-enabled", "Maintain Backup Streams", "Keeps A Short List Of Eligible Backup Drops Channels Ready.", settings.queueEnabled)}
+                <div class="mini-row"><span>Standby Streams</span><select class="select-lite" id="tdh-queue-count"><option value="1">1</option><option value="3">3</option><option value="5">5</option></select></div>
+                <div class="queue-switches">
+                  <div class="queue-switches-label">Skip On</div>
+                  ${switchHtml("tdh-queue-stall", "Stall", "Switches The Current Tab When Credited Progress Stalls.", settings.queueOnStall)}
+                  ${switchHtml("tdh-queue-offline", "Offline", "Switches The Current Tab When The Active Stream Goes Offline.", settings.queueOnOffline)}
+                  ${switchHtml("tdh-queue-category", "Category Change", "Finds A Replacement Stream If The Current Channel Changes Away From The Active Drop Game.", settings.queueOnCategoryChange)}
+                </div>
+                <div class="mini-row"><span>Channel Preference</span><select class="select-lite" id="tdh-queue-preference"><option>Any Eligible</option><option>Lowest Viewers</option><option>Highest Viewers</option></select></div>
+                <details class="queue-collapsible" id="tdh-queue-details">
+                  <summary class="queue-summary-head">
+                    <div><strong>Active + Standby</strong><span id="tdh-queue-summary"></span></div>
+                    <span class="queue-summary-chevron" aria-hidden="true">▸</span>
+                  </summary>
+                  <div class="inventory-list" id="tdh-queue-list"></div>
+                </details>
+                <button type="button" class="life-btn" id="tdh-clear-skipped-streamers" data-help="Clears The Temporary Streamer Rotation And Immediately Retries Discovery When Waiting.">Clear Skipped Streamers</button>
+              </div>
+            </details>
           </div></section>
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-progress-body"><span class="fl-tool-title">Appearance</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-progress-body">
             ${switchHtml("tdh-progress-title", "Show Progress In Tab", "", settings.progressInTitle)}
@@ -13299,11 +13313,15 @@
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-diagnostics-body"><span class="fl-tool-title">System</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-diagnostics-body">
             <div class="action-pair"><button type="button" class="life-btn" id="tdh-diagnostics-toggle">Show Diagnostics</button>
             <button type="button" class="life-btn" id="tdh-copy-diagnostics">Copy Diagnostics</button></div>
-            <hr class="action-separator">
-            <button type="button" class="life-btn" id="tdh-refresh-campaign-data">Refresh Campaign Data</button>
-            <button type="button" class="life-btn" id="tdh-clear-activity">Clear Activity Log</button>
-            <div class="action-pair"><button type="button" class="life-btn" id="tdh-refresh-now">Refresh Drop State</button>
-            <button type="button" class="life-btn" id="tdh-reset-session">Reset Session State</button></div>
+            <details class="auth-advanced">
+              <summary>Maintenance</summary>
+              <div class="auth-advanced-body">
+                <button type="button" class="life-btn" id="tdh-refresh-campaign-data">Refresh Campaign Data</button>
+                <button type="button" class="life-btn" id="tdh-clear-activity">Clear Activity Log</button>
+                <div class="action-pair"><button type="button" class="life-btn" id="tdh-refresh-now">Refresh Drop State</button>
+                <button type="button" class="life-btn" id="tdh-reset-session">Reset Session State</button></div>
+              </div>
+            </details>
             <details class="campaign-manager" id="tdh-claim-history-panel"><summary>Claim History</summary><div id="tdh-claim-health" class="campaign-manager-note">Claims: none</div><pre id="tdh-claim-history" class="campaign-manager-note" style="white-space:pre-wrap;overflow-wrap:anywhere">No claim attempts recorded for this account.</pre></details>
             <div class="diag" id="tdh-diagnostics" role="region" aria-label="Site and plugin diagnostics" tabindex="0"></div>
           </div></section>
