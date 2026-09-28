@@ -42,6 +42,9 @@ jobs:
           else
             echo "value=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: Prepare consumer patch release
+        if: steps.changed.outputs.value == 'true'
+        run: node scripts/prepare-core-release.cjs
       - name: Install browser runtime
         if: steps.changed.outputs.value == 'true'
         run: npx playwright install --with-deps chromium
@@ -51,14 +54,14 @@ jobs:
       - name: Rebuild and test consumer
         if: steps.changed.outputs.value == 'true'
         run: npm test
-      - name: Commit synchronized Core
+      - name: Commit Core-driven patch release
         if: steps.changed.outputs.value == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          tag="$(tr -d '\r\n' < vendor/exp-core/PIN)"
-          git add vendor/exp-core/PIN vendor/exp-core/exp-core.js vendor/exp-core/manifest.json
+          version="$(node -p "require('./package.json').version")"
+          git add -A
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m "Sync exp-core $tag"
+          git commit -m "Release Dropper $version"
           git push origin HEAD:main
