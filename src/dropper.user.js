@@ -15422,7 +15422,7 @@
   }
 
   function diagnosticsText() {
-    return JSON.stringify(ExtraPotionsDiagnostics.createReport("Dropper", { ...dropperDebugSnapshot(), host: ui?.host, shadow: ui?.shadow }), null, 2);
+    return JSON.stringify(ExtraPotionsCore.createDiagnosticsReport("Dropper", { ...dropperDebugSnapshot(), host: ui?.host, shadow: ui?.shadow }), null, 2);
   }
 
   function dropperDebugSnapshot() {
