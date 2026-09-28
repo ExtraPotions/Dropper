@@ -1610,6 +1610,10 @@ const ExpMenuArrangement = (() => {
     details.dataset.expMenuCategory = CATEGORY_META[category] ? category : 'advanced';
     if (key) details.dataset.expMenuKey = slug(key);
     details.open = false;
+    // Core created this submenu in its canonical collapsed state. Mark it initialized
+    // immediately so a later arrangement refresh cannot re-collapse a user-opened
+    // disclosure during the same interaction.
+    details.dataset.expMenuInitialized = '1';
     const summary = document.createElement('summary');
     summary.textContent = String(label || CATEGORY_META[category]?.label || 'Advanced');
     details.append(summary, ...contents);
@@ -1793,7 +1797,7 @@ const ExpMenuArrangement = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.3.16';
+  const version = '3.3.17';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';

@@ -1,3 +1,10 @@
+## 3.3.20 — 2026-09-28
+
+- Updates the shared foundation to exp-core 3.3.17.
+- Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.
+- Leaves Dropper Twitch routing, campaign, claim, and playback behavior unchanged.
+- Keeps the standalone userscript distribution while Core remains the single shared source.
+
 ## 3.3.19 — 2026-09-28
 
 - Updates the shared foundation to exp-core 3.3.16.
