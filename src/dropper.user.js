@@ -14492,6 +14492,7 @@
     for (const key of ["bg", "panel", "line", "text", "muted", "accent", "accent2"]) ui.cluster.style.setProperty(`--theme-${key}`, theme[key]);
     const semantic = semanticTheme(theme);
     for (const key of ["raised", "inset", "link", "focus", "onAccent"]) ui.cluster.style.setProperty(`--theme-${key}`, semantic[key]);
+    ExtraPotionsCore.publishMenuPalette?.(ui.host, { ...theme, ...semantic });
     ui.cluster.style.setProperty("--theme-skin", theme.skin || theme.swatch);
     ui.cluster.style.setProperty("--theme-skin-vertical", theme.skinVertical || theme.skin || theme.swatch);
     ui.cluster.dataset.uiTheme = theme.id;

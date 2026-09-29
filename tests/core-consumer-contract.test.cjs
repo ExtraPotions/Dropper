@@ -43,6 +43,7 @@ test('Dropper uses the public Core API for shared tool services', () => {
   assert.match(template, /ExtraPotionsCore\.createCompatibilityControls\(\)/u);
   assert.match(template, /ExtraPotionsCore\.createDiagnosticsReport\(/u);
   assert.doesNotMatch(template, /ExtraPotionsDiagnostics\.createReport/u);
+  assert.match(template, /ExtraPotionsCore\.publishMenuPalette\?\.\(ui\.host/u);
 });
 
 test('obsolete shared source copies stay removed', () => {
