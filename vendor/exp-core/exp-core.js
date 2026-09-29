@@ -1073,9 +1073,15 @@ function createProductLifecycle(shared) {
     return Boolean(node && node.nodeType === 11 && node.host);
   }
 
+  // Every stylesheet Core injects begins with an empty marker rule. A constructed sheet
+  // has no owner node, and a tool such as SHIFT cannot see a JavaScript flag across
+  // userscript sandboxes, but it can always read the first rule through the CSSOM.
+  const OWNED_SHEET_MARKER = '.exp-owned-sheet-marker{}';
+  const ensureMarker = (text) => { const value = String(text || ''); return value.startsWith(OWNED_SHEET_MARKER) ? value : OWNED_SHEET_MARKER + value; };
+
   function appendShadowStyle(root, css, data) {
     const node = document.createElement('style');
-    try { node.textContent = css; } catch (error) { safeError(error, 'core.style'); }
+    try { node.textContent = ensureMarker(css); } catch (error) { safeError(error, 'core.style'); }
     node.dataset.expOwned = '1';
     for (const [key, value] of Object.entries(data || {})) node.dataset[key] = String(value);
     root.append(node);
@@ -1087,6 +1093,7 @@ function createProductLifecycle(shared) {
   }
 
   function withPaintProbe(css, token) {
+    css = ensureMarker(css);
     return `${css}\n[data-${token}]{color:rgb(1, 2, 3)!important}`;
   }
 
@@ -1110,7 +1117,7 @@ function createProductLifecycle(shared) {
   }
 
   function writeSheet(sheet, text, view) {
-    const source = String(text || '');
+    const source = ensureMarker(text);
     try { sheet.replaceSync(source); return; } catch {}
     view.Function('sheet', 'css', 'sheet.replaceSync(css)')(sheet, source);
   }
@@ -1229,11 +1236,11 @@ function createProductLifecycle(shared) {
         const token = paintToken();
         let live = GM_addElement(parent, 'style', { textContent: withPaintProbe(css, token) });
         if (live && sawPaint(token, sample)) {
-          try { live.textContent = css; } catch {}
+          try { live.textContent = ensureMarker(css); } catch {}
           return handle(
             (text) => {
-              try { live.textContent = text; } catch {
-                const next = GM_addElement(parent, 'style', { textContent: text });
+              try { live.textContent = ensureMarker(text); } catch {
+                const next = GM_addElement(parent, 'style', { textContent: ensureMarker(text) });
                 try { live.remove(); } catch {}
                 live = next;
               }
@@ -1249,10 +1256,10 @@ function createProductLifecycle(shared) {
         const token = paintToken();
         let live = GM_addStyle(withPaintProbe(css, token));
         if (live && sawPaint(token, sample)) {
-          try { live.textContent = css; } catch {}
+          try { live.textContent = ensureMarker(css); } catch {}
           return handle(
             (text) => {
-              try { live.textContent = text; } catch { live = GM_addStyle(text); }
+              try { live.textContent = ensureMarker(text); } catch { live = GM_addStyle(ensureMarker(text)); }
             },
             () => { try { live.remove(); } catch {} }
           );
@@ -1265,7 +1272,7 @@ function createProductLifecycle(shared) {
       if (adopted) return handle((text) => adopted.write(text), () => adopted.detach());
     } catch (error) { fail(error); }
     const node = document.createElement('style');
-    try { node.textContent = css; } catch (error) { fail(error); }
+    try { node.textContent = ensureMarker(css); } catch (error) { fail(error); }
     parent.append(node);
     return mark(node);
   }
@@ -1472,7 +1479,7 @@ const ExpMenuArrangement = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.4.3';
+  const version = '3.4.4';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -2488,16 +2495,25 @@ const ExtraPotionsCore = (() => {
     host.dataset.expMenuPalette = serialized;
     emit('menu-theme', host.dataset.productId);
   }
+  // Every stylesheet Core injects is marked as owned by ExtraPotions so theming tools
+  // such as SHIFT leave it alone. A <style> node carries data-exp-owned; a constructed
+  // sheet has no node, so it starts with an empty marker rule that any script on the
+  // page can read through the CSSOM.
+  const OWNED_SHEET_MARKER = '.exp-owned-sheet-marker{}';
+  function isOwnedSheet(sheet) {
+    try { return sheet?.ownerNode?.dataset?.expOwned === '1' || sheet?.cssRules?.[0]?.selectorText === '.exp-owned-sheet-marker'; } catch { return false; }
+  }
   function injectStyle(shadow, css, data = {}) {
     const node = document.createElement('style');
     Object.assign(node.dataset, data);
+    node.dataset.expOwned = '1';
     node.textContent = css;
     shadow.append(node);
     // Constructed sheets survive pages that block style elements. Keep the style
     // node as a fallback and as the editable public handle used by product code.
     let sheet;
-    try { sheet = new CSSStyleSheet(); sheet.replaceSync(css); shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, sheet]; } catch {}
-    const observe = new MutationObserver(() => { if (sheet) { try { sheet.replaceSync(node.textContent); } catch {} } });
+    try { sheet = new CSSStyleSheet(); sheet.replaceSync(OWNED_SHEET_MARKER + css); shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, sheet]; } catch {}
+    const observe = new MutationObserver(() => { if (sheet) { try { sheet.replaceSync(OWNED_SHEET_MARKER + node.textContent); } catch {} } });
     observe.observe(node, { childList: true, characterData: true, subtree: true });
     node.dispose = () => { observe.disconnect(); if (sheet) shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets].filter(s => s !== sheet); node.remove(); };
     return node;
@@ -3423,6 +3439,6 @@ const ExtraPotionsCore = (() => {
     return Object.freeze({ lifecycle, diagnostics, updates });
   }
 
-  const api = Object.freeze({...ExtraPotionsTools,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,menuWidthForMode,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
+  const api = Object.freeze({...ExtraPotionsTools,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidthForMode,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
   return api;
 })();
