@@ -258,6 +258,12 @@ const pickerContext = {
     return complete;
   },
 };
+pickerContext.rankCampaignCandidatesForStrategy = (candidates, now = Date.now()) =>
+  activeViewing.rankCampaignCandidates(candidates, {
+    priorityOf: pickerContext.campaignPriority,
+    now,
+    activeGame: pickerContext.currentDrop?.game || "",
+  });
 vm.runInNewContext(
   `${source.slice(pickerStart, pickerEnd)}\nthis.pick = pickNextOpenCampaignDrop;this.isOpen = campaignIsOpen;this.isRoutingOpen = campaignIsRoutingOpen;this.routingState = campaignRoutingState;this.pickRemaining = pickRemainingGameDrop;this.pickTimed = pickTimedDrop;this.fitsWindow = dropFitsCampaignWindow;this.findCampaign = findCampaignForDrop;`,
   pickerContext,
