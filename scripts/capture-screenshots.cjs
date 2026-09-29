@@ -5,9 +5,9 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
-const OUTPUT_DIR = process.env.DROPPER_SCREENSHOT_DIR || path.join(ROOT, 'docs', 'screenshots');
-const SCREENSHOT_THEME = /^(warm|twitch)$/.test(process.env.DROPPER_SCREENSHOT_THEME || '')
-  ? process.env.DROPPER_SCREENSHOT_THEME : 'twitch';
+const FINAL_DIR = process.env.DROPPER_SCREENSHOT_DIR || path.join(ROOT, 'docs', 'screenshots');
+// Capture into a temporary folder first so a failed run never empties docs/screenshots.
+const OUTPUT_DIR = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'dropper-shots-'));
 const INSTALL_PATH = path.join(ROOT, 'dropper.user.js');
 
 const MENU_SHOTS = [
@@ -80,16 +80,7 @@ async function closeMenu(page) {
   }, null, { timeout: 5000 });
 }
 
-async function setTwitchFullWidth(page) {
-  await page.evaluate((theme) => {
-    const shadow = document.getElementById('tdh-root')?.shadowRoot;
-    shadow?.querySelector(`.exp-theme-swatch[data-theme="${theme}"]`)?.click();
-    const width = shadow?.getElementById('tdh-collapsed-width');
-    if (width) {
-      width.value = 'full';
-      width.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-  }, SCREENSHOT_THEME);
+async function settleMenu(page) {
   await page.waitForTimeout(160);
 }
 
@@ -131,32 +122,25 @@ async function expandPanel(page, panelId, extra) {
   await page.evaluate(({ panelId, extra }) => {
     const shadow = document.getElementById('tdh-root')?.shadowRoot;
     if (!shadow) return;
-    shadow.querySelectorAll('.fl-tool-header').forEach((header) => {
-      const body = shadow.getElementById(header.dataset.panel);
-      const open = header.dataset.panel === panelId;
-      body?.classList.toggle('fl-tool-hidden', !open);
-      const chevron = header.querySelector('.fl-tool-chevron');
-      if (chevron) {
-        chevron.textContent = open ? '▾' : '▸';
-        chevron.setAttribute('aria-expanded', String(open));
-      }
-      header.classList.toggle('last-opened', open);
-    });
+    for (const header of shadow.querySelectorAll('.fl-tool-header')) {
+      const wanted = header.dataset.panel === panelId;
+      const open = header.getAttribute('aria-expanded') === 'true' || !shadow.getElementById(header.dataset.panel)?.classList.contains('fl-tool-hidden');
+      if (wanted !== open) header.click();
+    }
+    for (const details of shadow.querySelectorAll('details')) details.open = false;
     if (extra === 'inventory') {
       const button = shadow.getElementById('tdh-toggle-inventory');
       const inventory = shadow.getElementById('tdh-compact-inventory');
       if (button && !inventory?.classList.contains('open')) button.click();
     }
-    if (extra === 'queue') {
-      shadow.getElementById('tdh-queue-details')?.setAttribute('open', '');
-    }
+    if (extra === 'queue') shadow.getElementById('tdh-queue-details')?.setAttribute('open', '');
     if (extra === 'diagnostics') {
       const button = shadow.getElementById('tdh-diagnostics-toggle');
       const diag = shadow.getElementById('tdh-diagnostics');
       if (button && !diag?.classList.contains('open')) button.click();
     }
   }, { panelId, extra: extra || '' });
-  await page.waitForTimeout(180);
+  await page.waitForTimeout(220);
 }
 
 async function pinClusterTop(page) {
@@ -183,6 +167,10 @@ async function clusterBox(page) {
       height: Math.ceil(rect.height + 20),
     };
   });
+}
+
+async function captureDock(page, outputPath) {
+  await page.locator('#tdh-root').locator('#tdh-tools-dock').screenshot({ path: outputPath });
 }
 
 async function captureCluster(page, outputPath) {
@@ -213,10 +201,6 @@ async function captureCluster(page, outputPath) {
 }
 
 (async () => {
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-  for (const stale of fs.readdirSync(OUTPUT_DIR).filter((name) => name.endsWith('.png'))) {
-    fs.unlinkSync(path.join(OUTPUT_DIR, stale));
-  }
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage({
@@ -225,12 +209,12 @@ async function captureCluster(page, outputPath) {
     });
     await injectDropper(page);
     await openMenu(page);
-    await setTwitchFullWidth(page);
+    await settleMenu(page);
     await paintProgressFixture(page);
 
     await closeMenu(page);
     await paintProgressFixture(page);
-    await captureCluster(page, path.join(OUTPUT_DIR, 'progress-panel.png'));
+    await page.locator('#tdh-root').locator('.progress-stack').screenshot({ path: path.join(OUTPUT_DIR, 'progress-panel.png') });
     console.log('Captured Progress panel -> docs/screenshots/progress-panel.png');
 
     await openMenu(page);
@@ -238,11 +222,21 @@ async function captureCluster(page, outputPath) {
     for (const shot of MENU_SHOTS) {
       await expandPanel(page, shot.id, shot.extra);
       await paintProgressFixture(page);
-      await captureCluster(page, path.join(OUTPUT_DIR, shot.file));
+      await captureDock(page, path.join(OUTPUT_DIR, shot.file));
       console.log(`Captured ${shot.caption} -> docs/screenshots/${shot.file}`);
+    }
+    fs.mkdirSync(FINAL_DIR, { recursive: true });
+    for (const name of fs.readdirSync(OUTPUT_DIR).filter((file) => file.endsWith('.png'))) {
+      // A flat, empty image compresses to almost nothing. Keep the existing picture instead of replacing it with one.
+      if (fs.statSync(path.join(OUTPUT_DIR, name)).size < 3000) {
+        console.warn(`Skipped ${name}: the capture came out blank, so the existing image was kept.`);
+        continue;
+      }
+      fs.copyFileSync(path.join(OUTPUT_DIR, name), path.join(FINAL_DIR, name));
     }
   } finally {
     await browser.close();
+    fs.rmSync(OUTPUT_DIR, { recursive: true, force: true });
   }
 })().catch((error) => {
   console.error(error);

@@ -62,7 +62,7 @@ The suite includes the existing regression tests, pure state-machine tests, and
 full-userscript browser fixtures. Browser fixtures cover deliberate pause,
 remount and resume, listener deduplication, screen-mode observations, scoped
 claim controls, exact claim confirmation, stale-account replies, priorities,
-and Full/Compact/Narrow width checks. Fixture screenshots are generated under
+and menu width checks. Fixture screenshots are generated under
 `test-artifacts/`; test-only private hooks are not included in the distribution.
 
 Before a stable release, manually check a live authenticated Twitch session:

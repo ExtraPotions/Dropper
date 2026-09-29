@@ -25,7 +25,7 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 - **Stream management:** find eligible streams and recover when a stream goes offline, changes category, or stops progressing.
 - **Campaign browsing:** explore open campaigns and ignore games you do not want to follow.
 - **Your preferred layout:** keep progress by the launcher or use Badge Only to place it at the top of the menu.
-- **Your controls:** choose menu colors, move the launcher, and rearrange sections from System.
+- **Your controls:** move the launcher and tune how the menu behaves from Appearance and System.
 
 ## See it in action
 
