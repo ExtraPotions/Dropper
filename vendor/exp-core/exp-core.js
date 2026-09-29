@@ -1408,33 +1408,14 @@ const ExpMenuArrangement = (() => {
   }
 
   const css = `
-    [data-exp-arrange-section]{position:relative}
-    [data-exp-arrange-section]>.fl-tool-header{padding-left:38px!important}
-    .exp-section-grip{position:absolute!important;left:4px!important;right:auto!important;top:4px!important;width:28px!important;height:26px!important;min-width:0!important;min-height:0!important;padding:0!important;border:1px solid var(--theme-line);border-radius:6px!important;background:var(--theme-bg);color:var(--theme-muted);touch-action:none;cursor:grab;z-index:1}
-    .exp-section-grip[data-dragging=true]{cursor:grabbing}
-    .exp-menu-editor{grid-column:1/-1;box-sizing:border-box;width:100%;min-width:0;padding:7px;border:1px solid var(--theme-line);border-radius:7px;background:var(--theme-bg);overflow:hidden}
-    .exp-menu-editor>summary{cursor:pointer;font-weight:700}
-    .exp-menu-category-list{display:grid;grid-template-columns:minmax(0,1fr);gap:7px;min-width:0;margin-top:7px}
-    .exp-menu-category-group{min-width:0;padding:6px;border:1px solid var(--theme-line);border-radius:6px;background:var(--theme-panel)}
-    .exp-menu-category-title{margin:0 0 4px;font-size:10px;font-weight:800;letter-spacing:.04em;color:var(--theme-muted);text-transform:uppercase}
-    .exp-menu-editor .exp-menu-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;margin-top:5px}
-    .exp-menu-editor .exp-menu-row>span{min-width:0;overflow-wrap:anywhere}
-    .exp-menu-editor button[role=switch]{flex:0 0 32px;width:32px;height:20px;padding:2px;border-radius:5px;border:1px solid var(--theme-line);background:var(--theme-panel)}
-    .exp-menu-editor button[role=switch]::before{content:'';display:block;width:12px;height:12px;border-radius:3px;background:var(--theme-muted)}
-    .exp-menu-editor button[aria-checked=true]{background:var(--theme-accent)}
-    .exp-menu-editor button[aria-checked=true]::before{margin-left:auto;background:var(--theme-text)}
-    .exp-menu-editor .exp-reset{width:100%;margin-top:7px;border-radius:6px}
-    [data-exp-arrange-section][hidden]{display:none!important}
     [data-exp-menu-submenu]{box-sizing:border-box;min-width:0;max-width:100%;overflow-wrap:anywhere}
     [data-exp-menu-submenu]>summary{cursor:pointer}
-    [data-exp-menu-width="narrow"] .exp-menu-editor{padding:6px}
-    [data-exp-menu-width="narrow"] .exp-menu-category-group{padding:5px}
-    [data-exp-menu-width="narrow"] .exp-menu-editor .exp-menu-row{gap:5px}
-    [data-exp-menu-width="compact"] .exp-menu-category-list,
-    [data-exp-menu-width="full"] .exp-menu-category-list{grid-template-columns:minmax(0,1fr)}
   `;
 
-  function mount({ panel, id, onChange = () => {}, resetLaunchers = () => {} }) {
+  // Tags each menu section with its category and keeps sections in category
+  // order (Main, Appearance, Advanced, System). Sections keep their own order
+  // inside a category; there is nothing for the user to arrange or hide.
+  function mount({ panel, id, onChange = () => {} }) {
     const document = panel.ownerDocument, view = document.defaultView;
     collapseSubmenus(panel);
     const entries = [...panel.querySelectorAll(':scope .fl-tool-panel')].filter(section => section.parentElement === panel || section.parentElement?.closest('.fl-tool-panel') === null).map(section => {
@@ -1445,118 +1426,34 @@ const ExpMenuArrangement = (() => {
       const key = header.dataset.route || header.dataset.section || header.dataset.panel || body.id;
       return { section, header, body, label, key };
     }).filter(entry => entry?.key);
-    if (entries.length < 2) return { update() { collapseSubmenus(panel); }, destroy() {} };
+    const none = { update() { collapseSubmenus(panel); }, describe: () => [], destroy() {} };
+    if (entries.length < 2) return none;
     const parent = entries[0].section.parentElement;
-    if (entries.some(entry => entry.section.parentElement !== parent)) return { update() { collapseSubmenus(panel); }, destroy() {} };
+    if (entries.some(entry => entry.section.parentElement !== parent)) return none;
     entries.forEach((entry, index) => {
       entry.category = categoryFor(id, entry, index);
       entry.section.dataset.expMenuCategory = entry.category;
     });
-    const defaults = entries.map(entry => entry.key);
-    const orderKey = `exp:v3:menu-order:${id}`, hiddenKey = `exp:v3:menu-hidden:${id}`;
-    const read = key => { try { const value = JSON.parse(view.localStorage.getItem(key) || '[]'); return Array.isArray(value) ? [...new Set(value.filter(x => typeof x === 'string'))] : []; } catch { return []; } };
-    const save = (key, value) => { try { view.localStorage.setItem(key, JSON.stringify(value)); } catch {} };
-    let order = [...new Set([...read(orderKey), ...defaults])], hidden = read(hiddenKey), drag = null;
-    const recovery = entries.find(entry => entry.category === 'system') || entries.find(entry => entry.label.toLowerCase() === 'system') || entries[0];
     const style = document.createElement('style'); style.textContent = css;
     const styleRoot = panel.getRootNode();
     (styleRoot instanceof view.ShadowRoot ? styleRoot : (document.head || document.documentElement)).append(style);
-    const abort = new view.AbortController();
-    const on = (node, type, handler, options = {}) => node.addEventListener(type, handler, { ...options, signal: abort.signal });
-    const editor = document.createElement('details'); editor.className = 'exp-menu-editor'; editor.dataset.expMenuSubmenu = '1';
-    const summary = document.createElement('summary'); summary.textContent = 'Edit menu'; editor.append(summary);
-    const categoryList = document.createElement('div'); categoryList.className = 'exp-menu-category-list'; editor.append(categoryList);
-    const categoryGroups = new Map();
-    const switches = new Map();
-    const ordered = () => [...parent.children].filter(node => node.hasAttribute('data-exp-arrange-section'));
-    function groupFor(category) {
-      if (categoryGroups.has(category)) return categoryGroups.get(category);
-      const group = document.createElement('div'); group.className = 'exp-menu-category-group'; group.dataset.expMenuCategoryGroup = category;
-      const title = document.createElement('div'); title.className = 'exp-menu-category-title'; title.textContent = CATEGORY_META[category]?.label || 'Main';
-      group.append(title); categoryList.append(group); categoryGroups.set(category, group); return group;
-    }
+    const rank = entry => CATEGORY_ORDER.indexOf(entry.category);
+    const desired = [...entries].sort((a, b) => rank(a) - rank(b));
     function apply() {
-      const desired = [...entries].sort((a,b) => order.indexOf(a.key)-order.indexOf(b.key));
-      desired.forEach((entry,index) => { const current = ordered()[index]; if (current !== entry.section) parent.insertBefore(entry.section,current || null); });
-      entries.forEach(entry => {
-        const isHidden = entry !== recovery && hidden.includes(entry.key);
-        if (entry.section.hidden !== isHidden) entry.section.hidden = isHidden;
-        switches.get(entry.key)?.setAttribute('aria-checked', String(!isHidden));
-      });
+      const present = entries.filter(entry => entry.section.parentElement === parent);
+      const wanted = desired.filter(entry => present.includes(entry));
+      const current = [...parent.children].filter(node => wanted.some(entry => entry.section === node));
+      const after = current.length ? current.at(-1).nextSibling : null;
+      for (const entry of wanted) parent.insertBefore(entry.section, after);
       onChange();
     }
-    function update() {
-      collapseSubmenus(panel);
-      const target = recovery.body.querySelector('[data-exp-system-tools]') || recovery.body;
-      if (editor.parentElement !== target) target.append(editor);
-    }
-    for (const entry of entries) {
-      entry.section.dataset.expArrangeSection = entry.key;
-      const grip = document.createElement('button'); grip.type = 'button'; grip.className = 'exp-section-grip'; grip.textContent = '⠿';
-      grip.setAttribute('aria-label', `Rearrange ${entry.label}`); grip.title = 'Drag to reorder, or use Alt + Up/Down'; entry.section.append(grip); entry.grip = grip;
-      on(grip, 'click', event => { event.preventDefault(); event.stopPropagation(); });
-      on(grip, 'pointerdown', event => {
-        if (event.button !== 0 || drag) return;
-        event.preventDefault(); event.stopPropagation();
-        drag = { entry, pointer: event.pointerId, y: event.clientY, snapshot: [...order], moved: false };
-        parent.setPointerCapture?.(event.pointerId); grip.dataset.dragging = 'true';
-      });
-      on(grip, 'keydown', event => {
-        if (!event.altKey || !['ArrowUp','ArrowDown'].includes(event.key)) return;
-        event.preventDefault(); event.stopPropagation();
-        const visible = ordered().filter(node => !node.hidden).map(node => node.dataset.expArrangeSection);
-        const from = visible.indexOf(entry.key), to = from + (event.key === 'ArrowUp' ? -1 : 1);
-        if (to < 0 || to >= visible.length) return;
-        const target = order.indexOf(visible[to]), source = order.indexOf(entry.key);
-        [order[source], order[target]] = [order[target], order[source]];
-        save(orderKey,order); apply(); grip.focus();
-      });
-      if (entry === recovery) continue;
-      const row = document.createElement('div'); row.className = 'exp-menu-row';
-      const label = document.createElement('span'); label.textContent = entry.label;
-      const toggle = document.createElement('button'); toggle.type = 'button'; toggle.setAttribute('role','switch'); toggle.setAttribute('aria-label',`Show ${entry.label}`);
-      switches.set(entry.key,toggle);
-      on(toggle,'click',() => { hidden = hidden.includes(entry.key) ? hidden.filter(key => key !== entry.key) : [...hidden,entry.key]; save(hiddenKey,hidden); apply(); });
-      row.append(label,toggle); groupFor(entry.category).append(row);
-    }
-    for (const category of CATEGORY_ORDER) {
-      const group = categoryGroups.get(category);
-      if (group) categoryList.append(group);
-    }
-    on(view,'pointermove',event => {
-      if (!drag || event.pointerId !== drag.pointer || Math.abs(event.clientY-drag.y) < 5 && !drag.moved) return;
-      event.preventDefault(); drag.moved = true;
-      const others = ordered().filter(node => node !== drag.entry.section && !node.hidden);
-      const next = others.find(node => { const rect=node.getBoundingClientRect(); return event.clientY < rect.top+rect.height/2; });
-      order = order.filter(key => key !== drag.entry.key);
-      const index = next ? order.indexOf(next.dataset.expArrangeSection) : others.length ? order.indexOf(others.at(-1).dataset.expArrangeSection)+1 : order.length;
-      order.splice(index,0,drag.entry.key); apply();
-    }, { passive:false });
-    function end(event) {
-      if (!drag || event.pointerId !== drag.pointer) return;
-      const previous = drag; drag = null; delete previous.entry.grip.dataset.dragging;
-      if (event.type !== 'pointerup') { order = previous.snapshot; apply(); } else save(orderKey,order);
-      if (parent.hasPointerCapture?.(previous.pointer)) parent.releasePointerCapture(previous.pointer);
-      previous.entry.grip.focus();
-    }
-    on(view,'pointerup',end); on(view,'pointercancel',end); on(parent,'lostpointercapture',end);
-    on(view,'storage',event => { if ([orderKey,hiddenKey,null].includes(event.key) && !drag) { order=[...new Set([...read(orderKey),...defaults])]; hidden=read(hiddenKey); apply(); } });
-    function resetButton(label, action) { const button=document.createElement('button');button.type='button';button.className='life-btn exp-reset';button.textContent=label;on(button,'click',action);editor.append(button); }
-    resetButton('Reset menu arrangement',() => { order=[...defaults];hidden=[];save(orderKey,order);save(hiddenKey,hidden);apply(); });
-    resetButton('Reset launcher arrangement',resetLaunchers);
-    editor.open = false;
-    apply(); update();
+    apply();
     return {
-      update,
-      describe: () => describe(id, entries.map(({key,label,category}) => ({ key, label, category }))),
+      update() { collapseSubmenus(panel); },
+      describe: () => describe(id, entries.map(({ key, label, category }) => ({ key, label, category }))),
       destroy() {
-        abort.abort();style.remove();editor.remove();
-        entries.forEach(entry => {
-          entry.grip.remove();
-          delete entry.section.dataset.expArrangeSection;
-          delete entry.section.dataset.expMenuCategory;
-          entry.section.hidden=false;
-        });
+        style.remove();
+        entries.forEach(entry => { delete entry.section.dataset.expMenuCategory; });
       }
     };
   }
@@ -1575,7 +1472,7 @@ const ExpMenuArrangement = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.4.1';
+  const version = '3.4.2';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -3043,7 +2940,7 @@ const ExtraPotionsCore = (() => {
     function scheduleDismiss() { clearTimer(); if (!open || getSettings().menuAutoClose === false) return; deadline = Date.now()+15000; timer = setTimeout(() => { if (open && Date.now() >= deadline) setOpen(false,false); },15020); }
     function layout() {
       if (destroyed || !launcher.isConnected) return;
-      const state = getSettings(); const width = ['full','compact','narrow'].includes(state.menuWidth) ? state.menuWidth : 'compact';
+      const state = getSettings(); const width = 'compact';
       host.dataset.menuWidth = width; themeRoot.dataset.panelWidth = width;
       themeRoot.classList.toggle('reduce-motion', state.reduceMotion === true || state.reduceMotion === 'on' || state.reducedMotion === 'reduce' || (state.reduceMotion === 'system' || state.reducedMotion === 'system') && matchMedia('(prefers-reduced-motion:reduce)').matches);
       const opacityValue = Number(state.opacityPercent);
@@ -3092,7 +2989,7 @@ const ExtraPotionsCore = (() => {
       get dismissAt(){return deadline;},
       destroy(){destroyed=true;arrangement.destroy();defaultSupport?.destroy();clearTimer();cancelAnimationFrame(frame);resize.disconnect();mutation.disconnect();menuNotices.forEach(notice=>notice.destroy());removers.forEach(f=>f());styles.dispose();controllers.delete(host);}
     };
-    controllers.set(host,controller);setTheme(getSettings().uiTheme || getSettings().theme || id);
+    controllers.set(host,controller);setTheme(id);
     queueLayout();return controller;
   }
   function createReleaseUpdateChecker(options = {}) {
