@@ -494,6 +494,7 @@
     findNextStream: false,
     muteRestarted: true,
     backgroundEarning: false,
+    autoPictureInPicture: false,
     restoreChannelPlayer: true,
     reduceMotion: false,
     collapsedPanelWidth: "compact",
@@ -502,6 +503,9 @@
     opacityPercent: 85,
     badgeOnly: false,
     notifications: true,
+    notifyClaimed: false,
+    notifyCampaignEnding: false,
+    notifyStalledProgress: false,
     hideTwitchSubscriptionPromos: true,
     pauseAutoSwitchMinutes: 0,
     pauseAutoSwitchUntil: 0,
@@ -1056,30 +1060,10 @@
   const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
   const PAGE_STARTED_AT = Date.now();
   const playerPresentationRecovery = { attempted: false, viewerInteracted: false, lastResult: 'not-needed' };
-  const TAB_ID = (() => {
-    try {
-      const key = scopedSessionStorageKey(TAB_ID_KEY);
-      let id = sessionStorage.getItem(key);
-      if (!id) {
-        id = `t${PAGE_STARTED_AT.toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
-        sessionStorage.setItem(key, id);
-      }
-      return id;
-    } catch (_) {
-      return `t${PAGE_STARTED_AT.toString(36)}`;
-    }
-  })();
-  const TAB_STARTED_AT = (() => {
-    try {
-      const key = scopedSessionStorageKey(TAB_STARTED_KEY);
-      const saved = Number(sessionStorage.getItem(key) || 0);
-      if (Number.isFinite(saved) && saved > 0) return saved;
-      sessionStorage.setItem(key, String(PAGE_STARTED_AT));
-      return PAGE_STARTED_AT;
-    } catch (_) {
-      return PAGE_STARTED_AT;
-    }
-  })();
+  // Per-document identity prevents a newly opened Twitch tab from inheriting
+  // the same controller identity through a cloned sessionStorage snapshot.
+  const TAB_ID = `t${PAGE_STARTED_AT.toString(36)}-${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 11)}`;
+  const TAB_STARTED_AT = PAGE_STARTED_AT;
   let tabPresenceTimer = null;
   let tabChannel = null;
   let lastPeerCount = 0;
@@ -1280,6 +1264,7 @@
   const VIEWING_NAVIGATION_KEY = 'dropper-viewing-navigation-v1';
   const CLAIM_HISTORY_KEY = 'dropper-claim-history-v1';
   const CAMPAIGN_PRIORITY_KEY = 'dropper-campaign-priority-v1';
+  const CAMPAIGN_PRIORITY_ORDER_KEY = 'dropper-campaign-priority-order-v1';
   let viewingAccount = storageAccountLogin();
   let viewingVideo = null;
   let videoMountedDuringPause = false;
@@ -1652,7 +1637,15 @@
     }
     logActivity('claim-result', label, { kind: attempt.kind, rewardId: attempt.rewardId || null, outcome, evidence });
     setStatus(label);
-    if (outcome === 'confirmed') notifyUser(label);
+    if (outcome === 'confirmed') {
+      notifyUser(label);
+      sendBrowserNotification(
+        'claimed',
+        'Dropper · Drop claimed',
+        cleanText(settled.rewardName || (settled.kind === 'bonus' ? 'Bonus Chest' : 'Drop')) + (settled.game ? ` · ${settled.game}` : ''),
+        { tag: `claim-${settled.key}` },
+      );
+    }
     for (const health of Object.values(claimHealth)) {
       if (health.kind === attempt.kind) { health.lastOutcome = outcome; health.lastEvidence = evidence; health.lastResultAt = Date.now(); }
     }
@@ -1946,16 +1939,50 @@
       return { value: [-1, 0, 1].includes(value) ? value : 0, explicit: true, key };
     } catch (_) { return { value: 0, explicit: false, key }; }
   }
-  function campaignPriority(game) {
-    return campaignPriorityEntry(game).value;
-  }
-  function setCampaignPriority(game, priority) {
-    if (![-1, 0, 1].includes(priority)) return;
-    const entry = campaignPriorityEntry(game);
+  function readCampaignPriorityOrder() {
     try {
-      if (priority === 0) localStorage.removeItem(entry.key);
-      else localStorage.setItem(entry.key, String(priority));
-    } catch (_) {}
+      const parsed = JSON.parse(localStorage.getItem(scopedLocalStorageKey(CAMPAIGN_PRIORITY_ORDER_KEY)) || '[]');
+      return Array.isArray(parsed)
+        ? [...new Set(parsed.map(value => normalizeGameName(value)).filter(Boolean))].slice(0, 250)
+        : [];
+    } catch (_) { return []; }
+  }
+  function writeCampaignPriorityOrder(order) {
+    const clean = [...new Set((order || []).map(value => normalizeGameName(value)).filter(Boolean))].slice(0, 250);
+    try { localStorage.setItem(scopedLocalStorageKey(CAMPAIGN_PRIORITY_ORDER_KEY), JSON.stringify(clean)); } catch (_) {}
+    return clean;
+  }
+  function reconcileCampaignPriorityOrder(openGames = []) {
+    const keyed = new Map((openGames || []).map(item => [normalizeGameName(item.game), item]).filter(([key]) => key));
+    const existing = readCampaignPriorityOrder().filter(key => keyed.has(key));
+    const missing = [...keyed.keys()].filter(key => !existing.includes(key));
+    missing.sort((left, right) => {
+      const a = campaignPriorityEntry(keyed.get(left)?.game).value;
+      const b = campaignPriorityEntry(keyed.get(right)?.game).value;
+      return b - a;
+    });
+    const next = [...existing, ...missing];
+    if (JSON.stringify(next) !== JSON.stringify(readCampaignPriorityOrder())) writeCampaignPriorityOrder(next);
+    return next;
+  }
+  function campaignPriorityRank(game) {
+    const key = normalizeGameName(game);
+    const order = readCampaignPriorityOrder();
+    const index = order.indexOf(key);
+    return index >= 0 ? { rank: index + 1, score: 1000 - index, explicit: true } : { rank: null, score: campaignPriorityEntry(game).value, explicit: false };
+  }
+  function campaignPriority(game) {
+    return campaignPriorityRank(game).score;
+  }
+  function moveCampaignPriority(game, direction, openGames = []) {
+    const order = reconcileCampaignPriorityOrder(openGames);
+    const key = normalizeGameName(game);
+    const index = order.indexOf(key);
+    const target = index + Number(direction || 0);
+    if (index < 0 || target < 0 || target >= order.length) return false;
+    [order[index], order[target]] = [order[target], order[index]];
+    writeCampaignPriorityOrder(order);
+    return true;
   }
   function dropperPreconditionsMet(drop, drops) {
     return DropperActiveViewing.planPrerequisites(drop, drops).ready;
@@ -2199,7 +2226,11 @@
         queueGqlPollSoon("visible", 0);
         heartbeat();
       }
+      void syncAutoPictureInPicture("visibilitychange");
     });
+    document.addEventListener("leavepictureinpicture", () => {
+      syncAutoPictureInPicture.owns = false;
+    }, true);
     window.addEventListener("resize", () => {
       syncDropperWidthToChat();
       layoutChrome();
@@ -2545,6 +2576,7 @@
     };
     writeTabPresenceMap(map);
     lastPeerCount = Object.keys(map).length - 1;
+    refreshMultiTabStatus();
     try {
       tabChannel?.postMessage({
         type: "presence",
@@ -2559,6 +2591,7 @@
     const map = pruneTabPresence(readTabPresenceMap());
     delete map[TAB_ID];
     writeTabPresenceMap(map);
+    refreshMultiTabStatus();
     try { tabChannel?.postMessage({ type: "bye", id: TAB_ID }); } catch (_) { /* ignore */ }
   }
 
@@ -2570,11 +2603,29 @@
   }
 
   function isAutoRoutingController() {
-    // 3.1 uses deterministic single-tab ownership. The oldest live Dropper tab
-    // is the only tab allowed to make routing/navigation decisions.
+    // Deterministic single-tab ownership. The oldest live Dropper document is
+    // the only tab allowed to make routing/navigation decisions.
     const peers = liveTabPeers();
     if (!peers.length) return true;
     return isOldestLiveTab();
+  }
+
+  function refreshMultiTabStatus() {
+    const node = ui?.shadow?.getElementById('tdh-multi-tab-status');
+    if (!node) return;
+    const peers = liveTabPeers();
+    if (!peers.length) {
+      node.hidden = true;
+      node.textContent = '';
+      delete node.dataset.role;
+      return;
+    }
+    const controller = isAutoRoutingController();
+    node.hidden = false;
+    node.dataset.role = controller ? 'controller' : 'passive';
+    node.textContent = controller
+      ? `Multi-tab safety · This tab controls switching · ${peers.length} other Dropper tab${peers.length === 1 ? '' : 's'} passive`
+      : `Multi-tab safety · Passive tab · another Dropper tab controls automatic switching`;
   }
 
   function clearDeferredTabDropCard(reason) {
@@ -2620,6 +2671,7 @@
             delete map[data.id];
             writeTabPresenceMap(map);
             lastPeerCount = Math.max(0, Object.keys(map).length - (map[TAB_ID] ? 1 : 0));
+            refreshMultiTabStatus();
             return;
           }
           if (data.type === "presence" && data.entry) {
@@ -2627,6 +2679,7 @@
             map[data.id] = data.entry;
             writeTabPresenceMap(map);
             lastPeerCount = Object.keys(map).length - (map[TAB_ID] ? 1 : 0);
+            refreshMultiTabStatus();
           }
           if (data.type === "ping") {
             publishTabPresence();
@@ -3904,6 +3957,12 @@
     ) {
       const stage = Number(session.recoveryStage || 0);
       if (!stage) {
+        sendBrowserNotification(
+          'stalled',
+          'Dropper · Progress stalled',
+          `No new Twitch credit from ${login}. Dropper is rechecking before it switches streams.`,
+          { tag: `stall-${login}-${cleanText(currentDrop?.id || currentDrop?.campaignKey || 'drop')}`, cooldownMs: 5 * 60 * 1000 },
+        );
         requestGqlPoll('stall-recovery-recheck', true);
         writeRoutingControllerSession({ ...session, recoveryStage: 1, recoveryStartedAt: now, recoveryLastCheckAt: now });
         setStatus(`Credit Stalled · Rechecking Twitch Before Switching`);
@@ -4179,6 +4238,8 @@
     refreshViewingControls();
     renderClaimHistory();
     refreshEligibilityControls();
+    refreshMultiTabStatus();
+    checkCampaignDeadlineNotification(now);
     queueClaimScan();
 
     if (location.pathname !== lastPath) {
@@ -13017,6 +13078,19 @@
       .deadline-status[hidden] { display:none!important; }
       .deadline-status[data-tone="warn"] { border-color:color-mix(in srgb,#e2b34a 58%,var(--theme-line)); color:#f2cf75; }
       .deadline-status[data-tone="bad"] { border-color:color-mix(in srgb,#df5b65 62%,var(--theme-line)); color:#ff9ea6; }
+      .multi-tab-status {
+        grid-column:1/-1; margin:3px 0 4px; padding:6px 8px; border:1px solid color-mix(in srgb,var(--theme-accent) 40%,var(--theme-line));
+        border-radius:7px; background:color-mix(in srgb,var(--theme-panel) 92%,var(--theme-accent) 8%);
+        color:var(--theme-muted); font-size:8px; font-weight:750; line-height:1.35;
+      }
+      .multi-tab-status[hidden] { display:none!important; }
+      .multi-tab-status[data-role="controller"] { color:color-mix(in srgb,#76d69a 78%,var(--theme-text)); border-color:color-mix(in srgb,#3ac978 46%,var(--theme-line)); }
+      .multi-tab-status[data-role="passive"] { color:#f2cf75; border-color:color-mix(in srgb,#e2b34a 55%,var(--theme-line)); }
+      .campaign-priority-controls { display:flex; align-items:center; gap:4px; margin-top:4px; }
+      .campaign-priority-rank { min-width:22px; color:var(--theme-accent2); font-size:8px; font-weight:900; }
+      .campaign-priority-button { width:24px; height:22px; padding:0; border:1px solid var(--theme-line); border-radius:5px; background:var(--theme-panel); color:var(--theme-text); cursor:pointer; font-size:10px; }
+      .campaign-priority-button:disabled { opacity:.35; cursor:default; }
+      .campaign-priority-button:not(:disabled):hover,.campaign-priority-button:not(:disabled):focus-visible { border-color:var(--theme-accent); outline:none; }
       .routing-history-list,.claim-history-list { max-height:180px; overflow:auto; padding:3px 8px 7px; }
       .routing-history-row,.claim-history-row { display:grid; gap:2px; padding:6px 0; min-width:0; }
       .routing-history-row + .routing-history-row,.claim-history-row + .claim-history-row { border-top:1px solid var(--theme-line); }
@@ -13381,7 +13455,7 @@
             <div class="deadline-status" id="tdh-deadline-status" data-tone="muted" role="status" hidden></div>
             <details class="campaign-manager" id="tdh-open-campaigns">
               <summary><span class="campaign-manager-title">Open Campaigns</span><span class="campaign-manager-summary" id="tdh-open-campaign-summary">Loading…</span></summary>
-              <div class="campaign-manager-note">Check a game to ignore it until its latest campaign ends. Priorities order recommendations without changing your selected stream.</div>
+              <div class="campaign-manager-note">Check a game to ignore it until its latest campaign ends. Use ↑ and ↓ to rank games; #1 is preferred whenever it is still eligible and finishable.</div>
               <div class="campaign-game-list" id="tdh-open-campaign-list"></div>
             </details>
             <details class="eligibility-chip" id="tdh-reward-eligibility" data-tone="muted">
@@ -13398,6 +13472,7 @@
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-streams-body"><span class="fl-tool-title">Streams</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-streams-body">
             <div class="stream-subsection-label">Current Stream</div>
             <div class="campaign-manager-note" id="tdh-viewing-status" role="status"></div>
+            <div class="multi-tab-status" id="tdh-multi-tab-status" role="status" hidden></div>
             <div class="action-pair"><button type="button" class="life-btn" id="tdh-resume-playback">Resume Playback</button><button type="button" class="life-btn" id="tdh-allow-switching">Use Automatic Switching</button></div>
             ${switchHtml("tdh-find-next", "Automatic Stream Switching", "Uses Eligible Alternatives Only When You Permit Switching. Manual Selections And Pauses Stay Protected.", settings.findNextStream)}
             <details class="auth-advanced">
@@ -13407,8 +13482,17 @@
                 ${switchHtml("tdh-restore-channel-player", "Restore Channel Player On Arrival", "Returns An Initial Twitch Mini-player To The Normal Channel View. Stops After You Interact With The Page.", settings.restoreChannelPlayer)}
                 <button id="tdh-restore-channel-player-now" type="button" class="life-btn">Restore Channel Player</button>
                 ${switchHtml("tdh-background-earning", "Background Progress Tracking", "Reports Actual Twitch Credit In Hidden Tabs Or Picture-in-Picture. Does Not Simulate Viewing.", settings.backgroundEarning)}
+                ${switchHtml("tdh-auto-pip", "Picture-in-Picture When Away", "Attempts Picture-in-Picture when this Twitch tab becomes hidden and exits Dropper-started PiP when you return. Browser permission and user-activation rules still apply.", settings.autoPictureInPicture)}
                 <div class="mini-row"><span>Pause Auto-Switch</span><select class="select-lite" id="tdh-pause-switch"><option value="0">Off</option><option value="30">30 Min</option><option value="60">1 Hour</option><option value="120">2 Hours</option><option value="240">4 Hours</option><option value="480">8 Hours</option><option value="720">12 Hours</option><option value="1440">24 Hours</option></select></div>
-                ${switchHtml("tdh-notifications", "Menu notifications", "Shows brief in-app Dropper messages for stream switches, campaign changes, and completed Drops.", settings.notifications)}
+              </div>
+            </details>
+            <details class="auth-advanced">
+              <summary>Notifications</summary>
+              <div class="auth-advanced-body">
+                ${switchHtml("tdh-notifications", "Menu notifications", "Shows brief in-app Dropper messages inside the menu.", settings.notifications)}
+                ${switchHtml("tdh-notify-claimed", "Claimed Drops", "Uses browser notifications when Dropper confirms a claimed Drop.", settings.notifyClaimed)}
+                ${switchHtml("tdh-notify-ending", "Ending Campaigns", "Uses browser notifications when the active campaign reaches 30 minutes and 10 minutes remaining.", settings.notifyCampaignEnding)}
+                ${switchHtml("tdh-notify-stalled", "Stalled Progress", "Uses browser notifications when credited progress enters stall recovery.", settings.notifyStalledProgress)}
               </div>
             </details>
             <details class="auth-advanced">
@@ -14112,6 +14196,12 @@
 
     const openGames = listOpenCampaignGames(openCampaignManagementPool(now), now);
     reconcileIgnoredCampaignGames(openGames, now);
+    const priorityOrder = reconcileCampaignPriorityOrder(openGames);
+    openGames.sort((a, b) => {
+      const left = priorityOrder.indexOf(normalizeGameName(a.game));
+      const right = priorityOrder.indexOf(normalizeGameName(b.game));
+      return (left < 0 ? Number.MAX_SAFE_INTEGER : left) - (right < 0 ? Number.MAX_SAFE_INTEGER : right);
+    });
     const ignoredCount = openGames.filter((item) => (
       Number(ignoredCampaignGames.games?.[item.key]?.expiresAt || 0) > now
     )).length;
@@ -14144,20 +14234,33 @@
       const campaignLabel = `${item.campaignCount} open campaign${item.campaignCount === 1 ? "" : "s"}`;
       meta.textContent = `${campaignLabel} · Latest ${formatCampaignEndLabel(item.latestEndAt, item.latestEndMs, now).toLowerCase()}`;
       copy.append(title, meta);
-      const priorityRow = document.createElement('label');
-      priorityRow.className = 'mini-row';
-      const priorityLabel = document.createElement('span'); priorityLabel.textContent = 'Priority';
-      const priority = document.createElement('select'); priority.className = 'select-lite';
-      priority.setAttribute('aria-label', `${item.game} campaign priority`);
-      for (const [value, label] of [[1, 'High'], [0, 'Normal'], [-1, 'Low']]) {
-        const option = document.createElement('option'); option.value = String(value); option.textContent = label; priority.append(option);
-      }
-      priority.value = String(campaignPriority(item.game));
-      priority.addEventListener('change', () => {
-        setCampaignPriority(item.game, Number(priority.value));
-        setStatus('Campaign Priority Saved · Your Stream Is Unchanged');
+      const rank = priorityOrder.indexOf(normalizeGameName(item.game));
+      const priorityControls = document.createElement('div');
+      priorityControls.className = 'campaign-priority-controls';
+      const priorityRank = document.createElement('span');
+      priorityRank.className = 'campaign-priority-rank';
+      priorityRank.textContent = rank >= 0 ? `#${rank + 1}` : '—';
+      const up = document.createElement('button');
+      up.type = 'button'; up.className = 'campaign-priority-button'; up.textContent = '↑';
+      up.disabled = rank <= 0;
+      up.setAttribute('aria-label', `Move ${item.game} higher in game priority`);
+      const down = document.createElement('button');
+      down.type = 'button'; down.className = 'campaign-priority-button'; down.textContent = '↓';
+      down.disabled = rank < 0 || rank >= openGames.length - 1;
+      down.setAttribute('aria-label', `Move ${item.game} lower in game priority`);
+      up.addEventListener('click', () => {
+        if (!moveCampaignPriority(item.game, -1, openGames)) return;
+        setStatus(`${item.game} moved higher in game priority`);
+        refreshOpenCampaignList();
+        routingControllerTick(Date.now(), 'campaign-priority-changed');
       });
-      priorityRow.append(priorityLabel, priority); copy.append(priorityRow);
+      down.addEventListener('click', () => {
+        if (!moveCampaignPriority(item.game, 1, openGames)) return;
+        setStatus(`${item.game} moved lower in game priority`);
+        refreshOpenCampaignList();
+        routingControllerTick(Date.now(), 'campaign-priority-changed');
+      });
+      priorityControls.append(priorityRank, up, down); copy.append(priorityControls);
 
       const check = document.createElement("button");
       check.type = "button";
@@ -14913,6 +15016,98 @@
     clearTimeout(notifyUser.timer);
     notifyUser.timer = setTimeout(() => { toast.hidden = true; }, 3000);
     requestAnimationFrame(layoutChrome);
+  }
+
+  function browserNotificationApi() {
+    return globalThis.Notification || page?.Notification || null;
+  }
+
+  async function requestBrowserNotificationPermission() {
+    const Api = browserNotificationApi();
+    if (!Api) return 'unsupported';
+    if (Api.permission === 'granted' || Api.permission === 'denied') return Api.permission;
+    try { return await Api.requestPermission(); } catch (_) { return 'denied'; }
+  }
+
+  function sendBrowserNotification(kind, title, body, { tag = kind, cooldownMs = 0 } = {}) {
+    const enabled = kind === 'claimed'
+      ? settings.notifyClaimed
+      : kind === 'ending'
+        ? settings.notifyCampaignEnding
+        : kind === 'stalled'
+          ? settings.notifyStalledProgress
+          : false;
+    if (!enabled) return false;
+    const Api = browserNotificationApi();
+    if (!Api || Api.permission !== 'granted') return false;
+    const now = Date.now();
+    sendBrowserNotification.last ||= new Map();
+    const key = `${kind}:${tag}`;
+    const last = Number(sendBrowserNotification.last.get(key) || 0);
+    if (cooldownMs && now - last < cooldownMs) return false;
+    sendBrowserNotification.last.set(key, now);
+    try {
+      const notice = new Api(title, {
+        body: cleanText(body).slice(0, 220),
+        tag: `dropper-${tag}`,
+        renotify: false,
+        silent: false,
+      });
+      setTimeout(() => { try { notice.close(); } catch (_) {} }, 12000);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function syncAutoPictureInPicture(reason = '') {
+    const video = streamVideoElement();
+    const active = document.pictureInPictureElement;
+    const owns = Boolean(syncAutoPictureInPicture.owns);
+    if (!settings.autoPictureInPicture || !document.hidden) {
+      if (owns && active && typeof document.exitPictureInPicture === 'function') {
+        try { await document.exitPictureInPicture(); } catch (_) {}
+      }
+      syncAutoPictureInPicture.owns = false;
+      return false;
+    }
+    if (!video || typeof video.requestPictureInPicture !== 'function' || document.pictureInPictureEnabled === false) return false;
+    if (active === video) return true;
+    try {
+      await video.requestPictureInPicture();
+      syncAutoPictureInPicture.owns = true;
+      syncAutoPictureInPicture.lastError = '';
+      logActivity('picture-in-picture', 'Entered Picture-in-Picture because the Twitch tab became hidden', { reason: reason || 'hidden' });
+      return true;
+    } catch (error) {
+      const message = cleanText(error?.message || error || 'Picture-in-Picture unavailable');
+      if (message !== syncAutoPictureInPicture.lastError) {
+        syncAutoPictureInPicture.lastError = message;
+        logActivity('picture-in-picture', 'Automatic Picture-in-Picture was unavailable', { reason: reason || 'hidden', message });
+      }
+      return false;
+    }
+  }
+
+  function checkCampaignDeadlineNotification(now = Date.now()) {
+    if (!settings.notifyCampaignEnding || !currentDrop) return false;
+    const state = activeRewardEligibility();
+    const minutes = Number(state?.deadline?.minutesUntilDeadline);
+    if (!Number.isFinite(minutes) || minutes > 30 || minutes < 0) return false;
+    const bucket = minutes <= 10 ? '10' : '30';
+    const campaign = cleanText(currentDrop.campaignKey || currentDrop.campaignId || currentDrop.campaign || currentDrop.game || 'campaign');
+    const signature = `${campaign}:${bucket}`;
+    if (checkCampaignDeadlineNotification.signature === signature) return false;
+    checkCampaignDeadlineNotification.signature = signature;
+    const required = Number(state?.deadline?.requiredMinutes);
+    return sendBrowserNotification(
+      'ending',
+      `Dropper · Campaign ending in ${Math.max(0, Math.round(minutes))} min`,
+      Number.isFinite(required)
+        ? `${currentDrop.game || currentDrop.campaign || 'Current campaign'} · ${Math.max(0, Math.round(required))} min watch remaining`
+        : `${currentDrop.game || currentDrop.campaign || 'Current campaign'} is close to its deadline.`,
+      { tag: `ending-${signature}` },
+    );
   }
 
   function loadUpdateReloadState() {
@@ -15688,7 +15883,7 @@
         capturedAt: lastCampaignCatalogAt ? new Date(lastCampaignCatalogAt).toISOString() : null,
         ageSeconds: lastCampaignCatalogAt ? Math.max(0, Math.floor((now - lastCampaignCatalogAt) / 1000)) : null,
         persistedAcrossNavigation: Boolean(campaignCatalogCache.at && campaignCatalogCache.campaigns?.length),
-        priorities: listOpenCampaignGames(openCampaignManagementPool(now), now).map(item => ({ game: item.game, ...campaignPriorityEntry(item.game) })).filter(item => item.explicit).map(({ key, ...item }) => item),
+        priorities: listOpenCampaignGames(openCampaignManagementPool(now), now).map(item => ({ game: item.game, ...campaignPriorityRank(item.game) })).filter(item => item.explicit),
         ignoredGames: Object.entries(ignoredCampaignGames.games || {}).map(([key, item]) => ({
           key,
           game: item?.game || key,
@@ -15702,7 +15897,8 @@
             endAt: item.endAt || null,
             endMs: item.endMs || null,
             priority: item.sequencePriority ?? campaignPriority(item.game),
-            prioritySource: campaignPriorityEntry(item.game).explicit ? 'saved' : 'default',
+            priorityRank: campaignPriorityRank(item.game).rank,
+            prioritySource: campaignPriorityRank(item.game).explicit ? 'ranked' : 'default',
             finishable: item.sequenceFinishable ?? null,
             remainingMinutes: item.sequenceRemainingMinutes ?? item.remainingMinutes ?? null,
             marginMinutes: item.sequenceMarginMinutes ?? null,
@@ -16429,7 +16625,8 @@
     const map = {
       "tdh-claim-bonus": "claimBonus", "tdh-keep-tab": "keepTabActive", "tdh-claim-drops": "claimDrops",
       "tdh-progress-title": "progressInTitle", "tdh-find-next": "findNextStream", "tdh-mute-next": "muteRestarted",
-      "tdh-background-earning": "backgroundEarning", "tdh-badge-only": "badgeOnly", "tdh-reduce-motion": "reduceMotion", "tdh-notifications": "notifications", "tdh-custom-opacity": "customOpacity",
+      "tdh-background-earning": "backgroundEarning", "tdh-auto-pip": "autoPictureInPicture", "tdh-badge-only": "badgeOnly", "tdh-reduce-motion": "reduceMotion", "tdh-notifications": "notifications",
+      "tdh-notify-claimed": "notifyClaimed", "tdh-notify-ending": "notifyCampaignEnding", "tdh-notify-stalled": "notifyStalledProgress", "tdh-custom-opacity": "customOpacity",
       "tdh-hide-sub-promos": "hideTwitchSubscriptionPromos",
       "tdh-restore-channel-player": "restoreChannelPlayer",
       "tdh-queue-enabled": "queueEnabled", "tdh-queue-stall": "queueOnStall", "tdh-queue-offline": "queueOnOffline", "tdh-queue-category": "queueOnCategoryChange",
@@ -16440,7 +16637,19 @@
         saveSettings();
         if (key === "claimBonus" || key === "claimDrops") syncClaimWatchers();
         if (key === "keepTabActive") void syncScreenWakeLock();
+        if (key === "autoPictureInPicture") void syncAutoPictureInPicture("setting-changed");
         if (key === "findNextStream" && settings.findNextStream) { syncViewingContext(); viewingIntent.allowSwitching(); }
+        if (["notifyClaimed","notifyCampaignEnding","notifyStalledProgress"].includes(key) && settings[key]) {
+          void requestBrowserNotificationPermission().then((permission) => {
+            if (permission === 'granted') {
+              notifyUser('Browser notifications enabled');
+              return;
+            }
+            settings[key] = false;
+            saveSettings();
+            notifyUser(permission === 'unsupported' ? 'Browser notifications are not supported here' : 'Browser notification permission was not granted');
+          });
+        }
         refreshViewingControls();
         if (key === "progressInTitle") updateTitle();
         if (key === "badgeOnly" || key === "customOpacity") applyAppearanceSettings();
@@ -16460,7 +16669,8 @@
     const map = {
       "tdh-claim-bonus": settings.claimBonus, "tdh-keep-tab": settings.keepTabActive, "tdh-claim-drops": settings.claimDrops,
       "tdh-progress-title": settings.progressInTitle, "tdh-find-next": settings.findNextStream, "tdh-mute-next": settings.muteRestarted,
-      "tdh-background-earning": settings.backgroundEarning, "tdh-badge-only": settings.badgeOnly, "tdh-reduce-motion": settings.reduceMotion, "tdh-notifications": settings.notifications, "tdh-custom-opacity": settings.customOpacity,
+      "tdh-background-earning": settings.backgroundEarning, "tdh-auto-pip": settings.autoPictureInPicture, "tdh-badge-only": settings.badgeOnly, "tdh-reduce-motion": settings.reduceMotion, "tdh-notifications": settings.notifications,
+      "tdh-notify-claimed": settings.notifyClaimed, "tdh-notify-ending": settings.notifyCampaignEnding, "tdh-notify-stalled": settings.notifyStalledProgress, "tdh-custom-opacity": settings.customOpacity,
       "tdh-hide-sub-promos": settings.hideTwitchSubscriptionPromos,
       "tdh-restore-channel-player": settings.restoreChannelPlayer,
       "tdh-queue-enabled": settings.queueEnabled, "tdh-queue-stall": settings.queueOnStall, "tdh-queue-offline": settings.queueOnOffline, "tdh-queue-category": settings.queueOnCategoryChange,
