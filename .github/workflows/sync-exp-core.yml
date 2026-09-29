@@ -1,4 +1,4 @@
-# rollout-trigger: exp-core v3.4.0
+# rollout-trigger: exp-core v3.4.1
 name: Sync exp-core
 
 on:
