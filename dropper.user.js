@@ -18703,7 +18703,7 @@ const ExtraPotionsCore = (() => {
 
   function normalizedCollapsedPanelWidth(value = settings.collapsedPanelWidth) {
     const normalized = cleanText(value).toLowerCase();
-    return "full";
+    return "compact";
   }
 
   function calculatedPanelWidth(mode = normalizedCollapsedPanelWidth()) {

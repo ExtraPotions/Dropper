@@ -323,7 +323,7 @@ test('ranked game priority is account-scoped, does not navigate, and existing ch
   });
   await page.evaluate(({ drop, campaigns }) => { window.__dropperTest.configure(drop, campaigns); window.__dropperTest.refresh(); window.dropperShow(); }, d);
   const widths = [];
-  for (const [mode, expected] of [['full', 312]]) {
+  for (const [mode, expected] of [['compact', 260]]) {
     await page.evaluate(mode => { const t = window.__dropperTest; t.setWidth(mode); window.dropperShow(); const h = document.getElementById('tdh-root').shadowRoot.querySelector('[data-panel="tdh-drops-body"]'); const b = document.getElementById('tdh-root').shadowRoot.getElementById('tdh-drops-body'); if (b.classList.contains('fl-tool-hidden')) h.click(); }, mode);
     await page.waitForTimeout(300);
     const box = await page.evaluate(() => {
