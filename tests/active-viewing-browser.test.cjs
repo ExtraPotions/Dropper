@@ -33,6 +33,11 @@ const exposed = source.replace('  startDropper();\n})();', `
     setFindNext: value => { settings.findNextStream = Boolean(value); },
     setTestTheme: value => { settings.uiTheme=value;saveSettings();applyAppearanceSettings(); },
     pauseIntent: () => { viewingIntent.pause(true); },
+    lockStream: value => setManualStreamLock(Boolean(value), 'test'),
+    streamLock: () => manualStreamLockSnapshot(),
+    refreshHealth: () => { refreshStreamHealthSummary(); refreshEligibilityChecklist(); refreshViewingControls(); },
+    confidence: () => earningConfidencePresentation(),
+    recoveryAction: () => recoveryActionState(),
   };
   startDropper();
 })();`);
@@ -119,6 +124,58 @@ test('screen/fullscreen/PiP observations do not grant navigation or install dupl
     return { added, before: first, after: t.status().viewing.generation, route: t.navigation('campaign-priority') };
   });
   assert.equal(result.added, 0); assert.equal(result.before, result.after); assert.equal(result.route, false);
+}));
+
+test('Stay On This Stream visibly locks automatic routing and can be released', async () => fixture(async page => {
+  const result = await page.evaluate(() => {
+    const t = window.__dropperTest;
+    t.setFindNext(true);
+    t.intent.allowSwitching();
+    const before = t.navigation('automatic-routing');
+    t.lockStream(true);
+    t.refreshHealth();
+    const root = document.getElementById('tdh-root').shadowRoot;
+    const button = root.getElementById('tdh-stream-lock');
+    const locked = {
+      allowed: t.navigation('automatic-routing'),
+      pressed: button.getAttribute('aria-pressed'),
+      label: button.textContent,
+      lock: t.streamLock()?.login || '',
+    };
+    t.lockStream(false);
+    const after = t.navigation('automatic-routing');
+    return { before, locked, after };
+  });
+  assert.equal(result.before, true);
+  assert.equal(result.locked.allowed, false);
+  assert.equal(result.locked.pressed, 'true');
+  assert.equal(result.locked.label, 'Release Stream Lock');
+  assert.equal(result.locked.lock, 'chosen_channel');
+  assert.equal(result.after, true);
+}));
+
+test('earning confidence and health surfaces use existing Twitch evidence without inventing status', async () => fixture(async page => {
+  const d = data();
+  d.drop.currentMinutes = 15; d.drop.percent = 25;
+  d.campaigns[0].timeBasedDrops[0].self.currentMinutesWatched = 15;
+  await page.evaluate(({ drop, campaigns }) => {
+    const t = window.__dropperTest;
+    t.configure(drop, campaigns);
+    t.refreshHealth();
+  }, d);
+  const result = await page.evaluate(() => {
+    const root = document.getElementById('tdh-root').shadowRoot;
+    return {
+      confidence: root.getElementById('tdh-earning-confidence-label')?.textContent || '',
+      healthRows: root.querySelectorAll('#tdh-stream-health-list .status-check-row').length,
+      eligibilityRows: root.querySelectorAll('#tdh-eligibility-checklist-list .status-check-row').length,
+      recovery: window.__dropperTest.recoveryAction()?.label || '',
+    };
+  });
+  assert.ok(['Waiting for Twitch','Not verified','Verified'].includes(result.confidence));
+  assert.equal(result.healthRows, 6);
+  assert.equal(result.eligibilityRows, 5);
+  assert.equal(result.recovery, 'Recheck Twitch');
 }));
 
 test('claim attempts are deduplicated and only an exact API confirmation settles them', async () => fixture(async page => {

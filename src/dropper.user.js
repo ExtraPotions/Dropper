@@ -1262,6 +1262,7 @@
 
   const VIEWING_INTENT_KEY = 'dropper-viewing-intent-v1';
   const VIEWING_NAVIGATION_KEY = 'dropper-viewing-navigation-v1';
+  const MANUAL_STREAM_LOCK_KEY = 'dropper-manual-stream-lock-v1';
   const CLAIM_HISTORY_KEY = 'dropper-claim-history-v1';
   const CAMPAIGN_PRIORITY_KEY = 'dropper-campaign-priority-v1';
   const CAMPAIGN_PRIORITY_ORDER_KEY = 'dropper-campaign-priority-order-v1';
@@ -1374,9 +1375,42 @@
     return viewingIntent.snapshot();
   }
 
+  function manualStreamLockSnapshot() {
+    const login = cleanText(watchingLogin()).toLowerCase();
+    const lock = readSession(MANUAL_STREAM_LOCK_KEY, null);
+    if (!lock?.login) return null;
+    if (login && cleanText(lock.login).toLowerCase() === login) return { ...lock, login };
+    if (login && cleanText(lock.login).toLowerCase() !== login) removeSession(MANUAL_STREAM_LOCK_KEY);
+    return null;
+  }
+
+  function setManualStreamLock(enabled, reason = 'viewer') {
+    const login = cleanText(watchingLogin()).toLowerCase();
+    const current = readSession(MANUAL_STREAM_LOCK_KEY, null);
+    if (!enabled || !login) {
+      if (current?.login) {
+        logActivity('stream-lock', 'Released Stay On This Stream', {
+          stream: current.login,
+          reason: reason || 'viewer',
+        });
+      }
+      removeSession(MANUAL_STREAM_LOCK_KEY);
+      refreshViewingControls();
+      return false;
+    }
+    writeSession(MANUAL_STREAM_LOCK_KEY, { login, at: Date.now(), reason: reason || 'viewer' });
+    logActivity('stream-lock', 'Stay On This Stream enabled', { stream: login });
+    refreshViewingControls();
+    return true;
+  }
+
   function viewingNavigationAllowed(reason = '', explicit = false) {
     const state = syncViewingContext();
     const manualAction = explicit || reason === 'manual-stream-skip' || Date.now() < explicitViewingNavigationUntil;
+    if (!manualAction && manualStreamLockSnapshot()) {
+      lastViewingNavigationBlock = 'Stream Locked';
+      return false;
+    }
     if (viewingIntent.navigationAllowed(manualAction)) return true;
     lastViewingNavigationBlock = state.paused ? 'Playback Paused' : 'Your Stream Is Selected';
     return false;
@@ -1384,9 +1418,11 @@
 
   function viewingStatus() {
     const state = viewingIntent.snapshot();
+    const lock = manualStreamLockSnapshot();
     if (state.paused) return state.pauseReason === 'viewer'
       ? { label: 'Playback Paused', detail: 'Dropper will not resume playback or switch streams while your pause is active.' }
       : { label: 'Playback Needs Attention', detail: 'Playback is paused. Resume it yourself or choose Resume Playback; Dropper will not guess why it stopped.' };
+    if (lock) return { label: 'Staying On This Stream', detail: `Automatic routing is held on ${lock.login}. Dropper will still monitor Twitch credit and release the lock if the stream becomes unusable.` };
     if (lastViewingNavigationBlock && state.manualStream) return { label: 'Your Stream Is Selected', detail: 'Campaign recommendations will not change this stream. Use Skip Streamer or enable automatic switching when ready.' };
     return null;
   }
@@ -1468,13 +1504,21 @@
   function refreshViewingControls() {
     if (!ui) return;
     const state = viewingIntent.snapshot();
+    const lock = manualStreamLockSnapshot();
     const message = viewingStatus();
     const status = ui.shadow.getElementById('tdh-viewing-status');
     if (status) status.textContent = message?.detail || (state.manualStream ? 'Your selected stream is protected from automatic navigation.' : 'Automatic navigation follows your stream settings.');
     const resume = ui.shadow.getElementById('tdh-resume-playback');
     if (resume) resume.hidden = !state.paused && state.playback === 'playing';
     const automatic = ui.shadow.getElementById('tdh-allow-switching');
-    if (automatic) automatic.hidden = !state.manualStream && settings.findNextStream;
+    if (automatic) automatic.hidden = Boolean(lock) || (!state.manualStream && settings.findNextStream);
+    const streamLock = ui.shadow.getElementById('tdh-stream-lock');
+    if (streamLock) {
+      streamLock.hidden = !watchingLogin();
+      streamLock.setAttribute('aria-pressed', String(Boolean(lock)));
+      streamLock.textContent = lock ? 'Release Stream Lock' : 'Stay On This Stream';
+    }
+    refreshRecoveryAction();
   }
 
   function claimContext() {
@@ -2180,6 +2224,7 @@
       ? ` Campaign watch remaining: ${state.campaignPlan.remainingMinutes} min.`
       : '';
     detail.textContent = `${state.detail}${estimate}${deadlineText}${campaignText}`;
+    refreshEligibilityChecklist();
   }
 
   // Viewing and Twitch network hooks are installed after all declarations so boot
@@ -3710,6 +3755,7 @@
       const mismatchSince = Number(session.mismatchSince || 0) || now;
       if (!session.mismatchSince) session = writeRoutingControllerSession({ ...session, mismatchSince });
       if (now - mismatchSince >= CATEGORY_MISMATCH_GRACE_MS) {
+        setManualStreamLock(false, 'category-changed');
         return transitionRoutingController(
           ROUTING_STATES.FIND_STREAM,
           {
@@ -3886,6 +3932,7 @@
       const offlineSince = Number(session.offlineSince || 0) || now;
       if (!session.offlineSince) session = writeRoutingControllerSession({ ...session, offlineSince });
       if (now - offlineSince >= ROUTING_OFFLINE_GRACE_MS) {
+        setManualStreamLock(false, 'stream-offline');
         return transitionRoutingController(
           ROUTING_STATES.FIND_STREAM,
           {
@@ -3938,6 +3985,7 @@
       return false;
     }
     if (recovery.code === 'playback-stopped' || recovery.code === 'playback-error') {
+      setManualStreamLock(false, recovery.code);
       return transitionRoutingController(
         ROUTING_STATES.FIND_STREAM,
         {
@@ -3971,6 +4019,16 @@
       stallAnchor &&
       now - stallAnchor >= stallMs
     ) {
+      if (manualStreamLockSnapshot()) {
+        sendBrowserNotification(
+          'stalled',
+          'Dropper · Progress stalled',
+          `No new Twitch credit from ${login}. Stay On This Stream is preventing automatic recovery.`,
+          { tag: `stall-locked-${login}-${cleanText(currentDrop?.id || currentDrop?.campaignKey || 'drop')}`, cooldownMs: 5 * 60 * 1000 },
+        );
+        setStatus(`Progress Stalled · Staying On ${login}`);
+        return false;
+      }
       const stage = Number(session.recoveryStage || 0);
       if (!stage) {
         sendBrowserNotification(
@@ -4254,6 +4312,7 @@
     refreshViewingControls();
     renderClaimHistory();
     refreshEligibilityControls();
+    refreshStreamHealthSummary();
     refreshMultiTabStatus();
     checkCampaignDeadlineNotification(now);
     queueClaimScan();
@@ -13102,6 +13161,25 @@
       .multi-tab-status[hidden] { display:none!important; }
       .multi-tab-status[data-role="controller"] { color:color-mix(in srgb,#76d69a 78%,var(--theme-text)); border-color:color-mix(in srgb,#3ac978 46%,var(--theme-line)); }
       .multi-tab-status[data-role="passive"] { color:#f2cf75; border-color:color-mix(in srgb,#e2b34a 55%,var(--theme-line)); }
+      .earning-confidence {
+        grid-column:1/-1; display:flex; align-items:baseline; justify-content:space-between; gap:8px;
+        margin:3px 0 4px; padding:7px 8px; border:1px solid var(--theme-line); border-radius:8px;
+        background:var(--theme-inset); color:var(--theme-muted);
+      }
+      .earning-confidence strong { color:var(--theme-text); font-size:10px; line-height:1.25; }
+      .earning-confidence span { min-width:0; text-align:right; font-size:8px; line-height:1.3; overflow-wrap:anywhere; }
+      .earning-confidence[data-tone="good"] { border-color:color-mix(in srgb,#3ac978 56%,var(--theme-line)); }
+      .earning-confidence[data-tone="warn"] { border-color:color-mix(in srgb,#e2b34a 58%,var(--theme-line)); }
+      .earning-confidence[data-tone="bad"] { border-color:color-mix(in srgb,#df5b65 62%,var(--theme-line)); }
+      .stream-health-list,.eligibility-checklist-list { padding:3px 8px 7px; }
+      .status-check-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; padding:5px 0; }
+      .status-check-row + .status-check-row { border-top:1px solid var(--theme-line); }
+      .status-check-label { min-width:0; color:var(--theme-muted); font-size:8px; line-height:1.3; }
+      .status-check-value { max-width:150px; color:var(--theme-text); font-size:8px; font-weight:800; line-height:1.3; text-align:right; overflow-wrap:anywhere; }
+      .status-check-value[data-tone="good"] { color:#76d69a; }
+      .status-check-value[data-tone="warn"] { color:#f2cf75; }
+      .status-check-value[data-tone="bad"] { color:#ff9ea6; }
+      #tdh-stream-lock[aria-pressed="true"] { border-color:color-mix(in srgb,var(--theme-accent) 72%,var(--theme-line)); background:color-mix(in srgb,var(--theme-panel) 76%,var(--theme-accent) 24%); }
       .campaign-priority-controls { display:flex; align-items:center; gap:4px; margin-top:4px; }
       .campaign-priority-rank { min-width:22px; color:var(--theme-accent2); font-size:8px; font-weight:900; }
       .campaign-priority-button { width:24px; height:22px; padding:0; border:1px solid var(--theme-line); border-radius:5px; background:var(--theme-panel); color:var(--theme-text); cursor:pointer; font-size:10px; }
@@ -13478,6 +13556,10 @@
               <summary><span id="tdh-eligibility-summary" role="status">? Eligibility Not Verified</span></summary>
               <div class="eligibility-detail" id="tdh-eligibility-detail">Dropper does not yet have enough information to verify this stream.</div>
             </details>
+            <details class="campaign-manager" id="tdh-eligibility-checklist">
+              <summary><span class="campaign-manager-title">Eligibility Checklist</span><span class="campaign-manager-summary" id="tdh-eligibility-checklist-summary">Checking…</span></summary>
+              <div class="eligibility-checklist-list" id="tdh-eligibility-checklist-list"></div>
+            </details>
             <button type="button" class="life-btn" id="tdh-toggle-inventory">Show Drops Inventory</button>
             <div class="compact-inventory" id="tdh-compact-inventory"><div class="inventory-head"><div><strong>Campaign Drops</strong><span id="tdh-inventory-game"></span></div></div><div class="inventory-list" id="tdh-inventory-list"></div></div>
             <details class="campaign-manager" id="tdh-claim-history-panel">
@@ -13488,9 +13570,21 @@
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-streams-body"><span class="fl-tool-title">Streams</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-streams-body">
             <div class="stream-subsection-label">Current Stream</div>
             <div class="campaign-manager-note" id="tdh-viewing-status" role="status"></div>
+            <div class="earning-confidence" id="tdh-earning-confidence" data-tone="muted" role="status">
+              <strong id="tdh-earning-confidence-label">Waiting for Twitch</strong>
+              <span id="tdh-earning-confidence-detail">No verified earning evidence yet.</span>
+            </div>
             <div class="multi-tab-status" id="tdh-multi-tab-status" role="status" hidden></div>
             <div class="action-pair"><button type="button" class="life-btn" id="tdh-resume-playback">Resume Playback</button><button type="button" class="life-btn" id="tdh-allow-switching">Use Automatic Switching</button></div>
+            <div class="action-pair">
+              <button type="button" class="life-btn" id="tdh-stream-lock" aria-pressed="false">Stay On This Stream</button>
+              <button type="button" class="life-btn" id="tdh-recovery-action" hidden>Recheck Twitch</button>
+            </div>
             ${switchHtml("tdh-find-next", "Automatic Stream Switching", "Uses Eligible Alternatives Only When You Permit Switching. Manual Selections And Pauses Stay Protected.", settings.findNextStream)}
+            <details class="campaign-manager" id="tdh-stream-health-panel">
+              <summary><span class="campaign-manager-title">Stream Health</span><span class="campaign-manager-summary" id="tdh-stream-health-summary">Checking…</span></summary>
+              <div class="stream-health-list" id="tdh-stream-health-list"></div>
+            </details>
             <details class="auth-advanced">
               <summary>Playback options</summary>
               <div class="auth-advanced-body">
@@ -14555,6 +14649,134 @@
     return result;
   }
 
+  function briefAge(ms) {
+    const value = Math.max(0, Number(ms) || 0);
+    const seconds = Math.floor(value / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    return `${Math.floor(minutes / 60)}h`;
+  }
+
+  function earningConfidencePresentation(health = streamEarningHealthSnapshot(), eligibility = activeRewardEligibility()) {
+    if (!currentDrop) return { label: 'No active Drop', detail: 'Waiting for Twitch campaign progress.', tone: 'muted' };
+    const blockedCodes = new Set(['account-link','participation','expired','paid-requirement','deadline-risk']);
+    if (blockedCodes.has(eligibility?.code)) {
+      return { label: 'Not eligible', detail: eligibility?.label || eligibility?.detail || 'Current reward is blocked.', tone: 'bad' };
+    }
+    if (eligibility?.code === 'wrong-game' || health?.recovery?.code === 'wrong-game') {
+      return { label: 'Wrong category', detail: health?.streamGame ? `Stream is in ${health.streamGame}.` : 'The stream category does not match the current Drop.', tone: 'warn' };
+    }
+    if (health?.recovery?.code === 'credit-stalled') {
+      return { label: 'Progress stalled', detail: health.creditedProgressAgeMs ? `Last Twitch credit ${briefAge(health.creditedProgressAgeMs)} ago.` : 'Twitch has not credited new progress.', tone: 'bad' };
+    }
+    if (health?.earningVerified) {
+      return { label: 'Verified', detail: health.creditedProgressAgeMs ? `Last Twitch credit ${briefAge(health.creditedProgressAgeMs)} ago.` : 'Campaign and stream evidence are verified.', tone: 'good' };
+    }
+    if (health?.inVerificationGrace || eligibility?.code === 'verification-pending' || eligibility?.code === 'unknown') {
+      return { label: 'Waiting for Twitch', detail: 'Dropper is waiting for campaign or credited-progress evidence.', tone: 'warn' };
+    }
+    if (health?.login && health?.live === false) return { label: 'Stream offline', detail: 'The current channel is not reporting as live.', tone: 'bad' };
+    return { label: 'Not verified', detail: eligibility?.detail || 'Earning evidence is not yet verified.', tone: 'muted' };
+  }
+
+  function appendStatusCheck(list, label, value, tone = 'muted') {
+    const row = document.createElement('div');
+    row.className = 'status-check-row';
+    const key = document.createElement('span');
+    key.className = 'status-check-label';
+    key.textContent = label;
+    const state = document.createElement('span');
+    state.className = 'status-check-value';
+    state.dataset.tone = tone;
+    state.textContent = value;
+    row.append(key, state);
+    list.append(row);
+  }
+
+  function refreshStreamHealthSummary() {
+    const list = ui?.shadow?.getElementById('tdh-stream-health-list');
+    const summary = ui?.shadow?.getElementById('tdh-stream-health-summary');
+    const confidence = ui?.shadow?.getElementById('tdh-earning-confidence');
+    const confidenceLabel = ui?.shadow?.getElementById('tdh-earning-confidence-label');
+    const confidenceDetail = ui?.shadow?.getElementById('tdh-earning-confidence-detail');
+    if (!list || !summary || !confidence || !confidenceLabel || !confidenceDetail) return;
+    const health = streamEarningHealthSnapshot();
+    const eligibility = activeRewardEligibility();
+    const presentation = earningConfidencePresentation(health, eligibility);
+    confidence.dataset.tone = presentation.tone;
+    confidenceLabel.textContent = presentation.label;
+    confidenceDetail.textContent = presentation.detail;
+    summary.textContent = presentation.label;
+    list.replaceChildren();
+    appendStatusCheck(list, 'Channel', health.login || 'No stream', health.login ? 'good' : 'muted');
+    appendStatusCheck(list, 'Online', health.login ? (health.live ? '✓ Online' : '? Not verified live') : '? Unknown', health.live ? 'good' : 'warn');
+    appendStatusCheck(list, 'Playback', health.playback === 'playing' ? '✓ Playing' : health.playback || '? Unknown', health.playback === 'playing' ? 'good' : health.paused ? 'warn' : 'muted');
+    appendStatusCheck(list, 'Correct game', !health.expectedGame || !health.streamGame ? '? Unknown' : health.gameMatches ? '✓ Yes' : `× ${health.streamGame}`, health.gameMatches ? 'good' : health.streamGame ? 'bad' : 'muted');
+    appendStatusCheck(list, 'Campaign evidence', health.campaignVerified ? '✓ Verified' : '? Waiting', health.campaignVerified ? 'good' : 'warn');
+    appendStatusCheck(list, 'Last credited', Number(currentDrop?.currentMinutes || 0) > 0 && health.creditedProgressAgeMs >= 0 ? `${briefAge(health.creditedProgressAgeMs)} ago` : 'No credited minute yet', Number(currentDrop?.currentMinutes || 0) > 0 ? 'good' : 'muted');
+  }
+
+  function refreshEligibilityChecklist() {
+    const list = ui?.shadow?.getElementById('tdh-eligibility-checklist-list');
+    const summary = ui?.shadow?.getElementById('tdh-eligibility-checklist-summary');
+    if (!list || !summary) return;
+    list.replaceChildren();
+    const campaign = findCampaignForDrop(lastInventoryCampaigns, currentDrop) || findCampaignForDrop(lastCampaignCatalog, currentDrop);
+    const raw = (campaign?.timeBasedDrops || campaign?.drops || []).find(drop => drop.id === currentDrop?.id);
+    const health = streamEarningHealthSnapshot();
+    const now = Date.now();
+    const window = campaign ? campaignWindow(campaign, raw) : { startMs: 0, endMs: 0 };
+    const accountConnected = typeof campaign?.self?.isAccountConnected === 'boolean'
+      ? campaign.self.isAccountConnected
+      : typeof campaign?.isAccountConnected === 'boolean'
+        ? campaign.isAccountConnected
+        : null;
+    const campaignActive = window.startMs && window.endMs
+      ? now >= window.startMs && now < window.endMs
+      : null;
+    const rewardAvailable = raw
+      ? raw.self?.isClaimed === true ? 'claimed' : true
+      : null;
+    const gameKnown = Boolean(health.expectedGame && health.streamGame);
+    const checks = [
+      ['Account linked', accountConnected === null ? '? Unknown' : accountConnected ? '✓ Linked' : '× Not linked', accountConnected === null ? 'muted' : accountConnected ? 'good' : 'bad'],
+      ['Campaign active', campaignActive === null ? '? Unknown' : campaignActive ? '✓ Active' : '× Not active', campaignActive === null ? 'muted' : campaignActive ? 'good' : 'bad'],
+      ['Reward available', rewardAvailable === null ? '? Unknown' : rewardAvailable === 'claimed' ? '✓ Already claimed' : '✓ Available', rewardAvailable === null ? 'muted' : 'good'],
+      ['Correct game', !gameKnown ? '? Unknown' : health.gameMatches ? '✓ Match' : '× Mismatch', !gameKnown ? 'muted' : health.gameMatches ? 'good' : 'bad'],
+      ['Stream verified', health.campaignVerified ? '✓ Verified' : '? Waiting', health.campaignVerified ? 'good' : 'warn'],
+    ];
+    for (const [label, value, tone] of checks) appendStatusCheck(list, label, value, tone);
+    const failures = checks.filter(([, value]) => String(value).startsWith('×')).length;
+    const unknowns = checks.filter(([, value]) => String(value).startsWith('?')).length;
+    summary.textContent = failures ? `${failures} blocked` : unknowns ? `${unknowns} unknown` : 'Ready';
+  }
+
+  function recoveryActionState() {
+    const health = streamEarningHealthSnapshot();
+    const eligibility = activeRewardEligibility();
+    const viewing = viewingIntent.snapshot();
+    if (viewing.paused) return { action: 'resume', label: 'Resume Playback' };
+    if (eligibility?.code === 'account-link') return { action: 'connections', label: 'Open Connections' };
+    if (manualStreamLockSnapshot() && health?.recovery?.code === 'credit-stalled') return { action: 'unlock', label: 'Release Stream Lock' };
+    if (
+      ['wrong-game','wrong-channel'].includes(eligibility?.code) ||
+      ['offline','wrong-game','playback-error','playback-stopped','credit-stalled'].includes(health?.recovery?.code)
+    ) return { action: 'find-stream', label: 'Find Another Stream' };
+    if (!health.login && currentDrop) return { action: 'find-stream', label: 'Find Eligible Stream' };
+    if (['verification-pending','unknown'].includes(eligibility?.code)) return { action: 'recheck', label: 'Recheck Twitch' };
+    return null;
+  }
+
+  function refreshRecoveryAction() {
+    const button = ui?.shadow?.getElementById('tdh-recovery-action');
+    if (!button) return;
+    const state = recoveryActionState();
+    button.hidden = !state;
+    button.dataset.action = state?.action || '';
+    button.textContent = state?.label || 'Recheck Twitch';
+  }
+
   function syncCompactState() {
     if (!ui) return;
     const reward = ui.shadow.getElementById("tdh-compact-reward");
@@ -14853,7 +15075,7 @@
     for (const empty of target.querySelectorAll(':scope>.action-pair:empty,:scope>.action-separator')) empty.remove();
     const preferences=document.createElement('details');const preferencesTitle=document.createElement('summary');preferencesTitle.textContent='Menu preferences';preferences.append(preferencesTitle,ui.shadow.getElementById('tdh-notifications').closest('.fl-switch'));
     const width=ui.shadow.getElementById('tdh-collapsed-width');width.setAttribute('aria-label','Menu width');target.prepend(width.closest('.mini-row'));
-    container.prepend(preferences,maintenance);history.append(ui.shadow.getElementById('tdh-claim-history-panel'));
+    container.prepend(preferences,maintenance);
     container.append(details,history);target.append(container);
     const editor=target.querySelector('.exp-menu-editor');if(editor)container.append(editor);
     container.dataset.expSystemTools='1';
@@ -14867,12 +15089,50 @@
       ensureStreamPlaying(true); refreshViewingControls();
     });
     s.getElementById('tdh-allow-switching')?.addEventListener('click', () => {
+      setManualStreamLock(false, 'automatic-switching-enabled');
       syncViewingContext(); viewingIntent.allowSwitching();
       settings.findNextStream = true; saveSettings(); refreshViewingControls();
     });
+    s.getElementById('tdh-stream-lock')?.addEventListener('click', () => {
+      const locked = Boolean(manualStreamLockSnapshot());
+      setManualStreamLock(!locked, locked ? 'viewer-release' : 'viewer-lock');
+      refreshStreamHealthSummary();
+    });
+    s.getElementById('tdh-recovery-action')?.addEventListener('click', (event) => {
+      const action = event.currentTarget.dataset.action;
+      if (action === 'resume') {
+        ensureStreamPlaying(true);
+      } else if (action === 'connections') {
+        try { window.open(TWITCH_CONNECTIONS_URL, '_blank', 'noopener,noreferrer'); }
+        catch (_) { location.assign(TWITCH_CONNECTIONS_URL); }
+      } else if (action === 'unlock') {
+        setManualStreamLock(false, 'recovery-action');
+      } else if (action === 'find-stream') {
+        setManualStreamLock(false, 'recovery-action');
+        explicitViewingNavigationUntil = Date.now() + 15000;
+        syncViewingContext();
+        viewingIntent.allowSwitching();
+        settings.findNextStream = true;
+        saveSettings();
+        const active = cleanText(watchingLogin()).toLowerCase();
+        if (active && currentDrop) skipCurrentStreamer();
+        else if (currentDrop) {
+          transitionRoutingController(
+            ROUTING_STATES.FIND_STREAM,
+            { ...routingControllerTargetFromDrop(currentDrop), targetStream: '', deadlineAt: 0, waitReason: '' },
+            'Viewer requested recovery stream search',
+          );
+          routingControllerTick(Date.now(), 'manual-recovery-action');
+        }
+      } else {
+        requestGqlPoll('manual-recovery-recheck', true);
+      }
+      refreshViewingControls();
+      refreshStreamHealthSummary();
+    });
     s.getElementById('tdh-claim-history-panel')?.addEventListener('toggle', renderClaimHistory);
     s.getElementById('tdh-routing-history-panel')?.addEventListener('toggle', renderRoutingHistory);
-    refreshViewingControls(); refreshEligibilityControls(); renderClaimHistory(); renderRoutingHistory();
+    refreshViewingControls(); refreshEligibilityControls(); refreshStreamHealthSummary(); renderClaimHistory(); renderRoutingHistory();
     const inventory = s.getElementById("tdh-compact-inventory");
     refreshTwitchAuthStatus();
     s.getElementById("tdh-open-campaigns")?.addEventListener("toggle", (event) => {
