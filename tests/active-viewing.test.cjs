@@ -359,9 +359,12 @@ test('Dropper throttles mutation-driven claim scans and uses bounded stall reche
   assert.match(source, /after two Twitch rechecks/);
 });
 
-test('normal campaign priority removes explicit storage instead of persisting a fake preference', () => {
+test('ranked campaign priority preserves legacy preference fallback without fake normal storage', () => {
   assert.match(source, /if \(priority === 0\) localStorage\.removeItem\(entry\.key\)/);
-  assert.match(source, /prioritySource: campaignPriorityEntry\(item\.game\)\.explicit \? 'saved' : 'default'/);
+  assert.match(source, /CAMPAIGN_PRIORITY_ORDER_KEY = 'dropper-campaign-priority-order-v1'/);
+  assert.match(source, /function campaignPriorityRank\(game\)/);
+  assert.match(source, /prioritySource: campaignPriorityRank\(item\.game\)\.source/);
+  assert.match(source, /source: legacy\.explicit \? 'legacy' : 'default'/);
 });
 
 
