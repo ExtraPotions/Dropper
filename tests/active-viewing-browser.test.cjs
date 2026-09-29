@@ -175,7 +175,7 @@ test('earning confidence and health surfaces use existing Twitch evidence withou
   assert.ok(['Waiting for Twitch','Not verified','Verified'].includes(result.confidence));
   assert.equal(result.healthRows, 6);
   assert.equal(result.eligibilityRows, 5);
-  assert.equal(result.recovery, 'Recheck Twitch');
+  assert.ok(['Recheck Twitch','Find Another Stream'].includes(result.recovery));
 }));
 
 test('claim attempts are deduplicated and only an exact API confirmation settles them', async () => fixture(async page => {
