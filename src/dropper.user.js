@@ -7142,6 +7142,15 @@
   function parseGqlRows(json, status = 200) {
     if (status < 200 || status >= 300) throw new Error(`GQL HTTP ${status}`);
     const rows = Array.isArray(json) ? json : [json];
+    if (
+      !rows.length ||
+      rows.some(row =>
+        !row ||
+        typeof row !== "object" ||
+        Array.isArray(row) ||
+        (!Object.prototype.hasOwnProperty.call(row, "data") && !Array.isArray(row.errors))
+      )
+    ) throw new Error("Malformed Twitch GQL response");
     const hardErrors = [];
     for (const row of rows) {
       const errors = Array.isArray(row?.errors) ? row.errors : [];

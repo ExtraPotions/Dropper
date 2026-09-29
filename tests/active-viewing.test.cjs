@@ -377,6 +377,55 @@ test('notification quieting is hidden-tab aware and restart recovery is bounded'
 });
 
 
+
+test('malformed Twitch GQL rows fail closed instead of counting as network success', () => {
+  const context = {
+    cleanText: value => String(value ?? '').trim(),
+    isSoftGqlError: () => false,
+  };
+  vm.runInNewContext(extract('parseGqlRows'), context);
+  assert.throws(() => context.parseGqlRows(null), /Malformed Twitch GQL response/);
+  assert.throws(() => context.parseGqlRows({}), /Malformed Twitch GQL response/);
+  assert.throws(() => context.parseGqlRows([]), /Malformed Twitch GQL response/);
+  assert.throws(() => context.parseGqlRows('not-json-object'), /Malformed Twitch GQL response/);
+  assert.throws(() => context.parseGqlRows({ data: null }, 429), /GQL HTTP 429/);
+  assert.throws(() => context.parseGqlRows({ errors: [{ message: 'hard failure' }] }), /hard failure/);
+  assert.deepEqual(normalize(context.parseGqlRows({ data: { viewer: null } })), [{ data: { viewer: null } }]);
+});
+
+test('network circuit distinguishes rate limits, auth failures, integrity failures, and repeated transport failures', () => {
+  const opened = [];
+  const activity = [];
+  const context = {
+    networkState: { consecutiveFailures: 0 },
+    persistNetworkState: () => {},
+    cleanText: value => String(value ?? '').trim(),
+    openNetworkCircuit: (reason, durationMs) => opened.push({ reason, durationMs }),
+    logActivity: (...args) => activity.push(args),
+    CIRCUIT_RATE_COOLDOWN_MS: 120000,
+    CIRCUIT_ERROR_COOLDOWN_MS: 60000,
+    NETWORK_FAILURE_THRESHOLD: 3,
+  };
+  vm.runInNewContext(extract('recordDropperNetworkFailure'), context);
+
+  context.recordDropperNetworkFailure(new Error('GQL HTTP 429'));
+  assert.equal(opened.at(-1).reason, 'Twitch rate limit response');
+
+  context.networkState.consecutiveFailures = 0;
+  context.recordDropperNetworkFailure(new Error('GQL HTTP 401 unauthorized'));
+  assert.equal(opened.at(-1).reason, 'authorization failures');
+
+  const countBeforeIntegrity = opened.length;
+  context.networkState.consecutiveFailures = 0;
+  context.recordDropperNetworkFailure(new Error('integrity GQL HTTP 403'));
+  assert.equal(opened.length, countBeforeIntegrity, 'integrity rejection is not misclassified as an auth circuit');
+
+  context.networkState.consecutiveFailures = 2;
+  context.recordDropperNetworkFailure(new Error('network error'));
+  assert.equal(opened.at(-1).reason, 'repeated Twitch GQL failures');
+  assert.ok(activity.some(entry => entry[0] === 'network-error'));
+});
+
 test('stream-switch browser alerts are opt-in and cooldown only after successful delivery', () => {
   const saved = { events: {} };
   const notices = [];
