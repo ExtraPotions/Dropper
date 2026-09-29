@@ -1954,32 +1954,48 @@
   }
   function reconcileCampaignPriorityOrder(openGames = []) {
     const keyed = new Map((openGames || []).map(item => [normalizeGameName(item.game), item]).filter(([key]) => key));
-    const existing = readCampaignPriorityOrder().filter(key => keyed.has(key));
+    const existing = readCampaignPriorityOrder();
     const missing = [...keyed.keys()].filter(key => !existing.includes(key));
     missing.sort((left, right) => {
       const a = campaignPriorityEntry(keyed.get(left)?.game).value;
       const b = campaignPriorityEntry(keyed.get(right)?.game).value;
       return b - a;
     });
-    const next = [...existing, ...missing];
-    if (JSON.stringify(next) !== JSON.stringify(readCampaignPriorityOrder())) writeCampaignPriorityOrder(next);
+    const next = [...existing, ...missing].slice(0, 250);
+    if (JSON.stringify(next) !== JSON.stringify(existing)) writeCampaignPriorityOrder(next);
     return next;
   }
   function campaignPriorityRank(game) {
     const key = normalizeGameName(game);
     const order = readCampaignPriorityOrder();
     const index = order.indexOf(key);
-    return index >= 0 ? { rank: index + 1, score: 1000 - index, explicit: true } : { rank: null, score: campaignPriorityEntry(game).value, explicit: false };
+    if (index >= 0) return { rank: index + 1, score: 1000 - index, explicit: true, source: 'ranked' };
+    const legacy = campaignPriorityEntry(game);
+    return { rank: null, score: legacy.value, explicit: legacy.explicit, source: legacy.explicit ? 'legacy' : 'default' };
   }
   function campaignPriority(game) {
     return campaignPriorityRank(game).score;
   }
+  function setCampaignPriority(game, priority) {
+    if (![-1, 0, 1].includes(priority)) return;
+    const entry = campaignPriorityEntry(game);
+    try {
+      if (priority === 0) localStorage.removeItem(entry.key);
+      else localStorage.setItem(entry.key, String(priority));
+    } catch (_) {}
+  }
   function moveCampaignPriority(game, direction, openGames = []) {
     const order = reconcileCampaignPriorityOrder(openGames);
+    const visible = [...new Set((openGames || []).map(item => normalizeGameName(item.game)).filter(Boolean))]
+      .filter(key => order.includes(key))
+      .sort((left, right) => order.indexOf(left) - order.indexOf(right));
     const key = normalizeGameName(game);
+    const visibleIndex = visible.indexOf(key);
+    const targetVisibleIndex = visibleIndex + Number(direction || 0);
+    if (visibleIndex < 0 || targetVisibleIndex < 0 || targetVisibleIndex >= visible.length) return false;
+    const targetKey = visible[targetVisibleIndex];
     const index = order.indexOf(key);
-    const target = index + Number(direction || 0);
-    if (index < 0 || target < 0 || target >= order.length) return false;
+    const target = order.indexOf(targetKey);
     [order[index], order[target]] = [order[target], order[index]];
     writeCampaignPriorityOrder(order);
     return true;
@@ -14197,9 +14213,10 @@
     const openGames = listOpenCampaignGames(openCampaignManagementPool(now), now);
     reconcileIgnoredCampaignGames(openGames, now);
     const priorityOrder = reconcileCampaignPriorityOrder(openGames);
+    const visiblePriorityOrder = priorityOrder.filter(key => openGames.some(item => normalizeGameName(item.game) === key));
     openGames.sort((a, b) => {
-      const left = priorityOrder.indexOf(normalizeGameName(a.game));
-      const right = priorityOrder.indexOf(normalizeGameName(b.game));
+      const left = visiblePriorityOrder.indexOf(normalizeGameName(a.game));
+      const right = visiblePriorityOrder.indexOf(normalizeGameName(b.game));
       return (left < 0 ? Number.MAX_SAFE_INTEGER : left) - (right < 0 ? Number.MAX_SAFE_INTEGER : right);
     });
     const ignoredCount = openGames.filter((item) => (
@@ -14234,7 +14251,7 @@
       const campaignLabel = `${item.campaignCount} open campaign${item.campaignCount === 1 ? "" : "s"}`;
       meta.textContent = `${campaignLabel} · Latest ${formatCampaignEndLabel(item.latestEndAt, item.latestEndMs, now).toLowerCase()}`;
       copy.append(title, meta);
-      const rank = priorityOrder.indexOf(normalizeGameName(item.game));
+      const rank = visiblePriorityOrder.indexOf(normalizeGameName(item.game));
       const priorityControls = document.createElement('div');
       priorityControls.className = 'campaign-priority-controls';
       const priorityRank = document.createElement('span');
@@ -15898,7 +15915,7 @@
             endMs: item.endMs || null,
             priority: item.sequencePriority ?? campaignPriority(item.game),
             priorityRank: campaignPriorityRank(item.game).rank,
-            prioritySource: campaignPriorityRank(item.game).explicit ? 'ranked' : 'default',
+            prioritySource: campaignPriorityRank(item.game).source,
             finishable: item.sequenceFinishable ?? null,
             remainingMinutes: item.sequenceRemainingMinutes ?? item.remainingMinutes ?? null,
             marginMinutes: item.sequenceMarginMinutes ?? null,

@@ -18,6 +18,7 @@ const exposed = source.replace('  startDropper();\n})();', `
     setWidth: mode => { settings.collapsedPanelWidth = mode; applyAppearanceSettings(); },
     setActiveClaims: value => { settings.claimBonus = value; settings.claimDrops = value; syncClaimWatchers(); },
     queueScan: queueClaimScan, setPriority: setCampaignPriority, priorityEntry: campaignPriorityEntry,
+    priorityRank: campaignPriorityRank, priorityOrder: readCampaignPriorityOrder, movePriority: moveCampaignPriority,
     rankCandidates: rankStreamCandidatesByEvidence,
     continueClaim: continueAfterConfirmedDropClaim, sweep: sweepClaimReadyInventory, current: () => currentDrop,
     status: () => ({ viewing: viewingIntent.snapshot(), selectors: claimHealth }),
@@ -193,8 +194,14 @@ test('an account change discards an in-flight response and cannot populate the n
   assert.equal(result.alice[0].outcome, 'discarded');
 }));
 
-test('campaign priority is account-scoped, does not navigate, and existing chrome retains all three widths', async () => fixture(async page => {
+test('ranked game priority is account-scoped, does not navigate, and existing chrome retains all three widths', async () => fixture(async page => {
   const d = data(); d.campaigns[0].timeBasedDrops[0].self.currentMinutesWatched = 0;
+  d.campaigns.push({
+    id: 'campaign-b', name: 'Second campaign', status: 'ACTIVE',
+    startAt: d.campaigns[0].startAt, endAt: d.campaigns[0].endAt,
+    game: { name: 'Second game', displayName: 'Second game' },
+    timeBasedDrops: [{ id: 'reward-b', name: 'Second reward', requiredMinutesWatched: 30, self: { currentMinutesWatched: 0, isClaimed: false } }],
+  });
   await page.evaluate(({ drop, campaigns }) => { window.__dropperTest.configure(drop, campaigns); window.__dropperTest.refresh(); window.dropperShow(); }, d);
   const widths = [];
   for (const [mode, expected] of [['full', 312], ['compact', 260], ['narrow', 220]]) {
@@ -223,14 +230,18 @@ test('campaign priority is account-scoped, does not navigate, and existing chrom
     fs.mkdirSync(path.join(__dirname, '../test-artifacts'), { recursive: true });
     await page.screenshot({ path: path.join(__dirname, `../test-artifacts/active-viewing-${mode}.png`) });
   }
-  await page.evaluate(() => {
-    const select = document.getElementById('tdh-root').shadowRoot.querySelector('[aria-label="Fixture game campaign priority"]');
-    select.value = '1'; select.dispatchEvent(new Event('change'));
+  const ranked = await page.evaluate(() => {
+    const root = document.getElementById('tdh-root').shadowRoot;
+    const up = root.querySelector('[aria-label="Move Second game higher in game priority"]');
+    up.click();
+    const t = window.__dropperTest;
+    return { rank: t.priorityRank('Second game').rank, order: t.priorityOrder(), path: location.pathname };
   });
-  assert.equal(await page.evaluate(() => window.__dropperTest.priority('Fixture game')), 1);
-  assert.ok(page.url().endsWith('/chosen_channel'));
+  assert.equal(ranked.rank, 1);
+  assert.equal(ranked.order[0], 'second game');
+  assert.equal(ranked.path, '/chosen_channel');
   await page.evaluate(() => { document.cookie = 'login=fixture-bob; path=/; domain=.twitch.tv'; window.__dropperTest.sync(); });
-  assert.equal(await page.evaluate(() => window.__dropperTest.priority('Fixture game')), 0);
+  assert.equal(await page.evaluate(() => window.__dropperTest.priorityRank('Second game').rank), null);
 }));
 
 
@@ -255,14 +266,10 @@ test('known-unfinishable campaign cannot win even with high personal priority', 
     const t = window.__dropperTest;
     t.configure(null, campaigns);
     t.refresh();
-    const root = document.getElementById('tdh-root').shadowRoot;
-    const select = root.querySelector('[aria-label="Impossible Game campaign priority"]');
-    select.value = '1';
-    select.dispatchEvent(new Event('change'));
     const pick = t.pickNext(campaigns, [], []);
-    return { game: pick?.game || '', priority: t.priority('Impossible Game'), url: location.pathname };
+    return { game: pick?.game || '', rank: t.priorityRank('Impossible Game').rank, url: location.pathname };
   }, campaigns);
-  assert.equal(result.priority, 1);
+  assert.equal(result.rank, 1);
   assert.equal(result.game, 'Viable Game');
   assert.equal(result.url, '/chosen_channel');
 }));
