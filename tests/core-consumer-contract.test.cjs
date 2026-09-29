@@ -33,6 +33,7 @@ test('Dropper delegates shared launcher and notice infrastructure to exp-core', 
   assert.match(template, /ExtraPotionsCore\.registerDiagnosticsProduct\(productId, APP_VERSION, host\)/u);
   assert.match(template, /ExtraPotionsCore\.claimNotice\("dropper", changeId\)/u);
   assert.match(template, /ExtraPotionsCore\.layoutFloatingNotices\(\)/u);
+  assert.match(template, /ExtraPotionsCore\.publishMenuPalette\?\.\(ui\.host, semantic\)/u);
   assert.match(template, /ExtraPotionsCore\.compareVersions\(a, b\)/u);
 });
 

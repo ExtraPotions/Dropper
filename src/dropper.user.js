@@ -14491,6 +14491,7 @@
     settings.uiTheme = theme.id;
     for (const key of ["bg", "panel", "line", "text", "muted", "accent", "accent2"]) ui.cluster.style.setProperty(`--theme-${key}`, theme[key]);
     const semantic = semanticTheme(theme);
+    ExtraPotionsCore.publishMenuPalette?.(ui.host, semantic);
     for (const key of ["raised", "inset", "link", "focus", "onAccent"]) ui.cluster.style.setProperty(`--theme-${key}`, semantic[key]);
     ExtraPotionsCore.publishMenuPalette?.(ui.host, { ...theme, ...semantic });
     ui.cluster.style.setProperty("--theme-skin", theme.skin || theme.swatch);
