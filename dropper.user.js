@@ -14959,6 +14959,11 @@ const ExtraPotionsCore = (() => {
       });
     }
     lastUiRoutingState = readRoutingControllerSession().state || "";
+    globalThis.ExtraPotionsCore?.publishSuiteState?.("dropper", "dropper.state-changed", {
+      activeReward: Boolean(currentDrop),
+      progressPercent: lastUiProgressPercent == null ? null : Number(lastUiProgressPercent),
+      routingState: lastUiRoutingState || "unknown",
+    });
     refreshOpenCampaignList();
   }
 
