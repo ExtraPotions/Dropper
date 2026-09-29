@@ -561,6 +561,7 @@
   const CAMPAIGNS_URL = "https://www.twitch.tv/drops/campaigns";
   const TWITCH_HOME_URL = "https://www.twitch.tv/";
   const TWITCH_LOGIN_URL = "https://www.twitch.tv/login";
+  const TWITCH_CONNECTIONS_URL = "https://www.twitch.tv/settings/connections";
 
   const GQL_URL = "https://gql.twitch.tv/gql";
   const INTEGRITY_URL = "https://gql.twitch.tv/integrity";
@@ -689,10 +690,11 @@
         try {
           for (const raw of read() || []) {
             if (!raw || !outcomes.has(raw.outcome) || !claimKinds.has(raw.kind) || !text(raw.key)) continue;
-            if (text(raw.key).length > 512 || text(raw.rewardId).length > 180 || text(raw.campaignId).length > 180) continue;
-            if (/https?:|[\r\n<>]/i.test(raw.key + (raw.rewardId || '') + (raw.campaignId || ''))) continue;
+            if (text(raw.key).length > 512 || text(raw.rewardId).length > 180 || text(raw.campaignId).length > 180 || text(raw.rewardName).length > 160 || text(raw.game).length > 120) continue;
+            if (/https?:|[\r\n<>]/i.test(raw.key + (raw.rewardId || '') + (raw.campaignId || '') + (raw.rewardName || '') + (raw.game || ''))) continue;
             const record = {
               key: text(raw.key), kind: raw.kind, rewardId: text(raw.rewardId), campaignId: text(raw.campaignId),
+              rewardName: text(raw.rewardName).slice(0, 160), game: text(raw.game).slice(0, 120),
               attemptId: text(raw.attemptId).slice(0, 100), at: Number(raw.at) || 0,
               updatedAt: Number(raw.updatedAt) || 0, attempts: Math.max(1, Math.min(3, Number(raw.attempts) || 1)),
               outcome: raw.outcome, evidence: evidenceKinds.has(raw.evidence) ? raw.evidence : 'unknown',
@@ -718,13 +720,14 @@
           }
         }
       }
-      function begin({ key, rewardId = '', campaignId = '', kind = 'drop', evidence = 'request' }) {
+      function begin({ key, rewardId = '', campaignId = '', rewardName = '', game = '', kind = 'drop', evidence = 'request' }) {
         expire();
-        if (!claimKinds.has(kind) || !text(key) || key.length > 512 || /https?:|[\r\n<>]/i.test(key + rewardId + campaignId)) return null;
+        if (!claimKinds.has(kind) || !text(key) || key.length > 512 || /https?:|[\r\n<>]/i.test(key + rewardId + campaignId + rewardName + game)) return null;
         const prior = records.get(key);
         if (prior && (prior.outcome !== 'retryable' || prior.attempts >= 3 || now() < prior.nextAttemptAt)) return null;
         return persist({
-          key, rewardId: text(rewardId).slice(0, 180), campaignId: text(campaignId).slice(0, 180), kind,
+          key, rewardId: text(rewardId).slice(0, 180), campaignId: text(campaignId).slice(0, 180),
+          rewardName: text(rewardName).slice(0, 160), game: text(game).slice(0, 120), kind,
           attemptId: text(id()), at: now(), updatedAt: now(),
           attempts: (prior?.attempts || 0) + 1, outcome: 'pending', evidence: evidenceKinds.has(evidence) ? evidence : 'request', nextAttemptAt: 0,
         });
@@ -1708,7 +1711,12 @@
       const instanceId = carrier?.getAttribute('data-drop-instance-id') || '';
       for (const campaign of lastInventoryCampaigns) {
         const reward = (campaign.timeBasedDrops || campaign.drops || []).find(item => (rewardId && item.id === rewardId) || (instanceId && item.self?.dropInstanceID === instanceId));
-        if (reward && !reward.self?.isClaimed) return { id: reward.id, campaignId: String(campaign.id || ''), campaignKey: campaignKey(campaign), dropInstanceID: reward.self?.dropInstanceID || '' };
+        if (reward && !reward.self?.isClaimed) return {
+          id: reward.id, campaignId: String(campaign.id || ''), campaignKey: campaignKey(campaign),
+          dropInstanceID: reward.self?.dropInstanceID || '',
+          name: reward.name || reward.benefitEdges?.[0]?.benefit?.name || 'Drop',
+          game: campaignGameName(campaign),
+        };
       }
       if (!isInventory() && currentDrop?.id && dropProgressComplete(currentDrop)) return currentDrop;
     }
@@ -1743,7 +1751,11 @@
       if (!isSafeClaimTarget(button, group)) return false;
       if (identity.anonymous && Date.now() - lastAnonymousAttemptAt[group.kind] < 1500) return false;
       const ledger = claimLedger();
-      const attempt = ledger.begin({ key, rewardId: identity.id || '', campaignId: identity.campaignId || identity.campaignKey || '', kind: group.kind, evidence: 'page-control' });
+      const attempt = ledger.begin({
+        key, rewardId: identity.id || '', campaignId: identity.campaignId || identity.campaignKey || '',
+        rewardName: group.kind === 'bonus' ? 'Bonus Chest' : cleanText(identity.name || currentDrop?.name || 'Drop'),
+        game: cleanText(identity.game || currentDrop?.game || ''), kind: group.kind, evidence: 'page-control'
+      });
       if (!attempt) return false;
       if (identity.anonymous) lastAnonymousAttemptAt[group.kind] = Date.now();
       try {
@@ -1863,10 +1875,66 @@
   function renderClaimHistory() {
     const output = ui?.shadow?.getElementById('tdh-claim-history');
     const health = ui?.shadow?.getElementById('tdh-claim-health');
-    if (health) health.textContent = claimHealthSummary();
     if (!output) return;
-    const records = claimLedger().snapshot().slice(0, 20);
-    output.textContent = records.length ? records.map(record => `${new Date(record.at).toLocaleTimeString()} · ${record.kind === 'bonus' ? 'Bonus' : 'Drop'} · ${DropperActiveViewing.claimPresentation(record)} · ${record.evidence}`).join('\n') : 'No claim attempts recorded for this account.';
+    const records = claimLedger().snapshot()
+      .filter(record => record.outcome === 'confirmed' || record.outcome === 'already-claimed')
+      .slice(0, 12);
+    if (health) health.textContent = records.length ? `${records.length} recent` : 'No claims yet';
+    output.replaceChildren();
+    if (!records.length) {
+      const empty = document.createElement('div');
+      empty.className = 'campaign-manager-note';
+      empty.textContent = 'No claimed Drops recorded for this account.';
+      output.append(empty);
+      return;
+    }
+    for (const record of records) {
+      const row = document.createElement('div');
+      row.className = 'claim-history-row';
+      const main = document.createElement('div');
+      main.className = 'claim-history-main';
+      const reward = cleanText(record.rewardName || (record.kind === 'bonus' ? 'Bonus Chest' : 'Drop'));
+      const game = cleanText(record.game);
+      const state = record.outcome === 'already-claimed' ? 'Already claimed' : 'Claimed';
+      main.textContent = `${reward}${game ? ` · ${game}` : ''} · ${state}`;
+      const time = document.createElement('div');
+      time.className = 'claim-history-time';
+      time.textContent = new Date(Number(record.updatedAt || record.at || Date.now())).toLocaleString();
+      row.append(main, time);
+      output.append(row);
+    }
+  }
+
+  function renderRoutingHistory() {
+    const output = ui?.shadow?.getElementById('tdh-routing-history');
+    const summary = ui?.shadow?.getElementById('tdh-routing-history-summary');
+    if (!output || !summary) return;
+    const routingTypes = new Set(['routing-controller','handoff','stream-switch','stream-recovery','stream-skip','stream-skip-confirmed','multi-tab']);
+    const rows = (Array.isArray(activityLog) ? activityLog : [])
+      .filter(entry => routingTypes.has(entry.type) || /offline|stall|category|switch|routing|stream/i.test(entry.message || ''))
+      .slice(-8)
+      .reverse();
+    summary.textContent = rows.length ? cleanText(rows[0].message).slice(0, 38) : 'No switches yet';
+    output.replaceChildren();
+    if (!rows.length) {
+      const empty = document.createElement('div');
+      empty.className = 'campaign-manager-note';
+      empty.textContent = 'Automatic switch reasons will appear here.';
+      output.append(empty);
+      return;
+    }
+    for (const entry of rows) {
+      const row = document.createElement('div');
+      row.className = 'routing-history-row';
+      const main = document.createElement('div');
+      main.className = 'routing-history-main';
+      main.textContent = entry.message || entry.type || 'Routing update';
+      const time = document.createElement('div');
+      time.className = 'routing-history-time';
+      time.textContent = new Date(Number(entry.at || Date.now())).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      row.append(main, time);
+      output.append(row);
+    }
   }
 
   function campaignPriorityEntry(game) {
@@ -2025,8 +2093,41 @@
     summary.textContent = compact.text;
     box.dataset.tone = compact.tone;
 
-    const estimate = Number.isFinite(state.estimateMinutes) ? ` Estimated reward time: ${state.estimateMinutes} min. Twitch-credited progress remains authoritative.` : '';
+    const accountWarning = ui.shadow.getElementById('tdh-account-link-warning');
+    const accountDetail = ui.shadow.getElementById('tdh-account-link-detail');
+    if (accountWarning) {
+      const needsLink = state.code === 'account-link';
+      accountWarning.hidden = !needsLink;
+      if (needsLink && accountDetail) {
+        const game = cleanText(currentDrop?.game);
+        accountDetail.textContent = game
+          ? `${game} requires a linked game account before Twitch can award this campaign's progress.`
+          : 'This campaign requires a linked game account before Twitch can award progress.';
+      }
+    }
+
+    const deadlineStatus = ui.shadow.getElementById('tdh-deadline-status');
     const deadline = state.deadline;
+    if (deadlineStatus) {
+      if (!Number.isFinite(deadline?.minutesUntilDeadline)) {
+        deadlineStatus.hidden = true;
+        deadlineStatus.textContent = '';
+        deadlineStatus.dataset.tone = 'muted';
+      } else {
+        const minutes = Math.max(0, Math.round(deadline.minutesUntilDeadline));
+        const timeLeft = minutes < 60 ? `${minutes}m` : minutes < 1440
+          ? `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+          : `${Math.floor(minutes / 1440)}d ${Math.floor((minutes % 1440) / 60)}h`;
+        const required = Number.isFinite(deadline.requiredMinutes) ? Math.max(0, Math.round(deadline.requiredMinutes)) : null;
+        deadlineStatus.hidden = false;
+        deadlineStatus.dataset.tone = deadline.finishable === false ? 'bad' : minutes <= 60 ? 'warn' : 'muted';
+        deadlineStatus.textContent = deadline.finishable === false
+          ? `⚠ Campaign ends in ${timeLeft} · ${required ?? '?'} min watch still required · Not finishable in time`
+          : `Campaign ends in ${timeLeft}${required !== null ? ` · ${required} min watch remaining` : ''}${deadline.urgency === 'tight' ? ' · Close deadline' : ''}`;
+      }
+    }
+
+    const estimate = Number.isFinite(state.estimateMinutes) ? ` Estimated reward time: ${state.estimateMinutes} min. Twitch-credited progress remains authoritative.` : '';
     const deadlineText = deadline?.finishable === false
       ? ` Deadline risk: ${deadline.requiredMinutes} min required with ${deadline.minutesUntilDeadline} min left.`
       : Number.isFinite(deadline?.marginMinutes) && deadline.marginMinutes <= 15
@@ -4421,12 +4522,14 @@
     };
     activityLog = [...(Array.isArray(activityLog) ? activityLog : []), entry].slice(-ACTIVITY_LOG_LIMIT);
     writeSession(ACTIVITY_LOG_KEY, activityLog);
+    renderRoutingHistory();
     return entry;
   }
 
   function clearActivityLog() {
     activityLog = [];
     writeSession(ACTIVITY_LOG_KEY, activityLog);
+    renderRoutingHistory();
   }
 
   function cleanupNetworkWindow(now = Date.now()) {
@@ -11517,7 +11620,11 @@
         // An unidentified page attempt must settle before a second path sends
         // a mutation for a possibly identical reward.
         if (ledger.snapshot().some(record => record.kind === 'drop' && !record.rewardId && record.outcome === 'pending')) return false;
-        const attempt = ledger.begin({ key, rewardId: drop.id || '', campaignId: drop.campaignId || drop.campaignKey || '', kind: 'drop' });
+        const attempt = ledger.begin({
+          key, rewardId: drop.id || '', campaignId: drop.campaignId || drop.campaignKey || '',
+          rewardName: cleanText(drop.name || drop.benefitEdges?.[0]?.benefit?.name || 'Drop'),
+          game: cleanText(drop.game || ''), kind: 'drop'
+        });
         if (!attempt) return false;
         logActivity('claim-attempt', 'Claim Sent', { rewardId: attempt.rewardId, evidence: 'request' });
         try {
@@ -12893,6 +13000,28 @@
         margin:0;
         flex:0 0 auto;
       }
+      .account-link-warning {
+        grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; gap:8px;
+        margin-top:6px; padding:8px; border:1px solid color-mix(in srgb,#f59e0b 58%,var(--theme-line));
+        border-radius:8px; background:color-mix(in srgb,var(--theme-panel) 82%,#f59e0b 18%); color:#ffe6ad;
+      }
+      .account-link-warning[hidden] { display:none!important; }
+      .account-link-warning-copy { min-width:0; display:flex; flex-direction:column; gap:2px; }
+      .account-link-warning-copy strong { font-size:10px; line-height:1.2; }
+      .account-link-warning-copy span { color:color-mix(in srgb,#ffe6ad 78%,var(--theme-muted)); font-size:8px; line-height:1.35; overflow-wrap:anywhere; }
+      .account-link-warning .life-btn { width:auto; min-width:104px; margin:0; flex:0 0 auto; }
+      .deadline-status {
+        grid-column:1/-1; margin-top:6px; padding:6px 8px; border:1px solid var(--theme-line);
+        border-radius:8px; background:var(--theme-inset); color:var(--theme-muted); font-size:9px; font-weight:750; line-height:1.35;
+      }
+      .deadline-status[hidden] { display:none!important; }
+      .deadline-status[data-tone="warn"] { border-color:color-mix(in srgb,#e2b34a 58%,var(--theme-line)); color:#f2cf75; }
+      .deadline-status[data-tone="bad"] { border-color:color-mix(in srgb,#df5b65 62%,var(--theme-line)); color:#ff9ea6; }
+      .routing-history-list,.claim-history-list { max-height:180px; overflow:auto; padding:3px 8px 7px; }
+      .routing-history-row,.claim-history-row { display:grid; gap:2px; padding:6px 0; min-width:0; }
+      .routing-history-row + .routing-history-row,.claim-history-row + .claim-history-row { border-top:1px solid var(--theme-line); }
+      .routing-history-main,.claim-history-main { min-width:0; color:var(--theme-text); font-size:9px; font-weight:750; line-height:1.35; overflow-wrap:anywhere; }
+      .routing-history-time,.claim-history-time { color:var(--theme-muted); font-size:7.5px; line-height:1.25; }
       #tdh-toggle-inventory,
       #tdh-refresh-campaign-data { grid-column:1/-1; }
       .auth-advanced { margin-top:2px; border:1px solid var(--theme-line); border-radius:7px; background:var(--theme-inset); padding:6px 8px; }
@@ -13242,6 +13371,14 @@
               <span>Twitch Login Required</span>
               <button type="button" class="life-btn" id="tdh-twitch-login">Open Twitch Login</button>
             </div>
+            <div class="account-link-warning" id="tdh-account-link-warning" role="alert" hidden>
+              <div class="account-link-warning-copy">
+                <strong>Game Account Not Linked</strong>
+                <span id="tdh-account-link-detail">This campaign requires a linked game account before Twitch can award progress.</span>
+              </div>
+              <button type="button" class="life-btn" id="tdh-account-link-open">Open Connections</button>
+            </div>
+            <div class="deadline-status" id="tdh-deadline-status" data-tone="muted" role="status" hidden></div>
             <details class="campaign-manager" id="tdh-open-campaigns">
               <summary><span class="campaign-manager-title">Open Campaigns</span><span class="campaign-manager-summary" id="tdh-open-campaign-summary">Loading…</span></summary>
               <div class="campaign-manager-note">Check a game to ignore it until its latest campaign ends. Priorities order recommendations without changing your selected stream.</div>
@@ -13253,6 +13390,10 @@
             </details>
             <button type="button" class="life-btn" id="tdh-toggle-inventory">Show Drops Inventory</button>
             <div class="compact-inventory" id="tdh-compact-inventory"><div class="inventory-head"><div><strong>Campaign Drops</strong><span id="tdh-inventory-game"></span></div></div><div class="inventory-list" id="tdh-inventory-list"></div></div>
+            <details class="campaign-manager" id="tdh-claim-history-panel">
+              <summary><span class="campaign-manager-title">Claim History</span><span class="campaign-manager-summary" id="tdh-claim-health">No claims yet</span></summary>
+              <div class="claim-history-list" id="tdh-claim-history"><div class="campaign-manager-note">No claimed Drops recorded for this account.</div></div>
+            </details>
           </div></section>
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-streams-body"><span class="fl-tool-title">Streams</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-streams-body">
             <div class="stream-subsection-label">Current Stream</div>
@@ -13292,6 +13433,10 @@
                 <button type="button" class="life-btn" id="tdh-clear-skipped-streamers" data-help="Clears The Temporary Streamer Rotation And Immediately Retries Discovery When Waiting.">Clear Skipped Streamers</button>
               </div>
             </details>
+            <details class="campaign-manager" id="tdh-routing-history-panel">
+              <summary><span class="campaign-manager-title">Why did it switch?</span><span class="campaign-manager-summary" id="tdh-routing-history-summary">No switches yet</span></summary>
+              <div class="routing-history-list" id="tdh-routing-history"><div class="campaign-manager-note">Automatic switch reasons will appear here.</div></div>
+            </details>
           </div></section>
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-progress-body"><span class="fl-tool-title">Appearance</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-progress-body">
             ${switchHtml("tdh-progress-title", "Show Progress In Tab", "", settings.progressInTitle)}
@@ -13319,7 +13464,6 @@
                 <button type="button" class="life-btn" id="tdh-reset-session">Reset Session State</button></div>
               </div>
             </details>
-            <details class="campaign-manager" id="tdh-claim-history-panel"><summary>Claim History</summary><div id="tdh-claim-health" class="campaign-manager-note">Claims: none</div><pre id="tdh-claim-history" class="campaign-manager-note" style="white-space:pre-wrap;overflow-wrap:anywhere">No claim attempts recorded for this account.</pre></details>
             <div class="diag" id="tdh-diagnostics" role="region" aria-label="Site and plugin diagnostics" tabindex="0"></div>
           </div></section>
         </aside>
@@ -14607,7 +14751,8 @@
       settings.findNextStream = true; saveSettings(); refreshViewingControls();
     });
     s.getElementById('tdh-claim-history-panel')?.addEventListener('toggle', renderClaimHistory);
-    refreshViewingControls(); refreshEligibilityControls(); renderClaimHistory();
+    s.getElementById('tdh-routing-history-panel')?.addEventListener('toggle', renderRoutingHistory);
+    refreshViewingControls(); refreshEligibilityControls(); renderClaimHistory(); renderRoutingHistory();
     const inventory = s.getElementById("tdh-compact-inventory");
     refreshTwitchAuthStatus();
     s.getElementById("tdh-open-campaigns")?.addEventListener("toggle", (event) => {
@@ -14623,6 +14768,14 @@
       }
       setStatus("Finish Twitch login, then return to Dropper");
       setTimeout(refreshTwitchAuthStatus, 1500);
+    });
+    s.getElementById("tdh-account-link-open")?.addEventListener("click", () => {
+      try {
+        window.open(TWITCH_CONNECTIONS_URL, "_blank", "noopener,noreferrer");
+      } catch (_) {
+        location.assign(TWITCH_CONNECTIONS_URL);
+      }
+      setStatus("Open Twitch Connections and link the required game account");
     });
     s.getElementById("tdh-toggle-inventory")?.addEventListener("click", (event) => {
       const open = inventory.classList.toggle("open");
