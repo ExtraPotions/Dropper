@@ -560,6 +560,13 @@ function css() {
       .multi-tab-status[hidden] { display:none!important; }
       .multi-tab-status[data-role="controller"] { color:color-mix(in srgb,#76d69a 78%,var(--theme-text)); border-color:color-mix(in srgb,#3ac978 46%,var(--theme-line)); }
       .multi-tab-status[data-role="passive"] { color:#f2cf75; border-color:color-mix(in srgb,#e2b34a 55%,var(--theme-line)); }
+      .session-recovery-status {
+        grid-column:1/-1; margin:3px 0 4px; padding:6px 8px; border:1px solid color-mix(in srgb,#57b5ff 44%,var(--theme-line));
+        border-radius:7px; background:color-mix(in srgb,var(--theme-panel) 92%,#57b5ff 8%); color:color-mix(in srgb,#a8d5ff 78%,var(--theme-text)); font-size:8px; font-weight:750; line-height:1.35;
+      }
+      .session-recovery-status[hidden] { display:none!important; }
+      .campaign-strategy-row { padding:6px 8px; margin:0; border-bottom:1px solid var(--theme-line); }
+      .campaign-strategy-row .select-lite { max-width:136px; width:136px; }
       .earning-confidence {
         grid-column:1/-1; display:flex; align-items:baseline; justify-content:space-between; gap:8px;
         margin:3px 0 4px; padding:7px 8px; border:1px solid var(--theme-line); border-radius:8px;
@@ -3941,6 +3948,10 @@ const ExtraPotionsCore = (() => {
   const GQL_MIN_GAP_MS = 15 * 1000;
   const GQL_MAX_BACKOFF_MS = 5 * 60 * 1000;
   const ACTIVITY_LOG_KEY = "dropper-activity-log";
+  const RECOVERY_SNAPSHOT_KEY = "dropper-recovery-snapshot-v1";
+  const RECOVERY_SNAPSHOT_VERSION = 1;
+  const RECOVERY_SNAPSHOT_TTL_MS = 6 * 60 * 60 * 1000;
+  const NOTIFICATION_STATE_KEY = "dropper-notification-quiet-v1";
   const NETWORK_STATE_KEY = "dropper-network-state";
   const STANDBY_CACHE_KEY = "dropper-standby-streams";
   const CAMPAIGN_CATALOG_KEY = "dropper-campaign-catalog";
@@ -4321,6 +4332,7 @@ const ExtraPotionsCore = (() => {
     muteRestarted: true,
     backgroundEarning: false,
     autoPictureInPicture: false,
+    resumeSessionOnRestart: true,
     restoreChannelPlayer: true,
     reduceMotion: false,
     collapsedPanelWidth: "compact",
@@ -4332,6 +4344,8 @@ const ExtraPotionsCore = (() => {
     notifyClaimed: false,
     notifyCampaignEnding: false,
     notifyStalledProgress: false,
+    notifyOnlyWhenHidden: true,
+    notificationCooldownMinutes: 5,
     hideTwitchSubscriptionPromos: true,
     pauseAutoSwitchMinutes: 0,
     pauseAutoSwitchUntil: 0,
@@ -4341,6 +4355,7 @@ const ExtraPotionsCore = (() => {
     queueOnOffline: true,
     queueOnCategoryChange: true,
     queuePreference: "Any Eligible",
+    campaignStrategy: "priority",
   };
   const { PRIDE_RAINBOW, UI_THEMES } = ExtraPotionsCore.reference;
   const themeRgb = (value) => [1, 3, 5].map((index) => parseInt(value.slice(index, index + 2), 16));
@@ -4895,6 +4910,7 @@ const ExtraPotionsCore = (() => {
   let lastPeerCount = 0;
   let lastDeferredRoutingAt = 0;
   let lastDeferredRoutingReason = "";
+  let lastSessionRecovery = null;
   let statusText = "Starting…";
   let progressLabel = "";
   let lastNativeTitle = document.title || "Twitch";
@@ -5199,6 +5215,159 @@ const ExtraPotionsCore = (() => {
       } else viewingIntent.observe(video.readyState > 1 ? 'playing' : 'buffering');
     }
     return viewingIntent.snapshot();
+  }
+
+  function recoverySnapshotStorageKey(account = storageAccountLogin()) {
+    return scopedLocalStorageKey(RECOVERY_SNAPSHOT_KEY, account);
+  }
+
+  function clearRecoverySnapshot(reason = '') {
+    try { localStorage.removeItem(recoverySnapshotStorageKey()); } catch (_) {}
+    if (reason && lastSessionRecovery) {
+      logActivity('session-recovery', 'Cleared restart recovery snapshot', { reason });
+    }
+  }
+
+  function compactRecoveryDrop(drop = currentDrop) {
+    if (!drop) return null;
+    const clean = value => cleanText(value).slice(0, 180);
+    return {
+      id: clean(drop.id),
+      dropInstanceID: clean(drop.dropInstanceID),
+      name: clean(drop.name || 'Current Drop'),
+      game: clean(drop.game),
+      gameSlug: clean(drop.gameSlug),
+      gameId: clean(drop.gameId),
+      campaignId: clean(drop.campaignId),
+      campaignKey: clean(drop.campaignKey),
+      campaign: clean(drop.campaign),
+      campaignStartAt: clean(drop.campaignStartAt),
+      campaignEndAt: clean(drop.campaignEndAt),
+      dropStartAt: clean(drop.dropStartAt),
+      dropEndAt: clean(drop.dropEndAt),
+      percent: Number.isFinite(Number(drop.percent)) ? Math.max(0, Math.min(100, Number(drop.percent))) : null,
+      currentMinutes: Number.isFinite(Number(drop.currentMinutes)) ? Math.max(0, Number(drop.currentMinutes)) : null,
+      requiredMinutes: Number.isFinite(Number(drop.requiredMinutes)) ? Math.max(0, Number(drop.requiredMinutes)) : null,
+      remainingMinutes: Number.isFinite(Number(drop.remainingMinutes)) ? Math.max(0, Number(drop.remainingMinutes)) : null,
+      needsDropDetails: Boolean(drop.needsDropDetails),
+      isClaimed: Boolean(drop.isClaimed),
+    };
+  }
+
+  function loadRecoverySnapshot(now = Date.now()) {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(recoverySnapshotStorageKey()) || 'null');
+      if (!parsed || parsed.version !== RECOVERY_SNAPSHOT_VERSION || !parsed.drop || parsed.drop.isClaimed) return null;
+      const at = Number(parsed.at || 0);
+      const expiresAt = Number(parsed.expiresAt || 0);
+      if (!at || !expiresAt || expiresAt <= now || now - at > RECOVERY_SNAPSHOT_TTL_MS) {
+        localStorage.removeItem(recoverySnapshotStorageKey());
+        return null;
+      }
+      const endMs = Date.parse(parsed.drop.dropEndAt || parsed.drop.campaignEndAt || '') || 0;
+      if (endMs && endMs <= now) {
+        localStorage.removeItem(recoverySnapshotStorageKey());
+        return null;
+      }
+      if (!cleanText(parsed.drop.game) || !cleanText(parsed.drop.campaignKey || parsed.drop.campaignId)) return null;
+      return parsed;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function saveRecoverySnapshot(reason = 'state-change') {
+    if (!settings.resumeSessionOnRestart || !currentDrop || currentDrop.isClaimed || isSyntheticWaitingDrop(currentDrop)) return false;
+    const now = Date.now();
+    const drop = compactRecoveryDrop(currentDrop);
+    if (!drop) return false;
+    const campaignEndMs = Date.parse(drop.dropEndAt || drop.campaignEndAt || '') || 0;
+    const expiresAt = Math.min(now + RECOVERY_SNAPSHOT_TTL_MS, campaignEndMs > now ? campaignEndMs : now + RECOVERY_SNAPSHOT_TTL_MS);
+    const routing = readRoutingControllerSession();
+    const preferredStream = cleanText(routing.targetStream || watchingLogin()).toLowerCase().slice(0, 120);
+    const snapshot = {
+      version: RECOVERY_SNAPSHOT_VERSION,
+      at: now,
+      expiresAt,
+      reason: cleanText(reason).slice(0, 60),
+      preferredStream,
+      progressAt: Number(lastProgressAt || 0),
+      drop,
+    };
+    const signature = JSON.stringify({ preferredStream, drop, bucket: Math.floor(now / 60000) });
+    if (saveRecoverySnapshot.signature === signature) return false;
+    saveRecoverySnapshot.signature = signature;
+    try {
+      localStorage.setItem(recoverySnapshotStorageKey(), JSON.stringify(snapshot));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function restoreRecoverySnapshot(now = Date.now()) {
+    if (!settings.resumeSessionOnRestart || currentDrop) return false;
+    const snapshot = loadRecoverySnapshot(now);
+    if (!snapshot) return false;
+    currentDrop = { ...snapshot.drop, isClaimed: false };
+    writeSession('tdh-drop', currentDrop);
+    if (Number.isFinite(Number(currentDrop.percent))) {
+      lastProgress = Number(currentDrop.percent);
+      progressLabel = `${lastProgress}%`;
+      writeSession('tdh-progress', lastProgress);
+    }
+    lastProgressAt = Number(snapshot.progressAt || 0);
+    if (lastProgressAt) writeSession('tdh-progress-at', lastProgressAt);
+    const login = cleanText(watchingLogin()).toLowerCase();
+    const preferred = cleanText(snapshot.preferredStream).toLowerCase();
+    if (login && preferred && login === preferred) {
+      writeRoutingControllerSession({
+        ...routingSessionDefaults(ROUTING_STATES.VERIFY_STREAM),
+        ...routingControllerTargetFromDrop(currentDrop),
+        targetStream: login,
+        candidateEvidence: { source: 'restart-recovery', verificationRequired: true, recoveredSession: true },
+        verifyBaselineMinutes: Number(currentDrop.currentMinutes || 0),
+        verifyBaselinePercent: Number(currentDrop.percent || 0),
+        deadlineAt: now + ROUTING_VERIFY_DEADLINE_MS,
+      });
+    } else if (settings.findNextStream) {
+      writeRoutingControllerSession({
+        ...routingSessionDefaults(ROUTING_STATES.FIND_STREAM),
+        ...routingControllerTargetFromDrop(currentDrop),
+        targetStream: '',
+        candidateEvidence: { source: 'restart-recovery', verificationRequired: true, recoveredSession: true },
+        deadlineAt: 0,
+      });
+    }
+    lastSessionRecovery = {
+      at: now,
+      snapshotAt: Number(snapshot.at || now),
+      preferredStream: preferred || null,
+      sameStream: Boolean(login && preferred && login === preferred),
+      drop: currentDrop.name || 'Current Drop',
+      game: currentDrop.game || null,
+    };
+    logActivity('session-recovery', `Recovered ${currentDrop.name || 'Drop'} after restart · re-verifying Twitch`, {
+      game: currentDrop.game || null,
+      preferredStream: preferred || null,
+      sameStream: lastSessionRecovery.sameStream,
+      snapshotAgeSeconds: Math.max(0, Math.floor((now - Number(snapshot.at || now)) / 1000)),
+    });
+    queueGqlPollSoon('restart-recovery', 0);
+    return true;
+  }
+
+  function refreshSessionRecoveryStatus() {
+    const node = ui?.shadow?.getElementById('tdh-session-recovery-status');
+    if (!node) return;
+    if (!lastSessionRecovery) {
+      node.hidden = true;
+      node.textContent = '';
+      return;
+    }
+    node.hidden = false;
+    const age = Math.max(0, Date.now() - Number(lastSessionRecovery.snapshotAt || Date.now()));
+    node.textContent = `Restart recovery · ${lastSessionRecovery.drop}${lastSessionRecovery.game ? ` · ${lastSessionRecovery.game}` : ''} · saved ${briefAge(age)} ago · re-verifying Twitch`;
   }
 
   function manualStreamLockSnapshot() {
@@ -5870,6 +6039,63 @@ const ExtraPotionsCore = (() => {
     writeCampaignPriorityOrder(order);
     return true;
   }
+  function normalizedCampaignStrategy(value = settings.campaignStrategy) {
+    const strategy = cleanText(value).toLowerCase();
+    return ['priority','deadline','completion','shortest'].includes(strategy) ? strategy : 'priority';
+  }
+
+  function campaignStrategyLabel(value = settings.campaignStrategy) {
+    return {
+      priority: 'My Priority',
+      deadline: 'Ending Soonest',
+      completion: 'Closest to Completion',
+      shortest: 'Shortest Remaining',
+    }[normalizedCampaignStrategy(value)];
+  }
+
+  function rankCampaignCandidatesForStrategy(candidates, now = Date.now()) {
+    const base = DropperActiveViewing.rankCampaignCandidates(candidates, {
+      priorityOf: campaignPriority,
+      now,
+      activeGame: currentDrop?.game || '',
+    });
+    const strategy = normalizedCampaignStrategy();
+    if (strategy === 'priority') return base;
+    const original = new Map(base.map((item, index) => [item, index]));
+    const remaining = item => {
+      const value = Number(item?.sequenceRemainingMinutes ?? item?.remainingMinutes);
+      return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+    };
+    const deadline = item => {
+      const value = Number(item?.endMs);
+      return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+    };
+    const completion = item => {
+      const percent = Number(item?.percent);
+      if (Number.isFinite(percent)) return Math.max(0, Math.min(100, percent));
+      return item?.sequenceInProgress ? 0.5 : 0;
+    };
+    const feasibility = item => item?.sequenceFinishable === false ? 1 : 0;
+    return [...base].sort((a, b) => {
+      const feasibleDelta = feasibility(a) - feasibility(b);
+      if (feasibleDelta) return feasibleDelta;
+      if (strategy === 'deadline') {
+        const delta = deadline(a) - deadline(b);
+        if (delta) return delta;
+      } else if (strategy === 'completion') {
+        const delta = completion(b) - completion(a);
+        if (delta) return delta;
+        const rem = remaining(a) - remaining(b);
+        if (rem) return rem;
+      } else if (strategy === 'shortest') {
+        const delta = remaining(a) - remaining(b);
+        if (delta) return delta;
+      }
+      if (b.sequencePriority !== a.sequencePriority) return b.sequencePriority - a.sequencePriority;
+      return (original.get(a) || 0) - (original.get(b) || 0);
+    });
+  }
+
   function dropperPreconditionsMet(drop, drops) {
     return DropperActiveViewing.planPrerequisites(drop, drops).ready;
   }
@@ -6059,6 +6285,7 @@ const ExtraPotionsCore = (() => {
     try { localStorage.removeItem(scopedLocalStorageKey("dropper-temp-campaign-skips-v1")); } catch (_) { /* legacy cleanup */ }
     const existingRoutingSession = readSession(ROUTING_SESSION_KEY, null);
     try { removeSession(NEXT_GAME_KEY); } catch (_) { /* 3.1 legacy handoff cleanup */ }
+    restoreRecoverySnapshot();
     if (!existingRoutingSession || existingRoutingSession.version !== ROUTING_SESSION_VERSION) {
       try { removeSession(NAVIGATION_GUARD_KEY); } catch (_) { /* clear inherited pre-3.1 loop guard */ }
       try { removeSession(NAVIGATION_FLIGHT_KEY); } catch (_) { /* clear inherited pre-3.1 navigation flight */ }
@@ -6364,6 +6591,7 @@ const ExtraPotionsCore = (() => {
   function clearStoredCurrentDrop() {
     currentDrop = null;
     removeSession("tdh-drop");
+    clearRecoverySnapshot('active-drop-cleared');
   }
 
   function clearGqlFailurePause(reason = "page catalog recovered") {
@@ -6883,6 +7111,7 @@ const ExtraPotionsCore = (() => {
         deadlineAt: next.deadlineAt ? new Date(next.deadlineAt).toISOString() : null,
       });
     }
+    saveRecoverySnapshot('routing-transition');
     return next;
   }
 
@@ -8140,6 +8369,7 @@ const ExtraPotionsCore = (() => {
     refreshEligibilityControls();
     refreshStreamHealthSummary();
     refreshMultiTabStatus();
+    refreshSessionRecoveryStatus();
     checkCampaignDeadlineNotification(now);
     queueClaimScan();
 
@@ -11473,11 +11703,7 @@ const ExtraPotionsCore = (() => {
     // Known unwinnable detailed rewards are filtered whenever a viable option
     // exists. The shared ranker then applies personal priority and sequencing.
     const winnablePool = preferWinnableDrops(inspectionPool, now);
-    const pool = DropperActiveViewing.rankCampaignCandidates(winnablePool, {
-      priorityOf: campaignPriority,
-      now,
-      activeGame: currentDrop?.game || "",
-    });
+    const pool = rankCampaignCandidatesForStrategy(winnablePool, now);
     return preferCurrentWinnableOpenDrop(pool) || pool[0] || null;
   }
 
@@ -11516,11 +11742,7 @@ const ExtraPotionsCore = (() => {
         pendingClaims: sequence.pendingClaims,
       });
     }
-    return DropperActiveViewing.rankCampaignCandidates([...byKey.values()], {
-      priorityOf: campaignPriority,
-      now,
-      activeGame: currentDrop?.game || "",
-    });
+    return rankCampaignCandidatesForStrategy([...byKey.values()], now);
   }
 
   function openCampaignManagementPool(now = Date.now()) {
@@ -13991,6 +14213,7 @@ const ExtraPotionsCore = (() => {
     if (resolvedSlug) currentDrop.gameSlug = resolvedSlug;
 
     writeSession("tdh-drop", currentDrop);
+    saveRecoverySnapshot('target-selected');
     if (detailsKnown) {
       progressLabel = `${percent}%`;
       lastProgress = percent;
@@ -15396,6 +15619,7 @@ const ExtraPotionsCore = (() => {
     }
 
     writeSession("tdh-drop", currentDrop);
+    saveRecoverySnapshot('progress');
     reconcileRoutingTargetWithCurrentDrop("apply-drop");
     progressLabel = `${percent}%`;
 
@@ -17321,7 +17545,8 @@ const ExtraPotionsCore = (() => {
             <div class="deadline-status" id="tdh-deadline-status" data-tone="muted" role="status" hidden></div>
             <details class="campaign-manager" id="tdh-open-campaigns">
               <summary><span class="campaign-manager-title">Open Campaigns</span><span class="campaign-manager-summary" id="tdh-open-campaign-summary">Loading…</span></summary>
-              <div class="campaign-manager-note">Check a game to ignore it until its latest campaign ends. Use ↑ and ↓ to rank games; #1 is preferred whenever it is still eligible and finishable.</div>
+              <div class="mini-row campaign-strategy-row"><span>Campaign Order</span><select class="select-lite" id="tdh-campaign-strategy"><option value="priority">My Priority</option><option value="deadline">Ending Soonest</option><option value="completion">Closest to Completion</option><option value="shortest">Shortest Remaining</option></select></div>
+              <div class="campaign-manager-note">Check a game to ignore it until its latest campaign ends. Use ↑ and ↓ to rank games. The selected Campaign Order controls how viable campaigns are chosen.</div>
               <div class="campaign-game-list" id="tdh-open-campaign-list"></div>
             </details>
             <details class="eligibility-chip" id="tdh-reward-eligibility" data-tone="muted">
@@ -17347,6 +17572,7 @@ const ExtraPotionsCore = (() => {
               <span id="tdh-earning-confidence-detail">No verified earning evidence yet.</span>
             </div>
             <div class="multi-tab-status" id="tdh-multi-tab-status" role="status" hidden></div>
+            <div class="session-recovery-status" id="tdh-session-recovery-status" role="status" hidden></div>
             <div class="action-pair"><button type="button" class="life-btn" id="tdh-resume-playback">Resume Playback</button><button type="button" class="life-btn" id="tdh-allow-switching">Use Automatic Switching</button></div>
             <div class="action-pair">
               <button type="button" class="life-btn" id="tdh-stream-lock" aria-pressed="false">Stay On This Stream</button>
@@ -17375,11 +17601,14 @@ const ExtraPotionsCore = (() => {
                 ${switchHtml("tdh-notify-claimed", "Claimed Drops", "Uses browser notifications when Dropper confirms a claimed Drop.", settings.notifyClaimed)}
                 ${switchHtml("tdh-notify-ending", "Ending Campaigns", "Uses browser notifications when the active campaign reaches 30 minutes and 10 minutes remaining.", settings.notifyCampaignEnding)}
                 ${switchHtml("tdh-notify-stalled", "Stalled Progress", "Uses browser notifications when credited progress enters stall recovery.", settings.notifyStalledProgress)}
+                ${switchHtml("tdh-notify-hidden", "Only When Tab Is Hidden", "Suppresses browser alerts while you are actively viewing this Twitch tab.", settings.notifyOnlyWhenHidden)}
+                <div class="mini-row"><span>Alert Cooldown</span><select class="select-lite" id="tdh-notification-cooldown"><option value="0">Off</option><option value="5">5 Min</option><option value="15">15 Min</option><option value="30">30 Min</option></select></div>
               </div>
             </details>
             <details class="auth-advanced">
               <summary>Routing & backup</summary>
               <div class="auth-advanced-body">
+                ${switchHtml("tdh-resume-session", "Resume Last Drop Session", "Keeps a small account-scoped resume snapshot across browser restarts and re-verifies Twitch before continuing.", settings.resumeSessionOnRestart)}
                 ${switchHtml("tdh-queue-enabled", "Maintain Backup Streams", "Keeps A Short List Of Eligible Backup Drops Channels Ready.", settings.queueEnabled)}
                 <div class="mini-row"><span>Standby Streams</span><select class="select-lite" id="tdh-queue-count"><option value="1">1</option><option value="3">3</option><option value="5">5</option></select></div>
                 <div class="queue-switches">
@@ -19009,6 +19238,21 @@ const ExtraPotionsCore = (() => {
       if (diag.classList.contains("open")) diag.textContent = diagnosticsText();
       setTimeout(() => { event.currentTarget.textContent = "Reset Session State"; }, 1600);
     });
+    const strategy = s.getElementById("tdh-campaign-strategy");
+    strategy.value = normalizedCampaignStrategy();
+    strategy.addEventListener("change", () => {
+      settings.campaignStrategy = normalizedCampaignStrategy(strategy.value);
+      saveSettings();
+      refreshOpenCampaignList();
+      refreshQueueList();
+      setStatus(`Campaign Order: ${campaignStrategyLabel()} · Current Stream Unchanged`);
+    });
+    const notificationCooldown = s.getElementById("tdh-notification-cooldown");
+    notificationCooldown.value = String([0,5,15,30].includes(Number(settings.notificationCooldownMinutes)) ? Number(settings.notificationCooldownMinutes) : 5);
+    notificationCooldown.addEventListener("change", () => {
+      settings.notificationCooldownMinutes = [0,5,15,30].includes(Number(notificationCooldown.value)) ? Number(notificationCooldown.value) : 5;
+      saveSettings();
+    });
     const queueCount = s.getElementById("tdh-queue-count"); queueCount.value = String(settings.queueCount); queueCount.addEventListener("change", () => { settings.queueCount = Number(queueCount.value); saveSettings(); refreshQueueList(); });
     const pref = s.getElementById("tdh-queue-preference"); pref.value = settings.queuePreference; pref.addEventListener("change", () => { settings.queuePreference = pref.value; saveSettings(); refreshQueueList(); });
     const pause = s.getElementById("tdh-pause-switch");
@@ -19078,6 +19322,21 @@ const ExtraPotionsCore = (() => {
     try { return await Api.requestPermission(); } catch (_) { return 'denied'; }
   }
 
+  function notificationQuietState() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(scopedLocalStorageKey(NOTIFICATION_STATE_KEY)) || '{"events":{}}');
+      const events = parsed && typeof parsed.events === 'object' && !Array.isArray(parsed.events) ? parsed.events : {};
+      const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+      return { events: Object.fromEntries(Object.entries(events).filter(([, at]) => Number(at || 0) >= cutoff).slice(-50)) };
+    } catch (_) {
+      return { events: {} };
+    }
+  }
+
+  function saveNotificationQuietState(state) {
+    try { localStorage.setItem(scopedLocalStorageKey(NOTIFICATION_STATE_KEY), JSON.stringify(state)); } catch (_) {}
+  }
+
   function sendBrowserNotification(kind, title, body, { tag = kind, cooldownMs = 0 } = {}) {
     const enabled = kind === 'claimed'
       ? settings.notifyClaimed
@@ -19087,14 +19346,18 @@ const ExtraPotionsCore = (() => {
           ? settings.notifyStalledProgress
           : false;
     if (!enabled) return false;
+    if (settings.notifyOnlyWhenHidden && !document.hidden) return false;
     const Api = browserNotificationApi();
     if (!Api || Api.permission !== 'granted') return false;
     const now = Date.now();
-    sendBrowserNotification.last ||= new Map();
     const key = `${kind}:${tag}`;
-    const last = Number(sendBrowserNotification.last.get(key) || 0);
-    if (cooldownMs && now - last < cooldownMs) return false;
-    sendBrowserNotification.last.set(key, now);
+    const quiet = notificationQuietState();
+    const last = Number(quiet.events[key] || 0);
+    const configuredCooldownMs = Math.max(0, Number(settings.notificationCooldownMinutes || 0)) * 60 * 1000;
+    const effectiveCooldownMs = Math.max(Math.max(0, Number(cooldownMs) || 0), configuredCooldownMs);
+    if (effectiveCooldownMs && now - last < effectiveCooldownMs) return false;
+    quiet.events[key] = now;
+    saveNotificationQuietState(quiet);
     try {
       const notice = new Api(title, {
         body: cleanText(body).slice(0, 220),
@@ -19742,6 +20005,8 @@ const ExtraPotionsCore = (() => {
     });
 
     currentDrop = null;
+    clearRecoverySnapshot('manual-session-reset');
+    lastSessionRecovery = null;
     campaignCatalogCache = { at: 0, campaigns: [] };
     lastCampaignCatalog = [];
     lastCampaignCatalogAt = 0;
@@ -19907,6 +20172,25 @@ const ExtraPotionsCore = (() => {
       currentDrop,
       viewing: { ...viewingIntent.snapshot(), screenWakeLock: Boolean(screenWakeLock), navigationBlocked: lastViewingNavigationBlock || null },
       claims: { history: claimLedger().snapshot(), selectors: claimSelectorHealthSnapshot(now), crossTabLock: navigator.locks?.request ? 'web-locks' : 'local-storage-lease', scanMinimumMs: CLAIM_SCAN_MIN_INTERVAL_MS, lastScanAt: lastClaimScanAt ? new Date(lastClaimScanAt).toISOString() : null, inventorySweep: { ...inventoryClaimSweepState, at: inventoryClaimSweepState.at ? new Date(inventoryClaimSweepState.at).toISOString() : null, limit: INVENTORY_CLAIM_SWEEP_LIMIT }, limit: 100 },
+      restartRecovery: {
+        enabled: Boolean(settings.resumeSessionOnRestart),
+        restored: lastSessionRecovery,
+        snapshot: (() => {
+          const snapshot = loadRecoverySnapshot(now);
+          return snapshot ? {
+            ageSeconds: Math.max(0, Math.floor((now - Number(snapshot.at || now)) / 1000)),
+            expiresAt: new Date(snapshot.expiresAt).toISOString(),
+            preferredStream: snapshot.preferredStream || null,
+            drop: snapshot.drop?.name || null,
+            game: snapshot.drop?.game || null,
+          } : null;
+        })(),
+      },
+      notifications: {
+        onlyWhenHidden: Boolean(settings.notifyOnlyWhenHidden),
+        cooldownMinutes: Math.max(0, Number(settings.notificationCooldownMinutes || 0)),
+        permission: browserNotificationApi()?.permission || 'unsupported',
+      },
       rewardEligibility: activeRewardEligibility(),
       rewardImage: (() => {
         const direct = dropBenefitImage(currentDrop);
@@ -19938,6 +20222,8 @@ const ExtraPotionsCore = (() => {
           game: item?.game || key,
           expiresAt: item?.expiresAt ? new Date(item.expiresAt).toISOString() : null,
         })),
+        strategy: normalizedCampaignStrategy(),
+        strategyLabel: campaignStrategyLabel(),
         queue: (() => {
           const triplet = campaignQueueTriplet(routingCampaignPool(), currentDrop, now);
           const summarize = (item) => item ? {
@@ -20674,8 +20960,8 @@ const ExtraPotionsCore = (() => {
     const map = {
       "tdh-claim-bonus": "claimBonus", "tdh-keep-tab": "keepTabActive", "tdh-claim-drops": "claimDrops",
       "tdh-progress-title": "progressInTitle", "tdh-find-next": "findNextStream", "tdh-mute-next": "muteRestarted",
-      "tdh-background-earning": "backgroundEarning", "tdh-auto-pip": "autoPictureInPicture", "tdh-badge-only": "badgeOnly", "tdh-reduce-motion": "reduceMotion", "tdh-notifications": "notifications",
-      "tdh-notify-claimed": "notifyClaimed", "tdh-notify-ending": "notifyCampaignEnding", "tdh-notify-stalled": "notifyStalledProgress", "tdh-custom-opacity": "customOpacity",
+      "tdh-background-earning": "backgroundEarning", "tdh-auto-pip": "autoPictureInPicture", "tdh-resume-session": "resumeSessionOnRestart", "tdh-badge-only": "badgeOnly", "tdh-reduce-motion": "reduceMotion", "tdh-notifications": "notifications",
+      "tdh-notify-claimed": "notifyClaimed", "tdh-notify-ending": "notifyCampaignEnding", "tdh-notify-stalled": "notifyStalledProgress", "tdh-notify-hidden": "notifyOnlyWhenHidden", "tdh-custom-opacity": "customOpacity",
       "tdh-hide-sub-promos": "hideTwitchSubscriptionPromos",
       "tdh-restore-channel-player": "restoreChannelPlayer",
       "tdh-queue-enabled": "queueEnabled", "tdh-queue-stall": "queueOnStall", "tdh-queue-offline": "queueOnOffline", "tdh-queue-category": "queueOnCategoryChange",
@@ -20687,6 +20973,10 @@ const ExtraPotionsCore = (() => {
         if (key === "claimBonus" || key === "claimDrops") syncClaimWatchers();
         if (key === "keepTabActive") void syncScreenWakeLock();
         if (key === "autoPictureInPicture") void syncAutoPictureInPicture("setting-changed");
+        if (key === "resumeSessionOnRestart") {
+          if (settings.resumeSessionOnRestart) saveRecoverySnapshot('setting-enabled');
+          else clearRecoverySnapshot('setting-disabled');
+        }
         if (key === "findNextStream" && settings.findNextStream) { syncViewingContext(); viewingIntent.allowSwitching(); }
         if (["notifyClaimed","notifyCampaignEnding","notifyStalledProgress"].includes(key) && settings[key]) {
           void requestBrowserNotificationPermission().then((permission) => {
@@ -20718,8 +21008,8 @@ const ExtraPotionsCore = (() => {
     const map = {
       "tdh-claim-bonus": settings.claimBonus, "tdh-keep-tab": settings.keepTabActive, "tdh-claim-drops": settings.claimDrops,
       "tdh-progress-title": settings.progressInTitle, "tdh-find-next": settings.findNextStream, "tdh-mute-next": settings.muteRestarted,
-      "tdh-background-earning": settings.backgroundEarning, "tdh-auto-pip": settings.autoPictureInPicture, "tdh-badge-only": settings.badgeOnly, "tdh-reduce-motion": settings.reduceMotion, "tdh-notifications": settings.notifications,
-      "tdh-notify-claimed": settings.notifyClaimed, "tdh-notify-ending": settings.notifyCampaignEnding, "tdh-notify-stalled": settings.notifyStalledProgress, "tdh-custom-opacity": settings.customOpacity,
+      "tdh-background-earning": settings.backgroundEarning, "tdh-auto-pip": settings.autoPictureInPicture, "tdh-resume-session": settings.resumeSessionOnRestart, "tdh-badge-only": settings.badgeOnly, "tdh-reduce-motion": settings.reduceMotion, "tdh-notifications": settings.notifications,
+      "tdh-notify-claimed": settings.notifyClaimed, "tdh-notify-ending": settings.notifyCampaignEnding, "tdh-notify-stalled": settings.notifyStalledProgress, "tdh-notify-hidden": settings.notifyOnlyWhenHidden, "tdh-custom-opacity": settings.customOpacity,
       "tdh-hide-sub-promos": settings.hideTwitchSubscriptionPromos,
       "tdh-restore-channel-player": settings.restoreChannelPlayer,
       "tdh-queue-enabled": settings.queueEnabled, "tdh-queue-stall": settings.queueOnStall, "tdh-queue-offline": settings.queueOnOffline, "tdh-queue-category": settings.queueOnCategoryChange,

@@ -368,6 +368,21 @@ test('ranked campaign priority preserves legacy preference fallback without fake
 });
 
 
+test('notification quieting is hidden-tab aware and restart recovery is bounded', () => {
+  assert.match(source, /notifyOnlyWhenHidden: true/);
+  assert.match(source, /notificationCooldownMinutes: 5/);
+  assert.match(source, /if \(settings\.notifyOnlyWhenHidden && !document\.hidden\) return false/);
+  assert.match(source, /RECOVERY_SNAPSHOT_TTL_MS = 6 \* 60 \* 60 \* 1000/);
+  assert.match(source, /verificationRequired: true, recoveredSession: true/);
+});
+
+test('campaign strategy exposes priority, deadline, completion, and shortest remaining modes', () => {
+  assert.match(source, /\['priority','deadline','completion','shortest'\]/);
+  assert.match(source, /Closest to Completion/);
+  assert.match(source, /Shortest Remaining/);
+  assert.match(source, /rankCampaignCandidatesForStrategy/);
+});
+
 test('stream routing ranks campaign evidence before viewer preference', () => {
   assert.match(source, /function streamCandidateEvidence\(/);
   assert.match(source, /live-campaign-allowed/);

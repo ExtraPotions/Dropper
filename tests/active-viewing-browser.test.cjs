@@ -38,6 +38,14 @@ const exposed = source.replace('  startDropper();\n})();', `
     refreshHealth: () => { refreshStreamHealthSummary(); refreshEligibilityChecklist(); refreshViewingControls(); },
     confidence: () => earningConfidencePresentation(),
     recoveryAction: () => recoveryActionState(),
+    setStrategy: value => { settings.campaignStrategy = value; },
+    strategy: () => normalizedCampaignStrategy(),
+    rankCampaigns: items => rankCampaignCandidatesForStrategy(items, Date.now()),
+    saveRecovery: () => saveRecoverySnapshot('test'),
+    restoreRecovery: () => restoreRecoverySnapshot(),
+    recoverySnapshot: () => loadRecoverySnapshot(),
+    clearCurrentForRecovery: () => { currentDrop = null; removeSession('tdh-drop'); removeSession(ROUTING_SESSION_KEY); },
+    recovered: () => lastSessionRecovery,
   };
   startDropper();
 })();`);
@@ -176,6 +184,60 @@ test('earning confidence and health surfaces use existing Twitch evidence withou
   assert.equal(result.healthRows, 6);
   assert.equal(result.eligibilityRows, 5);
   assert.ok(['Recheck Twitch','Find Another Stream'].includes(result.recovery));
+}));
+
+test('campaign strategy modes reorder viable campaigns without promoting known-unfinishable work', async () => fixture(async page => {
+  const now = Date.now();
+  const items = [
+    { game: 'Priority', percent: 10, remainingMinutes: 50, endMs: now + 120 * 60000, sequenceFinishable: true },
+    { game: 'Soon', percent: 20, remainingMinutes: 40, endMs: now + 45 * 60000, sequenceFinishable: true },
+    { game: 'Almost', percent: 90, remainingMinutes: 10, endMs: now + 100 * 60000, sequenceFinishable: true },
+    { game: 'Impossible', percent: 99, remainingMinutes: 60, endMs: now + 10 * 60000, sequenceFinishable: false },
+  ];
+  const result = await page.evaluate(items => {
+    const t = window.__dropperTest;
+    const first = {};
+    for (const strategy of ['deadline','completion','shortest']) {
+      t.setStrategy(strategy);
+      first[strategy] = t.rankCampaigns(items)[0]?.game || '';
+    }
+    return first;
+  }, items);
+  assert.equal(result.deadline, 'Soon');
+  assert.equal(result.completion, 'Almost');
+  assert.equal(result.shortest, 'Almost');
+}));
+
+test('restart recovery restores a bounded target but requires Twitch verification again', async () => fixture(async page => {
+  const d = data();
+  d.drop.currentMinutes = 15; d.drop.percent = 25;
+  await page.evaluate(({ drop, campaigns }) => {
+    const t = window.__dropperTest;
+    t.configure(drop, campaigns);
+    t.saveRecovery();
+    t.clearCurrentForRecovery();
+    t.restoreRecovery();
+    t.refreshHealth();
+  }, d);
+  const result = await page.evaluate(() => {
+    const t = window.__dropperTest;
+    const current = t.current();
+    const restored = t.recovered();
+    return {
+      name: current?.name || '',
+      game: current?.game || '',
+      restored: Boolean(restored),
+      sameStream: Boolean(restored?.sameStream),
+      recoveryAction: t.recoveryAction()?.label || '',
+      snapshot: Boolean(t.recoverySnapshot()),
+    };
+  });
+  assert.equal(result.name, 'Fixture reward');
+  assert.equal(result.game, 'Fixture game');
+  assert.equal(result.restored, true);
+  assert.equal(result.sameStream, true);
+  assert.equal(result.snapshot, true);
+  assert.ok(['Recheck Twitch','Find Another Stream'].includes(result.recoveryAction));
 }));
 
 test('claim attempts are deduplicated and only an exact API confirmation settles them', async () => fixture(async page => {
