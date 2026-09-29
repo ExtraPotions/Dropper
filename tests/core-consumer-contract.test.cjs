@@ -74,3 +74,12 @@ test('Dropper uses neutral Core width and opacity variables with temporary legac
   assert.match(template, /var\(--exp-menu-width,var\(--dropper-width, 312px\)\)/u);
   assert.match(template, /var\(--exp-ui-opacity,var\(--dropper-ui-opacity,1\)\)/u);
 });
+
+
+test('Dropper publishes stable Core surface markers', () => {
+  assert.match(template, /id="tdh-tools-dock" data-exp-part="dock"/u);
+  assert.match(template, /id="tdh-settings-launcher" data-exp-part="launcher"/u);
+  assert.match(template, /class="badge-row" data-exp-part="launcher-row"/u);
+  assert.match(template, /id="tdh-drop-card" data-exp-part="progress-card"/u);
+  assert.match(template, /id="tdh-update-notice" data-exp-update-notice="1"/u);
+});

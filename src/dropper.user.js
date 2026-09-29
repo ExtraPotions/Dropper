@@ -13180,7 +13180,7 @@
     shadow.innerHTML = `
       <style>${css()}</style>
       <div class="cluster" id="tdh-cluster">
-        <aside id="tdh-tools-dock" role="region" aria-labelledby="tdh-rail-title">
+        <aside id="tdh-tools-dock" data-exp-part="dock" role="region" aria-labelledby="tdh-rail-title">
           <div class="menu-head">
             <div class="header-brand">
               <div class="header-icon" aria-hidden="true">
@@ -13210,7 +13210,7 @@
           </div>
           <div class="header-divider"></div>
           <div class="toast" id="tdh-toast" hidden></div>
-          <div class="update-notice" id="tdh-update-notice" hidden>
+          <div class="update-notice" id="tdh-update-notice" data-exp-update-notice="1" hidden>
             <button type="button" class="update-dismiss" id="tdh-update-dismiss" aria-label="Dismiss Update Notice">×</button>
             <div class="update-head">
               <div class="update-heading">
@@ -13323,8 +13323,8 @@
           </div></section>
         </aside>
         <div class="progress-stack">
-          <div class="badge-row">
-          <section id="tdh-drop-card" aria-live="polite">
+          <div class="badge-row" data-exp-part="launcher-row">
+          <section id="tdh-drop-card" data-exp-part="progress-card" aria-live="polite">
             <div class="expanded-content">
               <div class="stream-info" id="tdh-stream-info">
                 <div class="progress-copy">
@@ -13356,7 +13356,7 @@
               </div>
             </div>
           </section>
-          <button type="button" id="tdh-settings-launcher" aria-controls="tdh-tools-dock" aria-expanded="false" aria-label="Open Dropper Settings" data-userscript-launcher="userscript-launcher-v1" data-launcher-id="dropper" data-launcher-preferred-position="right-bottom">
+          <button type="button" id="tdh-settings-launcher" data-exp-part="launcher" aria-controls="tdh-tools-dock" aria-expanded="false" aria-label="Open Dropper Settings" data-userscript-launcher="userscript-launcher-v1" data-launcher-id="dropper" data-launcher-preferred-position="right-bottom">
             <svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><path class="track" d="M18 3H24A9 9 0 0 1 33 12V24A9 9 0 0 1 24 33H12A9 9 0 0 1 3 24V12A9 9 0 0 1 12 3H18Z"></path><path class="fill" id="tdh-ring" d="M18 3H24A9 9 0 0 1 33 12V24A9 9 0 0 1 24 33H12A9 9 0 0 1 3 24V12A9 9 0 0 1 12 3H18Z" pathLength="100" stroke-dasharray="0 100"></path></svg>
             ${dropperGemSvg("icon")}
           </button>
