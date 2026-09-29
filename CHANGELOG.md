@@ -2,6 +2,8 @@
 
 - Fixes the Claim History and Open Campaigns headings collapsing into a column of single letters when the status text is long.
 - Keeps the campaign status text on one line and shortens it when there is no room.
+- Simplifies the menu to a single width that follows the Dropper theme.
+- Removes the Menu width, Menu theme, Menu notifications, and menu arrangement controls.
 
 ## 3.3.24 — 2026-09-29
 
