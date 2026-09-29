@@ -1,3 +1,8 @@
+## 3.3.25 — 2026-09-29
+
+- Fixes the Claim History and Open Campaigns headings collapsing into a column of single letters when the status text is long.
+- Keeps the campaign status text on one line and shortens it when there is no room.
+
 ## 3.3.24 — 2026-09-29
 
 - Updates the shared foundation to exp-core 3.4.2.

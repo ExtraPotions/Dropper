@@ -17015,8 +17015,8 @@ const ExtraPotionsCore = (() => {
       .campaign-manager { margin-top:6px; border:1px solid color-mix(in srgb,var(--theme-accent) 34%,var(--theme-line)); border-radius:9px; background:var(--theme-bg); overflow:hidden; }
       .campaign-manager > summary { list-style:none; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 8px; cursor:pointer; }
       .campaign-manager > summary::-webkit-details-marker { display:none; }
-      .campaign-manager-title { min-width:0; font-size:11px; font-weight:800; color:var(--theme-text); }
-      .campaign-manager-summary { flex:0 0 auto; font-size:8px; font-weight:700; color:var(--theme-muted); }
+      .campaign-manager-title { flex:0 0 auto; white-space:nowrap; font-size:11px; font-weight:800; color:var(--theme-text); }
+      .campaign-manager-summary { flex:1 1 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right; font-size:8px; font-weight:700; color:var(--theme-muted); }
       .campaign-manager[open] > summary { border-bottom:1px solid var(--theme-line); }
       .campaign-manager-note { padding:6px 8px 3px; font-size:8px; line-height:1.35; color:var(--theme-muted); }
       .eligibility-chip {
