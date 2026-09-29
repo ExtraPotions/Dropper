@@ -78,10 +78,11 @@
         try {
           for (const raw of read() || []) {
             if (!raw || !outcomes.has(raw.outcome) || !claimKinds.has(raw.kind) || !text(raw.key)) continue;
-            if (text(raw.key).length > 512 || text(raw.rewardId).length > 180 || text(raw.campaignId).length > 180) continue;
-            if (/https?:|[\r\n<>]/i.test(raw.key + (raw.rewardId || '') + (raw.campaignId || ''))) continue;
+            if (text(raw.key).length > 512 || text(raw.rewardId).length > 180 || text(raw.campaignId).length > 180 || text(raw.rewardName).length > 160 || text(raw.game).length > 120) continue;
+            if (/https?:|[\r\n<>]/i.test(raw.key + (raw.rewardId || '') + (raw.campaignId || '') + (raw.rewardName || '') + (raw.game || ''))) continue;
             const record = {
               key: text(raw.key), kind: raw.kind, rewardId: text(raw.rewardId), campaignId: text(raw.campaignId),
+              rewardName: text(raw.rewardName).slice(0, 160), game: text(raw.game).slice(0, 120),
               attemptId: text(raw.attemptId).slice(0, 100), at: Number(raw.at) || 0,
               updatedAt: Number(raw.updatedAt) || 0, attempts: Math.max(1, Math.min(3, Number(raw.attempts) || 1)),
               outcome: raw.outcome, evidence: evidenceKinds.has(raw.evidence) ? raw.evidence : 'unknown',
@@ -107,13 +108,14 @@
           }
         }
       }
-      function begin({ key, rewardId = '', campaignId = '', kind = 'drop', evidence = 'request' }) {
+      function begin({ key, rewardId = '', campaignId = '', rewardName = '', game = '', kind = 'drop', evidence = 'request' }) {
         expire();
-        if (!claimKinds.has(kind) || !text(key) || key.length > 512 || /https?:|[\r\n<>]/i.test(key + rewardId + campaignId)) return null;
+        if (!claimKinds.has(kind) || !text(key) || key.length > 512 || /https?:|[\r\n<>]/i.test(key + rewardId + campaignId + rewardName + game)) return null;
         const prior = records.get(key);
         if (prior && (prior.outcome !== 'retryable' || prior.attempts >= 3 || now() < prior.nextAttemptAt)) return null;
         return persist({
-          key, rewardId: text(rewardId).slice(0, 180), campaignId: text(campaignId).slice(0, 180), kind,
+          key, rewardId: text(rewardId).slice(0, 180), campaignId: text(campaignId).slice(0, 180),
+          rewardName: text(rewardName).slice(0, 160), game: text(game).slice(0, 120), kind,
           attemptId: text(id()), at: now(), updatedAt: now(),
           attempts: (prior?.attempts || 0) + 1, outcome: 'pending', evidence: evidenceKinds.has(evidence) ? evidence : 'request', nextAttemptAt: 0,
         });

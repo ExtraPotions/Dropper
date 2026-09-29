@@ -5679,7 +5679,7 @@ const ExtraPotionsCore = (() => {
     const records = claimLedger().snapshot()
       .filter(record => record.outcome === 'confirmed' || record.outcome === 'already-claimed')
       .slice(0, 12);
-    if (health) health.textContent = records.length ? `${records.length} recent` : 'No claims yet';
+    if (health) health.textContent = claimHealthSummary();
     output.replaceChildren();
     if (!records.length) {
       const empty = document.createElement('div');
