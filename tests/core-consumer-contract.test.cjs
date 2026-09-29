@@ -34,6 +34,8 @@ test('Dropper delegates shared launcher and notice infrastructure to exp-core', 
   assert.match(template, /ExtraPotionsCore\.claimNotice\("dropper", changeId\)/u);
   assert.match(template, /ExtraPotionsCore\.layoutFloatingNotices\(\)/u);
   assert.match(template, /ExtraPotionsCore\.publishMenuPalette\?\.\(ui\.host, semantic\)/u);
+  assert.match(template, /const \{ PRIDE_RAINBOW, UI_THEMES \} = ExtraPotionsCore\.reference;/u);
+  assert.doesNotMatch(template, /const UI_THEMES = Object\.freeze\(\[/u);
   assert.match(template, /ExtraPotionsCore\.compareVersions\(a, b\)/u);
 });
 
