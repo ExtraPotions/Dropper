@@ -4358,7 +4358,8 @@
     const chat = findTwitchChatColumn();
     const measured = chat ? Math.round(chat.getBoundingClientRect().width) : 312;
     const width = Math.max(280, Math.min(measured || 312, 340));
-    ui.cluster.style.setProperty("--exp-menu-width", `${width}px`);\n    ui.cluster.style.setProperty("--dropper-width", `${width}px`);
+    ui.cluster.style.setProperty("--exp-menu-width", `${width}px`);
+    ui.cluster.style.setProperty("--dropper-width", `${width}px`);
   }
 
   function watchChatWidth() {
@@ -14444,7 +14445,8 @@
   function calculatedPanelWidth(mode = normalizedCollapsedPanelWidth()) {
     if (mode === "narrow") return 220;
     if (mode === "compact") return 260;
-    const style = getComputedStyle(ui.cluster);\n    const full = parseFloat(style.getPropertyValue("--exp-menu-width")) || parseFloat(style.getPropertyValue("--dropper-width")) || 312;
+    const style = getComputedStyle(ui.cluster);
+    const full = parseFloat(style.getPropertyValue("--exp-menu-width")) || parseFloat(style.getPropertyValue("--dropper-width")) || 312;
     return Math.max(280, Math.min(full, 340));
   }
 
@@ -14488,7 +14490,8 @@
     ui.cluster.dataset.themeSkin = theme.skinMode === "flat" ? "flat" : "gradient";
     settings.opacityPercent = normalizedOpacityPercent();
     const appliedOpacity = settings.customOpacity ? settings.opacityPercent / 100 : 1;
-    ui.cluster.style.setProperty("--exp-ui-opacity", String(appliedOpacity));\n    ui.cluster.style.setProperty("--dropper-ui-opacity", String(appliedOpacity));
+    ui.cluster.style.setProperty("--exp-ui-opacity", String(appliedOpacity));
+    ui.cluster.style.setProperty("--dropper-ui-opacity", String(appliedOpacity));
     ui.cluster.dataset.customOpacity = settings.customOpacity ? "true" : "false";
     ui.cluster.dataset.opacityPercent = String(settings.opacityPercent);
     const opacityRow = ui.shadow.getElementById("tdh-opacity-row");
