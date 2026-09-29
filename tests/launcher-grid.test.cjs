@@ -12,9 +12,10 @@ const coreSource = fs.readFileSync(path.join(root, 'vendor', 'exp-core', 'exp-co
 test('Dropper delegates launcher-grid ownership to pinned exp-core', () => {
   assert.match(
     template,
-    /ExtraPotionsCore\.registerLauncher\(host, \{ productId, priority \}\)/u,
+    /ExtraPotionsCore\.registerLauncher\(host, \{ productId \}\)/u,
   );
   assert.match(template, /ExtraPotionsCore\.layout\(\)/u);
+  assert.doesNotMatch(template, /registerBadgeGrid\(host, "dropper", \d+/u);
   assert.doesNotMatch(template, /function layoutGrid\s*\(/u);
   assert.doesNotMatch(template, /launcherSlot\s*=/u);
   assert.match(coreSource, /function layoutGrid\s*\(/u);
