@@ -25,7 +25,7 @@ const exposed = source.replace('  startDropper();\n})();', `
     activityStatus: dropActivityStatus, claimSummary: claimHealthSummary,
     eligibilityCompact: eligibilityCompactPresentation,
     restoreMetadata: restoreCurrentDropMetadataFromKnownCampaigns,
-    eligibilityState: activeRewardEligibility, routingProof: persistedRoutingEligibilityProof,
+    eligibilityState: activeRewardEligibility, refreshEligibility: refreshEligibilityControls, routingProof: persistedRoutingEligibilityProof,
     restoreVerification: restorePersistedRoutingVerification,
     setRouting: writeRoutingControllerSession,
     clearVerification: () => { lastStreamVerification = null; },
@@ -690,6 +690,95 @@ test('eligibility uses a compact expandable chip with concise state wording', as
   assert.equal(dom.oldNote, false);
   assert.ok(dom.summary.length > 0);
   assert.ok(dom.detail.length > 0);
+}));
+
+
+test('account-link and deadline-risk cards render from verified campaign state', async () => fixture(async page => {
+  const now = Date.now();
+  const accountStart = new Date(now - 60 * 60 * 1000).toISOString();
+  const accountEnd = new Date(now + 2 * 60 * 60 * 1000).toISOString();
+  const accountState = await page.evaluate(({ start, end }) => {
+    const t = window.__dropperTest;
+    const drop = {
+      id: 'reward-link', campaignId: 'campaign-link', campaignKey: 'campaign-link',
+      name: 'Linked reward', game: 'Linked Game', requiredMinutes: 60, currentMinutes: 0, percent: 0,
+    };
+    const campaigns = [{
+      id: 'campaign-link', name: 'Linked campaign', status: 'ACTIVE', startAt: start, endAt: end,
+      game: { name: 'Linked Game', displayName: 'Linked Game' },
+      self: { isAccountConnected: false, isEligible: true },
+      timeBasedDrops: [{
+        id: 'reward-link', name: 'Linked reward', requiredMinutesWatched: 60,
+        self: { currentMinutesWatched: 0, isClaimed: false },
+      }],
+    }];
+    t.configure(drop, campaigns);
+    t.refreshEligibility();
+    const root = document.getElementById('tdh-root').shadowRoot;
+    const warning = root.getElementById('tdh-account-link-warning');
+    const deadline = root.getElementById('tdh-deadline-status');
+    return {
+      warningHidden: warning.hidden,
+      warningText: warning.textContent.replace(/\s+/g, ' ').trim(),
+      deadlineHidden: deadline.hidden,
+      compact: root.getElementById('tdh-eligibility-summary').textContent,
+    };
+  }, { start: accountStart, end: accountEnd });
+  assert.equal(accountState.warningHidden, false);
+  assert.match(accountState.warningText, /Game Account Not Linked/);
+  assert.match(accountState.warningText, /Linked Game requires a linked game account/);
+  assert.equal(accountState.deadlineHidden, true);
+  assert.equal(accountState.compact, '⚠ Account Link Required');
+
+  const deadlineStart = new Date(now - 60 * 60 * 1000).toISOString();
+  const deadlineEnd = new Date(now + 20 * 60 * 1000).toISOString();
+  const deadlineState = await page.evaluate(({ start, end }) => {
+    const t = window.__dropperTest;
+    const drop = {
+      id: 'reward-deadline', campaignId: 'campaign-deadline', campaignKey: 'campaign-deadline',
+      name: 'Deadline reward', game: 'Deadline Game', requiredMinutes: 60, currentMinutes: 0, percent: 0,
+    };
+    const campaigns = [{
+      id: 'campaign-deadline', name: 'Deadline campaign', status: 'ACTIVE', startAt: start, endAt: end,
+      game: { name: 'Deadline Game', displayName: 'Deadline Game' },
+      self: { isAccountConnected: true, isEligible: true },
+      timeBasedDrops: [{
+        id: 'reward-deadline', name: 'Deadline reward', requiredMinutesWatched: 60,
+        self: { currentMinutesWatched: 0, isClaimed: false },
+      }],
+    }];
+    t.configure(drop, campaigns);
+    t.setRouting({
+      state: 'earning',
+      targetStream: 'chosen_channel',
+      targetGame: 'Deadline Game',
+      targetCampaign: 'Deadline campaign',
+      targetCampaignKey: 'campaign-deadline',
+      targetDropId: 'reward-deadline',
+      candidateEvidence: {
+        gqlEvidenceAt: Date.now(),
+        gqlCampaignSupported: true,
+        gqlSessionDropMatched: true,
+      },
+    });
+    t.clearVerification();
+    t.refreshEligibility();
+    const root = document.getElementById('tdh-root').shadowRoot;
+    const warning = root.getElementById('tdh-account-link-warning');
+    const deadline = root.getElementById('tdh-deadline-status');
+    return {
+      warningHidden: warning.hidden,
+      deadlineHidden: deadline.hidden,
+      deadlineText: deadline.textContent,
+      tone: deadline.dataset.tone,
+      compact: root.getElementById('tdh-eligibility-summary').textContent,
+    };
+  }, { start: deadlineStart, end: deadlineEnd });
+  assert.equal(deadlineState.warningHidden, true);
+  assert.equal(deadlineState.deadlineHidden, false);
+  assert.equal(deadlineState.tone, 'bad');
+  assert.match(deadlineState.deadlineText, /Not finishable in time/);
+  assert.equal(deadlineState.compact, '⚠ Deadline Risk · 60 min needed');
 }));
 
 
