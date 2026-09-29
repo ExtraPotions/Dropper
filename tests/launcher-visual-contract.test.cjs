@@ -80,8 +80,6 @@ test('menu sections group related Dropper controls without token-only rows', () 
   assert.doesNotMatch(section('tdh-streams-body'), /tdh-toggle-inventory/u);
   assert.match(section('tdh-progress-body'), /tdh-progress-title/u);
   assert.match(section('tdh-progress-body'), /tdh-reduce-motion/u);
-  assert.match(section('tdh-progress-body'), /themeSwatchesHtml\(\)/u);
-  assert.match(section('tdh-progress-body'), /tdh-collapsed-width/u);
   assert.match(section('tdh-diagnostics-body'), /tdh-diagnostics-toggle/u);
   assert.match(section('tdh-diagnostics-body'), /tdh-reset-session/u);
   assert.match(section('tdh-diagnostics-body'), /tdh-refresh-campaign-data/u);
@@ -100,7 +98,6 @@ test('recover panel and dock use compact trailing spacing', () => {
 });
 
 test('appearance uses the locked eight-slot palette system', () => {
-  assert.match(source, /id="tdh-theme-swatches" role="radiogroup" aria-label="Menu Theme"/u);
   assert.match(source, /name:"Dropper gem"/u);
   assert.match(source, /#0b0713 0 38%,#7a46c8 38% 69%,#2a8c9b 69% 100%/u);
   assert.match(source, /\.exp-theme-swatch\{[^}]*width:22px!important;[^}]*height:22px!important;[^}]*border-radius:5px!important/u);
@@ -205,7 +202,6 @@ test('menu section titles do not carry redundant helper tips', () => {
   assert.match(source, /const labelClass = tip \? "fl-switch-text has-tooltip" : "fl-switch-text";/u);
   assert.match(source, /switchHtml\("tdh-claim-drops", "Auto-Claim Drops", "",/u);
   assert.match(source, /switchHtml\("tdh-reduce-motion", "Reduce motion", "",/u);
-  assert.match(source, /switchHtml\("tdh-notifications", "Menu notifications", "[^"]+",/u);
   assert.match(source, /switchHtml\("tdh-keep-tab", "Keep Screen Awake", "[^"]+",/u);
   assert.match(source, /switchHtml\("tdh-badge-only", "Badge Only", "[^"]+",/u);
 });

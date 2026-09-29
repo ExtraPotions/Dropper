@@ -16428,9 +16428,6 @@ const ExtraPotionsCore = (() => {
       </div>`;
   }
 
-  function themeSwatchesHtml() {
-    return `<div class="theme-row"><span>Theme</span><div class="exp-theme-swatches" id="tdh-theme-swatches" role="radiogroup" aria-label="Menu Theme">${UI_THEMES.map((theme) => `<button type="button" class="exp-theme-swatch" data-theme="${theme.id}" aria-label="${theme.name}" title="${theme.name}" style="background:${theme.swatch}"></button>`).join("")}</div></div>`;
-  }
 
   function css() {
     return `
@@ -16613,12 +16610,9 @@ const ExtraPotionsCore = (() => {
       .queue-switches>.fl-switch{grid-column:2;display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:space-between!important;gap:10px;min-width:0;padding:5px 0!important;text-align:left!important}
       .queue-switches>.fl-switch>span:first-child{display:block;flex:1 1 auto;width:auto!important;min-width:0!important;min-height:0!important;white-space:normal!important;word-break:normal!important;overflow-wrap:normal!important;line-height:1.25;text-align:left}
       .queue-switches>.fl-switch>.toggleSwitch{flex:0 0 34px;margin-left:auto}
-      #tdh-collapsed-width{box-sizing:border-box;width:100%;margin:0;min-width:0!important;max-width:104px!important;flex:0 1 104px}
       #tdh-progress-body{padding-bottom:5px}
       #tdh-progress-body>.fl-switch,
       #tdh-progress-body>.mini-row{padding:4px 0}
-      #tdh-diagnostics-body>.mini-row:has(#tdh-collapsed-width){grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,104px);align-items:center;gap:8px}
-      #tdh-diagnostics-body>.mini-row:has(#tdh-collapsed-width)>span{flex:1 1 120px;min-width:0;white-space:normal;overflow-wrap:normal}
       #tdh-progress-body>.theme-row{min-height:22px;padding:3px 0;gap:6px}
       #tdh-progress-body .exp-theme-swatches{gap:3px;flex-wrap:nowrap;min-width:0}
       #tdh-progress-body .exp-theme-swatch{flex:0 0 18px!important;width:18px!important;height:18px!important;min-width:18px!important;min-height:18px!important;max-width:18px!important;max-height:18px!important;border-radius:4px!important}
@@ -17381,7 +17375,6 @@ const ExtraPotionsCore = (() => {
             <details class="auth-advanced">
               <summary>Notifications</summary>
               <div class="auth-advanced-body">
-                ${switchHtml("tdh-notifications", "Menu notifications", "Shows brief in-app Dropper messages inside the menu.", settings.notifications)}
                 ${switchHtml("tdh-notify-claimed", "Claimed Drops", "Uses browser notifications when Dropper confirms a claimed Drop.", settings.notifyClaimed)}
                 ${switchHtml("tdh-notify-ending", "Ending Campaigns", "Uses browser notifications when the active campaign reaches 30 minutes and 10 minutes remaining.", settings.notifyCampaignEnding)}
                 ${switchHtml("tdh-notify-stalled", "Stalled Progress", "Uses browser notifications when credited progress enters stall recovery.", settings.notifyStalledProgress)}
@@ -17423,8 +17416,6 @@ const ExtraPotionsCore = (() => {
             ${switchHtml("tdh-badge-only", "Badge Only", "Keeps Only The Dropper Badge On The Page And Shows Progress At The Top Of The Drops Menu.", settings.badgeOnly)}
             ${switchHtml("tdh-reduce-motion", "Reduce motion", "", settings.reduceMotion)}
             <hr class="appearance-separator">
-            ${themeSwatchesHtml()}
-            <div class="mini-row"><span>Menu width</span><select class="select-lite" id="tdh-collapsed-width"><option value="full">Full</option><option value="compact">Compact</option><option value="narrow">Narrow</option></select></div>
             ${switchHtml("tdh-custom-opacity", "Custom Opacity", "Makes Dropper panels translucent while keeping the launcher fully visible.", settings.customOpacity)}
             <div class="opacity-row" id="tdh-opacity-row"${settings.customOpacity ? "" : " hidden"}>
               <span id="tdh-opacity-label">Opacity</span>
@@ -18712,7 +18703,7 @@ const ExtraPotionsCore = (() => {
 
   function normalizedCollapsedPanelWidth(value = settings.collapsedPanelWidth) {
     const normalized = cleanText(value).toLowerCase();
-    return ["full", "compact", "narrow"].includes(normalized) ? normalized : "compact";
+    return "full";
   }
 
   function calculatedPanelWidth(mode = normalizedCollapsedPanelWidth()) {
@@ -18790,8 +18781,6 @@ const ExtraPotionsCore = (() => {
     syncProgressPanelPlacement();
     ui.cluster.dataset.panelWidth = width;
     ui.cluster.dataset.badgeOnly = settings.badgeOnly ? "true" : "false";
-    const select = ui.shadow.getElementById("tdh-collapsed-width");
-    if (select && select.value !== width) select.value = width;
     requestAnimationFrame(layoutChrome);
   }
 
@@ -18859,11 +18848,8 @@ const ExtraPotionsCore = (() => {
     const actions = document.createElement('div');actions.className='action-pair';maintenance.append(actions);
     for (const id of ['tdh-refresh-campaign-data','tdh-clear-activity','tdh-refresh-now','tdh-reset-session']) actions.append(ui.shadow.getElementById(id));
     for (const empty of target.querySelectorAll(':scope>.action-pair:empty,:scope>.action-separator')) empty.remove();
-    const preferences=document.createElement('details');const preferencesTitle=document.createElement('summary');preferencesTitle.textContent='Menu preferences';preferences.append(preferencesTitle,ui.shadow.getElementById('tdh-notifications').closest('.fl-switch'));
-    const width=ui.shadow.getElementById('tdh-collapsed-width');width.setAttribute('aria-label','Menu width');target.prepend(width.closest('.mini-row'));
-    container.prepend(preferences,maintenance);
+    container.prepend(maintenance);
     container.append(details,history);target.append(container);
-    const editor=target.querySelector('.exp-menu-editor');if(editor)container.append(editor);
     container.dataset.expSystemTools='1';
   }
 
@@ -19054,14 +19040,6 @@ const ExtraPotionsCore = (() => {
       settings.pauseAutoSwitchUntil = pauseAutoSwitchUntil;
       saveSettings();
     });
-    const collapsedWidth = s.getElementById("tdh-collapsed-width");
-    collapsedWidth.value = normalizedCollapsedPanelWidth();
-    collapsedWidth.addEventListener("change", () => {
-      settings.collapsedPanelWidth = normalizedCollapsedPanelWidth(collapsedWidth.value);
-      saveSettings();
-      applyAppearanceSettings();
-      layoutChrome();
-    });
     const opacityRange = s.getElementById("tdh-opacity-range");
     opacityRange.value = String(normalizedOpacityPercent());
     opacityRange.addEventListener("input", () => {
@@ -19075,18 +19053,11 @@ const ExtraPotionsCore = (() => {
       saveSettings();
       applyAppearanceSettings();
     });
-    s.getElementById("tdh-theme-swatches")?.addEventListener("click", (event) => {
-      const button = event.target.closest(".exp-theme-swatch");
-      if (!button || !UI_THEMES.some((theme) => theme.id === button.dataset.theme)) return;
-      settings.uiTheme = button.dataset.theme;
-      saveSettings();
-      applyAppearanceSettings();
-    });
     s.getElementById("tdh-update-dismiss")?.addEventListener("click", hideUpdateNotice);
   }
 
   function notifyUser(text) {
-    if (!settings.notifications || !ui) return;
+    if (!ui) return;
     const toast = ui.shadow.getElementById("tdh-toast");
     if (!toast) return;
     toast.textContent = text;
@@ -20752,8 +20723,7 @@ const ExtraPotionsCore = (() => {
     const map = {
       "tdh-claim-bonus": "claimBonus", "tdh-keep-tab": "keepTabActive", "tdh-claim-drops": "claimDrops",
       "tdh-progress-title": "progressInTitle", "tdh-find-next": "findNextStream", "tdh-mute-next": "muteRestarted",
-      "tdh-background-earning": "backgroundEarning", "tdh-auto-pip": "autoPictureInPicture", "tdh-resume-session": "resumeSessionOnRestart", "tdh-badge-only": "badgeOnly", "tdh-reduce-motion": "reduceMotion", "tdh-notifications": "notifications",
-      "tdh-notify-claimed": "notifyClaimed", "tdh-notify-ending": "notifyCampaignEnding", "tdh-notify-stalled": "notifyStalledProgress", "tdh-notify-switch": "notifyStreamSwitches", "tdh-notify-hidden": "notifyOnlyWhenHidden", "tdh-custom-opacity": "customOpacity",
+      "tdh-background-earning": "backgroundEarning", "tdh-auto-pip": "autoPictureInPicture", "tdh-resume-session": "resumeSessionOnRestart", "tdh-badge-only": "badgeOnly", "tdh-reduce-motion": "reduceMotion", "tdh-notify-claimed": "notifyClaimed", "tdh-notify-ending": "notifyCampaignEnding", "tdh-notify-stalled": "notifyStalledProgress", "tdh-notify-switch": "notifyStreamSwitches", "tdh-notify-hidden": "notifyOnlyWhenHidden", "tdh-custom-opacity": "customOpacity",
       "tdh-hide-sub-promos": "hideTwitchSubscriptionPromos",
       "tdh-restore-channel-player": "restoreChannelPlayer",
       "tdh-queue-enabled": "queueEnabled", "tdh-queue-stall": "queueOnStall", "tdh-queue-offline": "queueOnOffline", "tdh-queue-category": "queueOnCategoryChange",
@@ -20800,8 +20770,7 @@ const ExtraPotionsCore = (() => {
     const map = {
       "tdh-claim-bonus": settings.claimBonus, "tdh-keep-tab": settings.keepTabActive, "tdh-claim-drops": settings.claimDrops,
       "tdh-progress-title": settings.progressInTitle, "tdh-find-next": settings.findNextStream, "tdh-mute-next": settings.muteRestarted,
-      "tdh-background-earning": settings.backgroundEarning, "tdh-auto-pip": settings.autoPictureInPicture, "tdh-resume-session": settings.resumeSessionOnRestart, "tdh-badge-only": settings.badgeOnly, "tdh-reduce-motion": settings.reduceMotion, "tdh-notifications": settings.notifications,
-      "tdh-notify-claimed": settings.notifyClaimed, "tdh-notify-ending": settings.notifyCampaignEnding, "tdh-notify-stalled": settings.notifyStalledProgress, "tdh-notify-switch": settings.notifyStreamSwitches, "tdh-notify-hidden": settings.notifyOnlyWhenHidden, "tdh-custom-opacity": settings.customOpacity,
+      "tdh-background-earning": settings.backgroundEarning, "tdh-auto-pip": settings.autoPictureInPicture, "tdh-resume-session": settings.resumeSessionOnRestart, "tdh-badge-only": settings.badgeOnly, "tdh-reduce-motion": settings.reduceMotion, "tdh-notify-claimed": settings.notifyClaimed, "tdh-notify-ending": settings.notifyCampaignEnding, "tdh-notify-stalled": settings.notifyStalledProgress, "tdh-notify-switch": settings.notifyStreamSwitches, "tdh-notify-hidden": settings.notifyOnlyWhenHidden, "tdh-custom-opacity": settings.customOpacity,
       "tdh-hide-sub-promos": settings.hideTwitchSubscriptionPromos,
       "tdh-restore-channel-player": settings.restoreChannelPlayer,
       "tdh-queue-enabled": settings.queueEnabled, "tdh-queue-stall": settings.queueOnStall, "tdh-queue-offline": settings.queueOnOffline, "tdh-queue-category": settings.queueOnCategoryChange,
