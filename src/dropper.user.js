@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.22
+// @version      3.3.23
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -56,7 +56,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.22";
+  const APP_VERSION = "3.3.23";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -206,6 +206,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.23": ["Updates the shared foundation to exp-core 3.4.1.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.22": ["Adds account-link warnings, campaign deadline/time-remaining status, local claim history, and explainable stream-switch/recovery history.","Adds ranked campaign priorities plus priority, deadline, closest-to-completion, and shortest-remaining strategy modes.","Adds opt-in claimed, ending-campaign, stalled-progress, and stream-switch browser alerts, while keeping automatic Picture-in-Picture explicitly opt-in.","Adds bounded restart recovery, deterministic multi-tab routing ownership, and stricter fail-closed Twitch GQL handling while keeping Twitch-credited progress authoritative."],
     "3.3.21": ["Updates the shared foundation to exp-core 3.4.0.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.20": ["Updates the shared foundation to exp-core 3.3.17.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
