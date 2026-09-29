@@ -21,3 +21,13 @@ test('generated Dropper userscript keeps the same Core-owned interoperability bo
   assert.doesNotMatch(built, /registerSuiteProduct\?\./u);
   assert.doesNotMatch(built, /registerPresentationProvider\?\./u);
 });
+
+
+test('Dropper publishes compact non-identifying suite state', () => {
+  const source = read('src/dropper.user.js');
+  assert.match(source, /publishSuiteState\?\.\("dropper", "dropper\.state-changed"/u);
+  assert.match(source, /activeReward/u);
+  assert.match(source, /progressPercent/u);
+  assert.match(source, /routingState/u);
+  assert.doesNotMatch(source.slice(source.indexOf('publishSuiteState?.("dropper"'), source.indexOf('refreshOpenCampaignList();', source.indexOf('publishSuiteState?.("dropper"'))), /streamer|login|rewardName|title|account/i);
+});
