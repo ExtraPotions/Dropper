@@ -1,17 +1,190 @@
 {
-  "coreVersion": "3.3.17",
+  "coreVersion": "3.4.0",
   "source": {
     "source": "ExtraPotions/exp-core",
-    "sourceVersion": "3.3.17",
+    "sourceVersion": "3.4.0",
     "architecture": "core-native"
   },
-  "bundleSha256": "387e2232f5cfc96165a556750e4770bc9c2e9a83739246c169a628ff11060c24",
+  "suiteContract": {
+    "dropper": {
+      "role": "flagship",
+      "priority": 4,
+      "launcherPriority": 110,
+      "themePriority": 4,
+      "capabilities": [
+        "twitch.drops",
+        "twitch.campaigns",
+        "twitch.progress",
+        "twitch.claims",
+        "twitch.stream-management"
+      ],
+      "presentationPhases": [],
+      "state": {
+        "type": "dropper.state-changed",
+        "fields": {
+          "activeReward": "boolean",
+          "progressPercent": "percent-nullable",
+          "routingState": "token"
+        }
+      },
+      "menuSections": {
+        "main": [
+          "drops",
+          "streams"
+        ],
+        "appearance": [
+          "appearance"
+        ],
+        "advanced": [
+          "advanced"
+        ],
+        "system": [
+          "system"
+        ]
+      },
+      "repository": "Dropper",
+      "rootId": "tdh-root"
+    },
+    "shift": {
+      "role": "product",
+      "priority": 3,
+      "launcherPriority": 100,
+      "themePriority": 3,
+      "capabilities": [
+        "appearance.theme",
+        "appearance.readability",
+        "appearance.site-profile"
+      ],
+      "presentationPhases": [
+        "theme"
+      ],
+      "state": {
+        "type": "shift.state-changed",
+        "fields": {
+          "active": "boolean",
+          "theme": "token",
+          "safeMode": "boolean",
+          "excluded": "boolean"
+        }
+      },
+      "menuSections": {
+        "appearance": [
+          "appearance",
+          "readability"
+        ],
+        "advanced": [
+          "effects",
+          "effects-integrations",
+          "profiles",
+          "profiles-sites"
+        ],
+        "system": [
+          "system"
+        ]
+      },
+      "repository": "SHIFT",
+      "rootId": "exp-shift-root"
+    },
+    "ward": {
+      "role": "product",
+      "priority": 2,
+      "launcherPriority": 60,
+      "themePriority": 1,
+      "capabilities": [
+        "retail.classification",
+        "retail.cleanup",
+        "retail.coupons"
+      ],
+      "presentationPhases": [
+        "classify",
+        "visibility"
+      ],
+      "state": {
+        "type": "ward.state-changed",
+        "fields": {
+          "active": "boolean",
+          "pageType": "token",
+          "interventions": "count",
+          "hide": "count",
+          "dim": "count",
+          "collapse": "count",
+          "annotate": "count"
+        }
+      },
+      "menuSections": {
+        "main": [
+          "protection",
+          "amazon",
+          "tools"
+        ],
+        "appearance": [
+          "appearance"
+        ],
+        "advanced": [
+          "advanced",
+          "patterns",
+          "advanced-amazon"
+        ],
+        "system": [
+          "system"
+        ]
+      },
+      "repository": "WARD",
+      "rootId": "exp-ward-root"
+    },
+    "prisma": {
+      "role": "product",
+      "priority": 1,
+      "launcherPriority": 40,
+      "themePriority": 2,
+      "capabilities": [
+        "text.identity-detection",
+        "text.identity-highlighting",
+        "identity.catalog"
+      ],
+      "presentationPhases": [
+        "annotate"
+      ],
+      "state": {
+        "type": "prisma.state-changed",
+        "fields": {
+          "status": "token",
+          "total": "count",
+          "temporarilyHidden": "boolean"
+        }
+      },
+      "menuSections": {
+        "main": [
+          "page",
+          "highlights"
+        ],
+        "appearance": [
+          "style",
+          "highlight-style",
+          "look",
+          "appearance"
+        ],
+        "advanced": [
+          "tools",
+          "language",
+          "sites"
+        ],
+        "system": [
+          "system"
+        ]
+      },
+      "repository": "PRISMA",
+      "rootId": "exp-prisma-root"
+    }
+  },
+  "bundleSha256": "2e7ef52874d38ce10394cf1cfc1cc43926b535d4bfc23446923a6aac272d1ff4",
   "files": {
-    "foundation.js": "6d9d8540ab1e750cc0f256da71fe7d575bfd55633ef7e45f40b0c8aff5002c56",
-    "diagnostic-report.js": "9d1c588495e07e411262184a8263a3d03d0e3dbc7f45c7ff71898a7f3c131861",
-    "lifecycle.js": "50a3584b708d155ce03c7d1a622d9be4f8345e91f6c4c71f8c42dc98f1ed5691",
-    "product-tools.js": "e9b774ab0891b17fcb58696281dd8b092d9e0ae0d8e53d0111b39d6fdc768b96",
-    "menu-arrangement.js": "06bbd7568ab5c7483e070cb7f009b3290f21fc1644d1743284776c119e86660a",
-    "runtime.js": "af4eb339d531da006dd5fdc3925fc61d2a5792f0fc17b1f8cfd1d31a498d0a82"
+    "foundation.js": "52c24ad642c4fbef701258279630a5c7e22003e27e97fd045afcda2058ab9e9c",
+    "diagnostic-report.js": "f31ef0718c38e096fda19b3be26136c10fc8915cb970dc72ded3b225dc338ee5",
+    "lifecycle.js": "eff86cb5f9a66450825cd8b2f1791da5f338aa8d9dc45b858bf130e1af88591e",
+    "product-tools.js": "a910c2648b1c1af05908f2707b58a8cf0025a8953e845716343fb1b870787f73",
+    "menu-arrangement.js": "2a11c5bcbec692ad5906b2d20ee8b55c3679b5db674859f1761690b71ad90da6",
+    "runtime.js": "add1910d5025561f3dc2524537d8cbf26a82705dc3070a3c74a8174c77e55320",
+    "suite-contract.json": "1b60485eeb48388692eadbc6a2de2c8916f7a67baadcb9ef277c44360b79b773"
   }
 }

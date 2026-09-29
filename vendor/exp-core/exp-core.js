@@ -18,48 +18,49 @@ const UI_THEMES = Object.freeze([
     { id:"twitch", name:"Twitch", swatch:"linear-gradient(135deg,#18181b 0 48%,#9147ff 48% 78%,#bf94ff 78% 100%)", canvas:"#111114", surface:"#19191e", primary:"#9147ff", companion:"#772ce8", counterpoint:"#bf94ff", interactive:"#bf94ff", bg:"#111114", panel:"#19191e", line:"#34343b", text:"#efeff1", muted:"#adadb8", accent:"#9147ff", accent2:"#bf94ff", skin:"linear-gradient(135deg,#9147ff,#bf94ff)", skinVertical:"linear-gradient(180deg,#9147ff,#bf94ff)", skinMode:"flat" },
     { id:"dropper", name:"Dropper gem", swatch:"linear-gradient(135deg,#0b0713 0 38%,#7a46c8 38% 69%,#2a8c9b 69% 100%)", canvas:"#0b0713", surface:"#171025", primary:"#7a46c8", companion:"#b14589", counterpoint:"#2a8c9b", interactive:"#9864dc", bg:"#0b0713", panel:"#171025", line:"#3c2850", text:"#e8ddf2", muted:"#aa98bb", accent:"#7a46c8", accent2:"#9864dc", skin:"linear-gradient(135deg,#7a46c8 0%,#b14589 52%,#2a8c9b 100%)", skinVertical:"linear-gradient(180deg,#7a46c8 0%,#b14589 52%,#2a8c9b 100%)" }
   ]);
+const SHARED_UI_THEMES = Object.freeze(UI_THEMES.slice(0, 6));
 
 function css() {
     return `
       :host { all: initial; }
       * { box-sizing: border-box; }
-      .cluster {
+      .exp-core-theme {
         position: fixed; right: 12px; z-index: 2147483600;
         display: flex; flex-direction: column-reverse; align-items: flex-end;
         width: max-content; max-width: calc(100vw - 24px); gap: 8px;
-        --theme-bg:#111114; --theme-panel:#19191e; --theme-raised:#2a2a31; --theme-inset:#0e0e10; --theme-line:#34343b; --theme-text:#efeff1; --theme-muted:#adadb8; --theme-accent:#9147ff; --theme-accent2:#bf94ff; --theme-link:#c6a4ff; --theme-focus:#bf94ff; --theme-onAccent:#111114; --theme-skin:linear-gradient(135deg,#d9b5ff,#9b5af9,#7428e8); --theme-skin-vertical:linear-gradient(180deg,#d9b5ff,#9b5af9,#7428e8); --dropper-ui-opacity:1;
+        --theme-bg:#111114; --theme-panel:#19191e; --theme-raised:#2a2a31; --theme-inset:#0e0e10; --theme-line:#34343b; --theme-text:#efeff1; --theme-muted:#adadb8; --theme-accent:#9147ff; --theme-accent2:#bf94ff; --theme-link:#c6a4ff; --theme-focus:#bf94ff; --theme-onAccent:#111114; --theme-skin:linear-gradient(135deg,#d9b5ff,#9b5af9,#7428e8); --theme-skin-vertical:linear-gradient(180deg,#d9b5ff,#9b5af9,#7428e8); --exp-ui-opacity:1; --exp-menu-width:312px;
         font: 13px/1.42 ui-sans-serif, system-ui, "Segoe UI", sans-serif; color: var(--theme-text);
       }
-      .cluster.open-up { flex-direction: column; }
-      #tdh-tools-dock,
+      .exp-core-theme.open-up { flex-direction: column; }
+      [data-exp-part="dock"],
       #tdh-drop-card,
       .update-notice {
-        opacity:var(--dropper-ui-opacity,1);
+        opacity:var(--exp-ui-opacity,var(--dropper-ui-opacity,1));
         transition:opacity .15s ease;
       }
       .progress-stack {
-        width:min(var(--dropper-width, 312px), calc(100vw - 24px));
+        width:min(var(--exp-menu-width,var(--dropper-width, 312px)), calc(100vw - 24px));
         display:flex; flex-direction:column; align-items:stretch;
         transition:.15s width;
         gap:6px;
       }
       .progress-stack[data-collapsed-width="compact"] { width:min(260px, calc(100vw - 24px)); }
       .progress-stack[data-collapsed-width="narrow"] { width:min(220px, calc(100vw - 24px)); }
-      .progress-stack[data-collapsed-width="full"] { width:min(var(--dropper-width, 312px), calc(100vw - 24px)); }
-      .cluster[data-panel-width="compact"] #tdh-tools-dock,
-      .cluster[data-panel-width="compact"] > .update-notice[data-placement="menu"] {
+      .progress-stack[data-collapsed-width="full"] { width:min(var(--exp-menu-width,var(--dropper-width, 312px)), calc(100vw - 24px)); }
+      .exp-core-theme[data-panel-width="compact"] [data-exp-part="dock"],
+      .exp-core-theme[data-panel-width="compact"] > .update-notice[data-placement="menu"] {
         width:min(260px, calc(100vw - 24px));
       }
-      .cluster[data-panel-width="narrow"] #tdh-tools-dock,
-      .cluster[data-panel-width="narrow"] > .update-notice[data-placement="menu"] {
+      .exp-core-theme[data-panel-width="narrow"] [data-exp-part="dock"],
+      .exp-core-theme[data-panel-width="narrow"] > .update-notice[data-placement="menu"] {
         width:min(220px, calc(100vw - 24px));
       }
-      .cluster[data-panel-width="full"] #tdh-tools-dock,
-      .cluster[data-panel-width="full"] > .update-notice[data-placement="menu"] {
-        width:min(var(--dropper-width, 312px), calc(100vw - 24px));
+      .exp-core-theme[data-panel-width="full"] [data-exp-part="dock"],
+      .exp-core-theme[data-panel-width="full"] > .update-notice[data-placement="menu"] {
+        width:min(var(--exp-menu-width,var(--dropper-width, 312px)), calc(100vw - 24px));
       }
       .progress-stack.badge-only .badge-row { justify-content:flex-end; min-height:48px!important; }
-      .progress-stack.badge-only #tdh-settings-launcher {
+      .progress-stack.badge-only [data-exp-part="launcher"] {
         border-radius:12px;
         border-left:1px solid color-mix(in srgb, var(--theme-accent) 47%, transparent);
       }
@@ -101,12 +102,12 @@ function css() {
       .progress-age.warn { color:#f59e0b; }
       .progress-age.bad { color:#ef4444; font-weight:800; }
       /* 3.2.0 progress panel */
-      .cluster{pointer-events:none!important}
-      .cluster :is(#tdh-tools-dock,.update-notice,#tdh-drop-card,#tdh-settings-launcher){pointer-events:auto!important}
-      .cluster .progress-stack{height:auto;min-height:48px;pointer-events:none!important}
-      .cluster .badge-row{position:fixed!important;min-height:112px!important;height:auto!important;justify-content:flex-end!important;align-items:center!important;pointer-events:none!important}
-      .cluster #tdh-drop-card[data-presentation="page-card"]{position:relative!important;inset:auto!important;right:auto!important;left:auto!important;top:auto!important;bottom:auto!important;flex:0 0 auto!important;margin:0!important}
-      .cluster .badge-only-progress-slot #tdh-drop-card[data-presentation="menu-card"]{position:relative!important;inset:auto!important;right:auto!important;left:auto!important;width:100%!important;min-width:0!important;max-width:none!important;margin:0!important}
+      .exp-core-theme{pointer-events:none!important}
+      .exp-core-theme :is([data-exp-part="dock"],.update-notice,#tdh-drop-card,[data-exp-part="launcher"]){pointer-events:auto!important}
+      .exp-core-theme .progress-stack{height:auto;min-height:48px;pointer-events:none!important}
+      .exp-core-theme .badge-row{position:fixed!important;min-height:112px!important;height:auto!important;justify-content:flex-end!important;align-items:center!important;pointer-events:none!important}
+      .exp-core-theme #tdh-drop-card[data-presentation="page-card"]{position:relative!important;inset:auto!important;right:auto!important;left:auto!important;top:auto!important;bottom:auto!important;flex:0 0 auto!important;margin:0!important}
+      .exp-core-theme .badge-only-progress-slot #tdh-drop-card[data-presentation="menu-card"]{position:relative!important;inset:auto!important;right:auto!important;left:auto!important;width:100%!important;min-width:0!important;max-width:none!important;margin:0!important}
 
       .badge-row {display:flex!important;flex-wrap:nowrap!important;align-items:center!important;gap:8px!important;width:100%!important;min-height:112px!important;height:auto!important;position:relative!important}
       #tdh-drop-card {position:relative!important;order:0!important;flex:1 1 auto!important;width:auto!important;min-width:0!important;max-width:none!important;min-height:112px!important;margin:0!important;overflow:hidden!important;isolation:isolate!important;cursor:default!important;background:var(--theme-panel)!important;border:1px solid color-mix(in srgb,var(--theme-line) 94%,var(--theme-accent) 6%)!important;border-radius:12px!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.03),inset 0 0 18px rgba(255,255,255,.012),0 8px 28px #0006!important;opacity:1!important;transition:border-color .16s ease,box-shadow .16s ease!important}
@@ -178,7 +179,7 @@ function css() {
       .progress-stack[data-collapsed-width="narrow"] .skip-streamer-chip.is-armed .skip-label{display:inline!important}
       .progress-stack[data-collapsed-width="narrow"] .skip-streamer-chip .skip-countdown{min-width:16px!important;height:14px!important;padding-inline:3px!important;font-size:5.5px!important}
 
-      #tdh-settings-launcher {
+      [data-exp-part="launcher"] {
         position:relative; width:48px; min-width:48px; height:48px; min-height:48px; align-self:flex-end; padding:0; margin:0;
         display:grid; place-items:center; border:1px solid color-mix(in srgb,var(--theme-accent) 30%,transparent); border-radius:10px;
         background:var(--theme-panel,#18181b); box-shadow:0 6px 22px #0006; cursor:grab; touch-action:none; user-select:none;
@@ -209,57 +210,57 @@ function css() {
       #tdh-progress-body>.theme-row{min-height:22px;padding:3px 0;gap:6px}
       #tdh-progress-body .exp-theme-swatches{gap:3px;flex-wrap:nowrap;min-width:0}
       #tdh-progress-body .exp-theme-swatch{flex:0 0 18px!important;width:18px!important;height:18px!important;min-width:18px!important;min-height:18px!important;max-width:18px!important;max-height:18px!important;border-radius:4px!important}
-      .cluster[data-panel-width="compact"] #tdh-progress-body>.theme-row>span,
-      .cluster[data-panel-width="narrow"] #tdh-progress-body>.theme-row>span{display:none}
-      .cluster[data-panel-width="compact"] #tdh-progress-body>.theme-row,
-      .cluster[data-panel-width="narrow"] #tdh-progress-body>.theme-row{gap:0}
-      .cluster[data-panel-width="compact"] #tdh-progress-body .exp-theme-swatches,
-      .cluster[data-panel-width="narrow"] #tdh-progress-body .exp-theme-swatches{width:100%;justify-content:space-between}
-      .cluster[data-panel-width="narrow"] #tdh-progress-body>.theme-row{gap:4px}
-      .cluster[data-panel-width="narrow"] #tdh-progress-body .exp-theme-swatch{flex-basis:16px!important;width:16px!important;height:16px!important;min-width:16px!important;min-height:16px!important;max-width:16px!important;max-height:16px!important}
+      .exp-core-theme[data-panel-width="compact"] #tdh-progress-body>.theme-row>span,
+      .exp-core-theme[data-panel-width="narrow"] #tdh-progress-body>.theme-row>span{display:none}
+      .exp-core-theme[data-panel-width="compact"] #tdh-progress-body>.theme-row,
+      .exp-core-theme[data-panel-width="narrow"] #tdh-progress-body>.theme-row{gap:0}
+      .exp-core-theme[data-panel-width="compact"] #tdh-progress-body .exp-theme-swatches,
+      .exp-core-theme[data-panel-width="narrow"] #tdh-progress-body .exp-theme-swatches{width:100%;justify-content:space-between}
+      .exp-core-theme[data-panel-width="narrow"] #tdh-progress-body>.theme-row{gap:4px}
+      .exp-core-theme[data-panel-width="narrow"] #tdh-progress-body .exp-theme-swatch{flex-basis:16px!important;width:16px!important;height:16px!important;min-width:16px!important;min-height:16px!important;max-width:16px!important;max-height:16px!important}
       .appearance-separator{grid-column:1/-1;width:100%;border:0;border-top:1px solid var(--theme-line,#34343b);margin:3px 0 1px}
       .opacity-row{grid-column:1/-1;display:grid;grid-template-columns:auto minmax(72px,1fr) auto;align-items:center;gap:6px;min-width:0;padding:4px 0;border-top:1px solid #26262b}
       .opacity-row[hidden]{display:none!important}
       .opacity-row>span{font-size:11px;line-height:1.25;white-space:nowrap}
-      #tdh-opacity-range{width:100%;min-width:0;accent-color:var(--theme-accent)}
-      #tdh-opacity-value{min-width:34px;text-align:right;font-size:10px;font-weight:800;color:var(--theme-muted)}
-      .cluster[data-panel-width="narrow"] .opacity-row{grid-template-columns:1fr auto}
-      .cluster[data-panel-width="narrow"] #tdh-opacity-range{grid-column:1/-1}
+      [data-exp-part="opacity-range"]{width:100%;min-width:0;accent-color:var(--theme-accent)}
+      [data-exp-part="opacity-value"]{min-width:34px;text-align:right;font-size:10px;font-weight:800;color:var(--theme-muted)}
+      .exp-core-theme[data-panel-width="narrow"] .opacity-row{grid-template-columns:1fr auto}
+      .exp-core-theme[data-panel-width="narrow"] [data-exp-part="opacity-range"]{grid-column:1/-1}
       #tdh-refresh-now,#tdh-reset-session{border-color:#cb6868!important;background:#402020!important;color:#ffd7d7!important}
-      #tdh-settings-launcher:hover {
+      [data-exp-part="launcher"]:hover {
         border-color:color-mix(in srgb,var(--theme-accent) 58%,transparent);
         background:color-mix(in srgb,var(--theme-panel,#18181b) 96%,var(--theme-accent) 4%);
         box-shadow:0 8px 24px #0007; transform:scale(1.015);
       }
-      #tdh-settings-launcher[aria-expanded="true"] {
+      [data-exp-part="launcher"][aria-expanded="true"] {
         border-color:color-mix(in srgb,var(--theme-accent) 72%,transparent);
         background:var(--theme-panel,#18181b);
         box-shadow:0 0 0 1px color-mix(in srgb,var(--theme-accent) 22%,transparent),0 8px 26px #0008;
         transform:scale(1.01);
       }
-      #tdh-settings-launcher.is-dragging {
+      [data-exp-part="launcher"].is-dragging {
         cursor:grabbing; transform:scale(1.03); box-shadow:0 10px 28px #0009;
       }
-      #tdh-settings-launcher.update-available::after {
+      [data-exp-part="launcher"].update-available::after {
         content:"↑"; position:absolute; top:-4px; right:-4px; width:14px; height:14px; display:grid; place-items:center;
         border:2px solid var(--theme-panel,#18181b); border-radius:4px; background:#f59e0b; color:#111114; font-size:8px; font-weight:950;
         box-shadow:0 2px 6px #0007; z-index:4; pointer-events:none;
       }
-      #tdh-settings-launcher .ring { position:absolute; top:50%; left:50%; width:44px; height:44px; pointer-events:none; transform:translate(-50%,-50%); }
-      #tdh-settings-launcher .track { fill:none; stroke:color-mix(in srgb,var(--theme-line,#34343b) 72%,transparent); stroke-width:2.5; }
-      #tdh-settings-launcher .fill { fill:none; stroke:var(--theme-accent,#9147ff); stroke-width:2.5; stroke-linecap:round; transition:.2s stroke; }
-      #tdh-settings-launcher .icon { position:absolute; top:50%; left:50%; width:40px; height:40px; pointer-events:none; z-index:1; transform:translate(-50%,-50%); }
-      #tdh-tools-dock {
+      [data-exp-part="launcher"] .ring { position:absolute; top:50%; left:50%; width:44px; height:44px; pointer-events:none; transform:translate(-50%,-50%); }
+      [data-exp-part="launcher"] .track { fill:none; stroke:color-mix(in srgb,var(--theme-line,#34343b) 72%,transparent); stroke-width:2.5; }
+      [data-exp-part="launcher"] .fill { fill:none; stroke:var(--theme-accent,#9147ff); stroke-width:2.5; stroke-linecap:round; transition:.2s stroke; }
+      [data-exp-part="launcher"] .icon { position:absolute; top:50%; left:50%; width:40px; height:40px; pointer-events:none; z-index:1; transform:translate(-50%,-50%); }
+      [data-exp-part="dock"] {
         position:fixed; right:12px; top:auto; bottom:auto;
-        display:none; width:min(var(--dropper-width, 312px), calc(100vw - 24px)); max-width:calc(100vw - 24px);
+        display:none; width:min(var(--exp-menu-width,var(--dropper-width, 312px)), calc(100vw - 24px)); max-width:calc(100vw - 24px);
         height:max-content; min-height:0; max-height:none; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; flex:0 0 auto;
         transition:.15s width;
         padding:9px 9px 4px; background:var(--theme-bg); border:1px solid var(--theme-line); border-radius:14px; box-shadow:0 18px 50px #0008; color-scheme:dark;
       }
-      #tdh-tools-dock.fl-rail-open { display:block; height:max-content; min-height:0; max-height:none; }
-      #tdh-tools-dock:focus { outline:none; }
-      #tdh-tools-dock :is(.fl-tool-body,.row,.group,.section,.fl-tool-title) { min-width:0; max-width:100%; overflow-wrap:anywhere; }
-      #tdh-tools-dock :is(input,select,textarea) { min-width:0; max-width:100%; }
+      [data-exp-part="dock"].fl-rail-open { display:block; height:max-content; min-height:0; max-height:none; }
+      [data-exp-part="dock"]:focus { outline:none; }
+      [data-exp-part="dock"] :is(.fl-tool-body,.row,.group,.section,.fl-tool-title) { min-width:0; max-width:100%; overflow-wrap:anywhere; }
+      [data-exp-part="dock"] :is(input,select,textarea) { min-width:0; max-width:100%; }
       .menu-head {
         position:relative;
         display:grid; grid-template-columns:minmax(0,1fr) auto;
@@ -267,14 +268,14 @@ function css() {
       }
       .header-actions { display:flex; align-items:flex-start; gap:5px; position:static; }
       .support-wrap { position:static; }
-      #tdh-support-button, #tdh-rail-close {
+      .support-button, #tdh-support-button, [data-exp-part="close"] {
         width:30px; height:30px; min-width:30px; padding:0;
         border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0;
         cursor:pointer;
       }
-      #tdh-support-button { display:grid; place-items:center; }
-      #tdh-support-button svg { width:15px; height:15px; fill:currentColor; }
-      #tdh-support-button:hover, #tdh-support-button:focus-visible {
+      .support-button, #tdh-support-button { display:grid; place-items:center; }
+      .support-button svg, #tdh-support-button svg { width:15px; height:15px; fill:currentColor; }
+      .support-button:hover, .support-button:focus-visible, #tdh-support-button:hover, #tdh-support-button:focus-visible {
         border-color:var(--theme-accent); color:var(--theme-accent2); background:#211b2b; outline:none;
       }
       .support-popover {
@@ -311,21 +312,21 @@ function css() {
       .header-icon .menu-icon { width:38px; height:38px; display:block; }
       .header-copy { min-width:0; overflow:hidden; }
       .header-title-row { display:flex; align-items:center; gap:6px; min-width:0; flex-wrap:wrap; }
-      #tdh-rail-title { margin:0; font-size:15px; font-weight:800; line-height:1.1; }
-      #tdh-header-version {
+      [data-exp-part="title"] { margin:0; font-size:15px; font-weight:800; line-height:1.1; }
+      [data-exp-part="version"] {
         min-height:18px; padding:1px 6px; border:1px solid #4a3b61; border-radius:5px;
         background:#1b1721; color:#c9a7ff; cursor:pointer; font:800 8px/1 ui-sans-serif,system-ui,sans-serif;
         white-space:nowrap;
       }
-      #tdh-header-version:hover, #tdh-header-version:focus-visible {
+      [data-exp-part="version"]:hover, [data-exp-part="version"]:focus-visible {
         border-color:#9147ff; background:#251d31; color:#fff; outline:none;
       }
-      #tdh-rail-subtitle {
+      [data-exp-part="subtitle"] {
         margin-top:2px; font-size:9px; line-height:1.2; color:#adadb8;
         white-space:normal; overflow-wrap:anywhere;
       }
-      #tdh-rail-close { font:18px/1 Arial,sans-serif; }
-      #tdh-rail-close:hover, #tdh-rail-close:focus-visible { border-color:#9147ff; color:#fff; background:#211b2b; outline:none; }
+      [data-exp-part="close"] { font:18px/1 Arial,sans-serif; }
+      [data-exp-part="close"]:hover, [data-exp-part="close"]:focus-visible { border-color:#9147ff; color:#fff; background:#211b2b; outline:none; }
       .header-divider { height:1px; width:100%; margin:5px 0; background:linear-gradient(90deg,transparent,#9147ff88 50%,transparent); }
       .update-notice {
         position:fixed; display:block; width:100%; max-width:calc(100vw - 24px); margin:0; padding:10px;
@@ -398,14 +399,14 @@ function css() {
       .update-release:focus-visible {
         background:color-mix(in srgb,var(--theme-panel) 88%,var(--theme-accent) 12%);
       }
-            .cluster[data-theme-skin="gradient"] .update-notice {
+            .exp-core-theme[data-theme-skin="gradient"] .update-notice {
         border:1px solid transparent;
         background-image:linear-gradient(var(--theme-panel),var(--theme-panel)),var(--theme-skin);
         background-origin:border-box;
         background-clip:padding-box,border-box;
       }
-      .cluster[data-theme-skin="gradient"] .update-version,
-      .cluster[data-theme-skin="gradient"] .update-action {
+      .exp-core-theme[data-theme-skin="gradient"] .update-version,
+      .exp-core-theme[data-theme-skin="gradient"] .update-action {
         border-color:transparent;
         background-image:linear-gradient(var(--theme-panel),var(--theme-panel)),var(--theme-skin);
         background-origin:border-box;
@@ -421,10 +422,10 @@ function css() {
       .fl-tool-chevron { background:none; border:0; color:#adadb8; cursor:pointer; }
       .fl-tool-body { padding:0 10px 8px; }
       .fl-tool-body:not(.fl-tool-hidden) { display:grid; height:auto; min-height:0; max-height:none; overflow:visible; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; column-gap:8px; }
-      .cluster[data-panel-width="compact"] .fl-tool-body:not(.fl-tool-hidden),
-      .cluster[data-panel-width="narrow"] .fl-tool-body:not(.fl-tool-hidden) { grid-template-columns:minmax(0,1fr); }
-      .cluster[data-panel-width="compact"] .fl-tool-body:not(.fl-tool-hidden) > *,
-      .cluster[data-panel-width="narrow"] .fl-tool-body:not(.fl-tool-hidden) > * { grid-column:1/-1; }
+      .exp-core-theme[data-panel-width="compact"] .fl-tool-body:not(.fl-tool-hidden),
+      .exp-core-theme[data-panel-width="narrow"] .fl-tool-body:not(.fl-tool-hidden) { grid-template-columns:minmax(0,1fr); }
+      .exp-core-theme[data-panel-width="compact"] .fl-tool-body:not(.fl-tool-hidden) > *,
+      .exp-core-theme[data-panel-width="narrow"] .fl-tool-body:not(.fl-tool-hidden) > * { grid-column:1/-1; }
       .fl-tool-body > :is(.fl-switch,.mini-row,.life-btn) { min-width:0; }
       .fl-tool-body > :is(.compact-inventory,.campaign-manager,.diag) { grid-column:1/-1; }
       #tdh-diagnostics-body { padding-bottom:2px; }
@@ -434,7 +435,7 @@ function css() {
       #tdh-diagnostics-body>[data-dropper-tools]>details:not([open]){grid-column:auto!important}
       #tdh-diagnostics-body > [data-dropper-tools] > details { min-width:0; margin-top:0!important; padding:7px!important; border:1px solid var(--theme-line);border-radius:7px;overflow-wrap:anywhere; }
       #tdh-diagnostics-body > [data-dropper-tools] :is(button,select) { max-width:100%; min-width:0; white-space:normal; }
-      .cluster[data-panel-width="narrow"] #tdh-diagnostics-body > [data-dropper-tools] { grid-template-columns:minmax(0,1fr); }
+      .exp-core-theme[data-panel-width="narrow"] #tdh-diagnostics-body > [data-dropper-tools] { grid-template-columns:minmax(0,1fr); }
       .fl-tool-hidden { display:none !important; }
       .fl-switch, .mini-row { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; height:auto; min-height:0; padding:6px 0; }
       .fl-switch + .fl-switch, .mini-row + .mini-row { border-top:1px solid #26262b; }
@@ -514,54 +515,54 @@ function css() {
       .fl-tool-panel { border-color:var(--theme-line); background:var(--theme-panel); }
       .fl-tool-body { border-color:var(--theme-line); background:var(--theme-bg); color:var(--theme-text); }
       .select-lite, .life-btn { border-color:var(--theme-line); background:var(--theme-raised); color:var(--theme-text); }
-      .cluster a { color:var(--theme-link); }
-      .fl-tool-chevron, #tdh-rail-subtitle, .compact-extra { color:var(--theme-muted); }
-      .cluster[data-ui-theme="contrast"] .toggleSwitch { border:2px solid #fff; background:#050505; }
-      .cluster[data-ui-theme="contrast"] .toggleSwitch::after { top:0; left:0; border:1px solid #050505; background:#fff; }
-      .cluster[data-ui-theme="contrast"] .toggleSwitch[aria-checked="true"] { background:#fff; border-color:#fff; }
-      .cluster[data-ui-theme="contrast"] .toggleSwitch[aria-checked="true"]::after { background:#050505; border-color:#fff; transform:translateX(14px); }
+      .exp-core-theme a { color:var(--theme-link); }
+      .fl-tool-chevron, [data-exp-part="subtitle"], .compact-extra { color:var(--theme-muted); }
+      .exp-core-theme[data-ui-theme="contrast"] .toggleSwitch { border:2px solid #fff; background:#050505; }
+      .exp-core-theme[data-ui-theme="contrast"] .toggleSwitch::after { top:0; left:0; border:1px solid #050505; background:#fff; }
+      .exp-core-theme[data-ui-theme="contrast"] .toggleSwitch[aria-checked="true"] { background:#fff; border-color:#fff; }
+      .exp-core-theme[data-ui-theme="contrast"] .toggleSwitch[aria-checked="true"]::after { background:#050505; border-color:#fff; transform:translateX(14px); }
       @media (forced-colors: active) {
         .toggleSwitch { forced-color-adjust:none; border:1px solid CanvasText; background:Canvas; }
         .toggleSwitch::after { border-color:CanvasText; background:CanvasText; }
         .toggleSwitch[aria-checked="true"] { border-color:Highlight; background:Highlight; }
         .toggleSwitch[aria-checked="true"]::after { border-color:HighlightText; background:HighlightText; }
       }
-            .cluster[data-theme-skin="gradient"] #tdh-tools-dock {
+            .exp-core-theme[data-theme-skin="gradient"] [data-exp-part="dock"] {
         border:1px solid transparent !important;
         background-origin:border-box !important;
         background-clip:padding-box, border-box !important;
         background-image:linear-gradient(var(--theme-bg),var(--theme-bg)),var(--theme-skin) !important;
       }
-      .cluster[data-theme-skin="gradient"] #tdh-settings-launcher {
+      .exp-core-theme[data-theme-skin="gradient"] [data-exp-part="launcher"] {
         border-color:color-mix(in srgb,var(--theme-accent) 30%,transparent) !important;
         background:var(--theme-panel) !important;
         background-image:none !important;
       }
-      .cluster[data-theme-skin="gradient"] #tdh-settings-launcher:hover {
+      .exp-core-theme[data-theme-skin="gradient"] [data-exp-part="launcher"]:hover {
         border-color:color-mix(in srgb,var(--theme-accent) 58%,transparent) !important;
         background:color-mix(in srgb,var(--theme-panel) 96%,var(--theme-accent) 4%) !important;
         background-image:none !important;
       }
-      .cluster[data-theme-skin="gradient"] #tdh-settings-launcher[aria-expanded="true"] {
+      .exp-core-theme[data-theme-skin="gradient"] [data-exp-part="launcher"][aria-expanded="true"] {
         border:1px solid transparent !important;
         background-image:linear-gradient(var(--theme-panel),var(--theme-panel)),var(--theme-skin) !important;
         background-origin:border-box !important;
         background-clip:padding-box,border-box !important;
       }
-      .cluster[data-theme-skin="gradient"] #tdh-header-version {
+      .exp-core-theme[data-theme-skin="gradient"] [data-exp-part="version"] {
         border:1px solid var(--theme-line);
         background:var(--theme-bg);
         color:var(--theme-text);
         border-radius:6px;
       }
-      .cluster[data-theme-skin="gradient"] #tdh-header-version:hover,
-      .cluster[data-theme-skin="gradient"] #tdh-header-version:focus-visible {
+      .exp-core-theme[data-theme-skin="gradient"] [data-exp-part="version"]:hover,
+      .exp-core-theme[data-theme-skin="gradient"] [data-exp-part="version"]:focus-visible {
         border-color:transparent;
         background-image:linear-gradient(var(--theme-panel),var(--theme-panel)),var(--theme-skin);
         background-origin:border-box;
         background-clip:padding-box,border-box;
       }
-      .cluster[data-theme-skin="gradient"] .header-divider {
+      .exp-core-theme[data-theme-skin="gradient"] .header-divider {
         height:2px;
         border-radius:2px;
         opacity:.9;
@@ -569,25 +570,25 @@ function css() {
         -webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 16%,#000 84%,transparent 100%);
         mask-image:linear-gradient(90deg,transparent 0%,#000 16%,#000 84%,transparent 100%);
       }
-      .cluster[data-theme-skin="gradient"] .drop-bar > span {
+      .exp-core-theme[data-theme-skin="gradient"] .drop-bar > span {
         background:var(--theme-accent) !important;
       }
-      .cluster[data-theme-skin="gradient"] .progress-head .drop-percent {
+      .exp-core-theme[data-theme-skin="gradient"] .progress-head .drop-percent {
         color:var(--theme-accent2) !important;
       }
-      .cluster[data-theme-skin="gradient"]:not([data-ui-theme="contrast"]) .toggleSwitch[aria-checked="true"] {
+      .exp-core-theme[data-theme-skin="gradient"]:not([data-ui-theme="contrast"]) .toggleSwitch[aria-checked="true"] {
         border-color:color-mix(in srgb,var(--theme-line) 52%,var(--theme-accent) 48%);
         background:color-mix(in srgb,var(--theme-panel) 72%,var(--theme-accent) 28%);
       }
-      .cluster[data-theme-skin="gradient"] .exp-theme-swatch.is-on {
+      .exp-core-theme[data-theme-skin="gradient"] .exp-theme-swatch.is-on {
         border-color:var(--theme-text);
         box-shadow:0 0 0 2px var(--theme-accent2);
       }
-      .cluster[data-theme-skin="gradient"] :is(.fl-tool-header,.life-btn).last-opened {
+      .exp-core-theme[data-theme-skin="gradient"] :is(.fl-tool-header,.life-btn).last-opened {
         box-shadow:none;
         position:relative;
       }
-      .cluster[data-theme-skin="gradient"] :is(.fl-tool-header,.life-btn).last-opened::before {
+      .exp-core-theme[data-theme-skin="gradient"] :is(.fl-tool-header,.life-btn).last-opened::before {
         content:"";
         position:absolute;
         left:0;
@@ -597,20 +598,20 @@ function css() {
         border-radius:2px;
         background:var(--theme-skin-vertical);
       }
-      .cluster[data-theme-skin="gradient"] .fl-tool-header:hover,
-      .cluster[data-theme-skin="gradient"] .fl-tool-header:focus-visible,
-      .cluster[data-theme-skin="gradient"] .fl-tool-header[aria-expanded="true"] {
+      .exp-core-theme[data-theme-skin="gradient"] .fl-tool-header:hover,
+      .exp-core-theme[data-theme-skin="gradient"] .fl-tool-header:focus-visible,
+      .exp-core-theme[data-theme-skin="gradient"] .fl-tool-header[aria-expanded="true"] {
         background:color-mix(in srgb,var(--theme-panel) 88%,var(--theme-accent) 12%);
       }
-      .cluster[data-theme-skin="gradient"] :is(.life-btn,.select-lite,.auth-input):focus-visible,
-      .cluster[data-theme-skin="gradient"] .skip-streamer-chip:focus-visible {
+      .exp-core-theme[data-theme-skin="gradient"] :is(.life-btn,.select-lite,.auth-input):focus-visible,
+      .exp-core-theme[data-theme-skin="gradient"] .skip-streamer-chip:focus-visible {
         outline:2px solid transparent !important;
         border-color:transparent !important;
         background-origin:border-box !important;
         background-clip:padding-box,border-box !important;
         background-image:linear-gradient(var(--theme-bg),var(--theme-bg)),var(--theme-skin) !important;
       }
-      .cluster[data-ui-theme="warm"] #tdh-tools-dock {
+      .exp-core-theme[data-ui-theme="warm"] [data-exp-part="dock"] {
         border:1px solid color-mix(in srgb,var(--theme-line) 84%,var(--theme-accent) 16%) !important;
         background-image:
           radial-gradient(120% 65% at 50% -18%,color-mix(in srgb,var(--theme-accent) 9%,transparent),transparent 72%),
@@ -618,29 +619,29 @@ function css() {
         background-clip:padding-box !important;
         box-shadow:0 18px 50px #0009,inset 0 1px 0 #ffedcf12;
       }
-      .cluster[data-ui-theme="warm"] .header-icon {
+      .exp-core-theme[data-ui-theme="warm"] .header-icon {
         background:linear-gradient(155deg,color-mix(in srgb,var(--theme-accent) 13%,var(--theme-panel)),var(--theme-panel) 70%);
         box-shadow:inset 0 1px 0 #ffedcf20,0 2px 9px #0005;
       }
-      .cluster[data-ui-theme="warm"] #tdh-header-version {
+      .exp-core-theme[data-ui-theme="warm"] [data-exp-part="version"] {
         border-color:color-mix(in srgb,var(--theme-line) 66%,var(--theme-accent) 34%);
         background:color-mix(in srgb,var(--theme-panel) 88%,var(--theme-accent) 12%);
         color:var(--theme-accent2);
       }
-      .cluster[data-ui-theme="warm"] #tdh-rail-close {
+      .exp-core-theme[data-ui-theme="warm"] [data-exp-part="close"] {
         border-color:var(--theme-line);background:var(--theme-panel);color:var(--theme-muted);
       }
-      .cluster[data-ui-theme="warm"] .header-divider {
+      .exp-core-theme[data-ui-theme="warm"] .header-divider {
         background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--theme-accent) 55%,transparent) 50%,transparent);
       }
-      .cluster[data-ui-theme="warm"] :is(.fl-tool-header,.life-btn):not(.last-opened) {
+      .exp-core-theme[data-ui-theme="warm"] :is(.fl-tool-header,.life-btn):not(.last-opened) {
         box-shadow:inset 0 1px 0 #ffedcf0a;
       }
-      .cluster[data-ui-theme="contrast"] .toggleSwitch[aria-checked="true"] {
+      .exp-core-theme[data-ui-theme="contrast"] .toggleSwitch[aria-checked="true"] {
         background:#fff;
         border-color:#fff;
       }
-      .cluster[data-ui-theme="contrast"] .toggleSwitch[aria-checked="true"]::after {
+      .exp-core-theme[data-ui-theme="contrast"] .toggleSwitch[aria-checked="true"]::after {
         background:#050505;
         border-color:#fff;
       }
@@ -853,13 +854,13 @@ function compareVersions(a, b) {
     for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) { const diff = (pa[i] || 0) - (pb[i] || 0); if (diff) return diff; }
     return 0;
   }
-return Object.freeze({ PRIDE_RAINBOW, PRIDE_RAINBOW_VERTICAL, CRIMSON_THEME, UI_THEMES, css, protectLauncherHost, compareVersions });
+return Object.freeze({ PRIDE_RAINBOW, PRIDE_RAINBOW_VERTICAL, CRIMSON_THEME, UI_THEMES, SHARED_UI_THEMES, css, protectLauncherHost, compareVersions });
 })();
 
 /* Local diagnostic capture shared at build time by ExtraPotions products. */
 const ExtraPotionsDiagnostics = (() => {
   const LIMIT = 100;
-  const supportedProducts = ['ward', 'dropper', 'prisma', 'shift'];
+  const supportedProducts = ["dropper","shift","ward","prisma"];
   const protocol = 'exp-core-coordination-v1';
   const entries = [], hooks = [], registrations = new Map();
   const startedAt = new Date().toISOString();
@@ -973,7 +974,7 @@ const ExtraPotionsDiagnostics = (() => {
     });
     const boxes = hosts.map(host => {
       // An inaccessible shadow or unknown box is not evidence of a collision.
-      const launcher = host.shadowRoot?.querySelector('[data-exp-part="launcher"],.ward-launcher,.launcher,#tdh-settings-launcher');
+      const launcher = host.shadowRoot?.querySelector('[data-exp-part="launcher"]');
       if (!launcher || !launcher.getClientRects().length || getComputedStyle(launcher).visibility === 'hidden') return null;
       return { id: host.dataset.productId, box: launcher.getBoundingClientRect() };
     }).filter(x => x && supportedProducts.includes(x.id));
@@ -1010,11 +1011,11 @@ const ExtraPotionsDiagnostics = (() => {
     const rect = n => { const b = n.getBoundingClientRect(); return { width: b.width, height: b.height, x: b.x, y: b.y, visible: !!n.getClientRects().length && getComputedStyle(n).visibility !== 'hidden' }; };
     const first = selector => shadow?.querySelector(selector) || null;
     const visibleFirst = selector => [...(shadow?.querySelectorAll(selector) || [])].find(n => !n.hidden && n.getClientRects().length) || first(selector);
-    const progressCard = first('#tdh-drop-card,[data-exp-part="progress-card"]');
-    const launcher = first('[data-exp-part="launcher"],.ward-launcher,.launcher,#tdh-settings-launcher');
-    const launcherRow = first('[data-exp-part="launcher-row"],.badge-row');
-    const menu = first('[data-exp-part="dock"],#tdh-tools-dock,.panel,.ward');
-    const notice = visibleFirst('#tdh-update-notice,[data-exp-update-notice],.update-notice,.changelog');
+    const progressCard = first('[data-exp-part="progress-card"]');
+    const launcher = first('[data-exp-part="launcher"]');
+    const launcherRow = first('[data-exp-part="launcher-row"]');
+    const menu = first('[data-exp-part="dock"]');
+    const notice = visibleFirst('[data-exp-update-notice],.update-notice,.changelog');
     const uiGeometry = {
       progressCardRect: progressCard ? rect(progressCard) : null,
       launcherRect: launcher ? rect(launcher) : null,
@@ -1030,7 +1031,7 @@ const ExtraPotionsDiagnostics = (() => {
       launcherRowWidth: launcherRow ? Math.round(launcherRow.getBoundingClientRect().width) : null,
       menuWidth: menu ? Math.round(menu.getBoundingClientRect().width) : null,
       noticeWidth: notice && !notice.hidden ? Math.round(notice.getBoundingClientRect().width) : null,
-      surfaces: [...(shadow?.querySelectorAll('.panel,.ward,#tdh-tools-dock,[data-exp-part="dock"]') || [])].map(rect),
+      surfaces: [...(shadow?.querySelectorAll('[data-exp-part="dock"]') || [])].map(rect),
       categories: [...(shadow?.querySelectorAll('.route,.nav-item,.fl-tool-header') || [])].map(n => ({ name: redact(n.textContent.trim()), expanded: n.getAttribute('aria-expanded') })),
       swatches: [...(shadow?.querySelectorAll('.exp-theme-swatch') || [])].map(n => ({ name: n.getAttribute('aria-label'), selected: n.getAttribute('aria-pressed'), ...rect(n) })),
     };
@@ -1089,7 +1090,7 @@ const ExtraPotionsDiagnostics = (() => {
   return Object.freeze({ createReport, registerProduct, compatibility, bindControls, createControls, dispose });
 })();
 
-/* exp-core 3.2.19: canonical ExtraPotions shared runtime. */
+/* Canonical ExtraPotions shared lifecycle runtime. */
 function createProductLifecycle(shared) {
   const VERSION = shared.version;
   const PROTOCOL = 'exp-core-coordination-v1';
@@ -1194,6 +1195,7 @@ function createProductLifecycle(shared) {
 
   function createScheduler(callback, options = {}) {
     let observer;
+    let sharedObserverCleanup;
     let frame = 0;
     let active = false;
     const roots = new Set();
@@ -1206,36 +1208,77 @@ function createProductLifecycle(shared) {
       metrics.roots += batch.length;
       try { callback(batch); } catch (error) { safeError(error, options.source || 'scheduler'); }
     };
-    const schedule = (root) => {
-      if (!active || !root || root.closest?.('[data-exp-owned="1"]')) return;
+    const queueRoot = (root) => {
+      if (!active || !root || root.closest?.('[data-exp-owned="1"]')) return false;
       const target = root.nodeType === Node.TEXT_NODE ? root.parentElement : root;
-      if (!target) return;
+      if (!target) return false;
       roots.add(target);
+      return true;
+    };
+    const schedule = (root) => {
+      if (!queueRoot(root)) return;
       if (!frame) frame = requestAnimationFrame(flush);
+    };
+    const startDedicatedObserver = () => {
+      observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+          const target = mutation.target?.nodeType === Node.TEXT_NODE ? mutation.target.parentElement : mutation.target;
+          if (!target) continue;
+          if (target.closest?.('[data-exp-owned="1"]')) continue;
+          if (mutation.type === 'childList') {
+            const changed = [...mutation.addedNodes, ...mutation.removedNodes];
+            if (changed.length && changed.every((node) => node.nodeType === 1 && (node.matches?.('[data-exp-owned="1"]') || node.closest?.('[data-exp-owned="1"]')))) continue;
+          }
+          schedule(target);
+        }
+      });
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: Boolean(options.attributes),
+        characterData: Boolean(options.characterData),
+        attributeFilter: options.attributeFilter
+      });
     };
     return Object.freeze({
       start() {
         if (active) return;
         active = true;
-        observer = new MutationObserver((mutations) => {
-          for (const mutation of mutations) {
-            const target = mutation.target?.nodeType === Node.TEXT_NODE ? mutation.target.parentElement : mutation.target;
-            if (!target) continue;
-            // Ignore SHIFT-owned style/UI writes. These are implementation output, not page
-            // changes, and feeding them back into the scheduler creates self-rescan loops.
-            if (target.closest?.('[data-exp-owned="1"]')) continue;
-            if (target.matches?.('style[data-exp-shift-page-style],style[data-exp-shift-sheet-style],style[data-exp-shift-adopted-style],style[data-exp-shift-adapter-style]')) continue;
-            if (mutation.type === 'childList') {
-              const changed = [...mutation.addedNodes, ...mutation.removedNodes];
-              if (changed.length && changed.every((node) => node.nodeType === 1 && (node.matches?.('[data-exp-owned="1"],style[data-exp-shift-page-style],style[data-exp-shift-sheet-style],style[data-exp-shift-adopted-style],style[data-exp-shift-adapter-style]') || node.closest?.('[data-exp-owned="1"]')))) continue;
+        if (!options.attributes && typeof shared.observePageBatch === 'function') {
+          const productId = options.source || 'scheduler';
+          const phase = options.phase || shared.suiteContract?.(productId)?.presentationPhases?.[0] || 'observe';
+          sharedObserverCleanup = shared.observePageBatch((batch, batchRoots, details) => {
+            for (let index = 0; index < batchRoots.length; index += 1) {
+              const types = Array.isArray(details?.[index]?.types) ? details[index].types : [];
+              if (!options.characterData && types.length && types.every(type => type === 'characterData')) continue;
+              queueRoot(batchRoots[index]);
             }
-            schedule(target);
-          }
-        });
-        observer.observe(document.documentElement, { childList: true, subtree: true, attributes: Boolean(options.attributes), characterData: Boolean(options.characterData), attributeFilter: options.attributeFilter });
+            if (roots.size) {
+              if (frame) { cancelAnimationFrame(frame); frame = 0; }
+              flush();
+            }
+          }, { productId, phase });
+        } else if (!options.attributes && typeof shared.observePage === 'function') {
+          sharedObserverCleanup = shared.observePage((batch, root) => {
+            const types = Array.isArray(batch?.types) ? batch.types : [];
+            if (!options.characterData && types.length && types.every(type => type === 'characterData')) return;
+            schedule(root);
+          }, { productId: options.source || 'scheduler' });
+        } else {
+          startDedicatedObserver();
+        }
         schedule(document.documentElement);
       },
-      stop() { active = false; observer?.disconnect(); observer = null; roots.clear(); if (frame) cancelAnimationFrame(frame); frame = 0; },
+      stop() {
+        active = false;
+        sharedObserverCleanup?.();
+        sharedObserverCleanup = null;
+        observer?.disconnect();
+        observer = null;
+        roots.clear();
+        if (frame) cancelAnimationFrame(frame);
+        frame = 0;
+      },
       schedule,
       flush
     });
@@ -1243,6 +1286,22 @@ function createProductLifecycle(shared) {
 
   function onNavigation(callback) {
     if (typeof callback !== 'function') throw new TypeError('Navigation callback must be a function');
+    if (typeof shared.observeNavigation === 'function') {
+      let disposed = false;
+      const stop = shared.observeNavigation(event => callback({
+        href: event.href,
+        kind: event.kind,
+        epoch: event.epoch,
+      }), { owner: 'lifecycle' });
+      const cleanup = () => {
+        if (disposed) return;
+        disposed = true;
+        stop();
+        cleanups.delete(cleanup);
+      };
+      cleanups.add(cleanup);
+      return cleanup;
+    }
     let previous=location.href;
     const subscriber=({href})=>{if(href!==previous){previous=href;callback({href});}};
     if (!stopNavigationHooks) {
@@ -1274,7 +1333,7 @@ function createProductLifecycle(shared) {
 
   function appendShadowStyle(root, css, data) {
     const node = document.createElement('style');
-    try { node.textContent = css; } catch (error) { safeError(error, 'shift.style'); }
+    try { node.textContent = css; } catch (error) { safeError(error, 'core.style'); }
     node.dataset.expOwned = '1';
     for (const [key, value] of Object.entries(data || {})) node.dataset[key] = String(value);
     root.append(node);
@@ -1360,7 +1419,7 @@ function createProductLifecycle(shared) {
       for (const [key, value] of Object.entries(data || {})) node.dataset[key] = String(value);
       return node;
     };
-    const fail = (error) => safeError(Object.assign(error || new Error('Style injection failed'), { code: 'STYLE_INJECTION' }), 'shift.style');
+    const fail = (error) => safeError(Object.assign(error || new Error('Style injection failed'), { code: 'STYLE_INJECTION' }), 'core.style');
     // Adopted sheets stay inside the shadow and still apply when the page CSP
     // blocks <style>. GM_addElement / GM_addStyle are not used here: managers
     // attach those to the document and leak header/nav/button/* onto the site.
@@ -1403,7 +1462,7 @@ function createProductLifecycle(shared) {
       for (const [key, value] of Object.entries(data || {})) node.dataset[key] = String(value);
       return node;
     };
-    const fail = (error) => safeError(Object.assign(error || new Error('Style injection failed'), { code: 'STYLE_INJECTION' }), 'shift.style');
+    const fail = (error) => safeError(Object.assign(error || new Error('Style injection failed'), { code: 'STYLE_INJECTION' }), 'core.style');
     const handle = (write, detach) => {
       const node = document.createElement('style');
       let current = css;
@@ -1493,8 +1552,9 @@ function createProductLifecycle(shared) {
 
 // Shared, local-only compatibility controls.
 const ExtraPotionsTools = (() => {
+  const PRODUCT_ROOT_IDS = {"dropper":"tdh-root","shift":"exp-shift-root","ward":"exp-ward-root","prisma":"exp-prisma-root"};
   function placeDonationPanel(panel, trigger){
-    trigger.closest('.menu-head,.ward-header,header')?.after(panel);
+    trigger.closest('.menu-head,header')?.after(panel);
     panel.style.cssText='position:static!important;width:100%!important;max-width:100%!important;margin:7px 0;box-shadow:none';
   }
   function createBitcoinDonation(){
@@ -1509,11 +1569,11 @@ const ExtraPotionsTools = (() => {
   }
   function compatibilitySnapshot(){
     const rows=[];const warnings=[];const versions=new Set();
-    for(const id of ['dropper','shift','prisma','ward']){
+    for(const [id,rootId] of Object.entries(PRODUCT_ROOT_IDS)){
       const markers=[...document.querySelectorAll('[data-exp-diagnostics-product]')].filter(n=>n.dataset.expDiagnosticsProduct===id);
       if(!markers.length)continue;
       const productVersions=[...new Set(markers.map(n=>n.dataset.expProductVersion||'unknown'))];
-      const host=document.getElementById(id==='dropper'?'tdh-root':`exp-${id}-root`);
+      const host=document.getElementById(rootId);
       const core=host?.dataset.coreVersion||null;if(core)versions.add(core);
       rows.push({id,versions:productVersions,core,instances:markers.length});
       if(markers.length>1)warnings.push(`More than one ${id.toUpperCase()} instance is active.`);
@@ -1536,31 +1596,7 @@ const ExpMenuArrangement = (() => {
     advanced: Object.freeze({ id: 'advanced', label: 'Advanced', order: 2 }),
     system: Object.freeze({ id: 'system', label: 'System', order: 3 }),
   });
-  const PRODUCT_SECTIONS = Object.freeze({
-    shift: Object.freeze({
-      appearance: Object.freeze(['appearance', 'readability']),
-      advanced: Object.freeze(['effects', 'effects-integrations', 'profiles', 'profiles-sites']),
-      system: Object.freeze(['system']),
-    }),
-    prisma: Object.freeze({
-      main: Object.freeze(['page', 'highlights']),
-      appearance: Object.freeze(['style', 'highlight-style', 'look', 'appearance']),
-      advanced: Object.freeze(['tools', 'language', 'sites']),
-      system: Object.freeze(['system']),
-    }),
-    ward: Object.freeze({
-      main: Object.freeze(['protection', 'amazon', 'tools']),
-      appearance: Object.freeze(['appearance']),
-      advanced: Object.freeze(['advanced', 'patterns', 'advanced-amazon']),
-      system: Object.freeze(['system']),
-    }),
-    dropper: Object.freeze({
-      main: Object.freeze(['drops', 'streams']),
-      appearance: Object.freeze(['appearance']),
-      advanced: Object.freeze(['advanced']),
-      system: Object.freeze(['system']),
-    }),
-  });
+  const PRODUCT_SECTIONS = {"dropper":{"main":["drops","streams"],"appearance":["appearance"],"advanced":["advanced"],"system":["system"]},"shift":{"appearance":["appearance","readability"],"advanced":["effects","effects-integrations","profiles","profiles-sites"],"system":["system"]},"ward":{"main":["protection","amazon","tools"],"appearance":["appearance"],"advanced":["advanced","patterns","advanced-amazon"],"system":["system"]},"prisma":{"main":["page","highlights"],"appearance":["style","highlight-style","look","appearance"],"advanced":["tools","language","sites"],"system":["system"]}};
   const GENERIC_SECTIONS = Object.freeze({
     appearance: Object.freeze(['appearance', 'readability', 'style', 'highlight-style', 'look', 'theme', 'themes']),
     advanced: Object.freeze(['advanced', 'effects', 'integrations', 'profiles', 'sites', 'language', 'patterns', 'routing', 'playback']),
@@ -1797,15 +1833,64 @@ const ExpMenuArrangement = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.3.17';
+  const version = '3.4.0';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
   const gridProtocol = 'exp-launcher-grid-v3';
   const GRID_ORDER = 'exp:v3:launcher-order';
   const GRID_DELTA = 'exp:v3:launcher-grid-delta';
-  const PRIORITY = { shift: 100, dropper: 90, ward: 60, prisma: 40 };
-  const THEME_PRIORITY = { dropper: 4, shift: 3, prisma: 2, ward: 1 };
+  // Product importance, launcher placement, and theme ownership are separate
+  // coordination policies backed by the same canonical suite manifest.
+  const freezeSuiteContract = values => Object.freeze(Object.fromEntries(
+    Object.entries(values || {}).map(([id, value]) => [id, Object.freeze({
+      role: String(value?.role || 'product'),
+      repository: String(value?.repository || ''),
+      rootId: String(value?.rootId || ''),
+      priority: Number(value?.priority || 0),
+      launcherPriority: Number(value?.launcherPriority || 0),
+      themePriority: Number(value?.themePriority || 0),
+      capabilities: Object.freeze([...(value?.capabilities || [])]),
+      presentationPhases: Object.freeze([...(value?.presentationPhases || [])]),
+      menuSections: Object.freeze(Object.fromEntries(
+        Object.entries(value?.menuSections || {}).map(([category, sections]) => [category, Object.freeze([...(sections || [])])])
+      )),
+      state: value?.state ? Object.freeze({
+        type: String(value.state.type || ''),
+        fields: Object.freeze({ ...(value.state.fields || {}) }),
+      }) : null,
+    })])
+  ));
+  const SUITE_PRODUCTS = freezeSuiteContract({"dropper":{"role":"flagship","priority":4,"launcherPriority":110,"themePriority":4,"capabilities":["twitch.drops","twitch.campaigns","twitch.progress","twitch.claims","twitch.stream-management"],"presentationPhases":[],"state":{"type":"dropper.state-changed","fields":{"activeReward":"boolean","progressPercent":"percent-nullable","routingState":"token"}},"menuSections":{"main":["drops","streams"],"appearance":["appearance"],"advanced":["advanced"],"system":["system"]},"repository":"Dropper","rootId":"tdh-root"},"shift":{"role":"product","priority":3,"launcherPriority":100,"themePriority":3,"capabilities":["appearance.theme","appearance.readability","appearance.site-profile"],"presentationPhases":["theme"],"state":{"type":"shift.state-changed","fields":{"active":"boolean","theme":"token","safeMode":"boolean","excluded":"boolean"}},"menuSections":{"appearance":["appearance","readability"],"advanced":["effects","effects-integrations","profiles","profiles-sites"],"system":["system"]},"repository":"SHIFT","rootId":"exp-shift-root"},"ward":{"role":"product","priority":2,"launcherPriority":60,"themePriority":1,"capabilities":["retail.classification","retail.cleanup","retail.coupons"],"presentationPhases":["classify","visibility"],"state":{"type":"ward.state-changed","fields":{"active":"boolean","pageType":"token","interventions":"count","hide":"count","dim":"count","collapse":"count","annotate":"count"}},"menuSections":{"main":["protection","amazon","tools"],"appearance":["appearance"],"advanced":["advanced","patterns","advanced-amazon"],"system":["system"]},"repository":"WARD","rootId":"exp-ward-root"},"prisma":{"role":"product","priority":1,"launcherPriority":40,"themePriority":2,"capabilities":["text.identity-detection","text.identity-highlighting","identity.catalog"],"presentationPhases":["annotate"],"state":{"type":"prisma.state-changed","fields":{"status":"token","total":"count","temporarilyHidden":"boolean"}},"menuSections":{"main":["page","highlights"],"appearance":["style","highlight-style","look","appearance"],"advanced":["tools","language","sites"],"system":["system"]},"repository":"PRISMA","rootId":"exp-prisma-root"}});
+  const SUITE_PRIORITY = Object.freeze(Object.fromEntries(
+    Object.entries(SUITE_PRODUCTS).map(([id, value]) => [id, value.priority])
+  ));
+  const LAUNCHER_PRIORITY = Object.freeze(Object.fromEntries(
+    Object.entries(SUITE_PRODUCTS).map(([id, value]) => [id, value.launcherPriority])
+  ));
+  const THEME_PRIORITY = Object.freeze(Object.fromEntries(
+    Object.entries(SUITE_PRODUCTS).map(([id, value]) => [id, value.themePriority])
+  ));
+  const SUITE_EVENT = 'exp-core:suite';
+  // Suite events/state cross userscript realms through shared DOM metadata.
+  // They are advisory coordination signals, never an authorization boundary.
+  const SUITE_TRUST = 'shared-dom-advisory';
+  const PAGE_BATCH_EVENT = 'exp-core:page-batch';
+  const NAVIGATION_EVENT = 'exp-core:navigation';
+  const NAVIGATION_CONTROL_EVENT = 'exp-core:navigation-control';
+  const PAGE_PHASE_EVENT = 'exp-core:page-phase';
+  const PAGE_PHASE_END_EVENT = 'exp-core:page-phase-end';
+  const PRESENTATION_STATE_EVENT = 'exp-core:presentation-state';
+  const PRESENTATION_PHASES = Object.freeze({
+    observe: 10,
+    classify: 20,
+    visibility: 30,
+    theme: 40,
+    annotate: 50,
+    ui: 60,
+  });
+  const PRESENTATION_CHANNELS = Object.freeze(['classification', 'visibility', 'surface', 'annotation']);
+  const suiteStateFingerprints = new Map();
   const registrations = new WeakMap();
   const floatingNoticeRegistrations = new WeakMap();
   const controllers = new WeakMap();
@@ -1875,15 +1960,7 @@ const ExtraPotionsCore = (() => {
     const full = Number(fullWidth);
     return Number.isFinite(full) ? Math.max(280, Math.min(full, 340)) : 312;
   }
-  const partIds = {
-    'tdh-tools-dock': 'dock', 'tdh-settings-launcher': 'launcher',
-    'tdh-rail-title': 'title', 'tdh-header-version': 'version',
-    'tdh-rail-subtitle': 'subtitle', 'tdh-rail-close': 'close',
-    'tdh-opacity-range': 'opacity-range', 'tdh-opacity-value': 'opacity-value'
-  };
-  const canonicalCss = Object.entries(partIds).reduce((css, [id, part]) =>
-    css.replaceAll('#' + id, '[data-exp-part="' + part + '"]'), CoreFoundation.css())
-    .replaceAll('.cluster', '.exp-core-theme');
+  const canonicalCss = CoreFoundation.css();
   const compositionCss = `
     [data-exp-part="dock"]{box-sizing:border-box;overflow-x:hidden;overscroll-behavior:contain}
     [data-exp-part="dock"] :is(.row,.group,.section,.fl-tool-body,.route-body,.fl-tool-title){min-width:0;max-width:100%;overflow-wrap:anywhere!important}
@@ -1954,7 +2031,6 @@ const ExtraPotionsCore = (() => {
     .diag{margin:6px 0 0}
     .diag[hidden]{display:none!important}
     .diag:not([hidden]){display:block}
-    .ward-shell{display:contents}
     .utility-grid,.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
     .workspace-actions{grid-column:1/-1}
     .setting-arrow,.step-btn{width:25px;min-height:25px;border:1px solid var(--theme-line);border-radius:6px;background:var(--theme-raised);color:var(--theme-text)}
@@ -1972,17 +2048,792 @@ const ExtraPotionsCore = (() => {
   const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
   const write = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} };
   const emit = (type, productId) => document.dispatchEvent(new CustomEvent('exp-core:coordination', { detail: { protocol, type, productId } }));
+
+  function normalizeSuiteCapabilities(values = []) {
+    if (!Array.isArray(values)) return [];
+    return [...new Set(values.map(value => String(value || '').trim().toLowerCase()).filter(value => /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/.test(value)))];
+  }
+
+  function suiteContract(productId) {
+    const id = String(productId || '').toLowerCase();
+    const known = SUITE_PRODUCTS[id];
+    if (!known) return null;
+    return Object.freeze({
+      id,
+      role: known.role || 'product',
+      repository: known.repository || '',
+      rootId: known.rootId || '',
+      priority: Number(known.priority || SUITE_PRIORITY[id] || 0),
+      launcherPriority: Number(known.launcherPriority || LAUNCHER_PRIORITY[id] || 0),
+      themePriority: Number(known.themePriority || THEME_PRIORITY[id] || 0),
+      capabilities: Object.freeze(normalizeSuiteCapabilities(known.capabilities)),
+      presentationPhases: Object.freeze(normalizePresentationPhases(known.presentationPhases || [])),
+      menuSections: Object.freeze(Object.fromEntries(
+        Object.entries(known.menuSections || {}).map(([category, sections]) => [category, Object.freeze([...sections])])
+      )),
+      state: known.state ? Object.freeze({
+        type: known.state.type,
+        fields: Object.freeze({ ...known.state.fields }),
+      }) : null,
+    });
+  }
+
+  function suiteProductNode(productId) {
+    const id = String(productId || '').toLowerCase();
+    if (!/^[a-z][a-z0-9-]+$/.test(id)) return null;
+    return [...document.querySelectorAll('[data-exp-suite-product]')]
+      .find(node => node.dataset.expSuiteProduct === id) || null;
+  }
+
+  function registerSuiteProduct(options = {}) {
+    const id = String(options.id || options.productId || '').toLowerCase();
+    const productVersion = String(options.version || options.productVersion || 'unknown');
+    if (!/^[a-z][a-z0-9-]+$/.test(id)) throw new Error('Invalid suite product ID');
+    const contract = suiteContract(id);
+    const capabilities = normalizeSuiteCapabilities(contract ? contract.capabilities : options.capabilities);
+    const priority = Number(contract?.priority ?? options.priority ?? 0);
+    const role = String(contract?.role ?? options.role ?? 'product');
+    let node = suiteProductNode(id);
+    const previous = node ? JSON.stringify({
+      version: node.dataset.expSuiteVersion || '',
+      coreVersion: node.dataset.expSuiteCoreVersion || '',
+      role: node.dataset.expSuiteRole || '',
+      priority: node.dataset.expSuitePriority || '',
+      capabilities: node.dataset.expSuiteCapabilities || '[]',
+    }) : null;
+    if (!node) {
+      node = document.createElement('meta');
+      node.dataset.expSuiteProduct = id;
+      (document.documentElement || document.head || document.body)?.append(node);
+    }
+    node.dataset.expSuiteVersion = productVersion;
+    node.dataset.expSuiteCoreVersion = version;
+    node.dataset.expSuiteRole = role;
+    node.dataset.expSuitePriority = String(Number.isFinite(priority) ? priority : 0);
+    node.dataset.expSuiteCapabilities = JSON.stringify(capabilities);
+    const current = JSON.stringify({
+      version: node.dataset.expSuiteVersion,
+      coreVersion: node.dataset.expSuiteCoreVersion,
+      role: node.dataset.expSuiteRole,
+      priority: node.dataset.expSuitePriority,
+      capabilities: node.dataset.expSuiteCapabilities,
+    });
+    if (previous !== current) emitSuiteEvent(id, 'product.registered', { capabilities, role, version: productVersion });
+    return Object.freeze({
+      id,
+      update(next = {}) { return registerSuiteProduct({ id, version: productVersion, role, priority, capabilities, ...next }); },
+      dispose() {
+        const current = suiteProductNode(id);
+        if (current === node) current.remove();
+        emitSuiteEvent(id, 'product.unregistered', {});
+      },
+    });
+  }
+
+  function suiteSnapshot() {
+    const products = [...document.querySelectorAll('[data-exp-suite-product]')].map(node => {
+      let capabilities = [];
+      try { capabilities = normalizeSuiteCapabilities(JSON.parse(node.dataset.expSuiteCapabilities || '[]')); } catch {}
+      return Object.freeze({
+        id: node.dataset.expSuiteProduct,
+        version: node.dataset.expSuiteVersion || 'unknown',
+        coreVersion: node.dataset.expSuiteCoreVersion || 'unknown',
+        role: node.dataset.expSuiteRole || 'product',
+        priority: Number(node.dataset.expSuitePriority || 0),
+        capabilities: Object.freeze(capabilities),
+      });
+    }).filter(product => product.id)
+      .sort((left, right) => right.priority - left.priority || left.id.localeCompare(right.id));
+    return Object.freeze({
+      protocol: 'exp-suite-interoperability-v1',
+      coreVersion: version,
+      trust: SUITE_TRUST,
+      products: Object.freeze(products),
+    });
+  }
+
+  function capabilityProviders(capability) {
+    const name = String(capability || '').trim().toLowerCase();
+    return Object.freeze(suiteSnapshot().products.filter(product => product.capabilities.includes(name)));
+  }
+
+  function hasProductCapability(capability) {
+    return capabilityProviders(capability).length > 0;
+  }
+
+  function pageContext() {
+    return Object.freeze({
+      href: location.href,
+      origin: location.origin,
+      hostname: location.hostname,
+      pathname: location.pathname,
+      topLevel: window.top === window.self,
+    });
+  }
+
+  function navigationObserverMarker() {
+    return document.querySelector('meta[data-exp-navigation-observer]');
+  }
+
+  function ensureSharedNavigationObserver(owner = 'core') {
+    let marker = navigationObserverMarker();
+    if (marker) return Object.freeze({ leader: false, owner: marker.dataset.expNavigationObserver || 'unknown' });
+    marker = document.createElement('meta');
+    marker.dataset.expOwned = '1';
+    marker.dataset.expNavigationObserver = String(owner || 'core').toLowerCase();
+    marker.dataset.expNavigationProtocol = 'exp-navigation-observer-v1';
+    marker.dataset.expNavigationEpoch = '0';
+    marker.dataset.expNavigationSubscribers = '0';
+    (document.head || document.documentElement || document.body)?.append(marker);
+
+    let previous = location.href;
+    let epoch = 0;
+    let pendingHistoryKind = '';
+    let disposed = false;
+    const publish = kind => {
+      if (disposed) return false;
+      const href = location.href;
+      if (href === previous) return false;
+      previous = href;
+      epoch += 1;
+      marker.dataset.expNavigationEpoch = String(epoch);
+      const payload = JSON.stringify({
+        protocol: 'exp-navigation-observer-v1',
+        owner: marker.dataset.expNavigationObserver,
+        epoch,
+        kind: String(kind || 'navigation'),
+        href,
+        at: Date.now(),
+      });
+      document.dispatchEvent(new CustomEvent(NAVIGATION_EVENT, { detail: payload }));
+      return true;
+    };
+    const originals = {};
+    const wrappers = {};
+    for (const name of ['pushState', 'replaceState']) {
+      const original = history[name];
+      originals[name] = original;
+      const wrapped = function (...args) {
+        const priorKind = pendingHistoryKind;
+        pendingHistoryKind = name;
+        try {
+          const result = Reflect.apply(original, this, args);
+          publish(name);
+          return result;
+        } finally {
+          pendingHistoryKind = priorKind;
+        }
+      };
+      wrappers[name] = wrapped;
+      history[name] = wrapped;
+    }
+    const onPopState = () => publish('popstate');
+    const onHashChange = () => publish('hashchange');
+    const onCurrentEntryChange = () => publish(pendingHistoryKind || 'currententrychange');
+    addEventListener('popstate', onPopState);
+    addEventListener('hashchange', onHashChange);
+    globalThis.navigation?.addEventListener('currententrychange', onCurrentEntryChange);
+    const teardown = () => {
+      if (disposed || Number(marker.dataset.expNavigationSubscribers || 0) > 0) return false;
+      disposed = true;
+      for (const name of Object.keys(wrappers)) if (history[name] === wrappers[name]) history[name] = originals[name];
+      removeEventListener('popstate', onPopState);
+      removeEventListener('hashchange', onHashChange);
+      globalThis.navigation?.removeEventListener('currententrychange', onCurrentEntryChange);
+      document.removeEventListener(NAVIGATION_CONTROL_EVENT, onControl);
+      if (marker.isConnected) marker.remove();
+      return true;
+    };
+    const onControl = event => {
+      let payload;
+      try { payload = typeof event.detail === 'string' ? JSON.parse(event.detail) : event.detail; } catch { return; }
+      if (!payload || payload.protocol !== 'exp-navigation-observer-v1' || payload.type !== 'release-if-idle') return;
+      teardown();
+    };
+    document.addEventListener(NAVIGATION_CONTROL_EVENT, onControl);
+    return Object.freeze({ leader: true, owner: marker.dataset.expNavigationObserver });
+  }
+
+  function observeNavigation(callback, options = {}) {
+    if (typeof callback !== 'function') throw new TypeError('Navigation callback must be a function');
+    ensureSharedNavigationObserver(options.productId || options.owner || 'core');
+    let marker = navigationObserverMarker();
+    if (marker) marker.dataset.expNavigationSubscribers = String(Number(marker.dataset.expNavigationSubscribers || 0) + 1);
+    const listener = event => {
+      let payload;
+      try { payload = typeof event.detail === 'string' ? JSON.parse(event.detail) : event.detail; } catch { return; }
+      if (!payload || payload.protocol !== 'exp-navigation-observer-v1') return;
+      callback(Object.freeze({ ...payload }));
+    };
+    document.addEventListener(NAVIGATION_EVENT, listener);
+    let disposed = false;
+    return () => {
+      if (disposed) return;
+      disposed = true;
+      document.removeEventListener(NAVIGATION_EVENT, listener);
+      marker = navigationObserverMarker();
+      if (!marker) return;
+      const next = Math.max(0, Number(marker.dataset.expNavigationSubscribers || 0) - 1);
+      marker.dataset.expNavigationSubscribers = String(next);
+      if (!next) document.dispatchEvent(new CustomEvent(NAVIGATION_CONTROL_EVENT, {
+        detail: JSON.stringify({ protocol: 'exp-navigation-observer-v1', type: 'release-if-idle' }),
+      }));
+    };
+  }
+
+  function navigationObserverState() {
+    const marker = navigationObserverMarker();
+    return Object.freeze({
+      active: Boolean(marker),
+      owner: marker?.dataset.expNavigationObserver || null,
+      protocol: marker?.dataset.expNavigationProtocol || null,
+      epoch: Number(marker?.dataset.expNavigationEpoch || 0),
+      subscribers: Number(marker?.dataset.expNavigationSubscribers || 0),
+    });
+  }
+
+  function emitSuiteEvent(productId, type, detail = {}) {
+    const source = String(productId || 'core').toLowerCase();
+    const eventType = String(type || '').trim().toLowerCase();
+    if (!/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/.test(eventType)) throw new Error('Invalid suite event type');
+    let safeDetail = {};
+    try { safeDetail = JSON.parse(JSON.stringify(detail || {})); } catch {}
+    const payload = JSON.stringify({
+      protocol: 'exp-suite-interoperability-v1',
+      coreVersion: version,
+      trust: SUITE_TRUST,
+      source,
+      type: eventType,
+      detail: safeDetail,
+      at: Date.now(),
+    });
+    document.dispatchEvent(new CustomEvent(SUITE_EVENT, { detail: payload }));
+  }
+
+  function stableSuiteValue(value) {
+    if (Array.isArray(value)) return value.map(stableSuiteValue);
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableSuiteValue(value[key])]));
+  }
+
+  function normalizeSuiteStateForContract(productId, type, state = {}) {
+    const source = String(productId || '').toLowerCase();
+    const eventType = String(type || '').trim().toLowerCase();
+    const contract = suiteContract(source);
+    const schema = contract?.state;
+    const input = state && typeof state === 'object' && !Array.isArray(state) ? state : {};
+    if (!schema || schema.type !== eventType) return stableSuiteValue(input);
+    const keys = Object.keys(input);
+    const expected = Object.keys(schema.fields);
+    const unknown = keys.filter(key => !Object.hasOwn(schema.fields, key));
+    if (unknown.length) throw new Error(`Unknown suite state field: ${unknown[0]}`);
+    const missing = expected.filter(key => !Object.hasOwn(input, key));
+    if (missing.length) throw new Error(`Missing suite state field: ${missing[0]}`);
+    const output = {};
+    for (const [key, kind] of Object.entries(schema.fields)) {
+      const value = input[key];
+      if (kind === 'boolean') {
+        if (typeof value !== 'boolean') throw new Error(`Invalid boolean suite state field: ${key}`);
+        output[key] = value;
+      } else if (kind === 'token') {
+        const token = String(value ?? '').trim().toLowerCase();
+        if (!/^[a-z0-9][a-z0-9._:-]{0,79}$/.test(token)) throw new Error(`Invalid token suite state field: ${key}`);
+        output[key] = token;
+      } else if (kind === 'count') {
+        const count = Number(value);
+        if (!Number.isSafeInteger(count) || count < 0) throw new Error(`Invalid count suite state field: ${key}`);
+        output[key] = count;
+      } else if (kind === 'percent-nullable') {
+        if (value === null) output[key] = null;
+        else {
+          const percent = Number(value);
+          if (!Number.isFinite(percent) || percent < 0 || percent > 100) throw new Error(`Invalid percent suite state field: ${key}`);
+          output[key] = percent;
+        }
+      } else {
+        throw new Error(`Unsupported suite state schema kind: ${kind}`);
+      }
+    }
+    return stableSuiteValue(output);
+  }
+
+  function suiteStateNode(productId, type) {
+    const source = String(productId || '').toLowerCase();
+    const eventType = String(type || '').trim().toLowerCase();
+    return [...document.querySelectorAll('meta[data-exp-suite-state-product][data-exp-suite-state-type]')]
+      .find(node => node.dataset.expSuiteStateProduct === source && node.dataset.expSuiteStateType === eventType) || null;
+  }
+
+  function readSuiteStateNode(node) {
+    if (!(node instanceof Element)) return null;
+    let state = {};
+    try { state = JSON.parse(node.dataset.expSuiteStatePayload || '{}'); } catch {}
+    return Object.freeze({
+      productId: node.dataset.expSuiteStateProduct || '',
+      type: node.dataset.expSuiteStateType || '',
+      coreVersion: node.dataset.expSuiteStateCoreVersion || 'unknown',
+      trust: node.dataset.expSuiteStateTrust || SUITE_TRUST,
+      at: Number(node.dataset.expSuiteStateAt || 0),
+      state: Object.freeze(stableSuiteValue(state && typeof state === 'object' ? state : {})),
+    });
+  }
+
+  function suiteStateSnapshot(productId = '') {
+    const source = String(productId || '').toLowerCase();
+    return Object.freeze(
+      [...document.querySelectorAll('meta[data-exp-suite-state-product][data-exp-suite-state-type]')]
+        .filter(node => !source || node.dataset.expSuiteStateProduct === source)
+        .map(readSuiteStateNode)
+        .filter(Boolean)
+        .sort((left, right) => left.productId.localeCompare(right.productId) || left.type.localeCompare(right.type))
+    );
+  }
+
+  function latestSuiteState(productId, type = '') {
+    const source = String(productId || '').toLowerCase();
+    const eventType = String(type || '').trim().toLowerCase();
+    const states = suiteStateSnapshot(source).filter(entry => !eventType || entry.type === eventType);
+    return states.sort((left, right) => right.at - left.at)[0] || null;
+  }
+
+  function publishSuiteState(productId, type, state = {}) {
+    const source = String(productId || '').toLowerCase();
+    const eventType = String(type || '').trim().toLowerCase();
+    if (!/^[a-z][a-z0-9-]+$/.test(source)) throw new Error('Invalid suite state product ID');
+    if (!/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/.test(eventType)) throw new Error('Invalid suite state event type');
+    let safeState = {};
+    try {
+      safeState = normalizeSuiteStateForContract(source, eventType, JSON.parse(JSON.stringify(state || {})));
+    } catch (error) {
+      throw error;
+    }
+    const serialized = JSON.stringify(safeState);
+    if (serialized.length > 4096) throw new Error('Suite state payload exceeds 4096 bytes');
+    const key = `${source}:${eventType}`;
+    let node = suiteStateNode(source, eventType);
+    const sharedFingerprint = node?.dataset.expSuiteStatePayload || '';
+    if (sharedFingerprint === serialized || suiteStateFingerprints.get(key) === serialized) return false;
+    suiteStateFingerprints.set(key, serialized);
+    if (!node) {
+      node = document.createElement('meta');
+      node.dataset.expOwned = '1';
+      node.dataset.expSuiteStateProduct = source;
+      node.dataset.expSuiteStateType = eventType;
+      (document.head || document.documentElement || document.body)?.append(node);
+    }
+    node.dataset.expSuiteStatePayload = serialized;
+    node.dataset.expSuiteStateCoreVersion = version;
+    node.dataset.expSuiteStateTrust = SUITE_TRUST;
+    node.dataset.expSuiteStateAt = String(Date.now());
+    emitSuiteEvent(source, eventType, safeState);
+    return true;
+  }
+
+  function onSuiteEvent(callback, options = {}) {
+    if (typeof callback !== 'function') throw new TypeError('Suite event callback must be a function');
+    const expectedType = options.type ? String(options.type).toLowerCase() : null;
+    const listener = event => {
+      let payload;
+      try { payload = typeof event.detail === 'string' ? JSON.parse(event.detail) : event.detail; } catch { return; }
+      if (!payload || payload.protocol !== 'exp-suite-interoperability-v1') return;
+      if (expectedType && payload.type !== expectedType) return;
+      callback(payload);
+    };
+    document.addEventListener(SUITE_EVENT, listener);
+    return () => document.removeEventListener(SUITE_EVENT, listener);
+  }
+
+  function subscribeSuiteState(productId, callback, options = {}) {
+    if (typeof callback !== 'function') throw new TypeError('Suite state callback must be a function');
+    const source = String(productId || '').toLowerCase();
+    if (!/^[a-z][a-z0-9-]+$/.test(source)) throw new Error('Invalid suite state product ID');
+    const contractType = suiteContract(source)?.state?.type || '';
+    const eventType = String(options.type || contractType).trim().toLowerCase();
+    if (eventType && !/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/.test(eventType)) throw new Error('Invalid suite state event type');
+    let disposed = false;
+    const deliver = entry => {
+      if (disposed || !entry) return;
+      callback(Object.freeze({ ...entry, state: Object.freeze(stableSuiteValue(entry.state || {})) }));
+    };
+    if (options.immediate !== false) deliver(latestSuiteState(source, eventType));
+    const stop = onSuiteEvent(event => {
+      if (event.source !== source) return;
+      if (eventType && event.type !== eventType) return;
+      deliver(latestSuiteState(source, eventType));
+    }, eventType ? { type: eventType } : {});
+    return () => {
+      if (disposed) return;
+      disposed = true;
+      stop();
+    };
+  }
+
+  function normalizePresentationPhases(values = []) {
+    const list = Array.isArray(values) ? values : [values];
+    return [...new Set(list.map(value => String(value || '').trim().toLowerCase()).filter(value => PRESENTATION_PHASES[value]))]
+      .sort((left, right) => PRESENTATION_PHASES[left] - PRESENTATION_PHASES[right]);
+  }
+
+  function presentationProviderNode(productId) {
+    const id = String(productId || '').toLowerCase();
+    if (!/^[a-z][a-z0-9-]+$/.test(id)) return null;
+    return [...document.querySelectorAll('[data-exp-presentation-provider]')]
+      .find(node => node.dataset.expPresentationProvider === id) || null;
+  }
+
+  function registerPresentationProvider(options = {}) {
+    const id = String(options.id || options.productId || '').toLowerCase();
+    if (!/^[a-z][a-z0-9-]+$/.test(id)) throw new Error('Invalid presentation product ID');
+    const contract = suiteContract(id);
+    if (contract && !contract.presentationPhases.length) throw new Error('Presentation provider is not declared for this suite product');
+    const phases = normalizePresentationPhases(contract ? contract.presentationPhases : options.phases || options.phase);
+    if (!phases.length) throw new Error('Presentation provider requires at least one valid phase');
+    let node = presentationProviderNode(id);
+    const previous = node ? JSON.stringify({
+      phases: node.dataset.expPresentationPhases || '[]',
+      priority: node.dataset.expPresentationPriority || '',
+    }) : null;
+    if (!node) {
+      node = document.createElement('meta');
+      node.dataset.expPresentationProvider = id;
+      (document.documentElement || document.head || document.body)?.append(node);
+    }
+    node.dataset.expPresentationPhases = JSON.stringify(phases);
+    node.dataset.expPresentationPriority = String(Number(contract?.priority ?? options.priority ?? 0) || 0);
+    const current = JSON.stringify({
+      phases: node.dataset.expPresentationPhases,
+      priority: node.dataset.expPresentationPriority,
+    });
+    if (previous !== current) emitSuiteEvent(id, 'presentation.provider-registered', { phases });
+    return Object.freeze({
+      id,
+      phases: Object.freeze([...phases]),
+      dispose() {
+        const current = presentationProviderNode(id);
+        if (current === node) current.remove();
+        emitSuiteEvent(id, 'presentation.provider-unregistered', {});
+      },
+    });
+  }
+
+  function presentationProviders() {
+    return Object.freeze([...document.querySelectorAll('[data-exp-presentation-provider]')].map(node => {
+      let phases = [];
+      try { phases = normalizePresentationPhases(JSON.parse(node.dataset.expPresentationPhases || '[]')); } catch {}
+      return Object.freeze({
+        id: node.dataset.expPresentationProvider,
+        phases: Object.freeze(phases),
+        priority: Number(node.dataset.expPresentationPriority || 0),
+      });
+    }).filter(provider => provider.id)
+      .sort((left, right) => {
+        const leftPhase = Math.min(...left.phases.map(phase => PRESENTATION_PHASES[phase]));
+        const rightPhase = Math.min(...right.phases.map(phase => PRESENTATION_PHASES[phase]));
+        return leftPhase - rightPhase || right.priority - left.priority || left.id.localeCompare(right.id);
+      }));
+  }
+
+  function suiteHealth() {
+    const suite = suiteSnapshot();
+    const providers = presentationProviders();
+    const providerMap = new Map(providers.map(provider => [provider.id, provider]));
+    const conflicts = [];
+    const sameList = (left = [], right = []) => left.length === right.length && left.every((value, index) => value === right[index]);
+    const products = suite.products.map(product => {
+      const contract = suiteContract(product.id);
+      if (!contract) {
+        conflicts.push({ type: 'unknown-suite-product', products: [product.id] });
+        return Object.freeze({ id: product.id, status: 'unknown-product' });
+      }
+      const expectedCapabilities = [...contract.capabilities].sort();
+      const actualCapabilities = [...product.capabilities].sort();
+      const provider = providerMap.get(product.id) || null;
+      const expectedPhases = [...contract.presentationPhases];
+      const actualPhases = provider ? [...provider.phases] : [];
+      if (product.role !== contract.role) conflicts.push({ type: 'suite-role-mismatch', products: [product.id], expected: contract.role, actual: product.role });
+      if (product.priority !== contract.priority) conflicts.push({ type: 'suite-priority-mismatch', products: [product.id], expected: contract.priority, actual: product.priority });
+      if (!sameList(actualCapabilities, expectedCapabilities)) conflicts.push({ type: 'suite-capability-mismatch', products: [product.id], expected: expectedCapabilities, actual: actualCapabilities });
+      if (expectedPhases.length && !provider) conflicts.push({ type: 'missing-presentation-provider', products: [product.id], expected: expectedPhases });
+      if (!expectedPhases.length && provider) conflicts.push({ type: 'unexpected-presentation-provider', products: [product.id], actual: actualPhases });
+      if (provider && !sameList(actualPhases, expectedPhases)) conflicts.push({ type: 'presentation-phase-mismatch', products: [product.id], expected: expectedPhases, actual: actualPhases });
+      const latestState = latestSuiteState(product.id);
+      return Object.freeze({
+        id: product.id,
+        status: conflicts.some(conflict => conflict.products?.includes(product.id)) ? 'conflict' : 'healthy',
+        coreVersion: product.coreVersion,
+        capabilities: Object.freeze(actualCapabilities),
+        presentationPhases: Object.freeze(actualPhases),
+        stateType: latestState?.type || null,
+        stateAt: latestState?.at || 0,
+        stateAgeMs: latestState?.at ? Math.max(0, Date.now() - latestState.at) : null,
+        state: latestState?.state || null,
+      });
+    });
+    const coreVersions = [...new Set(
+      [...document.querySelectorAll('meta[data-exp-diagnostics-product]')]
+        .map(node => node.dataset.expCoreVersion)
+        .filter(Boolean)
+    )].sort();
+    if (coreVersions.length > 1) conflicts.push({ type: 'mixed-core-versions', coreVersions });
+    const observerCount = document.querySelectorAll('meta[data-exp-page-observer]').length;
+    if (observerCount > 1) conflicts.push({ type: 'duplicate-page-observer', instances: observerCount });
+    return Object.freeze({
+      status: conflicts.length ? 'conflicts-detected' : 'healthy',
+      coreVersions: Object.freeze(coreVersions),
+      observerCount,
+      products: Object.freeze(products),
+      conflicts: Object.freeze(conflicts.map(conflict => Object.freeze({ ...conflict }))),
+    });
+  }
+
+  function readPresentationState(target) {
+    if (!(target instanceof Element)) return Object.freeze({});
+    try {
+      const value = JSON.parse(target.getAttribute('data-exp-presentation-state') || '{}');
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return Object.freeze({});
+      return Object.freeze(Object.fromEntries(Object.entries(value).map(([productId, state]) => [
+        productId,
+        Object.freeze({ ...(state && typeof state === 'object' && !Array.isArray(state) ? state : {}) }),
+      ])));
+    } catch {
+      return Object.freeze({});
+    }
+  }
+
+  function setPresentationState(target, productId, patch = {}) {
+    if (!(target instanceof Element)) throw new TypeError('Presentation target must be an Element');
+    const id = String(productId || '').toLowerCase();
+    if (!/^[a-z][a-z0-9-]+$/.test(id)) throw new Error('Invalid presentation product ID');
+    const previous = target.getAttribute('data-exp-presentation-state') || '';
+    const current = JSON.parse(JSON.stringify(readPresentationState(target)));
+    const next = { ...(current[id] || {}) };
+    for (const [channel, raw] of Object.entries(patch || {})) {
+      if (!PRESENTATION_CHANNELS.includes(channel)) continue;
+      if (raw === null || raw === undefined || raw === '') delete next[channel];
+      else {
+        const value = String(raw).trim().toLowerCase();
+        if (!/^[a-z0-9][a-z0-9._:-]{0,79}$/.test(value)) throw new Error('Invalid presentation state value');
+        next[channel] = value;
+      }
+    }
+    if (Object.keys(next).length) current[id] = next;
+    else delete current[id];
+    const serialized = Object.keys(current).length ? JSON.stringify(current) : '';
+    if (serialized === previous) return readPresentationState(target);
+    if (serialized) target.setAttribute('data-exp-presentation-state', serialized);
+    else target.removeAttribute('data-exp-presentation-state');
+    const phase = pageObserverMarker()?.dataset.expPageObserverPhase || null;
+    const detail = JSON.stringify({
+      protocol: 'exp-presentation-state-v1',
+      source: id,
+      channels: Object.keys(next),
+      phase,
+      at: Date.now(),
+    });
+    target.dispatchEvent(new CustomEvent(PRESENTATION_STATE_EVENT, {
+      bubbles: true,
+      composed: true,
+      detail,
+    }));
+    emitSuiteEvent(id, 'presentation.state-changed', { channels: Object.keys(next), phase });
+    return readPresentationState(target);
+  }
+
+  function clearPresentationState(target, productId) {
+    return setPresentationState(target, productId, Object.fromEntries(PRESENTATION_CHANNELS.map(channel => [channel, null])));
+  }
+
+  function presentationStateChain(target) {
+    const chain = [];
+    let node = target instanceof Element ? target : target?.parentElement;
+    while (node instanceof Element) {
+      const state = readPresentationState(node);
+      if (Object.keys(state).length) chain.push(Object.freeze({ node, state }));
+      node = node.parentElement;
+    }
+    return Object.freeze(chain);
+  }
+
+  function isPresentationSuppressed(target) {
+    for (const entry of presentationStateChain(target)) {
+      for (const state of Object.values(entry.state)) {
+        if (state?.visibility === 'hide' || state?.visibility === 'collapse') return true;
+      }
+    }
+    return false;
+  }
+
+  function pageObserverMarker() {
+    return document.querySelector('meta[data-exp-page-observer]');
+  }
+
+  function ensureSharedPageObserver(owner = 'core', options = {}) {
+    let marker = pageObserverMarker();
+    if (marker) return Object.freeze({ leader: false, owner: marker.dataset.expPageObserver || 'unknown' });
+    marker = document.createElement('meta');
+    marker.dataset.expPageObserver = String(owner || 'core').toLowerCase();
+    marker.dataset.expPageObserverProtocol = 'exp-page-observer-v1';
+    marker.dataset.expPageObserverEpoch = '0';
+    (document.documentElement || document.head || document.body)?.append(marker);
+
+    const delay = Math.max(16, Math.min(500, Number(options.delayMs || 60) || 60));
+    let timer = 0;
+    let epoch = 0;
+    const pending = new Map();
+    const queue = (target, record) => {
+      if (!(target instanceof Element)) return;
+      if (target.closest?.('[data-exp-owned="1"]')) return;
+      const state = pending.get(target) || { types: new Set(), added: 0, removed: 0 };
+      state.types.add(record.type);
+      state.added += record.addedNodes?.length || 0;
+      state.removed += record.removedNodes?.length || 0;
+      pending.set(target, state);
+    };
+    const flush = () => {
+      timer = 0;
+      const entries = [...pending.entries()].filter(([target]) => target.isConnected);
+      pending.clear();
+      if (!entries.length) return;
+      epoch += 1;
+      marker.dataset.expPageObserverEpoch = String(epoch);
+      const payloads = entries.map(([target, state], index) => [target, JSON.stringify({
+        protocol: 'exp-page-observer-v1',
+        owner: marker.dataset.expPageObserver,
+        epoch,
+        rootIndex: index,
+        rootCount: entries.length,
+        types: [...state.types].sort(),
+        added: state.added,
+        removed: state.removed,
+        href: location.href,
+        at: Date.now(),
+      })]);
+      payloads.forEach(([target, payload]) => {
+        target.dispatchEvent(new CustomEvent(PAGE_BATCH_EVENT, { bubbles: true, composed: true, detail: payload }));
+      });
+      for (const phase of Object.keys(PRESENTATION_PHASES).sort((left, right) => PRESENTATION_PHASES[left] - PRESENTATION_PHASES[right])) {
+        marker.dataset.expPageObserverPhase = phase;
+        for (const [target, payload] of payloads) {
+          target.dispatchEvent(new CustomEvent(`${PAGE_PHASE_EVENT}:${phase}`, { bubbles: true, composed: true, detail: payload }));
+        }
+        document.dispatchEvent(new CustomEvent(`${PAGE_PHASE_END_EVENT}:${phase}`, {
+          detail: JSON.stringify({
+            protocol: 'exp-page-observer-v1',
+            owner: marker.dataset.expPageObserver,
+            epoch,
+            phase,
+            rootCount: entries.length,
+            href: location.href,
+            at: Date.now(),
+          }),
+        }));
+        delete marker.dataset.expPageObserverPhase;
+      }
+    };
+    const observer = new MutationObserver(records => {
+      for (const record of records) {
+        const target = record.target?.nodeType === Node.TEXT_NODE ? record.target.parentElement : record.target;
+        queue(target, record);
+      }
+      if (!timer && pending.size) timer = setTimeout(flush, delay);
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    return Object.freeze({ leader: true, owner: marker.dataset.expPageObserver });
+  }
+
+  function observePage(callback, options = {}) {
+    if (typeof callback !== 'function') throw new TypeError('Page observer callback must be a function');
+    ensureSharedPageObserver(options.productId || options.owner || 'core', options);
+    const listener = event => {
+      let payload;
+      try { payload = typeof event.detail === 'string' ? JSON.parse(event.detail) : event.detail; } catch { return; }
+      if (!payload || payload.protocol !== 'exp-page-observer-v1') return;
+      callback(payload, event.target instanceof Element ? event.target : document.documentElement);
+    };
+    document.addEventListener(PAGE_BATCH_EVENT, listener);
+    return () => document.removeEventListener(PAGE_BATCH_EVENT, listener);
+  }
+
+  function observePageBatch(callback, options = {}) {
+    if (typeof callback !== 'function') throw new TypeError('Page batch callback must be a function');
+    const productId = String(options.productId || options.owner || 'core').toLowerCase();
+    const contract = suiteContract(productId);
+    const requested = options.phase || contract?.presentationPhases?.[0] || 'observe';
+    const phase = normalizePresentationPhases([requested])[0] || 'observe';
+    ensureSharedPageObserver(productId, options);
+    const roots = new Map();
+    const rootEvent = `${PAGE_PHASE_EVENT}:${phase}`;
+    const endEvent = `${PAGE_PHASE_END_EVENT}:${phase}`;
+    const onRoot = event => {
+      let payload;
+      try { payload = typeof event.detail === 'string' ? JSON.parse(event.detail) : event.detail; } catch { return; }
+      if (!payload || payload.protocol !== 'exp-page-observer-v1') return;
+      const root = event.target instanceof Element ? event.target : null;
+      if (root) roots.set(root, payload);
+    };
+    const onEnd = event => {
+      let payload;
+      try { payload = typeof event.detail === 'string' ? JSON.parse(event.detail) : event.detail; } catch { return; }
+      if (!payload || payload.protocol !== 'exp-page-observer-v1' || payload.phase !== phase) return;
+      const entries = [...roots.entries()];
+      roots.clear();
+      callback(
+        Object.freeze({ ...payload }),
+        Object.freeze(entries.map(([root]) => root)),
+        Object.freeze(entries.map(([, detail]) => Object.freeze({ ...detail }))),
+      );
+    };
+    document.addEventListener(rootEvent, onRoot);
+    document.addEventListener(endEvent, onEnd);
+    return () => {
+      document.removeEventListener(rootEvent, onRoot);
+      document.removeEventListener(endEvent, onEnd);
+      roots.clear();
+    };
+  }
+
+  function observePresentationState(callback, options = {}) {
+    if (typeof callback !== 'function') throw new TypeError('Presentation state callback must be a function');
+    const source = options.source ? String(options.source).toLowerCase() : '';
+    const channel = options.channel ? String(options.channel).toLowerCase() : '';
+    const listener = event => {
+      let payload;
+      try { payload = typeof event.detail === 'string' ? JSON.parse(event.detail) : event.detail; } catch { return; }
+      if (!payload || payload.protocol !== 'exp-presentation-state-v1') return;
+      if (source && payload.source !== source) return;
+      if (channel && !payload.channels?.includes(channel)) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target) callback(Object.freeze({ ...payload }), target);
+    };
+    document.addEventListener(PRESENTATION_STATE_EVENT, listener);
+    return () => document.removeEventListener(PRESENTATION_STATE_EVENT, listener);
+  }
+
+  function pageObserverState() {
+    const marker = pageObserverMarker();
+    return Object.freeze({
+      active: Boolean(marker),
+      owner: marker?.dataset.expPageObserver || null,
+      protocol: marker?.dataset.expPageObserverProtocol || null,
+      epoch: Number(marker?.dataset.expPageObserverEpoch || 0),
+      phase: marker?.dataset.expPageObserverPhase || null,
+    });
+  }
+
+  function registerDiagnosticsProduct(productId, productVersion, host) {
+    const result = ExtraPotionsDiagnostics.registerProduct(productId, productVersion, host);
+    if (result) result.dataset.expCoreVersion = version;
+    const contract = suiteContract(productId);
+    registerSuiteProduct({ productId, productVersion });
+    if (contract?.presentationPhases?.length) registerPresentationProvider({ productId });
+    return result;
+  }
   function menuThemeOwner() {
     return [...document.querySelectorAll('[data-exp-product-launcher="1"][data-product-id]')]
       .filter(node => node.isConnected && THEME_PRIORITY[node.dataset.productId])
       .sort((a,b) => THEME_PRIORITY[b.dataset.productId] - THEME_PRIORITY[a.dataset.productId])[0] || null;
   }
   function menuPalette(host) {
-    if (host?.dataset.productId === 'dropper') {
-      const selected = host.shadowRoot?.querySelector('#tdh-cluster')?.dataset.uiTheme;
-      const theme = CoreFoundation.UI_THEMES.find(item => item.id === selected);
-      if (theme) return semanticTheme(theme);
-    }
     try {
       const value = JSON.parse(host.dataset.expMenuPalette || 'null');
       if (!value || !baseTokenNames.every(key => /^#[0-9a-f]{3,8}$/i.test(value[key]))) return null;
@@ -2042,7 +2893,7 @@ const ExtraPotionsCore = (() => {
     if (!(shadow instanceof ShadowRoot)) return false;
     shadow.host.dataset.expContentDrivenMenu = '1';
     if (!shadow.querySelector('style[data-exp-content-driven-menu]')) {
-      injectStyle(shadow, '.fl-tool-body .action.warn{border-color:#cb6868!important;background:#402020!important;color:#ffd7d7!important}.fl-tool-body .action.warn:hover{background:#582828!important;color:#fff!important}:host([data-exp-content-driven-menu="1"]) :is(.panel,.ward,#mb-dock,[data-exp-part="dock"]){height:auto!important;min-height:0!important}:host([data-exp-content-driven-menu="1"]) :is(.fl-tool-body,.panel-body,.route-body){height:auto!important;min-height:0!important;max-height:none!important;overflow:visible!important}:host([data-exp-content-driven-menu="1"]) :is(.fl-tool-header,.panel-head,.route,.nav-item,.group>summary){height:auto!important;min-height:0!important;white-space:normal!important}:host([data-exp-content-driven-menu="1"]) :is(.fl-tool-title,.label,.setting-label,.setting-value,.copy strong,.copy .label){overflow:visible!important;text-overflow:clip!important;white-space:normal!important;word-break:normal!important;overflow-wrap:anywhere!important}:host([data-exp-content-driven-menu="1"]) :is(.row,.mini-row,.setting-row){height:auto!important;min-height:0!important;align-items:center!important}:host([data-exp-content-driven-menu="1"]) :is(.group,.section,.panel-body:not(.hidden)){grid-template-columns:minmax(0,1fr)!important}:host([data-exp-content-driven-menu="1"]) :is(.group,.section,.panel-body:not(.hidden))>*{grid-column:1/-1!important}.fl-tool-body .row:has(>select){display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr)!important;min-width:0!important}.fl-tool-body .row>select{width:100%!important;min-width:0!important;max-width:100%!important}', { expContentDrivenMenu: '1' });
+      injectStyle(shadow, '.fl-tool-body .action.warn{border-color:#cb6868!important;background:#402020!important;color:#ffd7d7!important}.fl-tool-body .action.warn:hover{background:#582828!important;color:#fff!important}:host([data-exp-content-driven-menu="1"]) :is(.panel,#mb-dock,[data-exp-part="dock"]){height:auto!important;min-height:0!important}:host([data-exp-content-driven-menu="1"]) :is(.fl-tool-body,.panel-body,.route-body){height:auto!important;min-height:0!important;max-height:none!important;overflow:visible!important}:host([data-exp-content-driven-menu="1"]) :is(.fl-tool-header,.panel-head,.route,.nav-item,.group>summary){height:auto!important;min-height:0!important;white-space:normal!important}:host([data-exp-content-driven-menu="1"]) :is(.fl-tool-title,.label,.setting-label,.setting-value,.copy strong,.copy .label){overflow:visible!important;text-overflow:clip!important;white-space:normal!important;word-break:normal!important;overflow-wrap:anywhere!important}:host([data-exp-content-driven-menu="1"]) :is(.row,.mini-row,.setting-row){height:auto!important;min-height:0!important;align-items:center!important}:host([data-exp-content-driven-menu="1"]) :is(.group,.section,.panel-body:not(.hidden)){grid-template-columns:minmax(0,1fr)!important}:host([data-exp-content-driven-menu="1"]) :is(.group,.section,.panel-body:not(.hidden))>*{grid-column:1/-1!important}.fl-tool-body .row:has(>select){display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr)!important;min-width:0!important}.fl-tool-body .row>select{width:100%!important;min-width:0!important;max-width:100%!important}', { expContentDrivenMenu: '1' });
     }
     applyMatteToggleChrome(shadow);
     return true;
@@ -2053,8 +2904,8 @@ const ExtraPotionsCore = (() => {
       const ai = Array.isArray(order) ? order.indexOf(a.dataset.productId) : -1;
       const bi = Array.isArray(order) ? order.indexOf(b.dataset.productId) : -1;
       if (ai !== bi) return ai < 0 ? 1 : bi < 0 ? -1 : ai - bi;
-      const ap = a.dataset.productId === 'dropper' ? Number.MAX_SAFE_INTEGER : Number(a.dataset.launcherPriority || 0);
-      const bp = b.dataset.productId === 'dropper' ? Number.MAX_SAFE_INTEGER : Number(b.dataset.launcherPriority || 0);
+      const ap = Number(a.dataset.launcherPriority || 0);
+      const bp = Number(b.dataset.launcherPriority || 0);
       return bp - ap || a.dataset.productId.localeCompare(b.dataset.productId);
     });
     const assign = (node, slot, span = 1) => {
@@ -2096,7 +2947,7 @@ const ExtraPotionsCore = (() => {
   }
   function layoutFloatingNotices() {
     const launchers = [...document.querySelectorAll('[data-exp-product-launcher="1"][data-product-id]')]
-      .map(host => host.shadowRoot?.querySelector('[data-exp-part="launcher"],.ward-launcher,.launcher,#tdh-settings-launcher'))
+      .map(host => host.shadowRoot?.querySelector('[data-exp-part="launcher"]'))
       .filter(Boolean).map(node => node.getBoundingClientRect()).filter(box => box.width && box.height);
     const notices = visibleFloatingNotices();
     if (!launchers.length || !notices.length) return;
@@ -2131,7 +2982,9 @@ const ExtraPotionsCore = (() => {
   function registerLauncher(host, options = {}) {
     if (registrations.has(host)) return registrations.get(host);
     const id = options.productId || options.id || host.dataset.productId;
-    Object.assign(host.dataset, { expProductLauncher:'1', productId:id, launcherPriority:String(options.priority ?? PRIORITY[id] ?? 0) });
+    const contract = suiteContract(id);
+    const launcherPriority = contract ? contract.launcherPriority : options.priority ?? 0;
+    Object.assign(host.dataset, { expProductLauncher:'1', productId:id, launcherPriority:String(launcherPriority) });
     applyMatteToggleChrome(host);
     // The launcher is non-modal: site-wide dialog backdrop styles must never
     // paint over the page when the reference opens its manual popover.
@@ -2149,7 +3002,7 @@ const ExtraPotionsCore = (() => {
     return dispose;
   }
   function themes(productTheme) {
-    const common = CoreFoundation.UI_THEMES.filter(t => !['twitch', 'dropper'].includes(t.id));
+    const common = CoreFoundation.SHARED_UI_THEMES;
     return Object.freeze([...common, CoreFoundation.CRIMSON_THEME, ...(productTheme ? [productTheme] : [CoreFoundation.UI_THEMES.at(-1)])].map(t => { const theme = semanticTheme(t); return Object.freeze({ ...theme, vars: Object.fromEntries(tokenNames.map(k => [k, theme[k]])) }); }));
   }
   function createThemeSwatches({ container, themes: choices, value, onChange = () => {} }) {
@@ -2176,6 +3029,20 @@ const ExtraPotionsCore = (() => {
     return { setValue: paint, destroy() { container.removeEventListener('keydown', keyboard); buttons.forEach(b => b.remove()); } };
   }
   function focusMenuSurface(panel) { if (!(panel instanceof HTMLElement)) return false; panel.tabIndex = -1; panel.style.outline = 'none'; panel.focus({ preventScroll: true }); return true; }
+  const FLOATING_NOTICE_CSS = '.exp-floating-update{position:fixed;z-index:2147483647;box-sizing:border-box;width:min(312px,calc(100vw - 24px));max-width:calc(100vw - 24px);margin:0;padding:10px 32px 10px 10px;border:1px solid var(--exp-notice-border,var(--dropper-accent,#6f42b4));border-radius:10px;background:linear-gradient(180deg,var(--exp-notice-top,#251a35),var(--exp-notice-bottom,#18181d) 70%);color:var(--exp-notice-text,#f4f4f6);box-shadow:0 10px 28px #0008;font:500 9px/1.45 system-ui,sans-serif}.exp-floating-update[hidden]{display:none!important}.exp-floating-update-dismiss{position:absolute;top:7px;right:7px;width:23px;height:23px;padding:0;border:1px solid transparent;border-radius:7px;background:transparent;color:inherit;cursor:pointer;font:15px/1 Arial,sans-serif}.exp-floating-update-dismiss:hover,.exp-floating-update-dismiss:focus-visible{border-color:var(--exp-notice-border,var(--dropper-accent,#6f42b4));outline:none}';
+  function ensureFloatingNoticeStyle(shadow) {
+    if (!shadow.querySelector('style[data-exp-floating-notice]')) {
+      injectStyle(shadow, FLOATING_NOTICE_CSS, { expFloatingNotice: '1' });
+    }
+  }
+  function syncNoticeTheme(notice, themeSource) {
+    const theme = getComputedStyle(themeSource);
+    const first = (names, fallback) => names.map(name => theme.getPropertyValue(name).trim()).find(Boolean) || fallback;
+    notice.style.setProperty('--exp-notice-border', first(['--exp-notice-border','--theme-accent','--dropper-accent','--accent','--accent2','--teal','--mb-brand'], theme.borderTopColor || '#6f42b4'));
+    notice.style.setProperty('--exp-notice-top', first(['--exp-notice-top','--theme-panel','--surface','--panel','--raised','--mb-surface','--bg','--mb-bg'], theme.backgroundColor || '#251a35'));
+    notice.style.setProperty('--exp-notice-bottom', first(['--exp-notice-bottom','--theme-bg','--bg','--mb-bg','--surface','--mb-surface'], theme.backgroundColor || '#18181d'));
+    notice.style.setProperty('--exp-notice-text', first(['--exp-notice-text','--theme-text','--text','--mb-ink'], theme.color || '#f4f4f6'));
+  }
   function createFloatingNotice(options = {}) {
     const { shadow, panel, notice, versionButton = null } = options;
     const host = options.host || shadow?.host;
@@ -2183,22 +3050,14 @@ const ExtraPotionsCore = (() => {
     const durationMs = Math.max(0, Number(options.durationMs ?? 30000));
     const manageVersion = options.manageVersion !== false;
     let timer = 0, menuOpen = false, destroyed = false;
-    if (!shadow.querySelector('style[data-exp-floating-notice]')) {
-      injectStyle(shadow, '.exp-floating-update{position:fixed;z-index:2147483647;box-sizing:border-box;width:min(312px,calc(100vw - 24px));max-width:calc(100vw - 24px);margin:0;padding:10px 32px 10px 10px;border:1px solid var(--exp-notice-border,var(--dropper-accent,#6f42b4));border-radius:10px;background:linear-gradient(180deg,var(--exp-notice-top,#251a35),var(--exp-notice-bottom,#18181d) 70%);color:var(--exp-notice-text,#f4f4f6);box-shadow:0 10px 28px #0008;font:500 9px/1.45 system-ui,sans-serif}.exp-floating-update[hidden]{display:none!important}.exp-floating-update-dismiss{position:absolute;top:7px;right:7px;width:23px;height:23px;padding:0;border:1px solid transparent;border-radius:7px;background:transparent;color:inherit;cursor:pointer;font:15px/1 Arial,sans-serif}.exp-floating-update-dismiss:hover,.exp-floating-update-dismiss:focus-visible{border-color:var(--exp-notice-border,var(--dropper-accent,#6f42b4));outline:none}', { expFloatingNotice: '1' });
-    }
+    ensureFloatingNoticeStyle(shadow);
     applyMatteToggleChrome(shadow);
     notice.classList.add('update-notice','exp-floating-update'); notice.setAttribute('role','status');
     let dismiss = notice.querySelector(':scope > .exp-floating-update-dismiss');
     if (!dismiss) { dismiss=document.createElement('button'); dismiss.type='button'; dismiss.className='exp-floating-update-dismiss'; dismiss.setAttribute('aria-label','Dismiss changelog'); dismiss.textContent='×'; notice.prepend(dismiss); }
     shadow.append(notice); const unregisterNotice = registerFloatingNotice(host, notice);
     const themeSource = options.themeSource instanceof Element ? options.themeSource : panel;
-    function syncTheme() {
-      const theme=getComputedStyle(themeSource); const first=(names,fallback)=>names.map(name=>theme.getPropertyValue(name).trim()).find(Boolean)||fallback;
-      notice.style.setProperty('--exp-notice-border',first(['--exp-notice-border','--theme-accent','--dropper-accent','--accent','--accent2','--teal','--mb-brand'],theme.borderTopColor||'#6f42b4'));
-      notice.style.setProperty('--exp-notice-top',first(['--exp-notice-top','--theme-panel','--surface','--panel','--raised','--mb-surface','--bg','--mb-bg'],theme.backgroundColor||'#251a35'));
-      notice.style.setProperty('--exp-notice-bottom',first(['--exp-notice-bottom','--theme-bg','--bg','--mb-bg','--surface','--mb-surface'],theme.backgroundColor||'#18181d'));
-      notice.style.setProperty('--exp-notice-text',first(['--exp-notice-text','--theme-text','--text','--mb-ink'],theme.color||'#f4f4f6'));
-    }
+    const syncTheme = () => syncNoticeTheme(notice, themeSource);
     const clearTimer=()=>{clearTimeout(timer);timer=0;};
     function layout(){if(destroyed||notice.hidden)return;syncTheme();layoutFloatingNotices();}
     function hide(){clearTimer();notice.hidden=true;versionButton?.setAttribute('aria-expanded','false');layoutFloatingNotices();}
@@ -2223,9 +3082,7 @@ const ExtraPotionsCore = (() => {
     const manageVersion = options.manageVersion !== false;
     let timer = 0, menuOpen = false, destroyed = false, frame = 0;
 
-    if (!shadow.querySelector('style[data-exp-floating-notice]')) {
-      injectStyle(shadow, '.exp-floating-update{position:fixed;z-index:2147483647;box-sizing:border-box;width:min(312px,calc(100vw - 24px));max-width:calc(100vw - 24px);margin:0;padding:10px 32px 10px 10px;border:1px solid var(--exp-notice-border,var(--dropper-accent,#6f42b4));border-radius:10px;background:linear-gradient(180deg,var(--exp-notice-top,#251a35),var(--exp-notice-bottom,#18181d) 70%);color:var(--exp-notice-text,#f4f4f6);box-shadow:0 10px 28px #0008;font:500 9px/1.45 system-ui,sans-serif}.exp-floating-update[hidden]{display:none!important}.exp-floating-update-dismiss{position:absolute;top:7px;right:7px;width:23px;height:23px;padding:0;border:1px solid transparent;border-radius:7px;background:transparent;color:inherit;cursor:pointer;font:15px/1 Arial,sans-serif}.exp-floating-update-dismiss:hover,.exp-floating-update-dismiss:focus-visible{border-color:var(--exp-notice-border,var(--dropper-accent,#6f42b4));outline:none}', { expFloatingNotice: '1' });
-    }
+    ensureFloatingNoticeStyle(shadow);
     applyMatteToggleChrome(shadow);
     notice.classList.add('update-notice', 'exp-floating-update');
     notice.dataset.placement = 'menu';
@@ -2243,14 +3100,7 @@ const ExtraPotionsCore = (() => {
     }
 
     const themeSource = options.themeSource instanceof Element ? options.themeSource : panel;
-    function syncTheme() {
-      const theme = getComputedStyle(themeSource);
-      const first = (names, fallback) => names.map(name => theme.getPropertyValue(name).trim()).find(Boolean) || fallback;
-      notice.style.setProperty('--exp-notice-border', first(['--exp-notice-border','--theme-accent','--dropper-accent','--accent','--accent2','--teal','--mb-brand'], theme.borderTopColor || '#6f42b4'));
-      notice.style.setProperty('--exp-notice-top', first(['--exp-notice-top','--theme-panel','--surface','--panel','--raised','--mb-surface','--bg','--mb-bg'], theme.backgroundColor || '#251a35'));
-      notice.style.setProperty('--exp-notice-bottom', first(['--exp-notice-bottom','--theme-bg','--bg','--mb-bg','--surface','--mb-surface'], theme.backgroundColor || '#18181d'));
-      notice.style.setProperty('--exp-notice-text', first(['--exp-notice-text','--theme-text','--text','--mb-ink'], theme.color || '#f4f4f6'));
-    }
+    const syncTheme = () => syncNoticeTheme(notice, themeSource);
     function widthForMode() {
       return menuWidthForMode(host?.dataset.menuWidth || 'compact');
     }
@@ -2266,7 +3116,7 @@ const ExtraPotionsCore = (() => {
       notice.style.setProperty('width', width + 'px', 'important');
 
       const panelBox = menuOpen && !panel.hidden && panel.getClientRects().length ? panel.getBoundingClientRect() : null;
-      const launcher = shadow.querySelector('[data-exp-part="launcher"],.ward-launcher,.launcher,#tdh-settings-launcher');
+      const launcher = shadow.querySelector('[data-exp-part="launcher"]');
       const launcherBox = launcher?.getBoundingClientRect?.();
       const anchorBox = panelBox?.width && panelBox?.height ? panelBox : launcherBox;
       if (!anchorBox?.width || !anchorBox?.height) return;
@@ -2350,7 +3200,7 @@ const ExtraPotionsCore = (() => {
     panel.querySelectorAll('.fl-tool-header').forEach(header => { if (active) header.classList.toggle('last-opened', header === active); const chevron = header.querySelector('.fl-tool-chevron'); if (chevron) { const text = header.getAttribute('aria-expanded') === 'true' ? '▾' : '▸'; if (chevron.textContent !== text) chevron.textContent = text; } });
   }
   function normalizeHeader(panel) {
-    const head = panel.querySelector('.menu-head,header,.head,.ward-header'); if (!head) return;
+    const head = panel.querySelector('.menu-head,header,.head'); if (!head) return;
     head.classList.add('menu-head');
     const brand = head.querySelector('.header-brand,.identity,.brand'); if (!brand) return;
     brand.classList.add('header-brand');
@@ -2390,7 +3240,7 @@ const ExtraPotionsCore = (() => {
     const styles = injectStyle(shadow, canonicalCss + compositionCss, { expCoreStyle:version });
     const themeRoot = document.createElement('div'); themeRoot.className = 'exp-core-theme';
     [...shadow.childNodes].filter(node => node !== styles).forEach(node => themeRoot.append(node)); shadow.append(themeRoot);
-    panel.dataset.expPart = 'dock'; panel.classList.add('dropper-menu-surface'); makeLauncher(launcher,launcherSrc); normalizeHeader(panel); normalizeControls(panel);
+    panel.dataset.expPart = 'dock'; panel.classList.add('exp-menu-surface'); makeLauncher(launcher,launcherSrc); normalizeHeader(panel); normalizeControls(panel);
     let defaultSupport = null;
     const header = panel.querySelector('.menu-head');
     if (header && !header.querySelector('.support-wrap') && options.supportUrl !== '') {
@@ -2404,31 +3254,21 @@ const ExtraPotionsCore = (() => {
     const versionButton=panel.querySelector('.version,[data-exp-part="version"]');
     const menuNotices=[...themeRoot.querySelectorAll('.update-notice,.changelog')].map(notice=>createMenuNotice({host,shadow,panel,notice,versionButton:notice.classList.contains('changelog')?versionButton:null,manageVersion:false,durationMs:30000}));
     if (launcherSrc) panel.querySelectorAll('.header-icon img').forEach(image => image.src = launcherSrc);
-    host.dataset.coreVersion = version; host.dataset.coreSource = 'Dropper/3.3.15';
+    host.dataset.coreVersion = version; host.dataset.coreSource = 'exp-core';
     let choices = themes(productTheme), selected = choices.at(-1), open = false, destroyed = false, timer = 0, deadline = 0, frame = 0;
     const removers = [];
     const on = (node,type,fn,opts) => { node.addEventListener(type,fn,opts); removers.push(() => node.removeEventListener(type,fn,opts)); };
     let localTheme = null;
     function paintTheme(theme) {
       selected = theme;
-      for (const key of tokenNames) { themeRoot.style.setProperty('--theme-' + key, selected[key]); host.style.setProperty('--' + key, selected[key]); host.style.setProperty('--dropper-' + key, selected[key]); }
+      for (const key of tokenNames) { themeRoot.style.setProperty('--theme-' + key, selected[key]); host.style.setProperty('--' + key, selected[key]); }
       themeRoot.style.setProperty('--theme-skin', selected.skin || selected.swatch || selected.accent);
       themeRoot.style.setProperty('--theme-skin-vertical', selected.skinVertical || selected.skin || selected.swatch || selected.accent);
       Object.assign(themeRoot.dataset, { uiTheme:selected.id, themeSkin:selected.skinMode === 'flat' ? 'flat' : 'gradient' });
       host.dataset.uiTheme = selected.id;
     }
-    let observedDropper = null;
-    const dropperThemeObserver = new MutationObserver(syncThemeOwner);
     function syncThemeOwner() {
       const owner = menuThemeOwner();
-      const dropperThemeSurface = owner?.dataset.productId === 'dropper'
-        ? owner.shadowRoot?.querySelector('#tdh-cluster')
-        : null;
-      if (dropperThemeSurface !== observedDropper) {
-        dropperThemeObserver.disconnect();
-        observedDropper = dropperThemeSurface;
-        if (observedDropper) dropperThemeObserver.observe(observedDropper, { attributes:true, attributeFilter:['data-ui-theme'] });
-      }
       const deprioritized = Boolean(owner && owner !== host);
       host.dataset.expThemeDeprioritized = deprioritized ? '1' : '0';
       host.dataset.expThemeOwner = owner?.dataset.productId || id;
@@ -2450,7 +3290,7 @@ const ExtraPotionsCore = (() => {
       themeRoot.classList.toggle('reduce-motion', state.reduceMotion === true || state.reduceMotion === 'on' || state.reducedMotion === 'reduce' || (state.reduceMotion === 'system' || state.reducedMotion === 'system') && matchMedia('(prefers-reduced-motion:reduce)').matches);
       const opacityValue = Number(state.opacityPercent);
       const opacity = state.customOpacity ? (Number.isFinite(opacityValue) ? Math.max(40, Math.min(100, Math.round(opacityValue / 5) * 5)) : 85)/100 : 1;
-      themeRoot.style.setProperty('--dropper-ui-opacity',String(opacity));
+      themeRoot.style.setProperty('--exp-ui-opacity',String(opacity));
       const offset = parseFloat(getComputedStyle(host).getPropertyValue('--exp-launcher-offset')) || 0;
       const x = parseFloat(getComputedStyle(host).getPropertyValue('--exp-launcher-x')) || 0;
       const delta = Math.max(8-(innerHeight-60), Math.min(4, Number(read(GRID_DELTA,0)) || 0));
@@ -2492,7 +3332,7 @@ const ExtraPotionsCore = (() => {
       state(value) {open=Boolean(value);if(open){document.documentElement.setAttribute('data-exp-open-menu',id);document.dispatchEvent(new Event('exp-core:menu-open'));}panel.classList.toggle('fl-rail-open',open);menuNotices.forEach(notice=>notice.setMenuOpen(open));if(open)scheduleDismiss();else clearTimer();queueLayout();},
       update(){normalizeControls(panel);queueLayout();},
       get dismissAt(){return deadline;},
-      destroy(){destroyed=true;arrangement.destroy();defaultSupport?.destroy();clearTimer();cancelAnimationFrame(frame);resize.disconnect();mutation.disconnect();dropperThemeObserver.disconnect();menuNotices.forEach(notice=>notice.destroy());removers.forEach(f=>f());styles.dispose();controllers.delete(host);}
+      destroy(){destroyed=true;arrangement.destroy();defaultSupport?.destroy();clearTimer();cancelAnimationFrame(frame);resize.disconnect();mutation.disconnect();menuNotices.forEach(notice=>notice.destroy());removers.forEach(f=>f());styles.dispose();controllers.delete(host);}
     };
     controllers.set(host,controller);setTheme(getSettings().uiTheme || getSettings().theme || id);
     queueLayout();return controller;
@@ -2674,15 +3514,15 @@ const ExtraPotionsCore = (() => {
     wrapper.className = 'support-wrap';
     const button = document.createElement('button');
     button.type = 'button';
-    button.id = 'tdh-support-button';
+    button.id = 'exp-support-button';
     button.className = 'support-button';
     button.setAttribute('aria-label', label);
     button.setAttribute('aria-expanded', 'false');
-    button.setAttribute('aria-controls', 'tdh-support-popover');
+    button.setAttribute('aria-controls', 'exp-support-popover');
     button.title = label;
     button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.2-4.35-9.55-8.45C.42 9.02 2.3 5 6.25 5c2.15 0 3.56 1.21 4.33 2.3C11.36 6.21 12.77 5 14.92 5c3.95 0 5.83 4.02 3.8 7.55C16.36 16.65 12 21 12 21Z"/></svg>';
     const popover = document.createElement('div');
-    popover.id = 'tdh-support-popover';
+    popover.id = 'exp-support-popover';
     popover.className = 'support-popover';
     popover.setAttribute('role', 'dialog');
     popover.setAttribute('aria-label', label);
@@ -2727,6 +3567,7 @@ const ExtraPotionsCore = (() => {
     }
     const notice = document.createElement('div');
     notice.className = 'update-notice';
+    notice.dataset.expUpdateNotice = '1';
     notice.hidden = true;
     notice.innerHTML = '<button type="button" class="update-dismiss" aria-label="Dismiss Update Notice">×</button><div class="update-head"><div class="update-heading"><div class="update-kicker">What\'s New</div><div class="update-title"></div></div><div class="update-version"></div></div><div class="update-text"></div><ul class="update-list"></ul><div class="update-footer"><a class="update-release" target="_blank" rel="noopener noreferrer">GitHub Release</a><a class="update-action" target="_blank" rel="noopener noreferrer">Install Update</a></div>';
     (shadow.querySelector('.exp-core-theme') || shadow).append(notice);
@@ -2786,8 +3627,91 @@ const ExtraPotionsCore = (() => {
     });
   }
 
+  function productCompatibilityReport() {
+    const base = ExtraPotionsDiagnostics.compatibility();
+    const interoperability = suiteHealth();
+    const conflicts = [
+      ...(Array.isArray(base.conflicts) ? base.conflicts : []),
+      ...interoperability.conflicts,
+    ];
+    return Object.freeze({
+      ...base,
+      conflicts: Object.freeze(conflicts.map(conflict => Object.freeze({ ...conflict }))),
+      status: conflicts.length ? 'conflicts-detected' : 'no-conflicts-observed',
+      interoperability,
+    });
+  }
+
+  function createSuiteCompatibilityControls() {
+    const details = document.createElement('details');
+    details.className = 'exp-tools-card';
+    details.style.cssText = 'border:1px solid var(--theme-line,var(--line,#777));border-radius:7px;padding:7px;margin-top:8px';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Product compatibility';
+    const output = document.createElement('div');
+    output.setAttribute('aria-live', 'polite');
+    const refreshButton = document.createElement('button');
+    refreshButton.type = 'button';
+    refreshButton.className = 'life-btn action';
+    refreshButton.textContent = 'Refresh compatibility';
+
+    const refresh = () => {
+      output.replaceChildren();
+      const report = productCompatibilityReport();
+      const suite = suiteSnapshot();
+      const healthById = new Map(report.interoperability.products.map(product => [product.id, product]));
+      if (!suite.products.length) {
+        const empty = document.createElement('p');
+        empty.textContent = 'No ExtraPotions products are registered on this page yet.';
+        output.append(empty);
+      }
+      for (const product of suite.products) {
+        const health = healthById.get(product.id);
+        const line = document.createElement('p');
+        const stateAge = health?.stateAgeMs == null ? '' : ` · state ${Math.max(0, Math.round(health.stateAgeMs / 1000))}s ago`;
+        line.textContent = `${product.id.toUpperCase()} ${product.version} · Core ${product.coreVersion} · ${health?.status === 'healthy' ? 'Healthy' : 'Check compatibility'}${stateAge}`;
+        output.append(line);
+      }
+
+      const observers = document.createElement('p');
+      const page = pageObserverState();
+      const navigation = navigationObserverState();
+      observers.textContent = `Shared observers · DOM: ${page.active ? page.owner || 'active' : 'idle'} · Navigation: ${navigation.active ? navigation.owner || 'active' : 'idle'}`;
+      output.append(observers);
+
+      const status = document.createElement('p');
+      status.textContent = report.conflicts.length
+        ? report.conflicts.map(conflict => conflict.type).join(', ')
+        : 'No interoperability conflicts detected on this page.';
+      output.append(status);
+
+      const note = document.createElement('small');
+      note.textContent = 'Only products running on this page are shown. Shared suite state is advisory coordination data, not an authorization signal.';
+      output.append(note);
+    };
+
+    details.addEventListener('toggle', () => { if (details.open) refresh(); });
+    refreshButton.addEventListener('click', refresh);
+    details.append(summary, output, refreshButton);
+    return details;
+  }
+
   function createDiagnosticsReport(product, details = {}) {
-    return ExtraPotionsDiagnostics.createReport(product, details, { version, source: 'exp-core', sourceVersion });
+    const report = ExtraPotionsDiagnostics.createReport(product, details, { version, source: 'exp-core', sourceVersion });
+    return {
+      ...report,
+      interoperability: {
+        suite: suiteSnapshot(),
+        presentation: {
+          phases: { ...PRESENTATION_PHASES },
+          providers: presentationProviders(),
+        },
+        pageObserver: pageObserverState(),
+        navigationObserver: navigationObserverState(),
+        states: suiteStateSnapshot(),
+        health: suiteHealth(),
+      },
+    };
   }
   function downloadDiagnostics(report) {
     const name=`${String(report.report||'Diagnostics').toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
@@ -2844,6 +3768,6 @@ const ExtraPotionsCore = (() => {
     return Object.freeze({ lifecycle, diagnostics, updates });
   }
 
-  const api = Object.freeze({...ExtraPotionsTools,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,menuWidthForMode,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct:ExtraPotionsDiagnostics.registerProduct,productCompatibility:ExtraPotionsDiagnostics.compatibility,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
+  const api = Object.freeze({...ExtraPotionsTools,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,menuWidthForMode,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
   return api;
 })();
