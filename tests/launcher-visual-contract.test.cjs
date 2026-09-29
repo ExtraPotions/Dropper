@@ -223,5 +223,5 @@ test('unified progress panel follows the 3.2 layout without campaign navigation'
   assert.match(source, /#tdh-settings-launcher \{[\s\S]*?width:48px;[\s\S]*?border-radius:10px;/u);
   assert.match(source, /data-collapsed-width="compact"\] \{ width:min\(260px/u);
   assert.match(source, /data-collapsed-width="narrow"\] \{ width:min\(220px/u);
-  assert.match(source, /data-collapsed-width="full"\\] \\{ width:min\\(var\\(--exp-menu-width,var\\(--dropper-width, 312px\\)\\)/u);
+  assert.match(source, /data-collapsed-width="full"\] \{ width:min\(var\(--exp-menu-width,var\(--dropper-width, 312px\)\), calc/u);
 });

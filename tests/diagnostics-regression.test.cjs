@@ -124,7 +124,7 @@ assert.doesNotMatch(source, /temporaryCampaignSkips: loadTemporaryCampaignSkips/
 assert.match(source, /function authoritativeProgressPercent/, "all visible progress surfaces can resolve one authoritative percentage");
 assert.match(source, /data-collapsed-width="compact"\] \{ width:min\(260px/, "compact mode remains exactly 260px");
 assert.match(source, /data-collapsed-width="narrow"\] \{ width:min\(220px/, "narrow mode remains exactly 220px");
-assert.match(source, /data-collapsed-width="full"\\] \\{ width:min\\(var\\(--exp-menu-width,var\\(--dropper-width, 312px\\)\\)/, "full mode still uses the live chat-matched Dropper width");
+assert.match(source, /data-collapsed-width="full"\] \{ width:min\(var\(--exp-menu-width,var\(--dropper-width, 312px\)\), calc/u, "full mode still uses the live chat-matched Dropper width");
 assert.match(source, /function syncProgressSurfaces/, "panel, compact state, and launcher ring share one progress renderer");
 assert.match(source, /syncProgressSurfaces\(\);\s*updateTitle\(\);/, "heartbeat keeps visible progress surfaces synchronized with the tab title");
 assert.match(source, /syncProgressSurfaces\(\);\s*refreshDropCard\(\);/, "authoritative Drop updates push progress to the visible UI immediately");
