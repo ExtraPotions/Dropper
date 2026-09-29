@@ -21,8 +21,8 @@ const rawNotes = process.env.RELEASE_NOTES_JSON || '';
 if (!rawNotes) throw new Error('RELEASE_NOTES_JSON is required for a feature release');
 let notes;
 try { notes = JSON.parse(rawNotes); } catch { throw new Error('RELEASE_NOTES_JSON must be valid JSON'); }
-if (!Array.isArray(notes) || notes.length < 1 || notes.length > 4 || notes.some(note => typeof note !== 'string' || !note.trim())) {
-  throw new Error('Feature releases require 1-4 non-empty release-note strings');
+if (!Array.isArray(notes) || notes.length < 2 || notes.length > 4 || notes.some(note => typeof note !== 'string' || !note.trim())) {
+  throw new Error('Feature releases need 2-4 non-empty release notes');
 }
 notes = notes.map(note => note.trim());
 

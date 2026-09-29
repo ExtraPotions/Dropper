@@ -66,7 +66,7 @@ test('repository keeps only current docs, assets, and required build inputs', ()
   assert.doesNotMatch(changelog, /^## 3\.0\.11/m);
   const currentSection = changelog.split(/^## /m)[1] || '';
   const bullets = [...currentSection.matchAll(/^- .+$/gm)];
-  assert.ok(bullets.length >= 4 && bullets.length <= 16, 'current changelog stays concise');
+  assert.ok(bullets.length >= 2 && bullets.length <= 4, 'current changelog stays concise');
 });
 
 test('in-app release notes and update checker stay current-only but functional', () => {

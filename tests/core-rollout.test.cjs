@@ -31,7 +31,7 @@ test('feature and Core release preparation stay separate', () => {
   assert.equal(pkg.scripts['prepare:release:feature'], 'node scripts/prepare-feature-release.cjs && npm run build');
   assert.equal(pkg.scripts['prepare:release:core'], 'node scripts/prepare-core-release.cjs');
   assert.match(featurePrepare, /RELEASE_NOTES_JSON is required for a feature release/u);
-  assert.match(featurePrepare, /notes\.length < 1 \|\| notes\.length > 4/u);
+  assert.match(featurePrepare, /notes\.length < 2 \|\| notes\.length > 4/u);
   assert.doesNotMatch(featurePrepare, /Updates the shared foundation to exp-core/u);
   assert.match(prepare, /Updates the shared foundation to exp-core/u);
 });
