@@ -2,6 +2,8 @@
 name: Sync exp-core
 
 on:
+  repository_dispatch:
+    types: [exp-core-release]
   push:
     branches: [main]
     paths:
@@ -26,7 +28,7 @@ jobs:
   sync:
     uses: ExtraPotions/exp-core/.github/workflows/consumer-rollout.yml@main
     with:
-      tag: ${{ inputs.tag || '' }}
+      tag: ${{ github.event.client_payload.tag || inputs.tag || '' }}
       product: Dropper
       node-version: "22"
       script-asset: dropper.user.js
