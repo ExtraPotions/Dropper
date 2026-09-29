@@ -1444,7 +1444,11 @@
   }
 
   function saveRecoverySnapshot(reason = 'state-change') {
-    if (!settings.resumeSessionOnRestart || !currentDrop || currentDrop.isClaimed || isSyntheticWaitingDrop(currentDrop)) return false;
+    if (!settings.resumeSessionOnRestart || !currentDrop || isSyntheticWaitingDrop(currentDrop)) return false;
+    if (currentDrop.isClaimed) {
+      clearRecoverySnapshot('drop-claimed');
+      return false;
+    }
     const now = Date.now();
     const drop = compactRecoveryDrop(currentDrop);
     if (!drop) return false;
@@ -15584,8 +15588,6 @@
     const configuredCooldownMs = Math.max(0, Number(settings.notificationCooldownMinutes || 0)) * 60 * 1000;
     const effectiveCooldownMs = Math.max(Math.max(0, Number(cooldownMs) || 0), configuredCooldownMs);
     if (effectiveCooldownMs && now - last < effectiveCooldownMs) return false;
-    quiet.events[key] = now;
-    saveNotificationQuietState(quiet);
     try {
       const notice = new Api(title, {
         body: cleanText(body).slice(0, 220),
@@ -15593,6 +15595,8 @@
         renotify: false,
         silent: false,
       });
+      quiet.events[key] = now;
+      saveNotificationQuietState(quiet);
       setTimeout(() => { try { notice.close(); } catch (_) {} }, 12000);
       return true;
     } catch (_) {
@@ -15638,9 +15642,8 @@
     const campaign = cleanText(currentDrop.campaignKey || currentDrop.campaignId || currentDrop.campaign || currentDrop.game || 'campaign');
     const signature = `${campaign}:${bucket}`;
     if (checkCampaignDeadlineNotification.signature === signature) return false;
-    checkCampaignDeadlineNotification.signature = signature;
     const required = Number(state?.deadline?.requiredMinutes);
-    return sendBrowserNotification(
+    const sent = sendBrowserNotification(
       'ending',
       `Dropper · Campaign ending in ${Math.max(0, Math.round(minutes))} min`,
       Number.isFinite(required)
@@ -15648,6 +15651,8 @@
         : `${currentDrop.game || currentDrop.campaign || 'Current campaign'} is close to its deadline.`,
       { tag: `ending-${signature}` },
     );
+    if (sent) checkCampaignDeadlineNotification.signature = signature;
+    return sent;
   }
 
   function loadUpdateReloadState() {
