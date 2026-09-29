@@ -1,3 +1,10 @@
+## 3.3.27 — 2026-09-29
+
+- Adds a Check for Updates button in Maintenance that works on demand.
+- Checks GitHub release information only when you press it and never installs anything.
+- Reports whether an update is available, Dropper is current, or the check failed.
+- Leaves Dropper Twitch routing, campaign, claim, and playback behavior unchanged.
+
 ## 3.3.26 — 2026-09-29
 
 - Shows Resume Playback once when playback is paused, instead of a second copy beside Stay On This Stream.

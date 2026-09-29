@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.26
+// @version      3.3.27
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -56,7 +56,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.26";
+  const APP_VERSION = "3.3.27";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -206,6 +206,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.27": ["Adds a Check for Updates button in Maintenance that works on demand.","Checks GitHub release information only when you press it and never installs anything.","Reports whether an update is available, Dropper is current, or the check failed.","Leaves Dropper Twitch routing, campaign, claim, and playback behavior unchanged."],
     "3.3.26": ["Shows Resume Playback once when playback is paused, instead of a second copy beside Stay On This Stream.","Keeps the other recovery actions, such as Recheck Twitch and Find Another Stream, in the same place.","Leaves Dropper Twitch routing, campaign, claim, and playback behavior unchanged.","Adds no new settings."],
     "3.3.25": ["Fixes the Claim History and Open Campaigns headings collapsing into a column of single letters when the status text is long.","Keeps the campaign status text on one line and shortens it when there is no room.","Simplifies the menu to a single width that follows the Dropper theme.","Removes the Menu width, Menu theme, Menu notifications, and menu arrangement controls."],
     "3.3.24": ["Updates the shared foundation to exp-core 3.4.2.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
@@ -13902,6 +13903,7 @@
             <details class="auth-advanced">
               <summary>Maintenance</summary>
               <div class="auth-advanced-body">
+                <button type="button" class="life-btn" id="tdh-check-updates">Check for Updates</button>
                 <button type="button" class="life-btn" id="tdh-refresh-campaign-data">Refresh Campaign Data</button>
                 <button type="button" class="life-btn" id="tdh-clear-activity">Clear Activity Log</button>
                 <div class="action-pair"><button type="button" class="life-btn" id="tdh-refresh-now">Refresh Drop State</button>
@@ -15320,7 +15322,7 @@
     const maintenance = document.createElement('details');
     const maintenanceTitle = document.createElement('summary');maintenanceTitle.textContent='Maintenance';maintenance.append(maintenanceTitle);
     const actions = document.createElement('div');actions.className='action-pair';maintenance.append(actions);
-    for (const id of ['tdh-refresh-campaign-data','tdh-clear-activity','tdh-refresh-now','tdh-reset-session']) actions.append(ui.shadow.getElementById(id));
+    for (const id of ['tdh-check-updates','tdh-refresh-campaign-data','tdh-clear-activity','tdh-refresh-now','tdh-reset-session']) actions.append(ui.shadow.getElementById(id));
     for (const empty of target.querySelectorAll(':scope>.action-pair:empty,:scope>.action-separator')) empty.remove();
     container.prepend(maintenance);
     container.append(details,history);target.append(container);
@@ -15476,6 +15478,21 @@
       event.currentTarget.textContent = "Activity Cleared";
       if (diag.classList.contains("open")) diag.textContent = diagnosticsText();
       setTimeout(() => { event.currentTarget.textContent = "Clear Activity Log"; }, 1600);
+    });
+    s.getElementById("tdh-check-updates")?.addEventListener("click", (event) => {
+      const button = event.currentTarget;
+      if (typeof GM_xmlhttpRequest !== "function") { notifyUser("Update checks need a userscript manager."); return; }
+      button.disabled = true;
+      button.textContent = "Checking…";
+      scheduleUpdateCheck(true);
+      setTimeout(() => {
+        const state = loadUpdateState();
+        button.disabled = false;
+        button.textContent = "Check for Updates";
+        if (state.availableVersion && compareVersions(state.availableVersion, APP_VERSION) > 0) notifyUser("Dropper " + state.availableVersion + " is available.");
+        else if (state.lastError) notifyUser("Update check failed quietly.");
+        else notifyUser("Dropper is up to date.");
+      }, 3500);
     });
     s.getElementById("tdh-reset-session")?.addEventListener("click", (event) => {
       resetTransientSessionState();
