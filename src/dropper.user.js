@@ -4358,7 +4358,7 @@
     const chat = findTwitchChatColumn();
     const measured = chat ? Math.round(chat.getBoundingClientRect().width) : 312;
     const width = Math.max(280, Math.min(measured || 312, 340));
-    ui.cluster.style.setProperty("--dropper-width", `${width}px`);
+    ui.cluster.style.setProperty("--exp-menu-width", `${width}px`);\n    ui.cluster.style.setProperty("--dropper-width", `${width}px`);
   }
 
   function watchChatWidth() {
@@ -12422,25 +12422,25 @@
         position: fixed; right: 12px; z-index: 2147483600;
         display: flex; flex-direction: column-reverse; align-items: flex-end;
         width: max-content; max-width: calc(100vw - 24px); gap: 8px;
-        --theme-bg:#111114; --theme-panel:#19191e; --theme-raised:#2a2a31; --theme-inset:#0e0e10; --theme-line:#34343b; --theme-text:#efeff1; --theme-muted:#adadb8; --theme-accent:#9147ff; --theme-accent2:#bf94ff; --theme-link:#c6a4ff; --theme-focus:#bf94ff; --theme-onAccent:#111114; --theme-skin:linear-gradient(135deg,#d9b5ff,#9b5af9,#7428e8); --theme-skin-vertical:linear-gradient(180deg,#d9b5ff,#9b5af9,#7428e8); --dropper-ui-opacity:1;
+        --theme-bg:#111114; --theme-panel:#19191e; --theme-raised:#2a2a31; --theme-inset:#0e0e10; --theme-line:#34343b; --theme-text:#efeff1; --theme-muted:#adadb8; --theme-accent:#9147ff; --theme-accent2:#bf94ff; --theme-link:#c6a4ff; --theme-focus:#bf94ff; --theme-onAccent:#111114; --theme-skin:linear-gradient(135deg,#d9b5ff,#9b5af9,#7428e8); --theme-skin-vertical:linear-gradient(180deg,#d9b5ff,#9b5af9,#7428e8); --exp-ui-opacity:1; --exp-menu-width:312px; --dropper-ui-opacity:1;
         font: 13px/1.42 ui-sans-serif, system-ui, "Segoe UI", sans-serif; color: var(--theme-text);
       }
       .cluster.open-up { flex-direction: column; }
       #tdh-tools-dock,
       #tdh-drop-card,
       .update-notice {
-        opacity:var(--dropper-ui-opacity,1);
+        opacity:var(--exp-ui-opacity,var(--dropper-ui-opacity,1));
         transition:opacity .15s ease;
       }
       .progress-stack {
-        width:min(var(--dropper-width, 312px), calc(100vw - 24px));
+        width:min(var(--exp-menu-width,var(--dropper-width, 312px)), calc(100vw - 24px));
         display:flex; flex-direction:column; align-items:stretch;
         transition:.15s width;
         gap:6px;
       }
       .progress-stack[data-collapsed-width="compact"] { width:min(260px, calc(100vw - 24px)); }
       .progress-stack[data-collapsed-width="narrow"] { width:min(220px, calc(100vw - 24px)); }
-      .progress-stack[data-collapsed-width="full"] { width:min(var(--dropper-width, 312px), calc(100vw - 24px)); }
+      .progress-stack[data-collapsed-width="full"] { width:min(var(--exp-menu-width,var(--dropper-width, 312px)), calc(100vw - 24px)); }
       .cluster[data-panel-width="compact"] #tdh-tools-dock,
       .cluster[data-panel-width="compact"] > .update-notice[data-placement="menu"] {
         width:min(260px, calc(100vw - 24px));
@@ -12451,7 +12451,7 @@
       }
       .cluster[data-panel-width="full"] #tdh-tools-dock,
       .cluster[data-panel-width="full"] > .update-notice[data-placement="menu"] {
-        width:min(var(--dropper-width, 312px), calc(100vw - 24px));
+        width:min(var(--exp-menu-width,var(--dropper-width, 312px)), calc(100vw - 24px));
       }
       .progress-stack.badge-only .badge-row { justify-content:flex-end; min-height:48px!important; }
       .progress-stack.badge-only #tdh-settings-launcher {
@@ -12646,7 +12646,7 @@
       #tdh-settings-launcher .icon { position:absolute; top:50%; left:50%; width:40px; height:40px; pointer-events:none; z-index:1; transform:translate(-50%,-50%); }
       #tdh-tools-dock {
         position:fixed; right:12px; top:auto; bottom:auto;
-        display:none; width:min(var(--dropper-width, 312px), calc(100vw - 24px)); max-width:calc(100vw - 24px);
+        display:none; width:min(var(--exp-menu-width,var(--dropper-width, 312px)), calc(100vw - 24px)); max-width:calc(100vw - 24px);
         height:max-content; min-height:0; max-height:none; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; flex:0 0 auto;
         transition:.15s width;
         padding:9px 9px 4px; background:var(--theme-bg); border:1px solid var(--theme-line); border-radius:14px; box-shadow:0 18px 50px #0008; color-scheme:dark;
@@ -14444,7 +14444,7 @@
   function calculatedPanelWidth(mode = normalizedCollapsedPanelWidth()) {
     if (mode === "narrow") return 220;
     if (mode === "compact") return 260;
-    const full = parseFloat(getComputedStyle(ui.cluster).getPropertyValue("--dropper-width")) || 312;
+    const style = getComputedStyle(ui.cluster);\n    const full = parseFloat(style.getPropertyValue("--exp-menu-width")) || parseFloat(style.getPropertyValue("--dropper-width")) || 312;
     return Math.max(280, Math.min(full, 340));
   }
 
@@ -14488,7 +14488,7 @@
     ui.cluster.dataset.themeSkin = theme.skinMode === "flat" ? "flat" : "gradient";
     settings.opacityPercent = normalizedOpacityPercent();
     const appliedOpacity = settings.customOpacity ? settings.opacityPercent / 100 : 1;
-    ui.cluster.style.setProperty("--dropper-ui-opacity", String(appliedOpacity));
+    ui.cluster.style.setProperty("--exp-ui-opacity", String(appliedOpacity));\n    ui.cluster.style.setProperty("--dropper-ui-opacity", String(appliedOpacity));
     ui.cluster.dataset.customOpacity = settings.customOpacity ? "true" : "false";
     ui.cluster.dataset.opacityPercent = String(settings.opacityPercent);
     const opacityRow = ui.shadow.getElementById("tdh-opacity-row");
