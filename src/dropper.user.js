@@ -45,9 +45,9 @@
   const LEGACY_LAUNCHER_GRID_DELTA_KEY = "tdh-launcher-grid-delta-v3";
   const LAUNCHER_GRID_DELTA_KEY = "exp:v3:launcher-grid-delta";
   const LAUNCHER_ORDER_KEY = "exp:v3:launcher-order";
-  function registerBadgeGrid(host, productId, priority) {
+  function registerBadgeGrid(host, productId) {
     ExtraPotionsCore.registerDiagnosticsProduct(productId, APP_VERSION, host);
-    ExtraPotionsCore.registerLauncher(host, { productId, priority });
+    ExtraPotionsCore.registerLauncher(host, { productId });
     const refreshProductChrome = () => requestAnimationFrame(() => {
       layoutChrome();
       ExtraPotionsCore.layoutFloatingNotices();
@@ -13375,7 +13375,7 @@
         </div>
       </div>`;
     document.documentElement.appendChild(host);
-    registerBadgeGrid(host, "dropper", 90);
+    registerBadgeGrid(host, "dropper");
     ui = { host, shadow, cluster: shadow.getElementById("tdh-cluster"), launcher: shadow.getElementById("tdh-settings-launcher"), dock: shadow.getElementById("tdh-tools-dock") };
     // Text wrapping, width transitions, and nested panels can change the menu
     // after the initial layout. Coalesce resize work without another poll loop.

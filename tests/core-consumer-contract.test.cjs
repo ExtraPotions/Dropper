@@ -28,7 +28,8 @@ test('Dropper assembles the complete pinned exp-core bundle before product code'
 
 test('Dropper delegates shared launcher and notice infrastructure to exp-core', () => {
   assert.doesNotMatch(template, /function protectLauncherHost\s*\(/u);
-  assert.match(template, /ExtraPotionsCore\.registerLauncher\(host, \{ productId, priority \}\)/u);
+  assert.match(template, /ExtraPotionsCore\.registerLauncher\(host, \{ productId \}\)/u);
+  assert.doesNotMatch(template, /registerBadgeGrid\(host, "dropper", \d+/u);
   assert.match(template, /ExtraPotionsCore\.registerDiagnosticsProduct\(productId, APP_VERSION, host\)/u);
   assert.match(template, /ExtraPotionsCore\.claimNotice\("dropper", changeId\)/u);
   assert.match(template, /ExtraPotionsCore\.layoutFloatingNotices\(\)/u);
