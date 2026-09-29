@@ -11,7 +11,7 @@
     "watch": "node scripts/watch-dropper.cjs",
     "watch:once": "node scripts/watch-dropper.cjs --once",
     "watch:import-auth": "node scripts/watch-import-auth.cjs",
-    "prepare:release:feature": "node scripts/prepare-feature-release.cjs",
+    "prepare:release:feature": "node scripts/prepare-feature-release.cjs && npm run build",
     "prepare:release:core": "node scripts/prepare-core-release.cjs"
   },
   "dependencies": {
