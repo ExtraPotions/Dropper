@@ -1,3 +1,10 @@
+## 3.3.26 — 2026-09-29
+
+- Shows Resume Playback once when playback is paused, instead of a second copy beside Stay On This Stream.
+- Keeps the other recovery actions, such as Recheck Twitch and Find Another Stream, in the same place.
+- Leaves Dropper Twitch routing, campaign, claim, and playback behavior unchanged.
+- Adds no new settings.
+
 ## 3.3.25 — 2026-09-29
 
 - Fixes the Claim History and Open Campaigns headings collapsing into a column of single letters when the status text is long.

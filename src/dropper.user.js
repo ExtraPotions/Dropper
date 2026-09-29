@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.25
+// @version      3.3.26
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -56,7 +56,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.25";
+  const APP_VERSION = "3.3.26";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -206,6 +206,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.26": ["Shows Resume Playback once when playback is paused, instead of a second copy beside Stay On This Stream.","Keeps the other recovery actions, such as Recheck Twitch and Find Another Stream, in the same place.","Leaves Dropper Twitch routing, campaign, claim, and playback behavior unchanged.","Adds no new settings."],
     "3.3.25": ["Fixes the Claim History and Open Campaigns headings collapsing into a column of single letters when the status text is long.","Keeps the campaign status text on one line and shortens it when there is no room.","Simplifies the menu to a single width that follows the Dropper theme.","Removes the Menu width, Menu theme, Menu notifications, and menu arrangement controls."],
     "3.3.24": ["Updates the shared foundation to exp-core 3.4.2.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.23": ["Updates the shared foundation to exp-core 3.4.1.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
@@ -15021,7 +15022,8 @@
     const button = ui?.shadow?.getElementById('tdh-recovery-action');
     if (!button) return;
     const state = recoveryActionState();
-    button.hidden = !state;
+    // Resume Playback already has its own button above; do not repeat it here.
+    button.hidden = !state || state.action === 'resume';
     button.dataset.action = state?.action || '';
     button.textContent = state?.label || 'Recheck Twitch';
   }
