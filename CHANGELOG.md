@@ -1,3 +1,13 @@
+## 3.3.22 — 2026-09-29
+
+- Adds clear game-account link warnings and campaign deadline/time-remaining status for active Drops.
+- Adds local claim history plus an explainable stream-switch and recovery log.
+- Adds ranked campaign priorities and strategy modes for priority, deadline, closest-to-completion, and shortest-remaining selection.
+- Adds opt-in browser notifications for claimed Drops, ending campaigns, stalled progress, and automatic stream switches with hidden-tab and cooldown controls.
+- Makes automatic Picture-in-Picture explicitly opt-in and exits only Dropper-started PiP when you return.
+- Adds deterministic multi-tab safety so the oldest active Dropper tab controls automatic routing while secondary tabs remain passive.
+- Adds bounded restart recovery and additional fail-closed Twitch GQL handling without weakening Twitch-credited progress as the source of truth.
+
 ## 3.3.21 — 2026-09-29
 
 - Updates the shared foundation to exp-core 3.4.0.
