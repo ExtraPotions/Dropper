@@ -458,7 +458,7 @@ test('new recovery surfaces and browser alerts remain wired to explicit controls
   assert.match(source, /id="tdh-deadline-status"/);
   assert.match(source, /id="tdh-routing-history"/);
   assert.match(source, /id="tdh-multi-tab-status"/);
-  assert.match(source, /id="tdh-notify-switch"/);
+  assert.match(source, /switchHtml\("tdh-notify-switch"/);
   assert.match(extract('autoNavigateTwitch'), /sendBrowserNotification\(\s*'switch'/);
 });
 
