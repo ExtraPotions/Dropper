@@ -376,6 +376,92 @@ test('notification quieting is hidden-tab aware and restart recovery is bounded'
   assert.match(source, /verificationRequired: true, recoveredSession: true/);
 });
 
+
+test('stream-switch browser alerts are opt-in and cooldown only after successful delivery', () => {
+  const saved = { events: {} };
+  const notices = [];
+  function FakeNotification(title, options) {
+    notices.push({ title, options });
+    this.close = () => {};
+  }
+  FakeNotification.permission = 'granted';
+  const context = {
+    settings: {
+      notifyClaimed: false,
+      notifyCampaignEnding: false,
+      notifyStalledProgress: false,
+      notifyStreamSwitches: false,
+      notifyOnlyWhenHidden: true,
+      notificationCooldownMinutes: 5,
+    },
+    document: { hidden: true },
+    browserNotificationApi: () => FakeNotification,
+    notificationQuietState: () => ({ events: { ...saved.events } }),
+    saveNotificationQuietState: state => { saved.events = { ...state.events }; },
+    cleanText: value => String(value ?? '').trim(),
+    setTimeout: () => 0,
+  };
+  vm.runInNewContext(extract('sendBrowserNotification'), context);
+  assert.equal(context.sendBrowserNotification('switch', 'Switch', 'Moving to channel', { tag: 'channel' }), false);
+  context.settings.notifyStreamSwitches = true;
+  assert.equal(context.sendBrowserNotification('switch', 'Switch', 'Moving to channel', { tag: 'channel' }), true);
+  assert.equal(notices.length, 1);
+  assert.equal(context.sendBrowserNotification('switch', 'Switch', 'Moving to channel', { tag: 'channel' }), false);
+  assert.equal(notices.length, 1);
+});
+
+test('automatic Picture-in-Picture remains explicitly opt-in', async () => {
+  const calls = [];
+  const video = { requestPictureInPicture: async () => { calls.push('enter'); } };
+  const document = {
+    hidden: true,
+    pictureInPictureElement: null,
+    pictureInPictureEnabled: true,
+    exitPictureInPicture: async () => { calls.push('exit'); },
+  };
+  const context = {
+    settings: { autoPictureInPicture: false },
+    document,
+    streamVideoElement: () => video,
+    logActivity: () => {},
+    cleanText: value => String(value ?? '').trim(),
+  };
+  vm.runInNewContext(extract('syncAutoPictureInPicture'), context);
+  assert.equal(await context.syncAutoPictureInPicture('test'), false);
+  assert.deepEqual(calls, []);
+  context.settings.autoPictureInPicture = true;
+  assert.equal(await context.syncAutoPictureInPicture('test'), true);
+  assert.deepEqual(calls, ['enter']);
+  document.hidden = false;
+  document.pictureInPictureElement = video;
+  assert.equal(await context.syncAutoPictureInPicture('return'), false);
+  assert.deepEqual(calls, ['enter', 'exit']);
+});
+
+test('multi-tab routing ownership is deterministic and oldest-tab wins', () => {
+  const context = {
+    TAB_STARTED_AT: 100,
+    liveTabPeers: () => [],
+  };
+  vm.runInNewContext(extract('isOldestLiveTab') + '\n' + extract('isAutoRoutingController'), context);
+  assert.equal(context.isAutoRoutingController(), true);
+  context.liveTabPeers = () => [{ startedAt: 200 }];
+  assert.equal(context.isAutoRoutingController(), true);
+  context.liveTabPeers = () => [{ startedAt: 50 }];
+  assert.equal(context.isAutoRoutingController(), false);
+});
+
+test('new recovery surfaces and browser alerts remain wired to explicit controls', () => {
+  assert.match(source, /autoPictureInPicture: false/);
+  assert.match(source, /notifyStreamSwitches: false/);
+  assert.match(source, /id="tdh-account-link-warning"/);
+  assert.match(source, /id="tdh-deadline-status"/);
+  assert.match(source, /id="tdh-routing-history"/);
+  assert.match(source, /id="tdh-multi-tab-status"/);
+  assert.match(source, /id="tdh-notify-switch"/);
+  assert.match(extract('autoNavigateTwitch'), /sendBrowserNotification\(\s*'switch'/);
+});
+
 test('campaign strategy exposes priority, deadline, completion, and shortest remaining modes', () => {
   assert.match(source, /\['priority','deadline','completion','shortest'\]/);
   assert.match(source, /Closest to Completion/);

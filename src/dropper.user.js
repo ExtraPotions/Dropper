@@ -511,6 +511,7 @@
     notifyClaimed: false,
     notifyCampaignEnding: false,
     notifyStalledProgress: false,
+    notifyStreamSwitches: false,
     notifyOnlyWhenHidden: true,
     notificationCooldownMinutes: 5,
     hideTwitchSubscriptionPromos: true,
@@ -5154,8 +5155,18 @@
       startedAt: now,
       expiresAt: now + AUTO_NAVIGATION_IN_FLIGHT_MS,
     });
-    if (settings.muteRestarted && streamLoginFromUrl(target.href)) {
+    const targetLogin = streamLoginFromUrl(target.href);
+    if (settings.muteRestarted && targetLogin) {
       requestMuteAfterNavigation(reason);
+    }
+    if (targetLogin && reason !== "manual-stream-skip") {
+      const game = cleanText(currentDrop?.game || currentDrop?.campaign || "");
+      sendBrowserNotification(
+        'switch',
+        'Dropper · Switching stream',
+        `Moving to ${targetLogin}${game ? ` for ${game}` : ''}.`,
+        { tag: `switch-${targetLogin}`, cooldownMs: 30000 },
+      );
     }
     noteRequestedViewingNavigation(target.href);
     explicitViewingNavigationUntil = 0;
@@ -13833,6 +13844,7 @@
                 ${switchHtml("tdh-notify-claimed", "Claimed Drops", "Uses browser notifications when Dropper confirms a claimed Drop.", settings.notifyClaimed)}
                 ${switchHtml("tdh-notify-ending", "Ending Campaigns", "Uses browser notifications when the active campaign reaches 30 minutes and 10 minutes remaining.", settings.notifyCampaignEnding)}
                 ${switchHtml("tdh-notify-stalled", "Stalled Progress", "Uses browser notifications when credited progress enters stall recovery.", settings.notifyStalledProgress)}
+                ${switchHtml("tdh-notify-switch", "Stream Switches", "Uses browser notifications when Dropper automatically moves to another Twitch channel.", settings.notifyStreamSwitches)}
                 ${switchHtml("tdh-notify-hidden", "Only When Tab Is Hidden", "Suppresses browser alerts while you are actively viewing this Twitch tab.", settings.notifyOnlyWhenHidden)}
                 <div class="mini-row"><span>Alert Cooldown</span><select class="select-lite" id="tdh-notification-cooldown"><option value="0">Off</option><option value="5">5 Min</option><option value="15">15 Min</option><option value="30">30 Min</option></select></div>
               </div>
@@ -15576,7 +15588,9 @@
         ? settings.notifyCampaignEnding
         : kind === 'stalled'
           ? settings.notifyStalledProgress
-          : false;
+          : kind === 'switch'
+            ? settings.notifyStreamSwitches
+            : false;
     if (!enabled) return false;
     if (settings.notifyOnlyWhenHidden && !document.hidden) return false;
     const Api = browserNotificationApi();
@@ -16420,6 +16434,10 @@
         })(),
       },
       notifications: {
+        claimed: Boolean(settings.notifyClaimed),
+        campaignEnding: Boolean(settings.notifyCampaignEnding),
+        stalledProgress: Boolean(settings.notifyStalledProgress),
+        streamSwitches: Boolean(settings.notifyStreamSwitches),
         onlyWhenHidden: Boolean(settings.notifyOnlyWhenHidden),
         cooldownMinutes: Math.max(0, Number(settings.notificationCooldownMinutes || 0)),
         permission: browserNotificationApi()?.permission || 'unsupported',
@@ -17194,7 +17212,7 @@
       "tdh-claim-bonus": "claimBonus", "tdh-keep-tab": "keepTabActive", "tdh-claim-drops": "claimDrops",
       "tdh-progress-title": "progressInTitle", "tdh-find-next": "findNextStream", "tdh-mute-next": "muteRestarted",
       "tdh-background-earning": "backgroundEarning", "tdh-auto-pip": "autoPictureInPicture", "tdh-resume-session": "resumeSessionOnRestart", "tdh-badge-only": "badgeOnly", "tdh-reduce-motion": "reduceMotion", "tdh-notifications": "notifications",
-      "tdh-notify-claimed": "notifyClaimed", "tdh-notify-ending": "notifyCampaignEnding", "tdh-notify-stalled": "notifyStalledProgress", "tdh-notify-hidden": "notifyOnlyWhenHidden", "tdh-custom-opacity": "customOpacity",
+      "tdh-notify-claimed": "notifyClaimed", "tdh-notify-ending": "notifyCampaignEnding", "tdh-notify-stalled": "notifyStalledProgress", "tdh-notify-switch": "notifyStreamSwitches", "tdh-notify-hidden": "notifyOnlyWhenHidden", "tdh-custom-opacity": "customOpacity",
       "tdh-hide-sub-promos": "hideTwitchSubscriptionPromos",
       "tdh-restore-channel-player": "restoreChannelPlayer",
       "tdh-queue-enabled": "queueEnabled", "tdh-queue-stall": "queueOnStall", "tdh-queue-offline": "queueOnOffline", "tdh-queue-category": "queueOnCategoryChange",
@@ -17211,7 +17229,7 @@
           else clearRecoverySnapshot('setting-disabled');
         }
         if (key === "findNextStream" && settings.findNextStream) { syncViewingContext(); viewingIntent.allowSwitching(); }
-        if (["notifyClaimed","notifyCampaignEnding","notifyStalledProgress"].includes(key) && settings[key]) {
+        if (["notifyClaimed","notifyCampaignEnding","notifyStalledProgress","notifyStreamSwitches"].includes(key) && settings[key]) {
           void requestBrowserNotificationPermission().then((permission) => {
             if (permission === 'granted') {
               notifyUser('Browser notifications enabled');
@@ -17242,7 +17260,7 @@
       "tdh-claim-bonus": settings.claimBonus, "tdh-keep-tab": settings.keepTabActive, "tdh-claim-drops": settings.claimDrops,
       "tdh-progress-title": settings.progressInTitle, "tdh-find-next": settings.findNextStream, "tdh-mute-next": settings.muteRestarted,
       "tdh-background-earning": settings.backgroundEarning, "tdh-auto-pip": settings.autoPictureInPicture, "tdh-resume-session": settings.resumeSessionOnRestart, "tdh-badge-only": settings.badgeOnly, "tdh-reduce-motion": settings.reduceMotion, "tdh-notifications": settings.notifications,
-      "tdh-notify-claimed": settings.notifyClaimed, "tdh-notify-ending": settings.notifyCampaignEnding, "tdh-notify-stalled": settings.notifyStalledProgress, "tdh-notify-hidden": settings.notifyOnlyWhenHidden, "tdh-custom-opacity": settings.customOpacity,
+      "tdh-notify-claimed": settings.notifyClaimed, "tdh-notify-ending": settings.notifyCampaignEnding, "tdh-notify-stalled": settings.notifyStalledProgress, "tdh-notify-switch": settings.notifyStreamSwitches, "tdh-notify-hidden": settings.notifyOnlyWhenHidden, "tdh-custom-opacity": settings.customOpacity,
       "tdh-hide-sub-promos": settings.hideTwitchSubscriptionPromos,
       "tdh-restore-channel-player": settings.restoreChannelPlayer,
       "tdh-queue-enabled": settings.queueEnabled, "tdh-queue-stall": settings.queueOnStall, "tdh-queue-offline": settings.queueOnOffline, "tdh-queue-category": settings.queueOnCategoryChange,
