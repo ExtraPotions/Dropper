@@ -12,7 +12,8 @@
     "watch:once": "node scripts/watch-dropper.cjs --once",
     "watch:import-auth": "node scripts/watch-import-auth.cjs",
     "prepare:release:feature": "node scripts/prepare-feature-release.cjs && npm run build",
-    "prepare:release:core": "node scripts/prepare-core-release.cjs"
+    "prepare:release:core": "node scripts/prepare-core-release.cjs",
+    "test:installed-browser": "node scripts/test-installed-browser.cjs"
   },
   "dependencies": {
     "terser": "^5.51.2"
