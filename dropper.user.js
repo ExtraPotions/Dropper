@@ -2633,6 +2633,47 @@ const ExtraPotionsCore = (() => {
     return { top, right: 12+x, anchor, delta };
   }
   // Restores the default launcher order and group position for every product.
+  // The single menu placement for every product. A menu opens beside the launcher grid, lined up with the
+  // launcher that opened it, so it never overlaps a launcher. Surfaces a product marks with data-exp-reserved
+  // (Dropper's progress row) count as part of the grid. When the menu does not fit beside the grid at its
+  // normal width, it opens above or below the grid instead, clear of those surfaces.
+  function placeMenu(host, panel, preferredWidth = 312) {
+    const launcherOf = node => node?.shadowRoot?.querySelector('[data-exp-part="launcher"],.launcher');
+    const own = launcherOf(host)?.getBoundingClientRect();
+    if (!own || !own.width) return null;
+    const hosts = [...document.querySelectorAll('[data-exp-product-launcher="1"]')];
+    const boxes = hosts.flatMap(node => [launcherOf(node), ...(node.shadowRoot?.querySelectorAll('[data-exp-reserved]') || [])])
+      .map(node => node?.getBoundingClientRect()).filter(box => box?.width && box?.height);
+    const gridLeft = Math.min(own.left, ...boxes.map(box => box.left));
+    // A product stylesheet may still size its menu; decide using the width the menu actually renders at.
+    panel.style.width = Math.max(0, Math.min(preferredWidth, innerWidth - 24)) + 'px';
+    const width = panel.offsetWidth || preferredWidth;
+    const beside = gridLeft - 16 >= width;
+    const right = beside ? Math.round(innerWidth - gridLeft + 8) : 12;
+    Object.assign(panel.style, { right:right+'px', left:'auto', bottom:'auto' });
+    const anchorTop = document.documentElement.dataset.expLauncherAnchor === 'top';
+    // Stacked menus clear the launcher and any reserved surface in its row.
+    const band = boxes.filter(box => box.bottom > own.top - 1 && box.top < own.bottom + 1).reduce((all, box) => ({ top:Math.min(all.top, box.top), bottom:Math.max(all.bottom, box.bottom) }), { top:own.top, bottom:own.bottom });
+    const below = innerHeight - band.bottom - 16, above = band.top - 16;
+    const up = !beside && (anchorTop ? below < 160 && above > below : !(above < 160 && below > above));
+    panel.style.maxHeight = Math.max(0, beside ? innerHeight - 16 : (up ? above : below)) + 'px';
+    const h = panel.offsetHeight;
+    let top = beside ? (anchorTop ? own.top : own.bottom - h) : (up ? band.top - h - 8 : band.bottom + 8);
+    top = Math.round(Math.max(8, Math.min(innerHeight - h - 8, top)));
+    panel.style.top = top + 'px';
+    host.dataset.menuSide = beside ? 'beside' : 'stacked';
+    host.dataset.openDirection = up ? 'up' : 'down';
+    return { top, right, width, side: host.dataset.menuSide };
+  }
+  // Every launcher host is its own top-layer popover, and the top layer stacks in the order popovers were
+  // shown (product load order), not by z-index. Whenever a menu opens, re-show its host so the open menu
+  // sits above every other launcher. Any product that announces exp-core:menu-open gets this for free.
+  function raiseOpenMenuHost() {
+    const id = document.documentElement.getAttribute('data-exp-open-menu');
+    const host = [...document.querySelectorAll('[data-exp-product-launcher="1"]')].find(node => node.dataset.productId === id);
+    if (!host || typeof host.hidePopover !== 'function') return;
+    try { if (host.matches(':popover-open')) host.hidePopover(); host.showPopover(); } catch {}
+  }
   function resetLauncherGrid(productId) { write(GRID_ORDER,[]); write(GRID_DELTA,0); layoutGrid(); emit('launcher-grid-moved', productId); }
   // Shared launcher drag for every product: drag moves the launcher group along the right edge;
   // Shift+drag and Alt+Arrow keys reorder. Listens on window in the capture phase so host pages
@@ -3038,13 +3079,9 @@ const ExtraPotionsCore = (() => {
       const { top, right } = launcherPlacement(host);
       Object.assign(launcher.style,{top:top+'px',right:right+'px',bottom:'auto',left:'auto',zIndex:open?'2147483647':'2147483600'});
       panel.dataset.expMenuWidth = width;
-      const maxWidth = Math.max(0,innerWidth-24), panelWidth = Math.min(menuWidthForMode(width),maxWidth);
-      Object.assign(panel.style,{width:panelWidth+'px',maxHeight:Math.max(0,innerHeight-80)+'px',overflowY:'auto',overflowX:'hidden',overscrollBehavior:'contain',right:'12px',left:'auto',bottom:'auto',zIndex:open?'2147483647':'2147483599'});
+      Object.assign(panel.style,{overflowY:'auto',overflowX:'hidden',overscrollBehavior:'contain',zIndex:open?'2147483647':'2147483599'});
       if (!open) return;
-      const h = panel.offsetHeight, below = innerHeight-top-56, above = top-8;
-      const up = below < h+12 && above >= below;
-      host.dataset.openDirection = up?'up':'down';
-      panel.style.top = Math.max(8, up ? top-h-8 : Math.min(innerHeight-h-8,top+56))+'px';
+      placeMenu(host, panel, menuWidthForMode(width));
       menuNotices.forEach(notice=>notice.layout());
     }
     const arrangement = ExpMenuArrangement.mount({ panel, id, onChange: queueLayout, resetLaunchers() { resetLauncherGrid(id); queueLayout(); } });
@@ -3472,6 +3509,7 @@ const ExtraPotionsCore = (() => {
   const startGrid=()=>{if(!document.documentElement)return;gridObserver.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['data-exp-product-launcher','data-product-id','data-launcher-priority','data-launcher-reserved-rows']});scheduleGrid();};
   if(document.documentElement)startGrid();else addEventListener('DOMContentLoaded',startGrid,{once:true});
   document.addEventListener('exp-core:coordination',scheduleGrid);
+  document.addEventListener('exp-core:menu-open', raiseOpenMenuHost);
   addEventListener('resize',scheduleGrid,{passive:true});
   // Core-owned product bootstrap for downstream consumers.
   function createProductServices(options = {}) {
@@ -3498,7 +3536,7 @@ const ExtraPotionsCore = (() => {
     return Object.freeze({ lifecycle, diagnostics, updates });
   }
 
-  const api = Object.freeze({...ExtraPotionsTools,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,bindLauncherDrag,launcherPlacement,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidthForMode,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
+  const api = Object.freeze({...ExtraPotionsTools,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,bindLauncherDrag,launcherPlacement,placeMenu,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidthForMode,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
   return api;
 })();
   // END EXP CORE
@@ -20609,6 +20647,8 @@ const ExtraPotionsCore = (() => {
     clusterTop = placement.top - (rowHeight - 48);
 
     if (badgeRow) {
+      // Tells exp-core this row belongs to the launcher grid, so menus open clear of the progress card.
+      badgeRow.dataset.expReserved = "1";
       badgeRow.style.setProperty("width", `${Math.min(rowWidth, window.innerWidth - 24)}px`, "important");
       badgeRow.style.setProperty("right", "12px", "important");
       badgeRow.style.setProperty("left", "auto", "important");
@@ -20639,28 +20679,10 @@ const ExtraPotionsCore = (() => {
       for (const property of ["left", "right", "top", "bottom"]) progressCard.style.removeProperty(property);
     }
 
-    const rowBox = badgeRow?.getBoundingClientRect?.();
-    const rowTop = rowBox?.height ? rowBox.top : clusterTop;
-    const rowBottom = rowBox?.height ? rowBox.bottom : clusterTop + rowHeight;
-
     if (railOpen) {
-      // Inline width from the previous mode must not determine the measured
-      // height. Constrain the new width and inward space before positioning.
-      ui.dock.style.setProperty("width", `${menuPanelWidth}px`, "important");
-      const availableMenuHeight = anchor === "top"
-        ? window.innerHeight - rowBottom - 16
-        : rowTop - 16;
-      ui.dock.style.maxHeight = `${Math.max(0, availableMenuHeight)}px`;
+      // exp-core owns menu placement: beside the launcher grid, lined up with this launcher.
       ui.dock.style.overflowY = "auto";
-      const menuHeight = ui.dock.offsetHeight || ui.dock.clientHeight || 0;
-      const desiredMenuTop = anchor === "top"
-        ? rowBottom + 8
-        : rowTop - menuHeight - 8;
-      const safeMenuTop = Math.max(8, Math.min(window.innerHeight - menuHeight - 8, desiredMenuTop));
-      ui.dock.style.right = "12px";
-      ui.dock.style.left = "auto";
-      ui.dock.style.top = `${safeMenuTop}px`;
-      ui.dock.style.bottom = "auto";
+      const safeMenuTop = ExtraPotionsCore.placeMenu(ui.host, ui.dock, menuPanelWidth)?.top ?? 8;
 
       document.documentElement.dataset.expDropperMenuOpen = "1";
       const previousTop = document.documentElement.style.getPropertyValue("--exp-dropper-menu-top");

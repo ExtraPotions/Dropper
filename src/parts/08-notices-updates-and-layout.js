@@ -1380,6 +1380,8 @@
     clusterTop = placement.top - (rowHeight - 48);
 
     if (badgeRow) {
+      // Tells exp-core this row belongs to the launcher grid, so menus open clear of the progress card.
+      badgeRow.dataset.expReserved = "1";
       badgeRow.style.setProperty("width", `${Math.min(rowWidth, window.innerWidth - 24)}px`, "important");
       badgeRow.style.setProperty("right", "12px", "important");
       badgeRow.style.setProperty("left", "auto", "important");
@@ -1410,28 +1412,10 @@
       for (const property of ["left", "right", "top", "bottom"]) progressCard.style.removeProperty(property);
     }
 
-    const rowBox = badgeRow?.getBoundingClientRect?.();
-    const rowTop = rowBox?.height ? rowBox.top : clusterTop;
-    const rowBottom = rowBox?.height ? rowBox.bottom : clusterTop + rowHeight;
-
     if (railOpen) {
-      // Inline width from the previous mode must not determine the measured
-      // height. Constrain the new width and inward space before positioning.
-      ui.dock.style.setProperty("width", `${menuPanelWidth}px`, "important");
-      const availableMenuHeight = anchor === "top"
-        ? window.innerHeight - rowBottom - 16
-        : rowTop - 16;
-      ui.dock.style.maxHeight = `${Math.max(0, availableMenuHeight)}px`;
+      // exp-core owns menu placement: beside the launcher grid, lined up with this launcher.
       ui.dock.style.overflowY = "auto";
-      const menuHeight = ui.dock.offsetHeight || ui.dock.clientHeight || 0;
-      const desiredMenuTop = anchor === "top"
-        ? rowBottom + 8
-        : rowTop - menuHeight - 8;
-      const safeMenuTop = Math.max(8, Math.min(window.innerHeight - menuHeight - 8, desiredMenuTop));
-      ui.dock.style.right = "12px";
-      ui.dock.style.left = "auto";
-      ui.dock.style.top = `${safeMenuTop}px`;
-      ui.dock.style.bottom = "auto";
+      const safeMenuTop = ExtraPotionsCore.placeMenu(ui.host, ui.dock, menuPanelWidth)?.top ?? 8;
 
       document.documentElement.dataset.expDropperMenuOpen = "1";
       const previousTop = document.documentElement.style.getPropertyValue("--exp-dropper-menu-top");

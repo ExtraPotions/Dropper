@@ -149,7 +149,7 @@ test('progress visibility preserves the badge-only controls', () => {
   assert.match(source, /badgeOnlySlot\.style\.setProperty\("margin-left", "0", "important"\);/u);
   assert.match(source, /badgeOnlySlot\.style\.setProperty\("margin-right", "0", "important"\);/u);
   assert.match(source, /progressCard\.style\.setProperty\("width", "100%", "important"\);/u);
-  assert.match(source, /ui\.dock\.style\.setProperty\("width", `\$\{menuPanelWidth\}px`, "important"\);/u);
+  assert.match(source, /ExtraPotionsCore\.placeMenu\(ui\.host, ui\.dock, menuPanelWidth\)/u);
   assert.doesNotMatch(source, /badgeOnlySlot\.style\.setProperty\("margin-left", "-9px"/u);
   assert.doesNotMatch(source, /badgeOnlySlot\.style\.setProperty\("margin-right", "-9px"/u);
   assert.doesNotMatch(source, /const firstProductSlot = dropper \? columns \* reservedRows : 0;/u);
@@ -182,8 +182,9 @@ test('progress panel remains in the launcher row instead of taking fixed viewpor
   assert.match(source, /const rowWidth = settings\.badgeOnly \? launcherWidth : panelWidth \+ rowGap \+ launcherWidth;/u);
   assert.match(source, /progressCard\.style\.setProperty\("width"/u);
   assert.match(source, /for \(const property of \["left", "right", "top", "bottom"\]\) progressCard\.style\.removeProperty\(property\);/u);
-  assert.match(source, /const rowBox = badgeRow\?\.getBoundingClientRect\?\.\(\);/u);
-  assert.match(source, /const desiredMenuTop = anchor === "top"/u);
+  // exp-core places the menu; Dropper only marks its row as part of the launcher grid.
+  assert.match(source, /badgeRow\.dataset\.expReserved = "1";/u);
+  assert.doesNotMatch(source, /const desiredMenuTop = anchor === "top"/u);
   assert.match(source, /ui\.cluster\.style\.gap = "0px";/u);
   assert.doesNotMatch(source, /progressCard\.style\.setProperty\("top"/u);
   assert.doesNotMatch(source, /progressCard\.style\.setProperty\("right"/u);

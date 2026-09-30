@@ -336,7 +336,7 @@ test('ranked game priority is account-scoped, does not navigate, and existing ch
       const hostStyle = getComputedStyle(document.getElementById('tdh-root'));
       return {
         width: rect.width, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
-        rowTop: row.top, rowBottom: row.bottom, overflow: dock.scrollWidth - dock.clientWidth,
+        rowTop: row.top, rowBottom: row.bottom, rowLeft: row.left, rowRight: row.right, overflow: dock.scrollWidth - dock.clientWidth,
         cssWidth: dockStyle.width, boxSizing: dockStyle.boxSizing, dockTransform: dockStyle.transform,
         clusterTransform: clusterStyle.transform, clusterWidth: clusterStyle.width,
         hostTransform: hostStyle.transform, dropperWidth: clusterStyle.getPropertyValue('--dropper-width').trim()
@@ -345,7 +345,9 @@ test('ranked game priority is account-scoped, does not navigate, and existing ch
     widths.push(box.width); assert.ok(Math.abs(box.width - expected) <= 1, `${mode}: ${JSON.stringify(box)}`);
     assert.ok(box.left >= 0 && box.right <= 1280); assert.ok(box.overflow <= 1, `${mode} content stays inside menu width`);
     assert.ok(box.top >= 8 && box.bottom <= 892, `${mode} menu stays inside the viewport`);
-    assert.ok(box.bottom <= box.rowTop - 7 || box.top >= box.rowBottom + 7, `${mode} menu does not overlap the progress/launcher row: ${JSON.stringify(box)}`);
+    // The menu may sit beside the row (exp-core places it left of the launcher grid) or above/below it, never on it.
+    const clear = box.bottom <= box.rowTop - 7 || box.top >= box.rowBottom + 7 || box.right <= box.rowLeft - 7;
+    assert.ok(clear, `${mode} menu does not overlap the progress/launcher row: ${JSON.stringify(box)}`);
     fs.mkdirSync(path.join(__dirname, '../test-artifacts'), { recursive: true });
     await page.screenshot({ path: path.join(__dirname, `../test-artifacts/active-viewing-${mode}.png`) });
   }
