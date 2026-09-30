@@ -214,7 +214,7 @@ async function captureCluster(page, outputPath) {
 
     await closeMenu(page);
     await paintProgressFixture(page);
-    await page.locator('#tdh-root').locator('.progress-stack').screenshot({ path: path.join(OUTPUT_DIR, 'progress-panel.png') });
+    await page.locator('#tdh-root').locator('.badge-row').screenshot({ path: path.join(OUTPUT_DIR, 'progress-panel.png') });
     console.log('Captured Progress panel -> docs/screenshots/progress-panel.png');
 
     await openMenu(page);
