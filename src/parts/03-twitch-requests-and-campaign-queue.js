@@ -1270,6 +1270,13 @@
     return rankCampaignCandidatesForStrategy([...byKey.values()], now);
   }
 
+  // Game keys in the order Dropper will pick them for the next campaign under the active Campaign Order.
+  function campaignQueueGameOrder(now = Date.now()) {
+    try {
+      return [...new Set(listOpenCampaignQueue(routingCampaignPool(), now).map(item => normalizeGameName(item.game)).filter(Boolean))];
+    } catch (_) { return []; }
+  }
+
   function openCampaignManagementPool(now = Date.now()) {
     const merged = mergeCampaigns(
       mergeCampaigns(lastCampaignCatalog, lastInventoryCampaigns),

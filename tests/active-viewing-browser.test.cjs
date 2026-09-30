@@ -922,3 +922,62 @@ test('reload reconciliation restores exact reward metadata and persisted eligibi
   assert.equal(result.staleCode, 'unknown');
   assert.equal(result.mismatchCode, 'unknown');
 }));
+
+test('the campaign list follows Campaign Order and matches the campaign Dropper picks next', async () => fixture(async page => {
+  const day = 86400000, start = new Date(Date.now() - day).toISOString();
+  const campaign = (id, game, endInDays, minutes) => ({
+    id, name: `${game} campaign`, status: 'ACTIVE', startAt: start, endAt: new Date(Date.now() + endInDays * day).toISOString(),
+    game: { name: game, displayName: game },
+    timeBasedDrops: [{ id: `reward-${id}`, name: `${game} reward`, requiredMinutesWatched: minutes, startAt: start, endAt: new Date(Date.now() + endInDays * day).toISOString(), self: { currentMinutesWatched: 0, isClaimed: false } }],
+  });
+  // Alpha ends last and is the longest; Bravo ends first; Charlie is the shortest.
+  const campaigns = [campaign('alpha', 'Alpha', 9, 600), campaign('bravo', 'Bravo', 2, 120), campaign('charlie', 'Charlie', 5, 30)];
+  await page.evaluate(campaigns => { window.__dropperTest.configure(null, campaigns); window.__dropperTest.refresh(); window.dropperShow(); window.__campaigns = campaigns; }, campaigns);
+  const snapshot = () => page.evaluate(() => {
+    const root = document.getElementById('tdh-root').shadowRoot;
+    const pick = window.__dropperTest.pickNext(window.__campaigns);
+    return {
+      list: [...root.querySelectorAll('.campaign-game-row')].map(row => ({
+        game: row.querySelector('.campaign-game-name').textContent,
+        label: row.querySelector('.campaign-game-meta').textContent.match(/^(Watching now|Next up)/)?.[1] || '',
+        arrowsOff: row.querySelector('.campaign-priority-button').disabled && row.querySelector('.campaign-priority-button:last-of-type').disabled,
+      })),
+      picks: pick?.game || '',
+      note: root.getElementById('tdh-campaign-order-note').textContent,
+    };
+  });
+  const choose = value => page.evaluate(value => {
+    const select = document.getElementById('tdh-root').shadowRoot.getElementById('tdh-campaign-strategy');
+    select.value = value; select.dispatchEvent(new Event('change', { bubbles: true }));
+  }, value);
+
+  for (const [strategy, expected] of [['deadline', ['Bravo', 'Charlie', 'Alpha']], ['completion', ['Charlie', 'Bravo', 'Alpha']], ['shortest', ['Charlie', 'Bravo', 'Alpha']]]) {
+    await choose(strategy);
+    const view = await snapshot();
+    assert.deepEqual(view.list.map(item => item.game), expected, `${strategy}: the list is in the order Dropper picks`);
+    assert.equal(view.list[0].label, 'Next up', `${strategy}: the first game is marked next`);
+    assert.equal(view.picks, expected[0], `${strategy}: the router picks the game shown first`);
+    assert.ok(view.list.every(item => item.arrowsOff), `${strategy}: hand-ranking arrows are off outside My Priority`);
+    assert.match(view.note, /Choose My Priority to rank games/);
+  }
+
+  // My Priority: arrows rank by hand and the list follows them.
+  await choose('priority');
+  assert.deepEqual((await snapshot()).list.map(item => item.game), ['Alpha', 'Bravo', 'Charlie']);
+  await page.evaluate(() => {
+    const row = [...document.getElementById('tdh-root').shadowRoot.querySelectorAll('.campaign-game-row')].find(item => item.querySelector('.campaign-game-name').textContent === 'Charlie');
+    const up = row.querySelector('.campaign-priority-button[aria-label$="higher in game priority"]');
+    up.click(); up.click();
+  });
+  let view = await snapshot();
+  assert.deepEqual(view.list.map(item => item.game), ['Charlie', 'Alpha', 'Bravo'], 'the arrows reorder the list');
+  assert.equal(view.picks, 'Charlie', 'the router follows the hand-ranked order');
+  assert.match(view.note, /Use ↑ and ↓ to rank games/);
+
+  // While a reward is being earned, that game is marked and the next game is the top of the rest.
+  await page.evaluate(campaigns => window.__dropperTest.configure({ id: 'reward-bravo', campaignId: 'bravo', campaignKey: 'bravo', name: 'Bravo reward', game: 'Bravo', requiredMinutes: 120, currentMinutes: 30, percent: 25, isClaimed: false }, campaigns), campaigns);
+  await page.evaluate(() => window.__dropperTest.refresh());
+  view = await snapshot();
+  assert.equal(view.list.find(item => item.game === 'Bravo').label, 'Watching now');
+  assert.equal(view.list.find(item => item.game === 'Charlie').label, 'Next up');
+}));

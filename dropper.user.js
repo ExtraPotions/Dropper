@@ -11495,6 +11495,13 @@ const ExtraPotionsCore = (() => {
     return rankCampaignCandidatesForStrategy([...byKey.values()], now);
   }
 
+  // Game keys in the order Dropper will pick them for the next campaign under the active Campaign Order.
+  function campaignQueueGameOrder(now = Date.now()) {
+    try {
+      return [...new Set(listOpenCampaignQueue(routingCampaignPool(), now).map(item => normalizeGameName(item.game)).filter(Boolean))];
+    } catch (_) { return []; }
+  }
+
   function openCampaignManagementPool(now = Date.now()) {
     const merged = mergeCampaigns(
       mergeCampaigns(lastCampaignCatalog, lastInventoryCampaigns),
@@ -17548,7 +17555,7 @@ const ExtraPotionsCore = (() => {
             <details class="campaign-manager" id="tdh-open-campaigns">
               <summary><span class="campaign-manager-title">Open Campaigns</span><span class="campaign-manager-summary" id="tdh-open-campaign-summary">Loading…</span></summary>
               <div class="mini-row campaign-strategy-row"><span>Campaign Order</span><select class="select-lite" id="tdh-campaign-strategy"><option value="priority">My Priority</option><option value="deadline">Ending Soonest</option><option value="completion">Closest to Completion</option><option value="shortest">Shortest Remaining</option></select></div>
-              <div class="campaign-manager-note">Check a game to ignore it until its latest campaign ends. Use ↑ and ↓ to rank games. The selected Campaign Order controls how viable campaigns are chosen.</div>
+              <div class="campaign-manager-note" id="tdh-campaign-order-note">Check a game to ignore it until its latest campaign ends. Use ↑ and ↓ to rank games. The selected Campaign Order controls how viable campaigns are chosen.</div>
               <div class="campaign-game-list" id="tdh-open-campaign-list"></div>
             </details>
             <details class="eligibility-chip" id="tdh-reward-eligibility" data-tone="muted">
@@ -18314,11 +18321,30 @@ const ExtraPotionsCore = (() => {
     reconcileIgnoredCampaignGames(openGames, now);
     const priorityOrder = reconcileCampaignPriorityOrder(openGames);
     const visiblePriorityOrder = priorityOrder.filter(key => openGames.some(item => normalizeGameName(item.game) === key));
+    // The list shows the order Dropper will actually pick in. Under My Priority that is the rank order
+    // you set with the arrows; under any other Campaign Order it is the order that strategy produces.
+    const strategy = normalizedCampaignStrategy();
+    const manualOrder = strategy === 'priority';
+    const queueOrder = manualOrder ? [] : campaignQueueGameOrder(now);
+    const position = (order, item) => {
+      const index = order.indexOf(normalizeGameName(item.game));
+      return index < 0 ? Number.MAX_SAFE_INTEGER : index;
+    };
     openGames.sort((a, b) => {
-      const left = visiblePriorityOrder.indexOf(normalizeGameName(a.game));
-      const right = visiblePriorityOrder.indexOf(normalizeGameName(b.game));
-      return (left < 0 ? Number.MAX_SAFE_INTEGER : left) - (right < 0 ? Number.MAX_SAFE_INTEGER : right);
+      if (!manualOrder) {
+        const byStrategy = position(queueOrder, a) - position(queueOrder, b);
+        if (byStrategy) return byStrategy;
+      }
+      return position(visiblePriorityOrder, a) - position(visiblePriorityOrder, b);
     });
+    const watchingKey = normalizeGameName(currentDrop?.game || '');
+    const nextKey = campaignQueueGameOrder(now).find(key => key !== watchingKey) || '';
+    const orderNote = ui.shadow.getElementById('tdh-campaign-order-note');
+    if (orderNote) {
+      orderNote.textContent = manualOrder
+        ? 'Check a game to ignore it until its latest campaign ends. Use ↑ and ↓ to rank games. Dropper keeps the stream it is earning on and uses this order for the next campaign.'
+        : `Games are listed in the order Dropper picks them under ${campaignStrategyLabel(strategy)}. Choose My Priority to rank games with ↑ and ↓. Dropper keeps the stream it is earning on and uses this order for the next campaign.`;
+    }
     const ignoredCount = openGames.filter((item) => (
       Number(ignoredCampaignGames.games?.[item.key]?.expiresAt || 0) > now
     )).length;
@@ -18360,9 +18386,11 @@ const ExtraPotionsCore = (() => {
       meta.className = "campaign-game-meta";
       const campaignLabel = `${item.campaignCount} open campaign${item.campaignCount === 1 ? "" : "s"}`;
       const subscriptionText = subscriptionRewardText(subscriptionRewards.get(item.key));
-      meta.textContent = `${campaignLabel} · Latest ${formatCampaignEndLabel(item.latestEndAt, item.latestEndMs, now).toLowerCase()}${subscriptionText ? ` · ${subscriptionText}` : ""}`;
+      const gameKey = normalizeGameName(item.game);
+      const orderLabel = gameKey && gameKey === watchingKey ? 'Watching now · ' : gameKey && gameKey === nextKey && !ignored ? 'Next up · ' : '';
+      meta.textContent = `${orderLabel}${campaignLabel} · Latest ${formatCampaignEndLabel(item.latestEndAt, item.latestEndMs, now).toLowerCase()}${subscriptionText ? ` · ${subscriptionText}` : ""}`;
       copy.append(title, meta);
-      const rank = visiblePriorityOrder.indexOf(normalizeGameName(item.game));
+      const rank = manualOrder ? visiblePriorityOrder.indexOf(normalizeGameName(item.game)) : openGames.indexOf(item);
       const priorityControls = document.createElement('div');
       priorityControls.className = 'campaign-priority-controls';
       const priorityRank = document.createElement('span');
@@ -18370,12 +18398,14 @@ const ExtraPotionsCore = (() => {
       priorityRank.textContent = rank >= 0 ? `#${rank + 1}` : '—';
       const up = document.createElement('button');
       up.type = 'button'; up.className = 'campaign-priority-button'; up.textContent = '↑';
-      up.disabled = rank <= 0;
+      up.disabled = !manualOrder || rank <= 0;
       up.setAttribute('aria-label', `Move ${item.game} higher in game priority`);
+      if (!manualOrder) up.title = 'Choose My Priority as the Campaign Order to rank games by hand';
       const down = document.createElement('button');
       down.type = 'button'; down.className = 'campaign-priority-button'; down.textContent = '↓';
-      down.disabled = rank < 0 || rank >= openGames.length - 1;
+      down.disabled = !manualOrder || rank < 0 || rank >= openGames.length - 1;
       down.setAttribute('aria-label', `Move ${item.game} lower in game priority`);
+      if (!manualOrder) down.title = 'Choose My Priority as the Campaign Order to rank games by hand';
       up.addEventListener('click', () => {
         if (!moveCampaignPriority(item.game, -1, openGames)) return;
         setStatus(`${item.game} moved higher in game priority`);
@@ -19272,7 +19302,9 @@ const ExtraPotionsCore = (() => {
       saveSettings();
       refreshOpenCampaignList();
       refreshQueueList();
-      setStatus(`Campaign Order: ${campaignStrategyLabel()} · Current Stream Unchanged`);
+      const next = campaignQueueGameOrder(Date.now()).find(key => key !== normalizeGameName(currentDrop?.game || ''));
+      const nextGame = next ? (listOpenCampaignGames(openCampaignManagementPool(Date.now()), Date.now()).find(item => normalizeGameName(item.game) === next)?.game || '') : '';
+      setStatus(`Campaign Order: ${campaignStrategyLabel()}${nextGame ? ` · Next: ${nextGame}` : ''} · Current Stream Unchanged`);
     });
     const notificationCooldown = s.getElementById("tdh-notification-cooldown");
     notificationCooldown.value = String([0,5,15,30].includes(Number(settings.notificationCooldownMinutes)) ? Number(settings.notificationCooldownMinutes) : 5);
