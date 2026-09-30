@@ -40,7 +40,10 @@ lock.version = next;
 if (lock.packages?.['']) lock.packages[''].version = next;
 write('package-lock.json', JSON.stringify(lock, null, 2) + '\n');
 
-let source = read('src/dropper.user.js');
+// The version and the release notes live in the first source part; the build joins the
+// parts back into src/dropper.user.js.
+const HEADER_PART = `src/parts/${fs.readdirSync(path.join(root, 'src', 'parts')).filter((name) => name.endsWith('.js')).sort()[0]}`;
+let source = read(HEADER_PART);
 source = replaceRequired(source, /^\/\/ @version\s+\S+/m, `// @version      ${next}`, 'userscript metadata version');
 const escapedPrevious = previous.replace(/\./g, '\\.');
 source = replaceRequired(
@@ -52,7 +55,7 @@ source = replaceRequired(
 const marker = /const RELEASE_NOTES = \{\n/;
 if (!marker.test(source)) throw new Error('Could not locate RELEASE_NOTES');
 source = source.replace(marker, match => match + `    "${next}": [${notes.map(JSON.stringify).join(',')}],\n`);
-write('src/dropper.user.js', source);
+write(HEADER_PART, source);
 
 let changelog = read('CHANGELOG.md');
 const section = `## ${next} — ${date}\n\n${notes.map(note => `- ${note}`).join('\n')}\n\n`;

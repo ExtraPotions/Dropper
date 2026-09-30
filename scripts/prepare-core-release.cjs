@@ -44,15 +44,25 @@ lock.version = next;
 if (lock.packages?.['']) lock.packages[''].version = next;
 write('package-lock.json', JSON.stringify(lock, null, 2) + '\n');
 
-let source = read('src/dropper.user.js');
+// The version and the release notes live in the first source part; the build joins the
+// parts back into src/dropper.user.js.
+const partFiles = fs.readdirSync(path.join(root, 'src', 'parts')).filter((name) => name.endsWith('.js')).sort();
+const HEADER_PART = `src/parts/${partFiles[0]}`;
 if (atLeastVersion(coreVersion, '3.3.13')) {
-  source = source
-    .replace(/ExtraPotionsDiagnostics\.bindControls/g, 'ExtraPotionsCore.bindDiagnosticsControls')
-    .replace(/ExpMenuArrangement\.mount/g, 'ExtraPotionsCore.mountMenuArrangement');
-  if (/ExtraPotionsDiagnostics\.|ExpMenuArrangement\./.test(source)) {
-    throw new Error('Dropper still references private exp-core globals after Core API cutover');
+  // Older private Core names are replaced in every part, then checked across all of them.
+  for (const name of partFiles) {
+    const relative = `src/parts/${name}`;
+    const before = read(relative);
+    const after = before
+      .replace(/ExtraPotionsDiagnostics\.bindControls/g, 'ExtraPotionsCore.bindDiagnosticsControls')
+      .replace(/ExpMenuArrangement\.mount/g, 'ExtraPotionsCore.mountMenuArrangement');
+    if (after !== before) write(relative, after);
+    if (/ExtraPotionsDiagnostics\.|ExpMenuArrangement\./.test(after)) {
+      throw new Error('Dropper still references private exp-core globals after Core API cutover');
+    }
   }
 }
+let source = read(HEADER_PART);
 source = replaceRequired(
   source,
   /^\/\/ @version\s+\S+/m,
@@ -70,7 +80,7 @@ const releaseEntry = `    "${next}": ["Updates the shared foundation to exp-core
 const releaseMarker = /const RELEASE_NOTES = \{\n/;
 if (!releaseMarker.test(source)) throw new Error('Could not locate Dropper RELEASE_NOTES');
 source = source.replace(releaseMarker, match => match + releaseEntry);
-write('src/dropper.user.js', source);
+write(HEADER_PART, source);
 
 let changelog = read('CHANGELOG.md');
 const heading = `## ${next} — ${date}\n\n`;

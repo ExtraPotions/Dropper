@@ -4,7 +4,7 @@
   "version": "3.3.29",
   "description": "Twitch Drops companion userscript",
   "scripts": {
-    "build": "node scripts/minify-dist.cjs",
+    "build": "node scripts/assemble-parts.cjs && node scripts/minify-dist.cjs",
     "test": "npm run build && node --test tests/*.test.cjs",
     "minify": "npm run build",
     "capture-screenshots": "npm run build && node scripts/capture-screenshots.cjs",
@@ -13,7 +13,8 @@
     "watch:import-auth": "node scripts/watch-import-auth.cjs",
     "prepare:release:feature": "node scripts/prepare-feature-release.cjs && npm run build",
     "prepare:release:core": "node scripts/prepare-core-release.cjs",
-    "test:installed-browser": "node scripts/test-installed-browser.cjs"
+    "test:installed-browser": "node scripts/test-installed-browser.cjs",
+    "build:check": "node scripts/assemble-parts.cjs --check"
   },
   "dependencies": {
     "terser": "^5.51.2"
