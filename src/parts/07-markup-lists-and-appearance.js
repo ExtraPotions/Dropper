@@ -265,7 +265,7 @@
     bindDrag();
     bindSwitches();
     bindPanels();
-    ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { try { localStorage.setItem(LAUNCHER_ORDER_KEY,"[]");localStorage.setItem(LAUNCHER_GRID_DELTA_KEY,"0"); } catch {} document.dispatchEvent(new CustomEvent("exp-core:coordination",{detail:{type:"launcher-grid-moved",productId:"dropper"}})); } });
+    ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { ExtraPotionsCore.resetLauncherGrid("dropper"); requestAnimationFrame(layoutChrome); } });
     bindMenuInactivity();
     bindDropperControls();
     renderSwitches();

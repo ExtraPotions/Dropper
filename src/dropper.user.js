@@ -44,7 +44,6 @@
   const LEGACY_LAUNCHER_TOP_KEY = "tdh-launcher-top";
   const LEGACY_LAUNCHER_GRID_DELTA_KEY = "tdh-launcher-grid-delta-v3";
   const LAUNCHER_GRID_DELTA_KEY = "exp:v3:launcher-grid-delta";
-  const LAUNCHER_ORDER_KEY = "exp:v3:launcher-order";
   function registerBadgeGrid(host, productId) {
     ExtraPotionsCore.registerDiagnosticsProduct(productId, APP_VERSION, host);
     ExtraPotionsCore.registerLauncher(host, { productId });
@@ -14189,7 +14188,7 @@
     bindDrag();
     bindSwitches();
     bindPanels();
-    ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { try { localStorage.setItem(LAUNCHER_ORDER_KEY,"[]");localStorage.setItem(LAUNCHER_GRID_DELTA_KEY,"0"); } catch {} document.dispatchEvent(new CustomEvent("exp-core:coordination",{detail:{type:"launcher-grid-moved",productId:"dropper"}})); } });
+    ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { ExtraPotionsCore.resetLauncherGrid("dropper"); requestAnimationFrame(layoutChrome); } });
     bindMenuInactivity();
     bindDropperControls();
     renderSwitches();
@@ -17136,26 +17135,19 @@
       document.dispatchEvent(new CustomEvent("exp-core:coordination", { detail: { type: "launcher-reservation", productId: "dropper", rows: reservedRows } }));
     }
 
-    const gridOffset = parseFloat(getComputedStyle(ui.host).getPropertyValue("--exp-launcher-offset")) || 0;
-    const storedDelta = Number(localStorage.getItem(LAUNCHER_GRID_DELTA_KEY) || 0);
-    const minimumDelta = 8 - (window.innerHeight - 48 - 12);
-    launcherGridDelta = Math.max(minimumDelta, Math.min(4, Number.isFinite(storedDelta) ? storedDelta : 0));
-    const launcherTop = window.innerHeight - 48 - 12 + launcherGridDelta;
-    const anchor = launcherTop <= (window.innerHeight - 48) / 2 ? "top" : "bottom";
-    document.documentElement.dataset.expLauncherAnchor = anchor;
+    // exp-core owns launcher coordinates. The launcher sits at the bottom of Dropper's row,
+    // so the row starts that much above the position Core assigned.
+    const placement = ExtraPotionsCore.launcherPlacement(ui.host);
+    launcherGridDelta = placement.delta;
+    const anchor = placement.anchor;
     ui.cluster.dataset.launcherAnchor = anchor;
-
-    // Dropper's row is the single positioning surface. The progress card remains
-    // directly to the left of the launcher and never receives viewport coordinates.
-    clusterTop = anchor === "top"
-      ? launcherTop + gridOffset
-      : launcherTop - gridOffset - (settings.badgeOnly ? 0 : Math.round((rowHeight - 48) / 2));
+    clusterTop = placement.top - (rowHeight - 48);
 
     if (badgeRow) {
       badgeRow.style.setProperty("width", `${Math.min(rowWidth, window.innerWidth - 24)}px`, "important");
       badgeRow.style.setProperty("right", "12px", "important");
       badgeRow.style.setProperty("left", "auto", "important");
-      badgeRow.style.setProperty("top", `${Math.max(8, Math.min(window.innerHeight - rowHeight - 8, clusterTop))}px`, "important");
+      badgeRow.style.setProperty("top", `${Math.max(8 - (rowHeight - 48), Math.min(window.innerHeight - rowHeight - 8, clusterTop))}px`, "important");
       badgeRow.style.setProperty("bottom", "auto", "important");
       badgeRow.style.setProperty("gap", `${rowGap}px`, "important");
       badgeRow.style.setProperty("min-height", `${rowHeight}px`, "important");
@@ -17226,75 +17218,9 @@
     positionMenuUpdateNotice();
   }
 
+  // Launcher dragging is shared suite behavior owned by exp-core.
   function bindDrag() {
-    let startX = 0;
-    let startY = 0;
-    let order = [];
-    let didDrag = false;
-    let activePointerId = null;
-    ui.launcher.addEventListener("pointerdown", (event) => {
-      if (event.button !== 0) return;
-      activePointerId = event.pointerId;
-      startX = event.clientX;
-      startY = event.clientY;
-      try { order = JSON.parse(localStorage.getItem(LAUNCHER_ORDER_KEY) || "[]"); } catch { order = []; }
-      if (!Array.isArray(order)) order = [];
-      if (!order.includes("dropper")) order.push("dropper");
-      didDrag = false;
-      ui.launcher.classList.remove("is-dragging");
-      event.preventDefault();
-    });
-    document.addEventListener("pointermove", (event) => {
-      if (event.pointerId !== activePointerId) return;
-      const dx = event.clientX - startX;
-      const dy = event.clientY - startY;
-      if (Math.max(Math.abs(dx), Math.abs(dy)) > 4 && !didDrag) {
-        didDrag = true;
-        ui.launcher.classList.add("is-dragging");
-      }
-      if (!didDrag) return;
-      event.preventDefault();
-      const from = order.indexOf("dropper");
-      const offset = Math.abs(dx) > Math.abs(dy) ? Math.round(-dx / 56) : Math.round(dy / 56) * 3;
-      const to = Math.max(0, Math.min(order.length - 1, from + offset));
-      const next = [...order];
-      next.splice(from, 1);
-      next.splice(to, 0, "dropper");
-      localStorage.setItem(LAUNCHER_ORDER_KEY, JSON.stringify(next));
-      document.dispatchEvent(new CustomEvent("exp-core:coordination", { detail: { type: "launcher-grid-moved", productId: "dropper" } }));
-      layoutChrome();
-    }, { passive: false });
-    const endDrag = (event) => {
-      if (event.pointerId !== activePointerId) return;
-      activePointerId = null;
-      ui.launcher.classList.remove("is-dragging");
-    };
-    document.addEventListener("pointerup", endDrag);
-    document.addEventListener("pointercancel", endDrag);
-    ui.launcher.addEventListener("click", (event) => {
-      if (!didDrag) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      didDrag = false;
-    }, true);
-    ui.launcher.title = "Drag left, right, up, or down to reorder. Alt+Arrow keys also reorder.";
-    ui.launcher.addEventListener("keydown", (event) => {
-      if (!event.altKey || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
-      event.preventDefault();
-      let next = [];
-      try { next = JSON.parse(localStorage.getItem(LAUNCHER_ORDER_KEY) || "[]"); } catch {}
-      if (!Array.isArray(next)) next = [];
-      if (!next.includes("dropper")) next.push("dropper");
-      const from = next.indexOf("dropper");
-      const offset = { ArrowLeft: 1, ArrowRight: -1, ArrowUp: -3, ArrowDown: 3 }[event.key];
-      const to = Math.max(0, Math.min(next.length - 1, from + offset));
-      next = [...next];
-      next.splice(from, 1);
-      next.splice(to, 0, "dropper");
-      localStorage.setItem(LAUNCHER_ORDER_KEY, JSON.stringify(next));
-      document.dispatchEvent(new CustomEvent("exp-core:coordination", { detail: { type: "launcher-grid-moved", productId: "dropper" } }));
-      ui.launcher.focus();
-    });
+    ExtraPotionsCore.bindLauncherDrag(ui.launcher, "dropper", { layout: layoutChrome });
   }
 
   function clearMenuDismissTimer() {

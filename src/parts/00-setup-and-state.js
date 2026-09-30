@@ -44,7 +44,6 @@
   const LEGACY_LAUNCHER_TOP_KEY = "tdh-launcher-top";
   const LEGACY_LAUNCHER_GRID_DELTA_KEY = "tdh-launcher-grid-delta-v3";
   const LAUNCHER_GRID_DELTA_KEY = "exp:v3:launcher-grid-delta";
-  const LAUNCHER_ORDER_KEY = "exp:v3:launcher-order";
   function registerBadgeGrid(host, productId) {
     ExtraPotionsCore.registerDiagnosticsProduct(productId, APP_VERSION, host);
     ExtraPotionsCore.registerLauncher(host, { productId });
