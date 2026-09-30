@@ -1125,7 +1125,7 @@
     return fallback;
   }
 
-  function pickNextOpenCampaignDrop(campaigns, excludedCampaignKeys = [], excludedGames = []) {
+  function pickNextOpenCampaignDrop(campaigns, excludedCampaignKeys = [], excludedGames = [], { preferCurrent = true } = {}) {
     const now = Date.now();
     const excludedCampaigns = new Set(normalizeExcludedCampaignKeys(excludedCampaignKeys));
     const excludedGameSet = new Set((excludedGames || []).map((game) => cleanText(game).toLowerCase()).filter(Boolean));
@@ -1229,7 +1229,7 @@
     // exists. The shared ranker then applies personal priority and sequencing.
     const winnablePool = preferWinnableDrops(inspectionPool, now);
     const pool = rankCampaignCandidatesForStrategy(winnablePool, now);
-    return preferCurrentWinnableOpenDrop(pool) || pool[0] || null;
+    return (preferCurrent && preferCurrentWinnableOpenDrop(pool)) || pool[0] || null;
   }
 
   function listOpenCampaignQueue(campaigns = routingCampaignPool(), now = Date.now()) {

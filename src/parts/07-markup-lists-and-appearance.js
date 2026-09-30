@@ -862,8 +862,8 @@
     const orderNote = ui.shadow.getElementById('tdh-campaign-order-note');
     if (orderNote) {
       orderNote.textContent = manualOrder
-        ? 'Check a game to ignore it until its latest campaign ends. Use ↑ and ↓ to rank games. Dropper keeps the stream it is earning on and uses this order for the next campaign.'
-        : `Games are listed in the order Dropper picks them under ${campaignStrategyLabel(strategy)}. Choose My Priority to rank games with ↑ and ↓. Dropper keeps the stream it is earning on and uses this order for the next campaign.`;
+        ? 'Check a game to ignore it until its latest campaign ends. Use ↑ and ↓ to rank games. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.'
+        : `Games are listed in the order Dropper picks them under ${campaignStrategyLabel(strategy)}. Choose My Priority to rank games with ↑ and ↓. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.`;
     }
     const ignoredCount = openGames.filter((item) => (
       Number(ignoredCampaignGames.games?.[item.key]?.expiresAt || 0) > now
@@ -928,15 +928,17 @@
       if (!manualOrder) down.title = 'Choose My Priority as the Campaign Order to rank games by hand';
       up.addEventListener('click', () => {
         if (!moveCampaignPriority(item.game, -1, openGames)) return;
-        setStatus(`${item.game} moved higher in game priority`);
+        const moved = applyCampaignOrderNow('campaign-priority-changed');
+        if (!moved.switched) routingControllerTick(Date.now(), 'campaign-priority-changed');
+        setStatus(`${item.game} moved higher in game priority${moved.switched ? ` · Switching to ${moved.game}` : moved.why ? ` · Current Stream Unchanged (${moved.why})` : ''}`);
         refreshOpenCampaignList();
-        routingControllerTick(Date.now(), 'campaign-priority-changed');
       });
       down.addEventListener('click', () => {
         if (!moveCampaignPriority(item.game, 1, openGames)) return;
-        setStatus(`${item.game} moved lower in game priority`);
+        const moved = applyCampaignOrderNow('campaign-priority-changed');
+        if (!moved.switched) routingControllerTick(Date.now(), 'campaign-priority-changed');
+        setStatus(`${item.game} moved lower in game priority${moved.switched ? ` · Switching to ${moved.game}` : moved.why ? ` · Current Stream Unchanged (${moved.why})` : ''}`);
         refreshOpenCampaignList();
-        routingControllerTick(Date.now(), 'campaign-priority-changed');
       });
       priorityControls.append(priorityRank, up, down); copy.append(priorityControls);
 
@@ -1822,9 +1824,12 @@
       saveSettings();
       refreshOpenCampaignList();
       refreshQueueList();
-      const next = campaignQueueGameOrder(Date.now()).find(key => key !== normalizeGameName(currentDrop?.game || ''));
-      const nextGame = next ? (listOpenCampaignGames(openCampaignManagementPool(Date.now()), Date.now()).find(item => normalizeGameName(item.game) === next)?.game || '') : '';
-      setStatus(`Campaign Order: ${campaignStrategyLabel()}${nextGame ? ` · Next: ${nextGame}` : ''} · Current Stream Unchanged`);
+      const moved = applyCampaignOrderNow('campaign-order-changed');
+      refreshOpenCampaignList();
+      const label = campaignStrategyLabel();
+      if (moved.switched) setStatus(`Campaign Order: ${label} · Switching to ${moved.game}`);
+      else if (moved.alreadyTop) setStatus(`Campaign Order: ${label} · ${moved.game} is already first`);
+      else setStatus(`Campaign Order: ${label} · Current Stream Unchanged${moved.why ? ` (${moved.why})` : ''}`);
     });
     const notificationCooldown = s.getElementById("tdh-notification-cooldown");
     notificationCooldown.value = String([0,5,15,30].includes(Number(settings.notificationCooldownMinutes)) ? Number(settings.notificationCooldownMinutes) : 5);

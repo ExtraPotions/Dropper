@@ -177,3 +177,9 @@ Identified Drops now preserve or restore their exact Twitch reward metadata acro
 Eligibility can now reuse recent persisted routing/GQL verification after reload when the active channel, campaign key, Drop ID, and game still match. The saved evidence must include Twitch campaign support plus an exact session campaign or Drop match and must remain within the bounded verification window. Stale or identity-mismatched evidence remains unverified.
 
 The restored proof also repopulates `lastStreamVerification` during boot so Diagnostics, routing state, earning health, and the eligibility chip report a consistent state after reload.
+
+## Campaign Order applies immediately
+
+Changing Campaign Order, or hand-ranking a game with the arrows, acts straight away. If the top-ranked campaign is not the one being earned, Dropper leaves the current stream for it and records the move in the routing state. The campaign list shows the order Dropper will pick in, marks the game being watched and the game that is next, and only offers the hand-ranking arrows under My Priority.
+
+The move keeps every earlier limit on automatic navigation: automatic switching must be on, this tab must be the routing tab, playback must not be paused, and a stream the viewer locked or chose stays put. A claim in progress is never interrupted. A campaign whose reward details have not loaded yet does not pull Dropper off a working stream. Closest to Completion ranks by percent complete, so an earning campaign that is already partly done stays first.

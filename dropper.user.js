@@ -7137,19 +7137,7 @@ const ExtraPotionsCore = (() => {
       clearStoredCurrentDrop();
     }
 
-    const excluded = new Set((session.excludedCampaignKeys || []).map((key) => cleanText(key).toLowerCase()).filter(Boolean));
-    let next = null;
-    for (let attempts = 0; attempts < 12; attempts += 1) {
-      next = pickNextOpenCampaignDrop(routingCampaignPool(), [...excluded], []);
-      if (!next) break;
-      const key = cleanText(next.campaignKey || next.campaignId).toLowerCase();
-      if (campaignIsExcluded(next) || (!next.needsDropDetails && !dropFitsCampaignWindow(next))) {
-        if (key) excluded.add(key);
-        next = null;
-        continue;
-      }
-      break;
-    }
+    const { next, excluded } = pickViableCampaign(session);
 
     if (!next) {
       queueGqlPollSoon("routing-no-campaign", 0);
@@ -8030,6 +8018,53 @@ const ExtraPotionsCore = (() => {
     );
     setStatus("Previous Campaign Ended · Selecting Next Eligible Campaign");
     return true;
+  }
+
+  // Picks the best campaign that can be earned now, skipping any that cannot. `excluded` carries the skipped
+  // keys so callers can keep them out of later picks. preferCurrent: false ranks purely by Campaign Order.
+  function pickViableCampaign(session, { preferCurrent = true } = {}) {
+    const excluded = new Set((session.excludedCampaignKeys || []).map((key) => cleanText(key).toLowerCase()).filter(Boolean));
+    let next = null;
+    for (let attempts = 0; attempts < 12; attempts += 1) {
+      next = pickNextOpenCampaignDrop(routingCampaignPool(), [...excluded], [], { preferCurrent });
+      if (!next) break;
+      const key = cleanText(next.campaignKey || next.campaignId).toLowerCase();
+      if (campaignIsExcluded(next) || (!next.needsDropDetails && !dropFitsCampaignWindow(next))) {
+        if (key) excluded.add(key);
+        next = null;
+        continue;
+      }
+      break;
+    }
+    return { next, excluded };
+  }
+
+  // The viewer changed Campaign Order or hand-ranked a game, so act on it straight away: when the top-ranked
+  // campaign is not the one being earned, leave for it. Same limits as any automatic move: automatic switching
+  // on, this tab routing, playback not paused, and no manual stream lock. Returns what happened for the UI.
+  function applyCampaignOrderNow(reason = 'campaign-order-changed', now = Date.now()) {
+    const none = (why = '') => ({ switched: false, why });
+    if (!settings.findNextStream) return none('Automatic Switching Is Off');
+    if (!isAutoRoutingController()) return none('Another Tab Is Routing');
+    const session = readRoutingControllerSession();
+    const movable = [ROUTING_STATES.SELECT_CAMPAIGN, ROUTING_STATES.FIND_STREAM, ROUTING_STATES.OPEN_STREAM, ROUTING_STATES.VERIFY_STREAM, ROUTING_STATES.EARNING];
+    // Claiming, waiting, and idle states are never interrupted; the next selection uses the new order anyway.
+    if (!movable.includes(session.state) || !currentDrop || currentDrop.isClaimed) return none();
+    if (!viewingNavigationAllowed(reason)) return none(lastViewingNavigationBlock || 'Navigation Blocked');
+    const { next: top, excluded } = pickViableCampaign(session, { preferCurrent: false });
+    if (!top) return none();
+    if (pickMatchesCurrentDrop(top)) return { switched: false, why: '', alreadyTop: true, game: top.game };
+    // Do not abandon a working stream for a campaign whose reward details have not loaded yet.
+    if (top.needsDropDetails || !Number.isFinite(Number(top.requiredMinutes)) || Number(top.requiredMinutes) <= 0) return none('Reward Details Pending');
+    const leaving = cleanText(currentDrop.game || 'Campaign');
+    clearStoredCurrentDrop();
+    transitionRoutingController(
+      ROUTING_STATES.SELECT_CAMPAIGN,
+      { targetGame: '', targetCampaign: '', targetCampaignKey: '', targetDropId: '', targetStream: '', candidateEvidence: null, excludedCampaignKeys: [...excluded], deadlineAt: 0 },
+      `Campaign Order changed · moving from ${leaving} to ${top.game}`,
+    );
+    routingControllerTick(now, reason);
+    return { switched: true, why: '', game: top.game, from: leaving };
   }
 
   function routingControllerTick(now = Date.now(), reason = "heartbeat") {
@@ -11350,7 +11385,7 @@ const ExtraPotionsCore = (() => {
     return fallback;
   }
 
-  function pickNextOpenCampaignDrop(campaigns, excludedCampaignKeys = [], excludedGames = []) {
+  function pickNextOpenCampaignDrop(campaigns, excludedCampaignKeys = [], excludedGames = [], { preferCurrent = true } = {}) {
     const now = Date.now();
     const excludedCampaigns = new Set(normalizeExcludedCampaignKeys(excludedCampaignKeys));
     const excludedGameSet = new Set((excludedGames || []).map((game) => cleanText(game).toLowerCase()).filter(Boolean));
@@ -11454,7 +11489,7 @@ const ExtraPotionsCore = (() => {
     // exists. The shared ranker then applies personal priority and sequencing.
     const winnablePool = preferWinnableDrops(inspectionPool, now);
     const pool = rankCampaignCandidatesForStrategy(winnablePool, now);
-    return preferCurrentWinnableOpenDrop(pool) || pool[0] || null;
+    return (preferCurrent && preferCurrentWinnableOpenDrop(pool)) || pool[0] || null;
   }
 
   function listOpenCampaignQueue(campaigns = routingCampaignPool(), now = Date.now()) {
@@ -18342,8 +18377,8 @@ const ExtraPotionsCore = (() => {
     const orderNote = ui.shadow.getElementById('tdh-campaign-order-note');
     if (orderNote) {
       orderNote.textContent = manualOrder
-        ? 'Check a game to ignore it until its latest campaign ends. Use ↑ and ↓ to rank games. Dropper keeps the stream it is earning on and uses this order for the next campaign.'
-        : `Games are listed in the order Dropper picks them under ${campaignStrategyLabel(strategy)}. Choose My Priority to rank games with ↑ and ↓. Dropper keeps the stream it is earning on and uses this order for the next campaign.`;
+        ? 'Check a game to ignore it until its latest campaign ends. Use ↑ and ↓ to rank games. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.'
+        : `Games are listed in the order Dropper picks them under ${campaignStrategyLabel(strategy)}. Choose My Priority to rank games with ↑ and ↓. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.`;
     }
     const ignoredCount = openGames.filter((item) => (
       Number(ignoredCampaignGames.games?.[item.key]?.expiresAt || 0) > now
@@ -18408,15 +18443,17 @@ const ExtraPotionsCore = (() => {
       if (!manualOrder) down.title = 'Choose My Priority as the Campaign Order to rank games by hand';
       up.addEventListener('click', () => {
         if (!moveCampaignPriority(item.game, -1, openGames)) return;
-        setStatus(`${item.game} moved higher in game priority`);
+        const moved = applyCampaignOrderNow('campaign-priority-changed');
+        if (!moved.switched) routingControllerTick(Date.now(), 'campaign-priority-changed');
+        setStatus(`${item.game} moved higher in game priority${moved.switched ? ` · Switching to ${moved.game}` : moved.why ? ` · Current Stream Unchanged (${moved.why})` : ''}`);
         refreshOpenCampaignList();
-        routingControllerTick(Date.now(), 'campaign-priority-changed');
       });
       down.addEventListener('click', () => {
         if (!moveCampaignPriority(item.game, 1, openGames)) return;
-        setStatus(`${item.game} moved lower in game priority`);
+        const moved = applyCampaignOrderNow('campaign-priority-changed');
+        if (!moved.switched) routingControllerTick(Date.now(), 'campaign-priority-changed');
+        setStatus(`${item.game} moved lower in game priority${moved.switched ? ` · Switching to ${moved.game}` : moved.why ? ` · Current Stream Unchanged (${moved.why})` : ''}`);
         refreshOpenCampaignList();
-        routingControllerTick(Date.now(), 'campaign-priority-changed');
       });
       priorityControls.append(priorityRank, up, down); copy.append(priorityControls);
 
@@ -19302,9 +19339,12 @@ const ExtraPotionsCore = (() => {
       saveSettings();
       refreshOpenCampaignList();
       refreshQueueList();
-      const next = campaignQueueGameOrder(Date.now()).find(key => key !== normalizeGameName(currentDrop?.game || ''));
-      const nextGame = next ? (listOpenCampaignGames(openCampaignManagementPool(Date.now()), Date.now()).find(item => normalizeGameName(item.game) === next)?.game || '') : '';
-      setStatus(`Campaign Order: ${campaignStrategyLabel()}${nextGame ? ` · Next: ${nextGame}` : ''} · Current Stream Unchanged`);
+      const moved = applyCampaignOrderNow('campaign-order-changed');
+      refreshOpenCampaignList();
+      const label = campaignStrategyLabel();
+      if (moved.switched) setStatus(`Campaign Order: ${label} · Switching to ${moved.game}`);
+      else if (moved.alreadyTop) setStatus(`Campaign Order: ${label} · ${moved.game} is already first`);
+      else setStatus(`Campaign Order: ${label} · Current Stream Unchanged${moved.why ? ` (${moved.why})` : ''}`);
     });
     const notificationCooldown = s.getElementById("tdh-notification-cooldown");
     notificationCooldown.value = String([0,5,15,30].includes(Number(settings.notificationCooldownMinutes)) ? Number(settings.notificationCooldownMinutes) : 5);

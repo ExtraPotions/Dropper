@@ -46,6 +46,7 @@ const exposed = source.replace('  startDropper();\n})();', `
     recoverySnapshot: () => loadRecoverySnapshot(),
     clearCurrentForRecovery: () => { currentDrop = null; removeSession('tdh-drop'); removeSession(ROUTING_SESSION_KEY); },
     recovered: () => lastSessionRecovery,
+    applyOrder: reason => applyCampaignOrderNow(reason), routing: () => readRoutingControllerSession(),
   };
   startDropper();
 })();`);
@@ -981,3 +982,92 @@ test('the campaign list follows Campaign Order and matches the campaign Dropper 
   assert.equal(view.list.find(item => item.game === 'Bravo').label, 'Watching now');
   assert.equal(view.list.find(item => item.game === 'Charlie').label, 'Next up');
 }));
+
+// Changing Campaign Order (or hand-ranking a game) acts immediately: Dropper leaves the campaign it is earning on
+// for the top-ranked one, unless it is not allowed to navigate on its own.
+async function orderFixture(run, { findNext = true, state = 'earning' } = {}) {
+  const day = 86400000, start = new Date(Date.now() - day).toISOString();
+  const campaign = (id, game, endInDays, minutes) => ({
+    id, name: `${game} campaign`, status: 'ACTIVE', startAt: start, endAt: new Date(Date.now() + endInDays * day).toISOString(),
+    game: { name: game, displayName: game },
+    timeBasedDrops: [{ id: `reward-${id}`, name: `${game} reward`, requiredMinutesWatched: minutes, startAt: start, endAt: new Date(Date.now() + endInDays * day).toISOString(), self: { currentMinutesWatched: 0, isClaimed: false } }],
+  });
+  // Alpha ends last and is the longest; Bravo ends first; Charlie is the shortest.
+  const campaigns = [campaign('alpha', 'Alpha', 9, 600), campaign('bravo', 'Bravo', 2, 120), campaign('charlie', 'Charlie', 5, 30)];
+  return fixture(async page => {
+    await page.evaluate(({ campaigns, findNext, state }) => {
+      const t = window.__dropperTest;
+      window.__campaigns = campaigns;
+      t.setFindNext(findNext);
+      // Dropper routed to this stream itself (as opposed to the viewer choosing it), so it may move on its own.
+      t.sync(); t.intent.allowSwitching();
+      // Earning Bravo: an in-progress reward with credited minutes.
+      t.configure({ id: 'reward-bravo', campaignId: 'bravo', campaignKey: 'bravo', name: 'Bravo reward', game: 'Bravo', requiredMinutes: 120, currentMinutes: 30, percent: 25, isClaimed: false }, campaigns);
+      t.setRouting({ state, targetGame: 'Bravo', targetCampaign: 'Bravo campaign', targetCampaignKey: 'bravo', targetDropId: 'reward-bravo', targetStream: 'chosen_channel' });
+      t.refresh();
+    }, { campaigns, findNext, state });
+    await run(page);
+  });
+}
+const routingView = page => page.evaluate(() => { const r = window.__dropperTest.routing(); return { state: r.state, game: r.targetGame, campaignKey: r.targetCampaignKey }; });
+
+test('changing Campaign Order moves an earning Dropper to the top-ranked campaign right away', async () => orderFixture(async page => {
+  await page.evaluate(() => window.__dropperTest.setStrategy('shortest')); // Charlie has the least time left.
+  const result = await page.evaluate(() => window.__dropperTest.applyOrder('campaign-order-changed'));
+  assert.equal(result.switched, true);
+  assert.equal(result.game, 'Charlie');
+  assert.equal(result.from, 'Bravo');
+  const routing = await routingView(page);
+  assert.equal(routing.game, 'Charlie', JSON.stringify(routing));
+  assert.notEqual(routing.state, 'earning');
+  assert.notEqual(await page.evaluate(() => window.__dropperTest.current()?.game), 'Bravo', 'the old campaign is no longer the current drop');
+}));
+
+test('Closest to Completion keeps an earning campaign that is already partly done', async () => orderFixture(async page => {
+  await page.evaluate(() => window.__dropperTest.setStrategy('completion')); // Bravo is 25% done; the others are at 0%.
+  const result = await page.evaluate(() => window.__dropperTest.applyOrder('campaign-order-changed'));
+  assert.equal(result.switched, false);
+  assert.equal(result.alreadyTop, true);
+  assert.equal((await routingView(page)).game, 'Bravo');
+}));
+
+test('changing Campaign Order does nothing when the earning campaign is already first', async () => orderFixture(async page => {
+  await page.evaluate(() => window.__dropperTest.setStrategy('deadline')); // Bravo ends soonest.
+  const result = await page.evaluate(() => window.__dropperTest.applyOrder('campaign-order-changed'));
+  assert.equal(result.switched, false);
+  assert.equal(result.alreadyTop, true);
+  assert.deepEqual(await routingView(page), { state: 'earning', game: 'Bravo', campaignKey: 'bravo' });
+}));
+
+test('hand-ranking a game with the arrows also moves an earning Dropper right away', async () => orderFixture(async page => {
+  const moved = await page.evaluate(() => {
+    const t = window.__dropperTest, games = window.__campaigns.map(item => ({ game: item.game.name }));
+    t.movePriority('Charlie', -1, games); t.movePriority('Charlie', -1, games); // Alpha, Bravo, Charlie -> Charlie, Alpha, Bravo
+    return t.applyOrder('campaign-priority-changed');
+  });
+  assert.equal(moved.switched, true);
+  assert.equal(moved.game, 'Charlie');
+  assert.equal((await routingView(page)).game, 'Charlie');
+}));
+
+test('a changed Campaign Order never overrides a pause, a locked stream, or switching being off', async () => {
+  const blocked = async (why, arrange, options) => orderFixture(async page => {
+    await page.evaluate(arrange);
+    await page.evaluate(() => window.__dropperTest.setStrategy('shortest'));
+    const result = await page.evaluate(() => window.__dropperTest.applyOrder('campaign-order-changed'));
+    assert.equal(result.switched, false, why);
+    assert.match(result.why, new RegExp(why, 'i'), JSON.stringify(result));
+    assert.deepEqual(await routingView(page), { state: 'earning', game: 'Bravo', campaignKey: 'bravo' }, `${why}: still earning the current campaign`);
+    assert.equal(await page.evaluate(() => window.__dropperTest.current()?.game), 'Bravo');
+  }, options);
+  await blocked('Automatic Switching Is Off', () => {}, { findNext: false });
+  await blocked('Playback Paused', () => window.__dropperTest.pauseIntent());
+  await blocked('Stream Locked', () => window.__dropperTest.lockStream(true));
+});
+
+test('a changed Campaign Order never interrupts a claim in progress', async () => orderFixture(async page => {
+  await page.evaluate(() => window.__dropperTest.setStrategy('shortest'));
+  const result = await page.evaluate(() => window.__dropperTest.applyOrder('campaign-order-changed'));
+  assert.equal(result.switched, false);
+  assert.equal((await routingView(page)).state, 'claim');
+}, { state: 'claim' }));

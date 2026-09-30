@@ -831,7 +831,8 @@ assert.match(
 );
 assert.match(source, /const soonerCampaignElsewhere = false;/, "same-game continuation is not preempted by an ending-sooner campaign");
 assert.match(source, /function preferCurrentWinnableOpenDrop/, "campaign selection has an explicit sticky-current-campaign preference");
-assert.match(source, /return preferCurrentWinnableOpenDrop\(pool\) \|\| pool\[0\] \|\| null;/, "open-campaign selection keeps the current winnable campaign before ending-soonest fallback");
+assert.match(source, /\{ preferCurrent = true \} = \{\}/, "open-campaign selection keeps the current winnable campaign by default");
+assert.match(source, /return \(preferCurrent && preferCurrentWinnableOpenDrop\(pool\)\) \|\| pool\[0\] \|\| null;/, "open-campaign selection keeps the current winnable campaign before ending-soonest fallback unless a Campaign Order change asks for a pure ranking");
 assert.match(source, /function twitchSearchTerm/, "search pages expose the current Twitch search term");
 assert.match(source, /Search was for/, "a leftover search term is corrected to the target game");
 assert.match(source, /isTwitchHomepage\(\) \|\| isTwitchSearchPage\(\)/, "an active \/search page is not bounced back to Twitch Home");

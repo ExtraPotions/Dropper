@@ -2099,19 +2099,7 @@
       clearStoredCurrentDrop();
     }
 
-    const excluded = new Set((session.excludedCampaignKeys || []).map((key) => cleanText(key).toLowerCase()).filter(Boolean));
-    let next = null;
-    for (let attempts = 0; attempts < 12; attempts += 1) {
-      next = pickNextOpenCampaignDrop(routingCampaignPool(), [...excluded], []);
-      if (!next) break;
-      const key = cleanText(next.campaignKey || next.campaignId).toLowerCase();
-      if (campaignIsExcluded(next) || (!next.needsDropDetails && !dropFitsCampaignWindow(next))) {
-        if (key) excluded.add(key);
-        next = null;
-        continue;
-      }
-      break;
-    }
+    const { next, excluded } = pickViableCampaign(session);
 
     if (!next) {
       queueGqlPollSoon("routing-no-campaign", 0);
@@ -2992,6 +2980,53 @@
     );
     setStatus("Previous Campaign Ended · Selecting Next Eligible Campaign");
     return true;
+  }
+
+  // Picks the best campaign that can be earned now, skipping any that cannot. `excluded` carries the skipped
+  // keys so callers can keep them out of later picks. preferCurrent: false ranks purely by Campaign Order.
+  function pickViableCampaign(session, { preferCurrent = true } = {}) {
+    const excluded = new Set((session.excludedCampaignKeys || []).map((key) => cleanText(key).toLowerCase()).filter(Boolean));
+    let next = null;
+    for (let attempts = 0; attempts < 12; attempts += 1) {
+      next = pickNextOpenCampaignDrop(routingCampaignPool(), [...excluded], [], { preferCurrent });
+      if (!next) break;
+      const key = cleanText(next.campaignKey || next.campaignId).toLowerCase();
+      if (campaignIsExcluded(next) || (!next.needsDropDetails && !dropFitsCampaignWindow(next))) {
+        if (key) excluded.add(key);
+        next = null;
+        continue;
+      }
+      break;
+    }
+    return { next, excluded };
+  }
+
+  // The viewer changed Campaign Order or hand-ranked a game, so act on it straight away: when the top-ranked
+  // campaign is not the one being earned, leave for it. Same limits as any automatic move: automatic switching
+  // on, this tab routing, playback not paused, and no manual stream lock. Returns what happened for the UI.
+  function applyCampaignOrderNow(reason = 'campaign-order-changed', now = Date.now()) {
+    const none = (why = '') => ({ switched: false, why });
+    if (!settings.findNextStream) return none('Automatic Switching Is Off');
+    if (!isAutoRoutingController()) return none('Another Tab Is Routing');
+    const session = readRoutingControllerSession();
+    const movable = [ROUTING_STATES.SELECT_CAMPAIGN, ROUTING_STATES.FIND_STREAM, ROUTING_STATES.OPEN_STREAM, ROUTING_STATES.VERIFY_STREAM, ROUTING_STATES.EARNING];
+    // Claiming, waiting, and idle states are never interrupted; the next selection uses the new order anyway.
+    if (!movable.includes(session.state) || !currentDrop || currentDrop.isClaimed) return none();
+    if (!viewingNavigationAllowed(reason)) return none(lastViewingNavigationBlock || 'Navigation Blocked');
+    const { next: top, excluded } = pickViableCampaign(session, { preferCurrent: false });
+    if (!top) return none();
+    if (pickMatchesCurrentDrop(top)) return { switched: false, why: '', alreadyTop: true, game: top.game };
+    // Do not abandon a working stream for a campaign whose reward details have not loaded yet.
+    if (top.needsDropDetails || !Number.isFinite(Number(top.requiredMinutes)) || Number(top.requiredMinutes) <= 0) return none('Reward Details Pending');
+    const leaving = cleanText(currentDrop.game || 'Campaign');
+    clearStoredCurrentDrop();
+    transitionRoutingController(
+      ROUTING_STATES.SELECT_CAMPAIGN,
+      { targetGame: '', targetCampaign: '', targetCampaignKey: '', targetDropId: '', targetStream: '', candidateEvidence: null, excludedCampaignKeys: [...excluded], deadlineAt: 0 },
+      `Campaign Order changed · moving from ${leaving} to ${top.game}`,
+    );
+    routingControllerTick(now, reason);
+    return { switched: true, why: '', game: top.game, from: leaving };
   }
 
   function routingControllerTick(now = Date.now(), reason = "heartbeat") {
