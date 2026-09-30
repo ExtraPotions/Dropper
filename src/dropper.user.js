@@ -13597,6 +13597,8 @@
       .campaign-manager-summary { flex:1 1 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right; font-size:8px; font-weight:700; color:var(--theme-muted); }
       .campaign-manager[open] > summary { border-bottom:1px solid var(--theme-line); }
       .campaign-manager-note { padding:6px 8px 3px; font-size:8px; line-height:1.35; color:var(--theme-muted); }
+      .campaign-manager-note[data-tone="warn"] { color:#f2cf75; }
+      #tdh-campaign-planner { color:var(--theme-text); font-weight:700; }
       .eligibility-chip {
         grid-column:1/-1; margin-top:6px;
         border:1px solid color-mix(in srgb,var(--theme-line) 68%,var(--theme-accent) 32%);
@@ -13716,6 +13718,199 @@
     `;
   }
 
+  // ---------------------------------------------------------------------------
+  // Campaign insights: read-only summaries built from campaign and inventory data
+  // Dropper already holds. Nothing here changes routing, claiming, or settings, and
+  // every entry point returns an empty result instead of throwing when data is
+  // missing, because Twitch offers no viewer API and its data can change shape.
+  // The pure helpers take their data as arguments so tests can run them on their own.
+  // ---------------------------------------------------------------------------
+
+  function insightsText(value) {
+    return String(value ?? "").replace(/\s+/g, " ").trim();
+  }
+
+  function insightsNumber(value) {
+    return value !== null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
+  }
+
+  function insightsDrops(campaign) {
+    return campaign?.timeBasedDrops || campaign?.drops || [];
+  }
+
+  function insightsDropName(drop) {
+    return insightsText(
+      drop?.name ||
+      drop?.benefitEdges?.[0]?.benefit?.name ||
+      drop?.benefit?.name ||
+      drop?.rewards?.[0]?.name ||
+      "Reward",
+    );
+  }
+
+  function insightsGameName(campaign) {
+    return insightsText(campaign?.game?.displayName || campaign?.game?.name || campaign?.gameName || (typeof campaign?.game === "string" ? campaign.game : ""));
+  }
+
+  // Number of subscriptions a drop needs, read from the same fields the routing code checks.
+  function insightsRequiredSubs(drop) {
+    return insightsNumber(
+      drop?.requiredSubs ??
+      drop?.requiredSubscriptions ??
+      drop?.requiredSubscriptionCount ??
+      drop?.subscriptionRequirement?.requiredSubs,
+    ) || 0;
+  }
+
+  // "2d 4h", "5h 10m", or "12m".
+  function insightsSpan(minutes) {
+    const total = Math.max(0, Math.round(Number(minutes) || 0));
+    if (total < 60) return `${total}m`;
+    if (total < 1440) return `${Math.floor(total / 60)}h ${total % 60}m`;
+    return `${Math.floor(total / 1440)}d ${Math.floor((total % 1440) / 60)}h`;
+  }
+
+  // ---- Deadline planner -------------------------------------------------------
+
+  // queue: the open-campaign queue (game, endMs, sequenceRemainingMinutes,
+  // sequenceFinishable, pendingClaims). Ignored games are left out.
+  function summarizeCampaignPlan(queue, { isIgnored = () => false, now = Date.now() } = {}) {
+    const games = new Set();
+    let campaigns = 0;
+    let remainingMinutes = 0;
+    let unknown = 0;
+    let atRisk = 0;
+    let earliestEndMs = 0;
+    for (const item of queue || []) {
+      if (!item || isIgnored(item.game)) continue;
+      const endMs = insightsNumber(item.endMs);
+      const hasEnd = endMs !== null && endMs > now && endMs < Number.MAX_SAFE_INTEGER / 2;
+      campaigns += 1;
+      games.add(insightsText(item.game).toLowerCase());
+      const remaining = insightsNumber(item.sequenceRemainingMinutes);
+      if (remaining === null) unknown += 1;
+      else remainingMinutes += Math.max(0, remaining);
+      if (item.sequenceFinishable === false) atRisk += 1;
+      if (hasEnd && (!earliestEndMs || endMs < earliestEndMs)) earliestEndMs = endMs;
+    }
+    return { campaigns, games: games.size, remainingMinutes, unknown, atRisk, earliestEndMs };
+  }
+
+  function campaignPlanText(summary, now = Date.now()) {
+    if (!summary || !summary.campaigns) return "";
+    const parts = [];
+    const known = summary.campaigns - summary.unknown;
+    if (known > 0) parts.push(`about ${insightsSpan(summary.remainingMinutes)} of watching left`);
+    else parts.push("watch time not known yet");
+    parts.push(`${summary.campaigns} open campaign${summary.campaigns === 1 ? "" : "s"}`);
+    if (summary.earliestEndMs > now) parts.push(`first ends in ${insightsSpan((summary.earliestEndMs - now) / 60000)}`);
+    if (summary.atRisk) parts.push(`${summary.atRisk} may not finish in time`);
+    if (summary.unknown && known > 0) parts.push(`${summary.unknown} without a known time`);
+    return `Planner: ${parts.join(" · ")}`;
+  }
+
+  function campaignPlannerText(now = Date.now()) {
+    try {
+      const queue = listOpenCampaignQueue(openCampaignManagementPool(now), now);
+      const isIgnored = (game) => Number(ignoredCampaignGames.games?.[ignoredCampaignGameKey(game)]?.expiresAt || 0) > now;
+      return campaignPlanText(summarizeCampaignPlan(queue, { isIgnored, now }), now);
+    } catch {
+      return "";
+    }
+  }
+
+  // ---- Subscription rewards ---------------------------------------------------
+
+  // Returns Map(gameKey -> { count, maxSubs }) for unclaimed subscription rewards.
+  function subscriptionRewardsByGame(campaigns, gameKeyOf = insightsText) {
+    const result = new Map();
+    for (const campaign of campaigns || []) {
+      const key = gameKeyOf(insightsGameName(campaign));
+      if (!key) continue;
+      for (const drop of insightsDrops(campaign)) {
+        if (drop?.self?.isClaimed === true) continue;
+        const subs = insightsRequiredSubs(drop);
+        if (!subs) continue;
+        const entry = result.get(key) || { count: 0, maxSubs: 0 };
+        entry.count += 1;
+        entry.maxSubs = Math.max(entry.maxSubs, subs);
+        result.set(key, entry);
+      }
+    }
+    return result;
+  }
+
+  function subscriptionRewardText(entry) {
+    if (!entry || !entry.count) return "";
+    const plural = entry.count === 1 ? "" : "s";
+    return `${entry.count} subscription reward${plural} (up to ${entry.maxSubs} sub${entry.maxSubs === 1 ? "" : "s"})`;
+  }
+
+  // ---- Unclaimed rewards ------------------------------------------------------
+
+  // Rewards fully earned but not yet claimed. Twitch lets you claim for a limited time
+  // after a campaign ends and its own pages disagree on how long (7 or 14 days), so the
+  // list only says how long ago a campaign ended and flags older ones as "claim soon".
+  const UNCLAIMED_CLAIM_SOON_MS = 5 * 24 * 60 * 60 * 1000;
+
+  function unclaimedRewards(campaigns, now = Date.now()) {
+    const items = [];
+    for (const campaign of campaigns || []) {
+      const endMs = Date.parse(campaign?.endAt || "");
+      const ended = Number.isFinite(endMs) && endMs > 0 && endMs <= now;
+      for (const drop of insightsDrops(campaign)) {
+        if (drop?.self?.isClaimed === true) continue;
+        if (insightsRequiredSubs(drop)) continue;
+        const required = insightsNumber(drop?.requiredMinutesWatched ?? drop?.requiredMinutes);
+        const current = insightsNumber(drop?.self?.currentMinutesWatched ?? drop?.currentMinutes);
+        if (required === null || required <= 0 || current === null || current < required) continue;
+        items.push({
+          name: insightsDropName(drop),
+          game: insightsGameName(campaign),
+          ended,
+          endedAgoMs: ended ? now - endMs : 0,
+          claimSoon: ended && now - endMs >= UNCLAIMED_CLAIM_SOON_MS,
+        });
+      }
+    }
+    // Longest since ending first: those are the ones closest to closing.
+    return items.sort((a, b) => b.endedAgoMs - a.endedAgoMs || a.game.localeCompare(b.game));
+  }
+
+  function unclaimedRewardLine(item) {
+    const when = item.ended ? `campaign ended ${insightsSpan(item.endedAgoMs / 60000)} ago` : "campaign still running";
+    return `${item.name}${item.game ? ` · ${item.game}` : ""} · ${when}${item.claimSoon ? " · claim soon" : ""}`;
+  }
+
+  function refreshUnclaimedRewards(now = Date.now()) {
+    try {
+      if (!ui) return;
+      const panel = ui.shadow.getElementById("tdh-unclaimed-panel");
+      const list = ui.shadow.getElementById("tdh-unclaimed-list");
+      const summary = ui.shadow.getElementById("tdh-unclaimed-summary");
+      if (!panel || !list || !summary) return;
+      const items = unclaimedRewards(mergeCampaigns(lastCampaignCatalog, lastInventoryCampaigns), now);
+      panel.hidden = items.length === 0;
+      summary.textContent = items.length ? String(items.length) : "";
+      list.replaceChildren();
+      for (const item of items.slice(0, 20)) {
+        const row = document.createElement("div");
+        row.className = "campaign-manager-note";
+        row.textContent = unclaimedRewardLine(item);
+        if (item.claimSoon) row.dataset.tone = "warn";
+        list.appendChild(row);
+      }
+      if (items.length) {
+        const help = document.createElement("div");
+        help.className = "campaign-manager-note";
+        help.textContent = "Open your Twitch Drops Inventory to claim. Twitch limits how long claiming stays open after a campaign ends.";
+        list.appendChild(help);
+      }
+    } catch {
+      // An insights problem must never affect the menu.
+    }
+  }
+
   function dropperGemSvg(className) {
     return `<svg class="${className}" viewBox="0 0 1024 1024" aria-hidden="true"><polygon points="494,210 285,500 430,590" fill="#D9B5FF"/><polygon points="494,210 430,590 494,470" fill="#9B5AF9"/><polygon points="285,500 285,685 430,590" fill="#8C39F2"/><polygon points="285,685 494,842 430,590" fill="#5417B3"/><polygon points="430,590 494,470 494,842" fill="#7428E8"/><polygon points="530,210 739,500 594,590" fill="#AEB0C2"/><polygon points="530,210 594,590 530,470" fill="#6A6E87"/><polygon points="739,500 739,685 594,590" fill="#4E5268"/><polygon points="739,685 530,842 594,590" fill="#242633"/><polygon points="594,590 530,470 530,842" fill="#3F4254"/><rect x="502" y="205" width="20" height="650" rx="10" fill="#101017"/></svg>`;
   }
@@ -13813,6 +14008,10 @@
             </details>
             <button type="button" class="life-btn" id="tdh-toggle-inventory">Show Drops Inventory</button>
             <div class="compact-inventory" id="tdh-compact-inventory"><div class="inventory-head"><div><strong>Campaign Drops</strong><span id="tdh-inventory-game"></span></div></div><div class="inventory-list" id="tdh-inventory-list"></div></div>
+            <details class="campaign-manager" id="tdh-unclaimed-panel" hidden>
+              <summary><span class="campaign-manager-title">Unclaimed Rewards</span><span class="campaign-manager-summary" id="tdh-unclaimed-summary"></span></summary>
+              <div class="claim-history-list" id="tdh-unclaimed-list"></div>
+            </details>
             <details class="campaign-manager" id="tdh-claim-history-panel">
               <summary><span class="campaign-manager-title">Claim History</span><span class="campaign-manager-summary" id="tdh-claim-health">No claims yet</span></summary>
               <div class="claim-history-list" id="tdh-claim-history"><div class="campaign-manager-note">No claimed Drops recorded for this account.</div></div>
@@ -14557,6 +14756,7 @@
     const list = ui.shadow.getElementById("tdh-open-campaign-list");
     const summary = ui.shadow.getElementById("tdh-open-campaign-summary");
     if (!list || !summary) return;
+    refreshUnclaimedRewards(now);
 
     const openGames = listOpenCampaignGames(openCampaignManagementPool(now), now);
     reconcileIgnoredCampaignGames(openGames, now);
@@ -14575,6 +14775,16 @@
       : "No open games";
 
     list.replaceChildren();
+    const plannerText = openGames.length ? campaignPlannerText(now) : "";
+    if (plannerText) {
+      const planner = document.createElement("div");
+      planner.className = "campaign-manager-note";
+      planner.id = "tdh-campaign-planner";
+      planner.textContent = plannerText;
+      list.appendChild(planner);
+    }
+    let subscriptionRewards = new Map();
+    try { subscriptionRewards = subscriptionRewardsByGame(openCampaignManagementPool(now), ignoredCampaignGameKey); } catch { /* optional detail */ }
     if (!openGames.length) {
       const empty = document.createElement("div");
       empty.className = "campaign-manager-note";
@@ -14597,7 +14807,8 @@
       const meta = document.createElement("div");
       meta.className = "campaign-game-meta";
       const campaignLabel = `${item.campaignCount} open campaign${item.campaignCount === 1 ? "" : "s"}`;
-      meta.textContent = `${campaignLabel} · Latest ${formatCampaignEndLabel(item.latestEndAt, item.latestEndMs, now).toLowerCase()}`;
+      const subscriptionText = subscriptionRewardText(subscriptionRewards.get(item.key));
+      meta.textContent = `${campaignLabel} · Latest ${formatCampaignEndLabel(item.latestEndAt, item.latestEndMs, now).toLowerCase()}${subscriptionText ? ` · ${subscriptionText}` : ""}`;
       copy.append(title, meta);
       const rank = visiblePriorityOrder.indexOf(normalizeGameName(item.game));
       const priorityControls = document.createElement('div');

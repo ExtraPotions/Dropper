@@ -95,6 +95,10 @@
             </details>
             <button type="button" class="life-btn" id="tdh-toggle-inventory">Show Drops Inventory</button>
             <div class="compact-inventory" id="tdh-compact-inventory"><div class="inventory-head"><div><strong>Campaign Drops</strong><span id="tdh-inventory-game"></span></div></div><div class="inventory-list" id="tdh-inventory-list"></div></div>
+            <details class="campaign-manager" id="tdh-unclaimed-panel" hidden>
+              <summary><span class="campaign-manager-title">Unclaimed Rewards</span><span class="campaign-manager-summary" id="tdh-unclaimed-summary"></span></summary>
+              <div class="claim-history-list" id="tdh-unclaimed-list"></div>
+            </details>
             <details class="campaign-manager" id="tdh-claim-history-panel">
               <summary><span class="campaign-manager-title">Claim History</span><span class="campaign-manager-summary" id="tdh-claim-health">No claims yet</span></summary>
               <div class="claim-history-list" id="tdh-claim-history"><div class="campaign-manager-note">No claimed Drops recorded for this account.</div></div>
@@ -839,6 +843,7 @@
     const list = ui.shadow.getElementById("tdh-open-campaign-list");
     const summary = ui.shadow.getElementById("tdh-open-campaign-summary");
     if (!list || !summary) return;
+    refreshUnclaimedRewards(now);
 
     const openGames = listOpenCampaignGames(openCampaignManagementPool(now), now);
     reconcileIgnoredCampaignGames(openGames, now);
@@ -857,6 +862,16 @@
       : "No open games";
 
     list.replaceChildren();
+    const plannerText = openGames.length ? campaignPlannerText(now) : "";
+    if (plannerText) {
+      const planner = document.createElement("div");
+      planner.className = "campaign-manager-note";
+      planner.id = "tdh-campaign-planner";
+      planner.textContent = plannerText;
+      list.appendChild(planner);
+    }
+    let subscriptionRewards = new Map();
+    try { subscriptionRewards = subscriptionRewardsByGame(openCampaignManagementPool(now), ignoredCampaignGameKey); } catch { /* optional detail */ }
     if (!openGames.length) {
       const empty = document.createElement("div");
       empty.className = "campaign-manager-note";
@@ -879,7 +894,8 @@
       const meta = document.createElement("div");
       meta.className = "campaign-game-meta";
       const campaignLabel = `${item.campaignCount} open campaign${item.campaignCount === 1 ? "" : "s"}`;
-      meta.textContent = `${campaignLabel} · Latest ${formatCampaignEndLabel(item.latestEndAt, item.latestEndMs, now).toLowerCase()}`;
+      const subscriptionText = subscriptionRewardText(subscriptionRewards.get(item.key));
+      meta.textContent = `${campaignLabel} · Latest ${formatCampaignEndLabel(item.latestEndAt, item.latestEndMs, now).toLowerCase()}${subscriptionText ? ` · ${subscriptionText}` : ""}`;
       copy.append(title, meta);
       const rank = visiblePriorityOrder.indexOf(normalizeGameName(item.game));
       const priorityControls = document.createElement('div');

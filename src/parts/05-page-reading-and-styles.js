@@ -1759,6 +1759,8 @@
       .campaign-manager-summary { flex:1 1 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right; font-size:8px; font-weight:700; color:var(--theme-muted); }
       .campaign-manager[open] > summary { border-bottom:1px solid var(--theme-line); }
       .campaign-manager-note { padding:6px 8px 3px; font-size:8px; line-height:1.35; color:var(--theme-muted); }
+      .campaign-manager-note[data-tone="warn"] { color:#f2cf75; }
+      #tdh-campaign-planner { color:var(--theme-text); font-weight:700; }
       .eligibility-chip {
         grid-column:1/-1; margin-top:6px;
         border:1px solid color-mix(in srgb,var(--theme-line) 68%,var(--theme-accent) 32%);
