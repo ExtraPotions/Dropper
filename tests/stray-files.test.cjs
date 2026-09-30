@@ -7,9 +7,10 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const SKIP = new Set(['.git', 'node_modules', '.watch-profile', 'test-artifacts', 'artifacts']);
-// File-sync tools leave copies such as "name (# Edit conflict 2026-09-29 abc #).js"
-// or "name (conflicted copy).js" beside the real file. They must never be committed.
-const STRAY = /\((?:#\s*)?[^)]*conflict[^)]*\)|\bconflicted copy\b|\s-\sCopy\b/i;
+// File-sync tools leave copies such as "name (# Edit conflict 2026-09-29 abc #).js",
+// "name (# Name clash 2026-09-29 abc #).js" or "name (conflicted copy).js" beside the
+// real file. They must never be committed.
+const STRAY = /\((?:#\s*)?[^)]*(?:conflict|clash)[^)]*\)|\bconflicted copy\b|\s-\sCopy\b/i;
 
 function walk(directory, found = []) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -29,4 +30,5 @@ test('git ignores sync-conflict copies', () => {
   const ignore = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
   assert.match(ignore, /^\*Edit conflict\*$/m);
   assert.match(ignore, /^\*conflicted copy\*$/m);
+  assert.match(ignore, /^\*Name clash\*$/m);
 });
