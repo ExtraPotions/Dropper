@@ -124,7 +124,8 @@ test('progress panel stays solid without auto-collapse fade timing', () => {
 test('README stays feature-focused without npm install guidance', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
   assert.match(readme, /## What you can do/u);
-  assert.match(readme, /https:\/\/github\.com\/ExtraPotions\/Dropper\/raw\/refs\/heads\/main\/dropper\.user\.js/u);
+  assert.match(readme, /https:\/\/github\.com\/ExtraPotions\/Dropper\/releases\/latest\/download\/dropper\.user\.js/u);
+  assert.doesNotMatch(readme, /\/raw\/refs\/heads\/main\//u, 'the README installs a published release, not whatever is on main');
   assert.match(readme, /docs\/screenshots\/drops-menu\.png/u);
   assert.match(readme, /docs\/screenshots\/streams-menu\.png/u);
   assert.match(readme, /<table>[\s\S]*<tr>[\s\S]*<td[\s\S]*<td/u);
