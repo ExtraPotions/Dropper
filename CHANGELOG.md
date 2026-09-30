@@ -1,3 +1,10 @@
+## 3.3.30 — 2026-09-30
+
+- Adds a planner line to Open Campaigns: watch time left across open campaigns, the first deadline, and how many may not finish in time.
+- Shows subscription rewards in each game row, for information only. Dropper never subscribes.
+- Adds unclaimed rewards to Claim History, with a badge and a claim soon flag.
+- Shortens the Drops menu by folding the eligibility checklist into its row and moving two page settings to Appearance.
+
 ## 3.3.29 — 2026-09-29
 
 - Updates the shared foundation to exp-core 3.4.4.
