@@ -1,3 +1,9 @@
+## 3.3.35 — 2026-09-30
+
+- Changing Campaign Order, or ranking a game with the up and down arrows, now takes effect right away: Dropper moves to the top-ranked game instead of waiting for the current reward to finish.
+- The campaign list shows the order Dropper will pick in, marks the game you are watching and the one that is next, and offers the ranking arrows only under My Priority.
+- A changed order never overrides a pause, a locked or chosen stream, or automatic switching being off, and never interrupts a claim.
+
 ## 3.3.34 — 2026-09-30
 
 - While the progress card is showing, menus open directly above it instead of beside the launchers, and below it when the launchers sit in the top half of the window.
