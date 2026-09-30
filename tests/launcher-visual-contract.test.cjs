@@ -169,8 +169,9 @@ test('all Dropper update and changelog notices share one menu-width card space',
   assert.match(source, /function noticePanelWidth\(\)/u);
   assert.match(source, /return calculatedPanelWidth\(\);/u);
   assert.match(source, /placement: "menu"/u);
-  assert.match(source, /const menuBox = railOpen \? ui\.dock\.getBoundingClientRect\(\) : null;/u);
-  assert.match(source, /const anchorBox = menuBox\?\.width && menuBox\?\.height/u);
+  // exp-core places the notice: beyond an open menu, above the progress card, or beside the launchers.
+  assert.match(source, /ExtraPotionsCore\.placeNotice\(ui\.host, notice, railOpen \? ui\.dock : null\);/u);
+  assert.doesNotMatch(source, /const anchorBox = menuBox\?\.width && menuBox\?\.height/u);
   assert.match(source, /notice\.style\.setProperty\("width", `\$\{width\}px`, "important"\);/u);
   assert.match(source, /positionMenuUpdateNotice\(\);/u);
   assert.doesNotMatch(source, /placement: options\.placement === "menu" \? "menu" : "launcher-grid"/u);
@@ -182,8 +183,8 @@ test('progress panel remains in the launcher row instead of taking fixed viewpor
   assert.match(source, /const rowWidth = settings\.badgeOnly \? launcherWidth : panelWidth \+ rowGap \+ launcherWidth;/u);
   assert.match(source, /progressCard\.style\.setProperty\("width"/u);
   assert.match(source, /for \(const property of \["left", "right", "top", "bottom"\]\) progressCard\.style\.removeProperty\(property\);/u);
-  // exp-core places the menu; Dropper only marks its row as part of the launcher grid.
-  assert.match(source, /badgeRow\.dataset\.expReserved = "1";/u);
+  // exp-core places the menu; Dropper only marks the progress card as a reserved surface.
+  assert.match(source, /progressCard\.dataset\.expReserved = "1"/u);
   assert.doesNotMatch(source, /const desiredMenuTop = anchor === "top"/u);
   assert.match(source, /ui\.cluster\.style\.gap = "0px";/u);
   assert.doesNotMatch(source, /progressCard\.style\.setProperty\("top"/u);

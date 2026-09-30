@@ -338,45 +338,10 @@
     if (!ui) return;
     const notice = ui.shadow.getElementById("tdh-update-notice");
     if (!notice || notice.hidden) return;
-
     const width = Math.min(noticePanelWidth(), Math.max(0, window.innerWidth - 24));
     notice.style.setProperty("width", `${width}px`, "important");
-
-    const menuBox = railOpen ? ui.dock.getBoundingClientRect() : null;
-    const rowBox = ui.shadow.querySelector(".badge-row")?.getBoundingClientRect?.();
-    const launcherBox = ui.launcher?.getBoundingClientRect?.();
-    const anchorBox = menuBox?.width && menuBox?.height
-      ? menuBox
-      : rowBox?.width && rowBox?.height
-        ? rowBox
-        : launcherBox;
-
-    if (!anchorBox?.width || !anchorBox?.height) return;
-
-    const height = notice.offsetHeight || notice.scrollHeight || 72;
-    const anchor = document.documentElement.dataset.expLauncherAnchor === "top" ? "top" : "bottom";
-    let top;
-
-    if (menuBox?.width && menuBox?.height) {
-      const preferredTop = menuBox.top - height - 8;
-      top = preferredTop >= 8
-        ? preferredTop
-        : Math.min(window.innerHeight - height - 8, menuBox.bottom + 8);
-    } else if (anchor === "top") {
-      top = Math.min(window.innerHeight - height - 8, anchorBox.bottom + 8);
-    } else {
-      top = Math.max(8, anchorBox.top - height - 8);
-    }
-
-    const left = Math.max(
-      8,
-      Math.min(window.innerWidth - width - 8, anchorBox.right - width),
-    );
-
-    notice.style.setProperty("left", `${left}px`, "important");
-    notice.style.setProperty("right", "auto", "important");
-    notice.style.setProperty("top", `${Math.max(8, top)}px`, "important");
-    notice.style.setProperty("bottom", "auto", "important");
+    // exp-core owns notice placement: beyond an open menu, above the progress card, or beside the launchers.
+    ExtraPotionsCore.placeNotice(ui.host, notice, railOpen ? ui.dock : null);
   }
 
   function showUpdateNotice(title, text, actionText = "View Update", action = null, options = {}) {
@@ -1380,8 +1345,6 @@
     clusterTop = placement.top - (rowHeight - 48);
 
     if (badgeRow) {
-      // Tells exp-core this row belongs to the launcher grid, so menus open clear of the progress card.
-      badgeRow.dataset.expReserved = "1";
       badgeRow.style.setProperty("width", `${Math.min(rowWidth, window.innerWidth - 24)}px`, "important");
       badgeRow.style.setProperty("right", "12px", "important");
       badgeRow.style.setProperty("left", "auto", "important");
@@ -1397,6 +1360,12 @@
     }
 
     const badgeOnlySlot = ui.shadow.getElementById("tdh-badge-only-progress-slot");
+    // Tells exp-core the progress card is showing beside the launchers, so menus and notices open above it
+    // instead of over it. In Badge Only the card lives in the menu and reserves nothing.
+    if (progressCard) {
+      if (progressCard.dataset.presentation === "page-card") progressCard.dataset.expReserved = "1";
+      else delete progressCard.dataset.expReserved;
+    }
     if (progressCard?.dataset.presentation === "page-card") {
       progressCard.style.setProperty("width", `${Math.min(panelWidth, Math.max(0, window.innerWidth - 80))}px`, "important");
       progressCard.style.setProperty("max-width", `calc(100vw - 80px)`, "important");
