@@ -1782,7 +1782,7 @@
       }
       .eligibility-chip[open] > summary::after { transform:rotate(90deg); }
       .eligibility-chip > summary > #tdh-eligibility-summary { flex:1 1 auto; min-width:0; }
-      .eligibility-checklist-count { flex:0 0 auto; color:var(--theme-muted); font-size:8px; font-weight:700; }
+      .eligibility-checklist-count { flex:0 1 auto; min-width:0; max-width:45%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--theme-muted); font-size:8px; font-weight:700; }
       .eligibility-chip > .eligibility-checklist-list { border-top:1px solid var(--theme-line); }
       .eligibility-chip[data-tone="good"] { border-color:color-mix(in srgb,#3ac978 58%,var(--theme-line)); }
       .eligibility-chip[data-tone="warn"] { border-color:color-mix(in srgb,#e2b34a 58%,var(--theme-line)); }
