@@ -1479,7 +1479,7 @@ const ExpMenuArrangement = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.4.6';
+  const version = '3.4.7';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -2595,37 +2595,103 @@ const ExtraPotionsCore = (() => {
     return { top, right: 12+x, anchor, delta };
   }
   // Restores the default launcher order and group position for every product.
-  // The single menu placement for every product. A menu opens beside the launcher grid, lined up with the
-  // launcher that opened it, so it never overlaps a launcher. Surfaces a product marks with data-exp-reserved
-  // (Dropper's progress row) count as part of the grid. When the menu does not fit beside the grid at its
-  // normal width, it opens above or below the grid instead, clear of those surfaces.
-  function placeMenu(host, panel, preferredWidth = 312) {
+  // Shared geometry for menus and notices: the launcher that owns them, the left edge of the launcher grid,
+  // and any visible surface a product marks with data-exp-reserved (Dropper's progress card).
+  function surfaceGeometry(host) {
     const launcherOf = node => node?.shadowRoot?.querySelector('[data-exp-part="launcher"],.launcher');
     const own = launcherOf(host)?.getBoundingClientRect();
     if (!own || !own.width) return null;
     const hosts = [...document.querySelectorAll('[data-exp-product-launcher="1"]')];
-    const boxes = hosts.flatMap(node => [launcherOf(node), ...(node.shadowRoot?.querySelectorAll('[data-exp-reserved]') || [])])
-      .map(node => node?.getBoundingClientRect()).filter(box => box?.width && box?.height);
-    const gridLeft = Math.min(own.left, ...boxes.map(box => box.left));
+    const launchers = hosts.map(node => launcherOf(node)?.getBoundingClientRect()).filter(box => box?.width && box?.height);
+    // A reserved surface never reaches into the launcher column: a product that marks a whole row holding
+    // its launcher gets the same geometry as one that marks only the card beside it.
+    const columnLeft = Math.min(...launchers.map(box => box.left));
+    const reservedBoxes = hosts.flatMap(node => [...(node.shadowRoot?.querySelectorAll('[data-exp-reserved]') || [])])
+      .map(node => node.getBoundingClientRect()).filter(box => box.width && box.height)
+      .map(box => ({ top:box.top, bottom:box.bottom, left:box.left, right:box.left < columnLeft ? Math.min(box.right, columnLeft - 8) : box.right }))
+      .filter(box => box.right > box.left);
+    const reserved = reservedBoxes.length ? reservedBoxes.reduce((all, box) => ({ top:Math.min(all.top, box.top), bottom:Math.max(all.bottom, box.bottom), left:Math.min(all.left, box.left), right:Math.max(all.right, box.right) })) : null;
+    const gridLeft = Math.min(own.left, ...launchers.map(box => box.left), ...reservedBoxes.map(box => box.left));
+    const anchorTop = document.documentElement.dataset.expLauncherAnchor === 'top';
+    return { own, launchers, reserved, gridLeft, anchorTop };
+  }
+  // The single menu placement for every product, in order of preference:
+  // 1. Directly above a reserved surface such as Dropper's progress card (below it when the launchers are
+  //    anchored at the top), sharing its right edge, so the menu covers neither it nor any launcher.
+  // 2. Beside the launcher grid, lined up with the launcher that opened it.
+  // 3. Above or below the grid when the window is too narrow for either.
+  function placeMenu(host, panel, preferredWidth = 312) {
+    const geometry = surfaceGeometry(host);
+    if (!geometry) return null;
+    const { own, reserved, gridLeft, anchorTop } = geometry;
     // A product stylesheet may still size its menu; decide using the width the menu actually renders at.
     panel.style.width = Math.max(0, Math.min(preferredWidth, innerWidth - 24)) + 'px';
     const width = panel.offsetWidth || preferredWidth;
-    const beside = gridLeft - 16 >= width;
-    const right = beside ? Math.round(innerWidth - gridLeft + 8) : 12;
-    Object.assign(panel.style, { right:right+'px', left:'auto', bottom:'auto' });
-    const anchorTop = document.documentElement.dataset.expLauncherAnchor === 'top';
+    Object.assign(panel.style, { left:'auto', bottom:'auto' });
+    const finish = (side, right, top, h) => {
+      top = Math.round(Math.max(8, Math.min(innerHeight - h - 8, top)));
+      Object.assign(panel.style, { right:Math.round(right)+'px', top:top+'px' });
+      host.dataset.menuSide = side;
+      return { top, right:Math.round(right), width, side };
+    };
+    if (reserved) {
+      const room = anchorTop ? innerHeight - reserved.bottom - 16 : reserved.top - 16;
+      if (room >= 200 && reserved.right - 8 >= width) {
+        panel.style.maxHeight = room + 'px';
+        const h = panel.offsetHeight;
+        host.dataset.openDirection = anchorTop ? 'down' : 'up';
+        return finish('reserved', innerWidth - reserved.right, anchorTop ? reserved.bottom + 8 : reserved.top - 8 - h, h);
+      }
+    }
+    if (gridLeft - 16 >= width) {
+      panel.style.maxHeight = Math.max(0, innerHeight - 16) + 'px';
+      const h = panel.offsetHeight;
+      host.dataset.openDirection = 'down';
+      return finish('beside', innerWidth - gridLeft + 8, anchorTop ? own.top : own.bottom - h, h);
+    }
     // Stacked menus clear the launcher and any reserved surface in its row.
-    const band = boxes.filter(box => box.bottom > own.top - 1 && box.top < own.bottom + 1).reduce((all, box) => ({ top:Math.min(all.top, box.top), bottom:Math.max(all.bottom, box.bottom) }), { top:own.top, bottom:own.bottom });
+    const band = [...geometry.launchers, ...(reserved ? [reserved] : [])].filter(box => box.bottom > own.top - 1 && box.top < own.bottom + 1)
+      .reduce((all, box) => ({ top:Math.min(all.top, box.top), bottom:Math.max(all.bottom, box.bottom) }), { top:own.top, bottom:own.bottom });
     const below = innerHeight - band.bottom - 16, above = band.top - 16;
-    const up = !beside && (anchorTop ? below < 160 && above > below : !(above < 160 && below > above));
-    panel.style.maxHeight = Math.max(0, beside ? innerHeight - 16 : (up ? above : below)) + 'px';
+    const up = anchorTop ? below < 160 && above > below : !(above < 160 && below > above);
+    panel.style.maxHeight = Math.max(0, up ? above : below) + 'px';
     const h = panel.offsetHeight;
-    let top = beside ? (anchorTop ? own.top : own.bottom - h) : (up ? band.top - h - 8 : band.bottom + 8);
-    top = Math.round(Math.max(8, Math.min(innerHeight - h - 8, top)));
-    panel.style.top = top + 'px';
-    host.dataset.menuSide = beside ? 'beside' : 'stacked';
     host.dataset.openDirection = up ? 'up' : 'down';
-    return { top, right, width, side: host.dataset.menuSide };
+    return finish('stacked', 12, up ? band.top - h - 8 : band.bottom + 8, h);
+  }
+  // The single placement for update and changelog notices. With a menu open, the notice stacks beyond it
+  // (above it, or below it when the launchers are anchored at the top) and shares its right edge. With no
+  // menu open it takes the menu's place: above a reserved surface, or beside the launcher grid.
+  function placeNotice(host, notice, panel = null) {
+    const geometry = surfaceGeometry(host);
+    if (!geometry) return null;
+    const { own, reserved, gridLeft, anchorTop } = geometry;
+    const width = notice.offsetWidth || 260;
+    const height = notice.offsetHeight || notice.scrollHeight || 72;
+    const menu = panel && !panel.hidden && panel.getClientRects().length ? panel.getBoundingClientRect() : null;
+    let right, top;
+    if (menu?.width && menu?.height) {
+      right = menu.right;
+      const beyond = anchorTop ? menu.bottom + 8 : menu.top - height - 8;
+      const fits = anchorTop ? beyond + height <= innerHeight - 8 : beyond >= 8;
+      top = fits ? beyond : (anchorTop ? menu.top - height - 8 : menu.bottom + 8);
+    } else if (reserved && reserved.right - 8 >= width) {
+      right = reserved.right;
+      top = anchorTop ? reserved.bottom + 8 : reserved.top - height - 8;
+    } else if (gridLeft - 16 >= width) {
+      right = gridLeft - 8;
+      top = anchorTop ? own.top : own.bottom - height;
+    } else {
+      right = own.right;
+      top = anchorTop ? own.bottom + 8 : own.top - height - 8;
+    }
+    const left = Math.round(Math.max(8, Math.min(innerWidth - width - 8, right - width)));
+    top = Math.round(Math.max(8, Math.min(innerHeight - height - 8, top)));
+    notice.style.setProperty('left', left + 'px', 'important');
+    notice.style.setProperty('right', 'auto', 'important');
+    notice.style.setProperty('top', top + 'px', 'important');
+    notice.style.setProperty('bottom', 'auto', 'important');
+    return { left, top };
   }
   // Every launcher host is its own top-layer popover, and the top layer stacks in the order popovers were
   // shown (product load order), not by z-index. Whenever a menu opens, re-show its host so the open menu
@@ -2862,28 +2928,7 @@ const ExtraPotionsCore = (() => {
       const width = Math.min(widthForMode(), Math.max(0, innerWidth - 24));
       notice.style.setProperty('width', width + 'px', 'important');
 
-      const panelBox = menuOpen && !panel.hidden && panel.getClientRects().length ? panel.getBoundingClientRect() : null;
-      const launcher = shadow.querySelector('[data-exp-part="launcher"]');
-      const launcherBox = launcher?.getBoundingClientRect?.();
-      const anchorBox = panelBox?.width && panelBox?.height ? panelBox : launcherBox;
-      if (!anchorBox?.width || !anchorBox?.height) return;
-
-      const height = notice.offsetHeight || notice.scrollHeight || 72;
-      const anchor = document.documentElement.dataset.expLauncherAnchor === 'top' ? 'top' : 'bottom';
-      let top;
-      if (panelBox?.width && panelBox?.height) {
-        const above = panelBox.top - height - 8;
-        top = above >= 8 ? above : Math.min(innerHeight - height - 8, panelBox.bottom + 8);
-      } else if (anchor === 'top') {
-        top = Math.min(innerHeight - height - 8, anchorBox.bottom + 8);
-      } else {
-        top = Math.max(8, anchorBox.top - height - 8);
-      }
-      const left = Math.max(8, Math.min(innerWidth - width - 8, anchorBox.right - width));
-      notice.style.setProperty('left', left + 'px', 'important');
-      notice.style.setProperty('right', 'auto', 'important');
-      notice.style.setProperty('top', Math.max(8, top) + 'px', 'important');
-      notice.style.setProperty('bottom', 'auto', 'important');
+      placeNotice(host || shadow.host, notice, menuOpen ? panel : null);
     }
     function hide() {
       clearTimer();
@@ -3498,6 +3543,6 @@ const ExtraPotionsCore = (() => {
     return Object.freeze({ lifecycle, diagnostics, updates });
   }
 
-  const api = Object.freeze({...ExtraPotionsTools,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,bindLauncherDrag,launcherPlacement,placeMenu,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidthForMode,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
+  const api = Object.freeze({...ExtraPotionsTools,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,bindLauncherDrag,launcherPlacement,placeMenu,placeNotice,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidthForMode,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
   return api;
 })();

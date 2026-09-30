@@ -1,8 +1,8 @@
 {
-  "coreVersion": "3.4.6",
+  "coreVersion": "3.4.7",
   "source": {
     "source": "ExtraPotions/exp-core",
-    "sourceVersion": "3.4.6",
+    "sourceVersion": "3.4.7",
     "architecture": "core-native"
   },
   "suiteContract": {
@@ -177,14 +177,14 @@
       "rootId": "exp-prisma-root"
     }
   },
-  "bundleSha256": "63a348117645dbf1f6548fff582a79dce443a14de47284657fe15f3411541106",
+  "bundleSha256": "4021ca73be5b791d068b21a4b0643f9293e9d58e3d50a6737efb842b60b43e78",
   "files": {
     "foundation.js": "45eab46f60a08bdb3d4e6e7c8ab6623b03f28044d7e6a9e4696654b77552a661",
     "diagnostic-report.js": "f31ef0718c38e096fda19b3be26136c10fc8915cb970dc72ded3b225dc338ee5",
     "lifecycle.js": "0386b5fed75b52c9bef310e459cf72a852bb617c2e9ad442aa1925f9816ddf5d",
     "product-tools.js": "a910c2648b1c1af05908f2707b58a8cf0025a8953e845716343fb1b870787f73",
     "menu-arrangement.js": "b46291126d3573bea33fe23afdc4a7acbf39ac331e57cbcceca3321bbfa0faf0",
-    "runtime.js": "6663ab6f47e1e88f0575f4fcc90afab116f910268a1112440571465416b503f0",
+    "runtime.js": "f129d78c05620078bce3a79625bfbcbe82c0e498e0437364a8d68e05c4e1fab5",
     "suite-contract.json": "1b60485eeb48388692eadbc6a2de2c8916f7a67baadcb9ef277c44360b79b773"
   }
 }

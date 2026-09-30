@@ -1,3 +1,9 @@
+## 3.3.34 — 2026-09-30
+
+- While the progress card is showing, menus open directly above it instead of beside the launchers, and below it when the launchers sit in the top half of the window.
+- Update and changelog notices stack above the open menu, or above the progress card, so nothing covers the card or a launcher.
+- Uses the shared exp-core notice placement, so every product places notices the same way.
+
 ## 3.3.33 — 2026-09-30
 
 - Opens the Dropper menu beside the launcher grid, lined up with the launcher, so it no longer opens over or behind other launchers.
