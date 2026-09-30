@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.35
+// @version      3.3.36
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -57,7 +57,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.35";
+  const APP_VERSION = "3.3.36";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -203,6 +203,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.36": ["Checks GitHub for new versions with one small request instead of downloading the whole script from the main branch every 15 minutes.","Install and update links now point to published releases, so only released versions are offered.","Update notices now show the highlights of the new release."],
     "3.3.35": ["Changing Campaign Order, or ranking a game with the up and down arrows, now takes effect right away: Dropper moves to the top-ranked game instead of waiting for the current reward to finish.","The campaign list shows the order Dropper will pick in, marks the game you are watching and the one that is next, and offers the ranking arrows only under My Priority.","A changed order never overrides a pause, a locked or chosen stream, or automatic switching being off, and never interrupts a claim."],
     "3.3.34": ["While the progress card is showing, menus open directly above it instead of beside the launchers, and below it when the launchers sit in the top half of the window.","Update and changelog notices stack above the open menu, or above the progress card, so nothing covers the card or a launcher.","Uses the shared exp-core notice placement, so every product places notices the same way."],
     "3.3.33": ["Opens the Dropper menu beside the launcher grid, lined up with the launcher, so it no longer opens over or behind other launchers.","Keeps every product menu clear of the Drops progress card.","Uses the shared exp-core menu placement, so Dropper menus open exactly like SHIFT, PRISMA, and WARD menus."],

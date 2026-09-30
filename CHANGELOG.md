@@ -1,3 +1,9 @@
+## 3.3.36 — 2026-09-30
+
+- Checks GitHub for new versions with one small request instead of downloading the whole script from the main branch every 15 minutes.
+- Install and update links now point to published releases, so only released versions are offered.
+- Update notices now show the highlights of the new release.
+
 ## 3.3.35 — 2026-09-30
 
 - Changing Campaign Order, or ranking a game with the up and down arrows, now takes effect right away: Dropper moves to the top-ranked game instead of waiting for the current reward to finish.
