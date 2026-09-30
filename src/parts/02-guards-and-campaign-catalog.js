@@ -47,7 +47,7 @@
     const updateState = loadUpdateState();
     if (
       updateState.checkedForVersion !== APP_VERSION ||
-      now - Number(updateState.lastCheckAt || 0) >= UPDATE_CHECK_INTERVAL_MS
+      now - Number(updateState.lastCheckAt || 0) >= updateChecker.CHECK_INTERVAL
     ) {
       scheduleUpdateCheck();
     }

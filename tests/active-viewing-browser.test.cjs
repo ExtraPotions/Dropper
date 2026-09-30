@@ -47,6 +47,7 @@ const exposed = source.replace('  startDropper();\n})();', `
     clearCurrentForRecovery: () => { currentDrop = null; removeSession('tdh-drop'); removeSession(ROUTING_SESSION_KEY); },
     recovered: () => lastSessionRecovery,
     applyOrder: reason => applyCampaignOrderNow(reason), routing: () => readRoutingControllerSession(),
+    checkUpdates: force => scheduleUpdateCheck(force), updateState: () => loadUpdateState(), appVersion: () => APP_VERSION,
   };
   startDropper();
 })();`);
@@ -1071,3 +1072,54 @@ test('a changed Campaign Order never interrupts a claim in progress', async () =
   assert.equal(result.switched, false);
   assert.equal((await routingView(page)).state, 'claim');
 }, { state: 'claim' }));
+
+// Update checks come from exp-core's release checker: one small GitHub release lookup, never the script from main.
+const releaseFixture = (responder, run) => fixture(async page => {
+  await page.evaluate(() => {
+    window.__updateRequests = [];
+  });
+  await page.evaluate(source => {
+    window.GM_xmlhttpRequest = details => {
+      window.__updateRequests.push(details.url);
+      queueMicrotask(() => { const reply = new Function('details', 'return (' + source + ')(details)')(details); (reply.error ? details.onerror : details.onload)?.(reply); });
+      return { abort() {} };
+    };
+  }, responder.toString());
+  await run(page);
+});
+const launcherHasUpdate = page => page.evaluate(() => Boolean(document.getElementById('tdh-root').shadowRoot.querySelector('.launcher, [data-exp-part="launcher"]')?.classList.contains('update-available')));
+
+test('a newer GitHub release is reported through exp-core and marks the launcher', async () => releaseFixture(
+  () => ({ status: 200, responseText: JSON.stringify({ tag_name: 'v99.0.0', body: '## 99.0.0\n\n- First highlight\n- Second highlight\n' }) }),
+  async page => {
+    await page.evaluate(() => window.__dropperTest.checkUpdates(true));
+    await page.waitForFunction(() => window.__dropperTest.updateState().availableVersion === '99.0.0');
+    await page.waitForFunction(() => document.getElementById('tdh-root').shadowRoot.querySelector('.launcher, [data-exp-part="launcher"]')?.classList.contains('update-available'));
+    const requests = await page.evaluate(() => window.__updateRequests);
+    assert.deepEqual(requests, ['https://api.github.com/repos/ExtraPotions/Dropper/releases/latest'], 'one release lookup, not a download of the script from main');
+    assert.equal(await launcherHasUpdate(page), true);
+    const state = await page.evaluate(() => window.__dropperTest.updateState());
+    assert.equal(state.lastRemoteVersion, '99.0.0');
+    assert.equal(state.lastHttpStatus, 200);
+  }));
+
+test('a release that is not newer leaves Dropper up to date', async () => releaseFixture(
+  () => ({ status: 200, responseText: JSON.stringify({ tag_name: 'v1.0.0', body: '## 1.0.0\n\n- Old\n' }) }),
+  async page => {
+    await page.evaluate(() => window.__dropperTest.checkUpdates(true));
+    await page.waitForFunction(() => window.__dropperTest.updateState().lastRemoteVersion === '1.0.0');
+    const state = await page.evaluate(() => window.__dropperTest.updateState());
+    assert.equal(state.availableVersion, '');
+    assert.equal(await launcherHasUpdate(page), false);
+  }));
+
+test('a failed release lookup is recorded quietly and never claims an update', async () => releaseFixture(
+  () => ({ status: 500, responseText: '{}' }),
+  async page => {
+    await page.evaluate(() => window.__dropperTest.checkUpdates(true));
+    await page.waitForFunction(() => window.__dropperTest.updateState().lastError !== '');
+    const state = await page.evaluate(() => window.__dropperTest.updateState());
+    assert.equal(state.availableVersion, '');
+    assert.notEqual(state.lastError, '');
+    assert.equal(await launcherHasUpdate(page), false);
+  }));

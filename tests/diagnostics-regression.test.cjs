@@ -13,8 +13,10 @@ assert.match(source, /rewardImage:\s*\(\(\) => \{/u, "diagnostics report reward 
 assert.match(source, /function resourceErrorDetails\(target\)/u, "resource errors include bounded attribution details");
 assert.match(source, /owner: owned \? \(productId \|\| 'extrapotions'\) : 'page'/u, "resource errors distinguish Dropper-owned assets from page assets");
 assert.match(source, /assetHost,/u, "resource errors retain only the asset hostname rather than a full URL");
-assert.match(source, /const checkedForCurrentVersion = state\.checkedForVersion === APP_VERSION;/u, "update checks detect a newly installed version before mutating state");
-assert.match(source, /if \(!checkedForCurrentVersion\) \{[\s\S]*state\.lastCheckAt = 0;[\s\S]*state\.lastRemoteVersion = "";/u, "a new installed version clears stale update-check timing and remote-version state");
+assert.match(source, /const updateChecker = ExtraPotionsCore\.createReleaseUpdateChecker\(/u, "update checks use exp-core's release checker, which detects a newly installed version and clears stale update state");
+const dropperOwnSource = source.replace(/\/\/ BEGIN EXP CORE[\s\S]*?\/\/ END EXP CORE/u, "");
+assert.notEqual(dropperOwnSource, source, "the bundled exp-core region is identifiable");
+assert.doesNotMatch(dropperOwnSource, /checkedForCurrentVersion/u, "Dropper keeps no private copy of the update-state machine");
 assert.match(source, /progressCardRect: rectSnapshot\(card\)/u, "diagnostics report the actual progress-card geometry");
 assert.match(source, /launcherRect: rectSnapshot\(launcher\)/u, "diagnostics report launcher geometry");
 assert.match(source, /launcherRowRect: rectSnapshot\(launcherRow\)/u, "diagnostics report launcher-row geometry");
@@ -130,7 +132,7 @@ assert.match(source, /syncProgressSurfaces\(\);\s*updateTitle\(\);/, "heartbeat 
 assert.match(source, /syncProgressSurfaces\(\);\s*refreshDropCard\(\);/, "authoritative Drop updates push progress to the visible UI immediately");
 assert.match(source, /Stream info refresh did not block progress rendering/, "stream-info failures cannot block progress rendering");
 assert.doesNotMatch(source, /Campaign strip refresh did not block progress rendering/, "removed campaign strip is no longer in the progress render path");
-assert.match(source, /state\.lastRemoteVersion && compareVersions\(state\.lastRemoteVersion, APP_VERSION\) <= 0/, "update state clears stale availability when the remote version is not newer");
+assert.match(source, /availableVersion: status\.available \? status\.latest : ""/, "update availability is derived from the checker's comparison, so a remote version that is not newer is never reported as available");
 assert.match(source, /sample: diagnosticMemorySample/, "diagnostics emit only the bounded campaign-memory sample");
 assert.match(source, /campaignMemoryOmitted:/, "diagnostics report how many campaign-memory records were omitted");
 assert.match(source, /const diagnosticActivity = activityEntries\.slice\(-12\);/, "diagnostics cap recent activity at 12 events");

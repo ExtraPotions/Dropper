@@ -4,8 +4,10 @@
 // @version      3.3.35
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
-// @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
-// @downloadURL  https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
+// @homepageURL  https://github.com/ExtraPotions/Dropper
+// @supportURL   https://github.com/ExtraPotions/Dropper/issues
+// @updateURL    https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js
+// @downloadURL  https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js
 // @tag          Twitch
 // @tag          Drops
 // @tag          Rewards
@@ -19,7 +21,7 @@
 // @grant        unsafeWindow
 // @grant        GM_xmlhttpRequest
 // @connect      gql.twitch.tv
-// @connect      raw.githubusercontent.com
+// @connect      api.github.com
 // ==/UserScript==
 
 
@@ -59,9 +61,6 @@
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
-  const UPDATE_STATE_KEY = "dropper-update-state-v2";
-  const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
-  const UPDATE_CHECK_LEASE_MS = 30 * 1000;
 
   function claimNotice(changeId) {
     return ExtraPotionsCore.claimNotice("dropper", changeId);
@@ -195,8 +194,7 @@
     COMPLETE: "complete",
     FAILED: "failed",
   });
-  const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
-  const INSTALL_URL = `https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js?v=${APP_VERSION}`;
+  const INSTALL_URL = "https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js";
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const UPDATE_RELOAD_KEY = "dropper-update-reload-pending";
@@ -4617,7 +4615,7 @@
     const updateState = loadUpdateState();
     if (
       updateState.checkedForVersion !== APP_VERSION ||
-      now - Number(updateState.lastCheckAt || 0) >= UPDATE_CHECK_INTERVAL_MS
+      now - Number(updateState.lastCheckAt || 0) >= updateChecker.CHECK_INTERVAL
     ) {
       scheduleUpdateCheck();
     }
@@ -16259,24 +16257,29 @@
     requestAnimationFrame(() => { layoutChrome(); });
   }
 
+  // Update checks come from exp-core, like every other ExtraPotions product: a small lookup of the latest
+  // GitHub release (and its highlights) instead of downloading the whole script from the main branch.
+  const updateChecker = ExtraPotionsCore.createReleaseUpdateChecker({
+    productId: "dropper",
+    repository: "ExtraPotions/Dropper",
+    currentVersion: APP_VERSION,
+  });
+
+  // The checker's cached result under the names the rest of Dropper already reads.
   function loadUpdateState() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(UPDATE_STATE_KEY) || "{}");
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-    } catch (_) {
-      return {};
-    }
+    const status = updateChecker.status();
+    return {
+      checkedForVersion: status.checkedForVersion || "",
+      lastCheckAt: Number(status.checkedAt || 0),
+      lastRemoteVersion: status.lastRemoteVersion || "",
+      lastHttpStatus: Number(status.lastHttpStatus || 0),
+      lastError: status.lastError || "",
+      availableVersion: status.available ? status.latest : "",
+      availableAt: status.available ? Number(status.checkedAt || 0) : 0,
+    };
   }
 
-  function saveUpdateState(state) {
-    try {
-      localStorage.setItem(UPDATE_STATE_KEY, JSON.stringify(state || {}));
-    } catch (_) {
-      /* ignore */
-    }
-  }
-
-  function markUpdateAvailable(version) {
+  function markUpdateAvailable(version, details = []) {
     if (!ui || !version || compareVersions(version, APP_VERSION) <= 0) return;
 
     const alreadyAnnounced = lastUpdateNoticeVersion === version;
@@ -16298,7 +16301,7 @@
       {
         kicker: "Update Available",
         version,
-        details: [
+        details: details.length ? details.slice(0, 4) : [
           "A newer Dropper build is available.",
           "Install the latest userscript to get the newest fixes and improvements.",
           "After reinstalling, return to Twitch and Dropper will refresh this page automatically.",
@@ -16321,28 +16324,16 @@
   }
 
   function checkCachedUpdateNotice() {
-    const state = loadUpdateState();
-    const available = cleanText(state.availableVersion || "");
-    if (available && compareVersions(available, APP_VERSION) > 0) {
-      markUpdateAvailable(available);
+    const status = updateChecker.status();
+    if (status.available && status.latest) {
+      markUpdateAvailable(status.latest, status.details);
       return true;
-    }
-    if (available && compareVersions(available, APP_VERSION) <= 0) {
-      state.availableVersion = "";
-      state.availableAt = 0;
-      saveUpdateState(state);
     }
     clearUpdateAvailableIndicator();
     return false;
   }
 
   function checkVersionNotice() {
-    const state = loadUpdateState();
-    if (state.availableVersion && compareVersions(state.availableVersion, APP_VERSION) <= 0) {
-      state.availableVersion = "";
-      state.availableAt = 0;
-      saveUpdateState(state);
-    }
     clearUpdateAvailableIndicator();
 
     const previous = localStorage.getItem(LAST_VERSION_KEY);
@@ -16356,6 +16347,8 @@
       );
     }
     localStorage.setItem(LAST_VERSION_KEY, APP_VERSION);
+    // Older builds kept their own copy of the update state; exp-core owns it now.
+    try { localStorage.removeItem("dropper-update-state-v2"); } catch (_) { /* ignore */ }
     checkCachedUpdateNotice();
   }
 
@@ -16363,113 +16356,21 @@
 
   function scheduleUpdateCheck(force = false) {
     if (typeof GM_xmlhttpRequest !== "function") return;
-
-    const now = Date.now();
-    const state = loadUpdateState();
-
-    if (state.availableVersion && compareVersions(state.availableVersion, APP_VERSION) <= 0) {
-      state.availableVersion = "";
-      state.availableAt = 0;
-    }
-    if (state.lastRemoteVersion && compareVersions(state.lastRemoteVersion, APP_VERSION) <= 0) {
-      state.availableVersion = "";
-      state.availableAt = 0;
-    }
-    const checkedForCurrentVersion = state.checkedForVersion === APP_VERSION;
-    if (!checkedForCurrentVersion) {
-      state.checkedForVersion = APP_VERSION;
-      state.lastCheckAt = 0;
-      state.checkLeaseUntil = 0;
-      state.lastRemoteVersion = "";
-      state.lastHttpStatus = 0;
-      state.lastError = "";
-    }
-    saveUpdateState(state);
-
-    // A newly installed version always performs one fresh remote check of its own
-    // instead of inheriting the previous version's 15-minute throttle window.
-    const lastCheckAt = Number(state.lastCheckAt || 0);
-    const leaseUntil = Number(state.checkLeaseUntil || 0);
-
-    if (!force && leaseUntil > now) {
-      checkCachedUpdateNotice();
-      return;
-    }
-
-    if (!force && checkedForCurrentVersion && now - lastCheckAt < UPDATE_CHECK_INTERVAL_MS) {
-      checkCachedUpdateNotice();
-      return;
-    }
-
-    state.checkedForVersion = APP_VERSION;
-    state.lastCheckAt = now;
-    state.checkLeaseUntil = now + UPDATE_CHECK_LEASE_MS;
-    state.lastError = "";
-    saveUpdateState(state);
-
-    const cacheBucket = Math.floor(now / UPDATE_CHECK_INTERVAL_MS);
-    const checkUrl = `${UPDATE_URL}?dropper_check=${encodeURIComponent(APP_VERSION)}&t=${cacheBucket}`;
-
-    GM_xmlhttpRequest({
-      method: "GET",
-      url: checkUrl,
-      headers: {
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-      },
-      timeout: 12000,
-      onload(response) {
-        const nextState = loadUpdateState();
-        const remote = String(response.responseText || "");
-        const match = remote.match(/^\/\/ @version\s+([^\s]+)/m);
-        const remoteVersion = cleanText(match?.[1] || "");
-
-        nextState.checkedForVersion = APP_VERSION;
-        nextState.lastCheckAt = Date.now();
-        nextState.lastHttpStatus = Number(response.status || 0);
-        nextState.lastRemoteVersion = remoteVersion || "";
-        nextState.checkLeaseUntil = 0;
-        nextState.lastError = "";
-
-        if (remoteVersion && compareVersions(remoteVersion, APP_VERSION) > 0) {
-          nextState.availableVersion = remoteVersion;
-          nextState.availableAt = Date.now();
-          saveUpdateState(nextState);
-          if (lastUpdateNoticeVersion !== remoteVersion) {
-            logActivity("update", `Dropper v${remoteVersion} is available`, {
-              installedVersion: APP_VERSION,
-              remoteVersion,
-            });
-          }
-          markUpdateAvailable(remoteVersion);
-          return;
+    updateChecker.check(force).then((result) => {
+      if (result.available && result.latest) {
+        if (lastUpdateNoticeVersion !== result.latest) {
+          logActivity("update", `Dropper v${result.latest} is available`, {
+            installedVersion: APP_VERSION,
+            remoteVersion: result.latest,
+          });
         }
-
-        if (remoteVersion && compareVersions(remoteVersion, APP_VERSION) <= 0) {
-          nextState.availableVersion = "";
-          nextState.availableAt = 0;
-          clearUpdateAvailableIndicator();
-        }
-
-        saveUpdateState(nextState);
-      },
-      onerror(response) {
-        const nextState = loadUpdateState();
-        nextState.lastError = `Update check network error${response?.status ? ` (${response.status})` : ""}`;
-        nextState.checkLeaseUntil = 0;
-        nextState.lastCheckAt = Date.now();
-        saveUpdateState(nextState);
-        logActivity("update-error", nextState.lastError);
-      },
-      ontimeout() {
-        const nextState = loadUpdateState();
-        nextState.lastError = "Update check timed out";
-        nextState.checkLeaseUntil = 0;
-        nextState.lastCheckAt = Date.now();
-        saveUpdateState(nextState);
-        logActivity("update-error", nextState.lastError);
-      },
-    });
+        markUpdateAvailable(result.latest, result.details);
+      } else if (result.latest) {
+        clearUpdateAvailableIndicator();
+      } else if (result.state === "failed" && result.lastError) {
+        logActivity("update-error", result.lastError);
+      }
+    }).catch((error) => logActivity("update-error", cleanText(error?.message || "Update check failed")));
   }
 
   function selectorHealthSnapshot() {
@@ -16892,8 +16793,8 @@
       updateCheck: (() => {
         const state = loadUpdateState();
         return {
-          intervalMinutes: Math.round(UPDATE_CHECK_INTERVAL_MS / 60000),
-          stateKey: UPDATE_STATE_KEY,
+          intervalMinutes: Math.round(updateChecker.CHECK_INTERVAL / 60000),
+          endpoint: updateChecker.ENDPOINT,
           checkedForVersion: state.checkedForVersion || null,
           lastCheckAt: state.lastCheckAt ? new Date(state.lastCheckAt).toISOString() : null,
           lastRemoteVersion: state.lastRemoteVersion || null,
@@ -16901,7 +16802,6 @@
           availableAt: state.availableAt ? new Date(state.availableAt).toISOString() : null,
           lastHttpStatus: Number(state.lastHttpStatus || 0) || null,
           lastError: state.lastError || null,
-          checkLeaseUntil: state.checkLeaseUntil ? new Date(state.checkLeaseUntil).toISOString() : null,
           noticeVersionThisPage: lastUpdateNoticeVersion || null,
           pendingRefresh: (() => {
             const pending = loadUpdateReloadState();

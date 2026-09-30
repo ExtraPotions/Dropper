@@ -16,10 +16,11 @@
     "test:installed-browser": "node scripts/test-installed-browser.cjs",
     "build:check": "node scripts/assemble-parts.cjs --check"
   },
-  "dependencies": {
-    "terser": "^5.51.2"
+  "engines": {
+    "node": ">=20"
   },
   "devDependencies": {
-    "playwright": "1.55.1"
+    "playwright": "1.55.1",
+    "terser": "^5.51.2"
   }
 }

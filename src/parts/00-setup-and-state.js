@@ -4,8 +4,10 @@
 // @version      3.3.35
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
-// @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
-// @downloadURL  https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
+// @homepageURL  https://github.com/ExtraPotions/Dropper
+// @supportURL   https://github.com/ExtraPotions/Dropper/issues
+// @updateURL    https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js
+// @downloadURL  https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js
 // @tag          Twitch
 // @tag          Drops
 // @tag          Rewards
@@ -19,7 +21,7 @@
 // @grant        unsafeWindow
 // @grant        GM_xmlhttpRequest
 // @connect      gql.twitch.tv
-// @connect      raw.githubusercontent.com
+// @connect      api.github.com
 // ==/UserScript==
 
 
@@ -59,9 +61,6 @@
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
-  const UPDATE_STATE_KEY = "dropper-update-state-v2";
-  const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
-  const UPDATE_CHECK_LEASE_MS = 30 * 1000;
 
   function claimNotice(changeId) {
     return ExtraPotionsCore.claimNotice("dropper", changeId);
@@ -195,8 +194,7 @@
     COMPLETE: "complete",
     FAILED: "failed",
   });
-  const UPDATE_URL = "https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js";
-  const INSTALL_URL = `https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js?v=${APP_VERSION}`;
+  const INSTALL_URL = "https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js";
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const UPDATE_RELOAD_KEY = "dropper-update-reload-pending";

@@ -6,14 +6,14 @@
 
 Track Twitch-credited progress, manage eligible streams, and claim available rewards from a compact menu.
 
-[![Install Dropper](docs/badges/install.svg)](https://github.com/ExtraPotions/Dropper/raw/refs/heads/main/dropper.user.js)
+[![Install Dropper](docs/badges/install.svg)](https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js)
 [![Code: PolyForm Noncommercial 1.0.0](docs/badges/code.svg)](LICENSE-CODE.md)
 [![Artwork and documentation: CC BY-NC-SA 4.0](docs/badges/assets.svg)](LICENSE-ASSETS.md)
 
 ## Get started
 
 1. Install a userscript manager such as [Violentmonkey](https://violentmonkey.github.io/get-it/) or [Tampermonkey](https://www.tampermonkey.net/).
-2. [Install Dropper](https://github.com/ExtraPotions/Dropper/raw/refs/heads/main/dropper.user.js) and confirm in your userscript manager.
+2. [Install Dropper](https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js) and confirm in your userscript manager.
 3. Refresh Twitch and open the product launcher.
 
 Sign in to Twitch and open the Dropper launcher. Check Drops for progress and claim options, then Streams for stream-switching preferences. Twitch determines eligibility and credited watch time.

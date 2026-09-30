@@ -82,11 +82,21 @@ test('in-app release notes and update checker stay current-only but functional',
   const bullets = [...currentNotes.matchAll(/"([^"]+)"/gu)];
   assert.ok(bullets.length >= 2 && bullets.length <= 5, 'current release notes stay concise');
 
-  assert.match(source, /const UPDATE_URL = "https:\/\/raw\.githubusercontent\.com\/ExtraPotions\/Dropper\/main\/dropper\.user\.js"/u);
-  assert.match(source, /const INSTALL_URL = `https:\/\/raw\.githubusercontent\.com\/ExtraPotions\/Dropper\/main\/dropper\.user\.js\?v=\$\{APP_VERSION\}`/u);
+  // Installs and updates come from published releases, never from whatever is on the main branch.
+  assert.match(source, /^\/\/ @updateURL\s+https:\/\/github\.com\/ExtraPotions\/Dropper\/releases\/latest\/download\/dropper\.user\.js$/mu);
+  assert.match(source, /^\/\/ @downloadURL\s+https:\/\/github\.com\/ExtraPotions\/Dropper\/releases\/latest\/download\/dropper\.user\.js$/mu);
+  assert.match(source, /^\/\/ @homepageURL\s+https:\/\/github\.com\/ExtraPotions\/Dropper$/mu);
+  assert.match(source, /^\/\/ @supportURL\s+https:\/\/github\.com\/ExtraPotions\/Dropper\/issues$/mu);
+  assert.match(source, /^\/\/ @connect\s+api\.github\.com$/mu);
+  assert.doesNotMatch(source, /^\/\/ @(?:updateURL|downloadURL)\s+https:\/\/raw\.githubusercontent\.com/mu);
+  assert.match(source, /const INSTALL_URL = "https:\/\/github\.com\/ExtraPotions\/Dropper\/releases\/latest\/download\/dropper\.user\.js";/u);
+  assert.doesNotMatch(source, /const UPDATE_URL\b|dropper_check/u, 'Dropper no longer downloads its own script from main to read a version');
+  // The update check is exp-core's shared release checker.
+  assert.match(source, /const updateChecker = ExtraPotionsCore\.createReleaseUpdateChecker\(\{\s*productId: "dropper",\s*repository: "ExtraPotions\/Dropper",\s*currentVersion: APP_VERSION,\s*\}\);/u);
   assert.match(source, /function scheduleUpdateCheck\(/u);
+  assert.match(source, /updateChecker\.check\(force\)/u);
   assert.match(source, /RELEASE_NOTES\[APP_VERSION\]/u);
-  assert.match(source, /compareVersions\(remoteVersion, APP_VERSION\)/u);
+  assert.match(source, /compareVersions\(version, APP_VERSION\)/u);
 });
 
 test('GitHub releases publish only the latest three changelog sections', () => {
