@@ -13599,6 +13599,11 @@
       .campaign-manager-note { padding:6px 8px 3px; font-size:8px; line-height:1.35; color:var(--theme-muted); }
       .campaign-manager-note[data-tone="warn"] { color:#f2cf75; }
       #tdh-campaign-planner { color:var(--theme-text); font-weight:700; }
+      .unclaimed-badge { flex:0 0 auto; padding:1px 6px; border:1px solid color-mix(in srgb,#e2b34a 58%,var(--theme-line)); border-radius:8px; color:#f2cf75; font-size:8px; font-weight:800; white-space:nowrap; }
+      .unclaimed-badge[hidden] { display:none; }
+      .unclaimed-section { border-bottom:1px solid var(--theme-line); }
+      .unclaimed-section[hidden] { display:none; }
+      .unclaimed-title { padding:6px 8px 0; font-size:8px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--theme-muted); }
       .eligibility-chip {
         grid-column:1/-1; margin-top:6px;
         border:1px solid color-mix(in srgb,var(--theme-line) 68%,var(--theme-accent) 32%);
@@ -13614,6 +13619,9 @@
         content:"▸"; margin-left:auto; color:var(--theme-muted); font-size:9px; transition:.12s transform;
       }
       .eligibility-chip[open] > summary::after { transform:rotate(90deg); }
+      .eligibility-chip > summary > #tdh-eligibility-summary { flex:1 1 auto; min-width:0; }
+      .eligibility-checklist-count { flex:0 0 auto; color:var(--theme-muted); font-size:8px; font-weight:700; }
+      .eligibility-chip > .eligibility-checklist-list { border-top:1px solid var(--theme-line); }
       .eligibility-chip[data-tone="good"] { border-color:color-mix(in srgb,#3ac978 58%,var(--theme-line)); }
       .eligibility-chip[data-tone="warn"] { border-color:color-mix(in srgb,#e2b34a 58%,var(--theme-line)); }
       .eligibility-chip[data-tone="bad"] { border-color:color-mix(in srgb,#df5b65 58%,var(--theme-line)); }
@@ -13891,7 +13899,8 @@
       if (!panel || !list || !summary) return;
       const items = unclaimedRewards(mergeCampaigns(lastCampaignCatalog, lastInventoryCampaigns), now);
       panel.hidden = items.length === 0;
-      summary.textContent = items.length ? String(items.length) : "";
+      summary.hidden = items.length === 0;
+      summary.textContent = items.length ? `${items.length} unclaimed` : "";
       list.replaceChildren();
       for (const item of items.slice(0, 20)) {
         const row = document.createElement("div");
@@ -13973,13 +13982,6 @@
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-drops-body"><span class="fl-tool-title">Drops</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-drops-body">
             ${switchHtml("tdh-claim-drops", "Auto-Claim Drops", "", settings.claimDrops)}
             ${switchHtml("tdh-claim-bonus", "Auto-Claim Bonus Chests", "Attempts Free Bonus Claims. A Click Is Not Counted As Confirmation.", settings.claimBonus)}
-            <details class="auth-advanced">
-              <summary>Page behavior</summary>
-              <div class="auth-advanced-body">
-                ${switchHtml("tdh-keep-tab", "Keep Screen Awake", "Requests A Screen Wake Lock During Actual Playback. Does Not Override Visibility Or Pauses.", settings.keepTabActive)}
-                ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "", settings.hideTwitchSubscriptionPromos)}
-              </div>
-            </details>
             <div class="auth-required" id="tdh-auth-required" hidden>
               <span>Twitch Login Required</span>
               <button type="button" class="life-btn" id="tdh-twitch-login">Open Twitch Login</button>
@@ -13999,21 +14001,18 @@
               <div class="campaign-game-list" id="tdh-open-campaign-list"></div>
             </details>
             <details class="eligibility-chip" id="tdh-reward-eligibility" data-tone="muted">
-              <summary><span id="tdh-eligibility-summary" role="status">? Eligibility Not Verified</span></summary>
+              <summary><span id="tdh-eligibility-summary" role="status">? Eligibility Not Verified</span><span class="eligibility-checklist-count" id="tdh-eligibility-checklist-summary">Checking…</span></summary>
               <div class="eligibility-detail" id="tdh-eligibility-detail">Dropper does not yet have enough information to verify this stream.</div>
-            </details>
-            <details class="campaign-manager" id="tdh-eligibility-checklist">
-              <summary><span class="campaign-manager-title">Eligibility Checklist</span><span class="campaign-manager-summary" id="tdh-eligibility-checklist-summary">Checking…</span></summary>
               <div class="eligibility-checklist-list" id="tdh-eligibility-checklist-list"></div>
             </details>
             <button type="button" class="life-btn" id="tdh-toggle-inventory">Show Drops Inventory</button>
             <div class="compact-inventory" id="tdh-compact-inventory"><div class="inventory-head"><div><strong>Campaign Drops</strong><span id="tdh-inventory-game"></span></div></div><div class="inventory-list" id="tdh-inventory-list"></div></div>
-            <details class="campaign-manager" id="tdh-unclaimed-panel" hidden>
-              <summary><span class="campaign-manager-title">Unclaimed Rewards</span><span class="campaign-manager-summary" id="tdh-unclaimed-summary"></span></summary>
-              <div class="claim-history-list" id="tdh-unclaimed-list"></div>
-            </details>
             <details class="campaign-manager" id="tdh-claim-history-panel">
-              <summary><span class="campaign-manager-title">Claim History</span><span class="campaign-manager-summary" id="tdh-claim-health">No claims yet</span></summary>
+              <summary><span class="campaign-manager-title">Claim History</span><span class="unclaimed-badge" id="tdh-unclaimed-summary" hidden></span><span class="campaign-manager-summary" id="tdh-claim-health">No claims yet</span></summary>
+              <div class="unclaimed-section" id="tdh-unclaimed-panel" hidden>
+                <div class="unclaimed-title">Unclaimed rewards</div>
+                <div class="claim-history-list" id="tdh-unclaimed-list"></div>
+              </div>
               <div class="claim-history-list" id="tdh-claim-history"><div class="campaign-manager-note">No claimed Drops recorded for this account.</div></div>
             </details>
           </div></section>
@@ -14088,6 +14087,8 @@
           </div></section>
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-progress-body"><span class="fl-tool-title">Appearance</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-progress-body">
             ${switchHtml("tdh-progress-title", "Show Progress In Tab", "", settings.progressInTitle)}
+            ${switchHtml("tdh-keep-tab", "Keep Screen Awake", "Requests A Screen Wake Lock During Actual Playback. Does Not Override Visibility Or Pauses.", settings.keepTabActive)}
+            ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "", settings.hideTwitchSubscriptionPromos)}
             ${switchHtml("tdh-badge-only", "Badge Only", "Keeps Only The Dropper Badge On The Page And Shows Progress At The Top Of The Drops Menu.", settings.badgeOnly)}
             ${switchHtml("tdh-reduce-motion", "Reduce motion", "", settings.reduceMotion)}
             <hr class="appearance-separator">

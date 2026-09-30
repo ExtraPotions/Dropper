@@ -171,7 +171,8 @@
       if (!panel || !list || !summary) return;
       const items = unclaimedRewards(mergeCampaigns(lastCampaignCatalog, lastInventoryCampaigns), now);
       panel.hidden = items.length === 0;
-      summary.textContent = items.length ? String(items.length) : "";
+      summary.hidden = items.length === 0;
+      summary.textContent = items.length ? `${items.length} unclaimed` : "";
       list.replaceChildren();
       for (const item of items.slice(0, 20)) {
         const row = document.createElement("div");

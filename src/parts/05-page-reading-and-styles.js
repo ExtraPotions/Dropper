@@ -1761,6 +1761,11 @@
       .campaign-manager-note { padding:6px 8px 3px; font-size:8px; line-height:1.35; color:var(--theme-muted); }
       .campaign-manager-note[data-tone="warn"] { color:#f2cf75; }
       #tdh-campaign-planner { color:var(--theme-text); font-weight:700; }
+      .unclaimed-badge { flex:0 0 auto; padding:1px 6px; border:1px solid color-mix(in srgb,#e2b34a 58%,var(--theme-line)); border-radius:8px; color:#f2cf75; font-size:8px; font-weight:800; white-space:nowrap; }
+      .unclaimed-badge[hidden] { display:none; }
+      .unclaimed-section { border-bottom:1px solid var(--theme-line); }
+      .unclaimed-section[hidden] { display:none; }
+      .unclaimed-title { padding:6px 8px 0; font-size:8px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--theme-muted); }
       .eligibility-chip {
         grid-column:1/-1; margin-top:6px;
         border:1px solid color-mix(in srgb,var(--theme-line) 68%,var(--theme-accent) 32%);
@@ -1776,6 +1781,9 @@
         content:"▸"; margin-left:auto; color:var(--theme-muted); font-size:9px; transition:.12s transform;
       }
       .eligibility-chip[open] > summary::after { transform:rotate(90deg); }
+      .eligibility-chip > summary > #tdh-eligibility-summary { flex:1 1 auto; min-width:0; }
+      .eligibility-checklist-count { flex:0 0 auto; color:var(--theme-muted); font-size:8px; font-weight:700; }
+      .eligibility-chip > .eligibility-checklist-list { border-top:1px solid var(--theme-line); }
       .eligibility-chip[data-tone="good"] { border-color:color-mix(in srgb,#3ac978 58%,var(--theme-line)); }
       .eligibility-chip[data-tone="warn"] { border-color:color-mix(in srgb,#e2b34a 58%,var(--theme-line)); }
       .eligibility-chip[data-tone="bad"] { border-color:color-mix(in srgb,#df5b65 58%,var(--theme-line)); }

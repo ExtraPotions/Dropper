@@ -60,13 +60,6 @@
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-drops-body"><span class="fl-tool-title">Drops</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-drops-body">
             ${switchHtml("tdh-claim-drops", "Auto-Claim Drops", "", settings.claimDrops)}
             ${switchHtml("tdh-claim-bonus", "Auto-Claim Bonus Chests", "Attempts Free Bonus Claims. A Click Is Not Counted As Confirmation.", settings.claimBonus)}
-            <details class="auth-advanced">
-              <summary>Page behavior</summary>
-              <div class="auth-advanced-body">
-                ${switchHtml("tdh-keep-tab", "Keep Screen Awake", "Requests A Screen Wake Lock During Actual Playback. Does Not Override Visibility Or Pauses.", settings.keepTabActive)}
-                ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "", settings.hideTwitchSubscriptionPromos)}
-              </div>
-            </details>
             <div class="auth-required" id="tdh-auth-required" hidden>
               <span>Twitch Login Required</span>
               <button type="button" class="life-btn" id="tdh-twitch-login">Open Twitch Login</button>
@@ -86,21 +79,18 @@
               <div class="campaign-game-list" id="tdh-open-campaign-list"></div>
             </details>
             <details class="eligibility-chip" id="tdh-reward-eligibility" data-tone="muted">
-              <summary><span id="tdh-eligibility-summary" role="status">? Eligibility Not Verified</span></summary>
+              <summary><span id="tdh-eligibility-summary" role="status">? Eligibility Not Verified</span><span class="eligibility-checklist-count" id="tdh-eligibility-checklist-summary">Checking…</span></summary>
               <div class="eligibility-detail" id="tdh-eligibility-detail">Dropper does not yet have enough information to verify this stream.</div>
-            </details>
-            <details class="campaign-manager" id="tdh-eligibility-checklist">
-              <summary><span class="campaign-manager-title">Eligibility Checklist</span><span class="campaign-manager-summary" id="tdh-eligibility-checklist-summary">Checking…</span></summary>
               <div class="eligibility-checklist-list" id="tdh-eligibility-checklist-list"></div>
             </details>
             <button type="button" class="life-btn" id="tdh-toggle-inventory">Show Drops Inventory</button>
             <div class="compact-inventory" id="tdh-compact-inventory"><div class="inventory-head"><div><strong>Campaign Drops</strong><span id="tdh-inventory-game"></span></div></div><div class="inventory-list" id="tdh-inventory-list"></div></div>
-            <details class="campaign-manager" id="tdh-unclaimed-panel" hidden>
-              <summary><span class="campaign-manager-title">Unclaimed Rewards</span><span class="campaign-manager-summary" id="tdh-unclaimed-summary"></span></summary>
-              <div class="claim-history-list" id="tdh-unclaimed-list"></div>
-            </details>
             <details class="campaign-manager" id="tdh-claim-history-panel">
-              <summary><span class="campaign-manager-title">Claim History</span><span class="campaign-manager-summary" id="tdh-claim-health">No claims yet</span></summary>
+              <summary><span class="campaign-manager-title">Claim History</span><span class="unclaimed-badge" id="tdh-unclaimed-summary" hidden></span><span class="campaign-manager-summary" id="tdh-claim-health">No claims yet</span></summary>
+              <div class="unclaimed-section" id="tdh-unclaimed-panel" hidden>
+                <div class="unclaimed-title">Unclaimed rewards</div>
+                <div class="claim-history-list" id="tdh-unclaimed-list"></div>
+              </div>
               <div class="claim-history-list" id="tdh-claim-history"><div class="campaign-manager-note">No claimed Drops recorded for this account.</div></div>
             </details>
           </div></section>
@@ -175,6 +165,8 @@
           </div></section>
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-progress-body"><span class="fl-tool-title">Appearance</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-progress-body">
             ${switchHtml("tdh-progress-title", "Show Progress In Tab", "", settings.progressInTitle)}
+            ${switchHtml("tdh-keep-tab", "Keep Screen Awake", "Requests A Screen Wake Lock During Actual Playback. Does Not Override Visibility Or Pauses.", settings.keepTabActive)}
+            ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "", settings.hideTwitchSubscriptionPromos)}
             ${switchHtml("tdh-badge-only", "Badge Only", "Keeps Only The Dropper Badge On The Page And Shows Progress At The Top Of The Drops Menu.", settings.badgeOnly)}
             ${switchHtml("tdh-reduce-motion", "Reduce motion", "", settings.reduceMotion)}
             <hr class="appearance-separator">

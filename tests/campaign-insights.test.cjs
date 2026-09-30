@@ -121,7 +121,7 @@ test('unclaimed rewards are fully earned drops that were not claimed, oldest cam
 
 test('the menu wires the insights in without adding settings', () => {
   const source = fs.readFileSync(path.join(root, 'src', 'dropper.user.js'), 'utf8');
-  for (const marker of ['id="tdh-unclaimed-panel"', 'id="tdh-unclaimed-list"', 'campaignPlannerText(now)', 'refreshUnclaimedRewards(now)', 'subscriptionRewardText(subscriptionRewards.get(item.key))']) {
+  for (const marker of ['id="tdh-unclaimed-panel"', 'id="tdh-unclaimed-list"', 'id="tdh-unclaimed-summary"', 'campaignPlannerText(now)', 'refreshUnclaimedRewards(now)', 'subscriptionRewardText(subscriptionRewards.get(item.key))']) {
     assert.ok(source.includes(marker), marker);
   }
   const insights = fs.readFileSync(partPath, 'utf8');

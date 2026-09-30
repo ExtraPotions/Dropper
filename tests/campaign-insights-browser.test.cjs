@@ -60,6 +60,7 @@ test('the campaign list shows the planner and subscription rewards, and unclaime
     shadow.querySelector('#tdh-settings-launcher').click();
     shadow.querySelector('.fl-tool-header[data-panel="tdh-drops-body"]').click();
     shadow.querySelector('#tdh-open-campaigns').open = true;
+    shadow.querySelector('#tdh-claim-history-panel').open = true;
   });
   await page.waitForFunction(() => document.querySelector('#tdh-root')?.shadowRoot?.querySelector('#tdh-campaign-planner'), null, { timeout: 15000 });
   const facts = await host.evaluate((node) => {
@@ -70,6 +71,8 @@ test('the campaign list shows the planner and subscription rewards, and unclaime
       games: [...shadow.querySelectorAll('.campaign-game-name')].map((item) => item.textContent),
       metas: [...shadow.querySelectorAll('.campaign-game-meta')].map((item) => item.textContent),
       unclaimedHidden: unclaimed?.hidden,
+      unclaimedInsideHistory: Boolean(shadow.querySelector('#tdh-claim-history-panel #tdh-unclaimed-panel')),
+      badgeHidden: shadow.querySelector('#tdh-unclaimed-summary')?.hidden,
       unclaimedRows: [...shadow.querySelectorAll('#tdh-unclaimed-list .campaign-manager-note')].map((item) => item.textContent),
       unclaimedCount: shadow.querySelector('#tdh-unclaimed-summary')?.textContent,
     };
@@ -81,7 +84,9 @@ test('the campaign list shows the planner and subscription rewards, and unclaime
   assert.ok(beta && /1 subscription reward \(up to 2 subs\)/u.test(beta), JSON.stringify(facts.metas));
   assert.equal(facts.metas.filter((meta) => meta.includes('subscription')).length, 1, 'only the game with a subscription reward mentions it');
   assert.equal(facts.unclaimedHidden, false);
-  assert.equal(facts.unclaimedCount, '1');
+  assert.equal(facts.unclaimedInsideHistory, true, 'unclaimed rewards share the Claim History row');
+  assert.equal(facts.badgeHidden, false);
+  assert.equal(facts.unclaimedCount, '1 unclaimed');
   assert.match(facts.unclaimedRows[0], /^Gamma Badge · Gamma Grid · campaign ended 6d 0h ago · claim soon$/u);
   assert.match(facts.unclaimedRows.at(-1), /Drops Inventory/u);
 });
@@ -108,6 +113,7 @@ test('with no campaigns the insights stay out of the way', async (t) => {
   const facts = await host.evaluate((node) => ({
     planner: Boolean(node.shadowRoot.querySelector('#tdh-campaign-planner')),
     unclaimedHidden: node.shadowRoot.querySelector('#tdh-unclaimed-panel')?.hidden,
+    badgeHidden: node.shadowRoot.querySelector('#tdh-unclaimed-summary')?.hidden,
   }));
-  assert.deepEqual(facts, { planner: false, unclaimedHidden: true });
+  assert.deepEqual(facts, { planner: false, unclaimedHidden: true, badgeHidden: true });
 });

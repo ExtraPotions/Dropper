@@ -70,9 +70,12 @@ test('settings open collapsed and retain a themed last-category marker', () => {
 test('menu sections group related Dropper controls without token-only rows', () => {
   const section = (id) => source.match(new RegExp(`id="${id}"[^>]*>([\\s\\S]*?)<\\/div></section>`, 'u'))?.[1] || '';
   assert.match(section('tdh-drops-body'), /tdh-claim-drops/u);
-  assert.match(section('tdh-drops-body'), /tdh-keep-tab/u);
+  assert.match(section('tdh-progress-body'), /tdh-keep-tab/u);
   assert.match(section('tdh-drops-body'), /tdh-toggle-inventory/u);
-  assert.match(section('tdh-drops-body'), /tdh-hide-sub-promos/u);
+  assert.match(section('tdh-progress-body'), /tdh-hide-sub-promos/u);
+  assert.doesNotMatch(section('tdh-drops-body'), /Page behavior/u);
+  assert.doesNotMatch(section('tdh-drops-body'), /id="tdh-eligibility-checklist"/u);
+  assert.match(section('tdh-drops-body'), /id="tdh-reward-eligibility"[\s\S]*id="tdh-eligibility-checklist-list"/u);
   assert.doesNotMatch(section('tdh-drops-body'), /tdh-find-next/u);
   assert.doesNotMatch(section('tdh-streams-body'), /tdh-skip-stream/u);
   assert.match(section('tdh-streams-body'), /tdh-queue-enabled/u);
