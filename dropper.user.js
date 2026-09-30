@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.30
+// @version      3.3.31
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -1517,7 +1517,7 @@ const ExpMenuArrangement = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.4.4';
+  const version = '3.4.5';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -2608,7 +2608,10 @@ const ExtraPotionsCore = (() => {
       node.style.setProperty('--exp-launcher-y', row * 56 + 'px');
       node.style.setProperty('--exp-launcher-offset', row * 56 + 'px');
     };
-    sorted.forEach((node, index) => assign(node, index));
+    // Dropper's progress card spans the space to the left of the launchers, so while any launcher
+    // reserves rows, every launcher stacks in the right-hand column where nothing can cover it.
+    const stacked = sorted.some(node => Number(node.dataset.launcherReservedRows) > 0);
+    sorted.forEach((node, index) => assign(node, stacked ? index * 3 : index));
     const ids = sorted.map(node => node.dataset.productId);
     const known = new Set(Object.keys(SUITE_PRODUCTS));
     const completeSuite = ids.filter(id => known.has(id)).length === known.size;
@@ -2616,6 +2619,38 @@ const ExtraPotionsCore = (() => {
     // install stays priority-sorted until either the complete suite is present
     // or the user explicitly reorders the visible launchers.
     if ((Array.isArray(order) && order.length) || completeSuite) write(GRID_ORDER, ids);
+  }
+  // The single source of launcher coordinates for every product: the saved group position
+  // (GRID_DELTA) plus the launcher's grid cell. Products position their launcher from this.
+  function launcherPlacement(host) {
+    const style = getComputedStyle(host);
+    const offset = parseFloat(style.getPropertyValue('--exp-launcher-offset')) || 0;
+    const x = parseFloat(style.getPropertyValue('--exp-launcher-x')) || 0;
+    const delta = Math.max(8-(innerHeight-60), Math.min(4, Number(read(GRID_DELTA,0)) || 0));
+    const origin = innerHeight-60+delta, anchor = origin <= (innerHeight-48)/2 ? 'top':'bottom';
+    document.documentElement.dataset.expLauncherAnchor = anchor;
+    const top = Math.max(8, Math.min(innerHeight-56, anchor === 'top' ? origin+offset : origin-offset));
+    return { top, right: 12+x, anchor, delta };
+  }
+  // Restores the default launcher order and group position for every product.
+  function resetLauncherGrid(productId) { write(GRID_ORDER,[]); write(GRID_DELTA,0); layoutGrid(); emit('launcher-grid-moved', productId); }
+  // Shared launcher drag for every product: drag moves the launcher group along the right edge;
+  // Shift+drag and Alt+Arrow keys reorder. Listens on window in the capture phase so host pages
+  // that stop pointer events (Twitch's player) cannot stall a drag. Returns a cleanup function.
+  function bindLauncherDrag(launcher, id, { layout = () => {} } = {}) {
+    const removers = [];
+    const on = (node,type,fn,opts) => { node.addEventListener(type,fn,opts); removers.push(() => node.removeEventListener(type,fn,opts)); };
+    let startX=0,startY=0,startDelta=0,pointer=null,dragged=false,mode='',axis='',order=[];
+    launcher.title = launcher.title || 'Drag to move the launchers. Shift+drag or Alt+Arrow keys reorder.';
+    on(launcher,'pointerdown',e=>{if(e.button!==0)return;pointer=e.pointerId;startX=e.clientX;startY=e.clientY;startDelta=Number(read(GRID_DELTA,0))||0;mode=e.shiftKey?'order':'group';order=interactionGridOrder();if(!order.includes(id))order.push(id);dragged=false;axis='';e.preventDefault();try{launcher.setPointerCapture(e.pointerId);}catch{}});
+    // Listen on window in the capture phase so host pages that stop pointer events (Twitch's player) cannot stall a drag.
+    on(launcher,'dragstart',e=>e.preventDefault());
+    on(window,'pointermove',e=>{if(e.pointerId!==pointer)return;const dx=e.clientX-startX,dy=e.clientY-startY;if(!axis&&Math.max(Math.abs(dx),Math.abs(dy))>4)axis=mode;if(!axis)return;dragged=true;e.preventDefault();launcher.classList.add('is-dragging');if(axis==='group')write(GRID_DELTA,Math.round(Math.max(8-(innerHeight-60),Math.min(4,startDelta+dy))));else{const from=order.indexOf(id),offset=Math.abs(dx)>Math.abs(dy)?Math.round(-dx/56):Math.round(dy/56)*3,to=Math.max(0,Math.min(order.length-1,from+offset)),next=[...order];next.splice(from,1);next.splice(to,0,id);write(GRID_ORDER,next);}layoutGrid();emit('launcher-grid-moved',id);layout();},{passive:false,capture:true});
+    const end=e=>{if(e.pointerId===pointer){pointer=null;launcher.classList.remove('is-dragging');try{launcher.releasePointerCapture(e.pointerId);}catch{}}};
+    on(window,'pointerup',end,true);on(window,'pointercancel',end,true);on(launcher,'lostpointercapture',end);
+    on(launcher,'click',e=>{if(dragged){e.preventDefault();e.stopImmediatePropagation();dragged=false;}},true);
+    on(launcher,'keydown',e=>{if(!e.altKey||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();let next=interactionGridOrder();if(!next.includes(id))next.push(id);const from=next.indexOf(id),offset={ArrowLeft:1,ArrowRight:-1,ArrowUp:-3,ArrowDown:3}[e.key],to=Math.max(0,Math.min(next.length-1,from+offset));next=[...next];next.splice(from,1);next.splice(to,0,id);write(GRID_ORDER,next);layoutGrid();emit('launcher-grid-moved',id);layout();launcher.focus();});
+    return () => { while (removers.length) removers.pop()(); };
   }
   function interactionGridOrder() {
     let order = read(GRID_ORDER, []);
@@ -3000,15 +3035,8 @@ const ExtraPotionsCore = (() => {
       const opacityValue = Number(state.opacityPercent);
       const opacity = state.customOpacity ? (Number.isFinite(opacityValue) ? Math.max(40, Math.min(100, Math.round(opacityValue / 5) * 5)) : 85)/100 : 1;
       themeRoot.style.setProperty('--exp-ui-opacity',String(opacity));
-      const offset = parseFloat(getComputedStyle(host).getPropertyValue('--exp-launcher-offset')) || 0;
-      const x = parseFloat(getComputedStyle(host).getPropertyValue('--exp-launcher-x')) || 0;
-      const delta = Math.max(8-(innerHeight-60), Math.min(4, Number(read(GRID_DELTA,0)) || 0));
-      const origin = innerHeight-60+delta, anchor = origin <= (innerHeight-48)/2 ? 'top':'bottom';
-      document.documentElement.dataset.expLauncherAnchor = anchor;
-      let top = anchor === 'top' ? origin+offset : origin-offset;
-
-      top = Math.max(8,Math.min(innerHeight-56,top));
-      Object.assign(launcher.style,{top:top+'px',right:(12+x)+'px',bottom:'auto',left:'auto',zIndex:open?'2147483647':'2147483600'});
+      const { top, right } = launcherPlacement(host);
+      Object.assign(launcher.style,{top:top+'px',right:right+'px',bottom:'auto',left:'auto',zIndex:open?'2147483647':'2147483600'});
       panel.dataset.expMenuWidth = width;
       const maxWidth = Math.max(0,innerWidth-24), panelWidth = Math.min(menuWidthForMode(width),maxWidth);
       Object.assign(panel.style,{width:panelWidth+'px',maxHeight:Math.max(0,innerHeight-80)+'px',overflowY:'auto',overflowX:'hidden',overscrollBehavior:'contain',right:'12px',left:'auto',bottom:'auto',zIndex:open?'2147483647':'2147483599'});
@@ -3019,16 +3047,9 @@ const ExtraPotionsCore = (() => {
       panel.style.top = Math.max(8, up ? top-h-8 : Math.min(innerHeight-h-8,top+56))+'px';
       menuNotices.forEach(notice=>notice.layout());
     }
-    const arrangement = ExpMenuArrangement.mount({ panel, id, onChange: queueLayout, resetLaunchers() { write(GRID_ORDER,[]);write(GRID_DELTA,0);layoutGrid();emit('launcher-grid-moved',id);queueLayout(); } });
+    const arrangement = ExpMenuArrangement.mount({ panel, id, onChange: queueLayout, resetLaunchers() { resetLauncherGrid(id); queueLayout(); } });
     function queueLayout() { if (!frame && !destroyed) frame = requestAnimationFrame(() => { frame = 0; normalizeControls(panel); arrangement.update(); layout(); }); }
-    let startX=0,startY=0,pointer=null,dragged=false,axis='',order=[];
-    launcher.title = launcher.title || 'Drag left, right, up, or down to reorder. Alt+Arrow keys also reorder.';
-    on(launcher,'pointerdown',e=>{if(e.button!==0)return;pointer=e.pointerId;startX=e.clientX;startY=e.clientY;order=interactionGridOrder();if(!order.includes(id))order.push(id);dragged=false;axis='';e.preventDefault();});
-    on(document,'pointermove',e=>{if(e.pointerId!==pointer)return;const dx=e.clientX-startX,dy=e.clientY-startY;if(!axis&&Math.max(Math.abs(dx),Math.abs(dy))>4)axis='order';if(!axis)return;dragged=true;e.preventDefault();launcher.classList.add('is-dragging');const from=order.indexOf(id),offset=Math.abs(dx)>Math.abs(dy)?Math.round(-dx/56):Math.round(dy/56)*3,to=Math.max(0,Math.min(order.length-1,from+offset)),next=[...order];next.splice(from,1);next.splice(to,0,id);write(GRID_ORDER,next);layoutGrid();emit('launcher-grid-moved',id);layout();},{passive:false});
-    const end=e=>{if(e.pointerId===pointer){pointer=null;launcher.classList.remove('is-dragging');}};
-    on(document,'pointerup',end);on(document,'pointercancel',end);
-    on(launcher,'click',e=>{if(dragged){e.preventDefault();e.stopImmediatePropagation();dragged=false;}},true);
-    on(launcher,'keydown',e=>{if(!e.altKey||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();let next=interactionGridOrder();if(!next.includes(id))next.push(id);const from=next.indexOf(id),offset={ArrowLeft:1,ArrowRight:-1,ArrowUp:-3,ArrowDown:3}[e.key],to=Math.max(0,Math.min(next.length-1,from+offset));next=[...next];next.splice(from,1);next.splice(to,0,id);write(GRID_ORDER,next);layoutGrid();emit('launcher-grid-moved',id);layout();launcher.focus();});
+    removers.push(bindLauncherDrag(launcher, id, { layout }));
     for(const type of ['pointerdown','click','wheel','keydown','input','change'])on(panel,type,scheduleDismiss,{passive:type==='wheel'});
     on(window,'keydown',e=>{if(shortcutKey&&e.altKey&&e.shiftKey&&e.key.toLowerCase()===shortcutKey.toLowerCase()&&!e.repeat){e.preventDefault();setOpen(!open,true);} });
     on(window,'resize',queueLayout);on(document,'exp-core:coordination',queueLayout);
@@ -3477,7 +3498,7 @@ const ExtraPotionsCore = (() => {
     return Object.freeze({ lifecycle, diagnostics, updates });
   }
 
-  const api = Object.freeze({...ExtraPotionsTools,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidthForMode,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
+  const api = Object.freeze({...ExtraPotionsTools,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,bindLauncherDrag,launcherPlacement,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidthForMode,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
   return api;
 })();
   // END EXP CORE
@@ -3499,7 +3520,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.30";
+  const APP_VERSION = "3.3.31";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -3649,6 +3670,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.31": ["Updates the shared foundation to exp-core 3.4.5.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.30": ["Adds a planner line to Open Campaigns: watch time left across open campaigns, the first deadline, and how many may not finish in time.","Shows subscription rewards in each game row, for information only. Dropper never subscribes.","Adds unclaimed rewards to Claim History, with a badge and a claim soon flag.","Shortens the Drops menu by folding the eligibility checklist into its row and moving two page settings to Appearance."],
     "3.3.29": ["Updates the shared foundation to exp-core 3.4.4.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.28": ["Updates the shared foundation to exp-core 3.4.3.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],

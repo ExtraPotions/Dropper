@@ -1,3 +1,10 @@
+## 3.3.31 — 2026-09-30
+
+- Updates the shared foundation to exp-core 3.4.5.
+- Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.
+- Leaves Dropper Twitch routing, campaign, claim, and playback behavior unchanged.
+- Keeps the standalone userscript distribution while Core remains the single shared source.
+
 ## 3.3.30 — 2026-09-30
 
 - Adds a planner line to Open Campaigns: watch time left across open campaigns, the first deadline, and how many may not finish in time.
