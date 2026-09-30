@@ -12,8 +12,8 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -28,19 +28,17 @@ jobs:
         run: |
           set -euo pipefail
           npm test 2>&1 | tee test-results.txt
-      - name: Archive reviewed source and locked toolchain
+      - name: Archive reviewed source
         if: always()
         run: |
           git archive --format=zip --output=dropper-source.zip HEAD
-          if test -d node_modules; then tar -czf dropper-toolchain.tgz node_modules; fi
       - name: Retain verification artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dropper-verification-${{ github.sha }}
           path: |
             dropper-source.zip
-            dropper-toolchain.tgz
             test-results.txt
             test-artifacts/
             dropper.user.js
