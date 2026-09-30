@@ -1,3 +1,10 @@
+## 3.3.32 — 2026-09-30
+
+- Lets you drag the launcher to move the whole launcher group up or down the right edge; Shift+drag or Alt+Arrow keys reorder launchers.
+- Keeps launcher dragging working on Twitch, where the video player used to swallow the mouse movement.
+- Stacks all launchers in the right-hand column while the progress card is showing, so no launcher sits underneath it.
+- Uses the shared exp-core launcher code, so Dropper drags, positions, and resets its launcher exactly like SHIFT, PRISMA, and WARD.
+
 ## 3.3.31 — 2026-09-30
 
 - Updates the shared foundation to exp-core 3.4.5.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.31
+// @version      3.3.32
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @updateURL    https://raw.githubusercontent.com/ExtraPotions/Dropper/main/dropper.user.js
@@ -3519,7 +3519,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.31";
+  const APP_VERSION = "3.3.32";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -3669,6 +3669,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.32": ["Lets you drag the launcher to move the whole launcher group up or down the right edge; Shift+drag or Alt+Arrow keys reorder launchers.","Keeps launcher dragging working on Twitch, where the video player used to swallow the mouse movement.","Stacks all launchers in the right-hand column while the progress card is showing, so no launcher sits underneath it.","Uses the shared exp-core launcher code, so Dropper drags, positions, and resets its launcher exactly like SHIFT, PRISMA, and WARD."],
     "3.3.31": ["Updates the shared foundation to exp-core 3.4.5.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.30": ["Adds a planner line to Open Campaigns: watch time left across open campaigns, the first deadline, and how many may not finish in time.","Shows subscription rewards in each game row, for information only. Dropper never subscribes.","Adds unclaimed rewards to Claim History, with a badge and a claim soon flag.","Shortens the Drops menu by folding the eligibility checklist into its row and moving two page settings to Appearance."],
     "3.3.29": ["Updates the shared foundation to exp-core 3.4.4.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
