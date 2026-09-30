@@ -1,3 +1,9 @@
+## 3.3.33 — 2026-09-30
+
+- Opens the Dropper menu beside the launcher grid, lined up with the launcher, so it no longer opens over or behind other launchers.
+- Keeps every product menu clear of the Drops progress card.
+- Uses the shared exp-core menu placement, so Dropper menus open exactly like SHIFT, PRISMA, and WARD menus.
+
 ## 3.3.32 — 2026-09-30
 
 - Lets you drag the launcher to move the whole launcher group up or down the right edge; Shift+drag or Alt+Arrow keys reorder launchers.
