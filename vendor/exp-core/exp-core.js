@@ -68,7 +68,7 @@ function css() {
         position: fixed; right: 12px; z-index: 2147483600;
         display: flex; flex-direction: column-reverse; align-items: flex-end;
         width: max-content; max-width: calc(100vw - 24px); gap: 8px;
-        --theme-bg:#111114; --theme-panel:#19191e; --theme-raised:#2a2a31; --theme-inset:#0e0e10; --theme-line:#34343b; --theme-text:#efeff1; --theme-muted:#adadb8; --theme-accent:#9147ff; --theme-accent2:#bf94ff; --theme-link:#c6a4ff; --theme-focus:#bf94ff; --theme-onAccent:#111114; --theme-skin:linear-gradient(135deg,#d9b5ff,#9b5af9,#7428e8); --theme-skin-vertical:linear-gradient(180deg,#d9b5ff,#9b5af9,#7428e8); --exp-ui-opacity:1; --exp-menu-width:312px;
+        --theme-bg:#111114; --theme-panel:#19191e; --theme-raised:#2a2a31; --theme-inset:#0e0e10; --theme-line:#34343b; --theme-text:#efeff1; --theme-muted:#adadb8; --theme-accent:#9147ff; --theme-accent2:#bf94ff; --theme-link:#c6a4ff; --theme-focus:#bf94ff; --theme-onAccent:#111114; --theme-skin:linear-gradient(135deg,#d9b5ff,#9b5af9,#7428e8); --theme-skin-vertical:linear-gradient(180deg,#d9b5ff,#9b5af9,#7428e8); --exp-ui-opacity:1; --exp-menu-width:260px;
         font: 13px/1.42 ui-sans-serif, system-ui, "Segoe UI", sans-serif; color: var(--theme-text);
       }
       .exp-core-theme.open-up { flex-direction: column; }
@@ -77,18 +77,11 @@ function css() {
         opacity:var(--exp-ui-opacity,1);
         transition:opacity .15s ease;
       }
-      .exp-core-theme[data-panel-width="compact"] [data-exp-part="dock"],
-      .exp-core-theme[data-panel-width="compact"] > .update-notice[data-placement="menu"] {
-        width:min(260px, calc(100vw - 24px));
+      .exp-core-theme [data-exp-part="dock"],
+      .exp-core-theme > .update-notice[data-placement="menu"] {
+        width:min(var(--exp-menu-width,260px), calc(100vw - 24px));
       }
-      .exp-core-theme[data-panel-width="narrow"] [data-exp-part="dock"],
-      .exp-core-theme[data-panel-width="narrow"] > .update-notice[data-placement="menu"] {
-        width:min(220px, calc(100vw - 24px));
-      }
-      .exp-core-theme[data-panel-width="full"] [data-exp-part="dock"],
-      .exp-core-theme[data-panel-width="full"] > .update-notice[data-placement="menu"] {
-        width:min(var(--exp-menu-width,312px), calc(100vw - 24px));
-      }
+
       .progress-age { color:#a7a7b0; }
       .progress-age.warn { color:#f59e0b; }
       .progress-age.bad { color:#ef4444; font-weight:800; }
@@ -119,8 +112,7 @@ function css() {
       .opacity-row>span{font-size:11px;line-height:1.25;white-space:nowrap}
       [data-exp-part="opacity-range"]{width:100%;min-width:0;accent-color:var(--theme-accent)}
       [data-exp-part="opacity-value"]{min-width:34px;text-align:right;font-size:10px;font-weight:800;color:var(--theme-muted)}
-      .exp-core-theme[data-panel-width="narrow"] .opacity-row{grid-template-columns:1fr auto}
-      .exp-core-theme[data-panel-width="narrow"] [data-exp-part="opacity-range"]{grid-column:1/-1}
+
       [data-exp-part="launcher"]:hover {
         border-color:color-mix(in srgb,var(--theme-accent) 58%,transparent);
         background:color-mix(in srgb,var(--theme-panel,#18181b) 96%,var(--theme-accent) 4%);
@@ -146,7 +138,7 @@ function css() {
       [data-exp-part="launcher"] .icon { position:absolute; top:50%; left:50%; width:40px; height:40px; pointer-events:none; z-index:1; transform:translate(-50%,-50%); }
       [data-exp-part="dock"] {
         position:fixed; right:12px; top:auto; bottom:auto;
-        display:none; width:min(var(--exp-menu-width,312px), calc(100vw - 24px)); max-width:calc(100vw - 24px);
+        display:none; width:min(var(--exp-menu-width,260px), calc(100vw - 24px)); max-width:calc(100vw - 24px);
         height:max-content; min-height:0; max-height:none; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; flex:0 0 auto;
         transition:.15s width;
         padding:9px 9px 4px; background:var(--theme-bg); border:1px solid var(--theme-line); border-radius:14px; box-shadow:0 18px 50px #0008; color-scheme:dark;
@@ -297,10 +289,8 @@ function css() {
       .fl-tool-chevron { background:none; border:0; color:#adadb8; cursor:pointer; }
       .fl-tool-body { padding:0 10px 8px; }
       .fl-tool-body:not(.fl-tool-hidden) { display:grid; height:auto; min-height:0; max-height:none; overflow:visible; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; column-gap:8px; }
-      .exp-core-theme[data-panel-width="compact"] .fl-tool-body:not(.fl-tool-hidden),
-      .exp-core-theme[data-panel-width="narrow"] .fl-tool-body:not(.fl-tool-hidden) { grid-template-columns:minmax(0,1fr); }
-      .exp-core-theme[data-panel-width="compact"] .fl-tool-body:not(.fl-tool-hidden) > *,
-      .exp-core-theme[data-panel-width="narrow"] .fl-tool-body:not(.fl-tool-hidden) > * { grid-column:1/-1; }
+      .exp-core-theme .fl-tool-body:not(.fl-tool-hidden) { grid-template-columns:minmax(0,1fr); }
+      .exp-core-theme .fl-tool-body:not(.fl-tool-hidden) > * { grid-column:1/-1; }
       .fl-tool-body > :is(.fl-switch,.mini-row,.life-btn) { min-width:0; }
       .fl-tool-body > :is(.diag) { grid-column:1/-1; }
       .fl-tool-hidden { display:none !important; }
@@ -778,7 +768,7 @@ const ExtraPotionsDiagnostics = (() => {
     };
     const ui = {
       mounted: !!host?.isConnected,
-      menuWidthMode: host?.dataset.menuWidth || null,
+      menuSizing: 'viewport-clamped',
       uiGeometry,
       progressPanelWidth: progressCard ? Math.round(progressCard.getBoundingClientRect().width) : null,
       launcherRowWidth: launcherRow ? Math.round(launcherRow.getBoundingClientRect().width) : null,
@@ -1490,7 +1480,7 @@ const ExpMenuArrangement = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.4.11';
+  const version = '3.4.12';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -1612,12 +1602,8 @@ const ExtraPotionsCore = (() => {
     const grid = document.createElement('div'); grid.dataset.expSystemTools = '1';
     grid.append(...contents); return grid;
   }
-  function menuWidthForMode(mode = 'compact', fullWidth = 312) {
-    if (mode === 'narrow') return 220;
-    if (mode === 'compact') return 260;
-    const full = Number(fullWidth);
-    return Number.isFinite(full) ? Math.max(280, Math.min(full, 340)) : 312;
-  }
+  // One suite size. Placement clamps this preferred width to the viewport.
+  function menuWidth() { return 260; }
   const canonicalCss = CoreFoundation.css();
   const compositionCss = `
     [data-exp-part="dock"]{box-sizing:border-box;overflow-x:hidden;overscroll-behavior:contain}
@@ -1631,8 +1617,6 @@ const ExtraPotionsCore = (() => {
     [data-exp-system-tools]>details>summary{cursor:pointer;font-weight:600}
     .exp-system-card>summary{cursor:pointer}
     .exp-system-card>summary+*{margin-top:6px}
-    [data-exp-part="dock"] .row:has(>select[aria-label="Menu width"]){display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,104px)!important;align-items:center;gap:8px!important}
-    [data-exp-part="dock"] .row>select[aria-label="Menu width"]{box-sizing:border-box;width:100%!important;max-width:104px!important;min-width:0!important;margin:0!important}
     :host{color-scheme:dark}
     [data-exp-part="launcher"]{box-sizing:border-box!important;width:48px!important;min-width:48px!important;max-width:48px!important;height:48px!important;min-height:48px!important;max-height:48px!important}
     [data-exp-part="launcher"] .launcher-icon{width:40px!important;height:40px!important}
@@ -2937,9 +2921,6 @@ const ExtraPotionsCore = (() => {
 
     const themeSource = options.themeSource instanceof Element ? options.themeSource : panel;
     const syncTheme = () => syncNoticeTheme(notice, themeSource);
-    function widthForMode() {
-      return menuWidthForMode(host?.dataset.menuWidth || 'compact');
-    }
     function clearTimer() { clearTimeout(timer); timer = 0; }
     function queueLayout() {
       if (destroyed || frame) return;
@@ -2948,7 +2929,7 @@ const ExtraPotionsCore = (() => {
     function layout() {
       if (destroyed || notice.hidden) return;
       syncTheme();
-      const width = Math.min(widthForMode(), Math.max(0, innerWidth - 24));
+      const width = Math.min(menuWidth(), Math.max(0, innerWidth - 24));
       notice.style.setProperty('width', width + 'px', 'important');
 
       placeNotice(host || shadow.host, notice, menuOpen ? panel : null);
@@ -3178,18 +3159,17 @@ const ExtraPotionsCore = (() => {
     }
     function layout() {
       if (destroyed || !launcher.isConnected) return;
-      const state = getSettings(); const width = 'compact';
-      host.dataset.menuWidth = width; themeRoot.dataset.panelWidth = width;
+      const state = getSettings();
+      themeRoot.style.setProperty('--exp-menu-width', menuWidth() + 'px');
       themeRoot.classList.toggle('reduce-motion', state.reduceMotion === true || state.reduceMotion === 'on' || state.reducedMotion === 'reduce' || (state.reduceMotion === 'system' || state.reducedMotion === 'system') && matchMedia('(prefers-reduced-motion:reduce)').matches);
       const opacityValue = Number(state.opacityPercent);
       const opacity = state.customOpacity ? (Number.isFinite(opacityValue) ? Math.max(40, Math.min(100, Math.round(opacityValue / 5) * 5)) : 85)/100 : 1;
       themeRoot.style.setProperty('--exp-ui-opacity',String(opacity));
       const { top, right } = launcherPlacement(host);
       Object.assign(launcher.style,{top:top+'px',right:right+'px',bottom:'auto',left:'auto',zIndex:open?'2147483647':'2147483600'});
-      panel.dataset.expMenuWidth = width;
       Object.assign(panel.style,{overflowY:'auto',overflowX:'hidden',overscrollBehavior:'contain',zIndex:open?'2147483647':'2147483599'});
       if (!open) return;
-      placeMenu(host, panel, menuWidthForMode(width));
+      placeMenu(host, panel, menuWidth());
       menuNotices.forEach(notice=>notice.layout());
     }
     const arrangement = ExpMenuArrangement.mount({ panel, id, onChange: queueLayout, resetLaunchers() { resetLauncherGrid(id); queueLayout(); } });
@@ -3656,6 +3636,6 @@ const ExtraPotionsCore = (() => {
     return Object.freeze({ lifecycle, diagnostics, updates });
   }
 
-  const api = Object.freeze({...ExtraPotionsTools,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createMenuController,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,bindLauncherDrag,launcherPlacement,placeMenu,placeNotice,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidthForMode,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
+  const api = Object.freeze({...ExtraPotionsTools,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createMenuController,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,bindLauncherDrag,launcherPlacement,placeMenu,placeNotice,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidth,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
   return api;
 })();
