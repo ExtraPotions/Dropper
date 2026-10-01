@@ -119,7 +119,8 @@ test('unhealthy streams recover faster than healthy stalled streams', () => {
 test('progress panel stays solid without auto-collapse fade timing', () => {
   const source = loadDropperSource(root);
   assert.doesNotMatch(source, /const PROGRESS_EXPAND_AUTO_COLLAPSE_MS = 30 \* 1000;/u);
-  assert.match(source, /const MENU_INACTIVITY_DISMISS_MS = 15 \* 1000;/u);
+  assert.match(source, /ExtraPotionsCore\.createMenuController/u);
+  assert.match(source, /menuController\?\.enforceDeadline\(now\)/u);
   assert.match(source, /\/\* 3\.2\.0 progress panel \*\//u);
 });
 

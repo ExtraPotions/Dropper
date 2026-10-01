@@ -1,3 +1,9 @@
+## 3.3.45 — 2026-10-01
+
+- Moves menu exclusivity, outside-click dismissal and inactivity timing into exp-core 3.4.10 while preserving Dropper layout and saved preferences.
+- Removes the remaining private menu listeners and obsolete support styles; support controls continue to come from Core.
+- Preserves the released Inventory recovery and exact-reward progress fixes without changing Twitch routing or claim safety.
+
 ## 3.3.44 — 2026-10-01
 
 - Updates the shared foundation to exp-core 3.4.10.

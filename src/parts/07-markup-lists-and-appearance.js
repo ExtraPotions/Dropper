@@ -256,7 +256,10 @@
     bindSwitches();
     bindPanels();
     ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { ExtraPotionsCore.resetLauncherGrid("dropper"); requestAnimationFrame(layoutChrome); } });
-    bindMenuInactivity();
+    ui.menuController = ExtraPotionsCore.createMenuController({
+      id: "dropper", host, shadow, panel: ui.dock,
+      getSettings: () => settings, setOpen: setRailOpen,
+    });
     bindDropperControls();
     renderSwitches();
     applyMotionSetting();
@@ -288,10 +291,6 @@
       if (event.key === "Escape" && supportPopover?.hidden === false) { closeSupportPopover(); return; }
       if (event.key === "Escape" && railOpen) setRailOpen(false, true);
       if (!event.altKey && (event.key === "r" || event.key === "R") && railOpen) requestGqlPoll("keyboard-refresh", true);
-    });
-    // exp-core-allow: Dropper's menu does not run on Core's create() controller yet; remove with that migration.
-    document.addEventListener("pointerdown", (event) => {
-      if (railOpen && !event.composedPath().includes(host)) setRailOpen(false);
     });
     return ui;
   }

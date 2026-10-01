@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.44
+// @version      3.3.45
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -3702,7 +3702,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.44";
+  const APP_VERSION = "3.3.45";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -3845,8 +3845,8 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RETURN_DELAY_MS = 3 * 1000;
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
-  const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.45": ["Moves menu exclusivity, outside-click dismissal and inactivity timing into exp-core 3.4.10 while preserving Dropper layout and saved preferences.","Removes the remaining private menu listeners and obsolete support styles; support controls continue to come from Core.","Preserves the released Inventory recovery and exact-reward progress fixes without changing Twitch routing or claim safety."],
     "3.3.44": ["Updates the shared foundation to exp-core 3.4.10.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.43": ["Repairs the Inventory request and preserves the last valid reward snapshot when Twitch returns unavailable or partial data.","Keeps successful read-only session updates running through Inventory lookup failures without weakening claim, authorization, rate-limit or integrity checks.","Resolves active reward details and keeps watch minutes tied to the exact reward across claims and next-reward transitions.","Reports syncing and unknown deadline estimates honestly; retains Core 3.4.9 and existing manual viewing protections."],
     "3.3.42": ["Updates to exp-core 3.4.9.","The support button and popover now come from exp-core, shared with the rest of the suite.","The install link now comes from the exp-core update checker, which only points at published releases."],
@@ -4795,8 +4795,6 @@ const ExtraPotionsCore = (() => {
   localStorage.removeItem(LEGACY_LAUNCHER_GRID_DELTA_KEY);
   let lastUiProgressPercent = null;
   let lastUiRoutingState = "";
-  let menuDismissTimer = null;
-  let menuDismissAt = 0;
   let updateNoticeTimer = null;
   let updateNoticeState = null;
   let lastUpdateNoticeVersion = "";
@@ -6198,9 +6196,6 @@ const ExtraPotionsCore = (() => {
       syncDropperWidthToChat();
       layoutChrome();
     }, { passive: true });
-    document.addEventListener("exp-core:menu-open", () => {
-      if (railOpen && document.documentElement.getAttribute("data-exp-open-menu") !== "dropper") setRailOpen(false, false);
-    });
     window.addEventListener("storage", (event) => {
       if (event.key !== scopedLocalStorageKey(IGNORED_CAMPAIGN_GAMES_KEY)) return;
       ignoredCampaignGames = loadIgnoredCampaignGames();
@@ -17316,37 +17311,10 @@ const ExtraPotionsCore = (() => {
         align-items:start; gap:8px; width:100%;
       }
       .header-actions { display:flex; align-items:flex-start; gap:5px; position:static; }
-      .support-wrap { position:static; }
-      .support-button, #tdh-rail-close {
+      #tdh-rail-close {
         width:30px; height:30px; min-width:30px; padding:0;
         border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0;
         cursor:pointer;
-      }
-      .support-button { display:grid; place-items:center; }
-      .support-button svg { width:15px; height:15px; fill:currentColor; }
-      .support-button:hover, .support-button:focus-visible {
-        border-color:var(--theme-accent); color:var(--theme-accent2); background:#211b2b; outline:none;
-      }
-      .support-popover {
-        position:absolute; z-index:14; top:35px; right:0;
-        width:min(190px,100%); max-width:100%;
-        box-sizing:border-box; padding:8px 9px;
-        border:1px solid color-mix(in srgb,var(--theme-accent) 46%,var(--theme-line));
-        border-radius:9px; background:var(--theme-panel); color:var(--theme-text);
-        box-shadow:0 10px 28px #0009;
-      }
-      .support-popover[hidden] { display:none; }
-      .support-popover strong { display:block; margin-bottom:3px; font-size:10px; }
-      .support-popover span { display:block; color:var(--theme-muted); font-size:8px; line-height:1.35; }
-      .support-popover a {
-        display:flex; align-items:center; justify-content:center; min-height:26px; margin-top:7px; padding:0 9px;
-        border:1px solid color-mix(in srgb,var(--theme-accent) 58%,var(--theme-line));
-        border-radius:7px; background:color-mix(in srgb,var(--theme-panel) 76%,var(--theme-accent) 24%);
-        color:var(--theme-text); text-decoration:none; font-size:9px; font-weight:800;
-      }
-      .support-popover a:hover, .support-popover a:focus-visible {
-        border-color:var(--theme-accent2); outline:none;
-        background:color-mix(in srgb,var(--theme-panel) 66%,var(--theme-accent) 34%);
       }
       .header-brand {
         display:grid; grid-template-columns:38px minmax(0,1fr);
@@ -18345,7 +18313,10 @@ const ExtraPotionsCore = (() => {
     bindSwitches();
     bindPanels();
     ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { ExtraPotionsCore.resetLauncherGrid("dropper"); requestAnimationFrame(layoutChrome); } });
-    bindMenuInactivity();
+    ui.menuController = ExtraPotionsCore.createMenuController({
+      id: "dropper", host, shadow, panel: ui.dock,
+      getSettings: () => settings, setOpen: setRailOpen,
+    });
     bindDropperControls();
     renderSwitches();
     applyMotionSetting();
@@ -18377,10 +18348,6 @@ const ExtraPotionsCore = (() => {
       if (event.key === "Escape" && supportPopover?.hidden === false) { closeSupportPopover(); return; }
       if (event.key === "Escape" && railOpen) setRailOpen(false, true);
       if (!event.altKey && (event.key === "r" || event.key === "R") && railOpen) requestGqlPoll("keyboard-refresh", true);
-    });
-    // exp-core-allow: Dropper's menu does not run on Core's create() controller yet; remove with that migration.
-    document.addEventListener("pointerdown", (event) => {
-      if (railOpen && !event.composedPath().includes(host)) setRailOpen(false);
     });
     return ui;
   }
@@ -20675,10 +20642,10 @@ const ExtraPotionsCore = (() => {
         manualDelta: launcherGridDelta,
       },
       autoDismiss: {
-        menuSeconds: Math.round(MENU_INACTIVITY_DISMISS_MS / 1000),
-        menuTimerActive: Boolean(menuDismissTimer),
-        menuDismissAt: menuDismissAt ? new Date(menuDismissAt).toISOString() : null,
-        menuRemainingSeconds: menuDismissAt ? Math.max(0, Math.ceil((menuDismissAt - now) / 1000)) : null,
+        menuSeconds: Math.round((ui?.menuController?.idleTimeoutMs || 15000) / 1000),
+        menuTimerActive: Boolean(ui?.menuController?.timerActive),
+        menuDismissAt: ui?.menuController?.dismissAt ? new Date(ui.menuController.dismissAt).toISOString() : null,
+        menuRemainingSeconds: ui?.menuController?.dismissAt ? Math.max(0, Math.ceil((ui.menuController.dismissAt - now) / 1000)) : null,
       },
       updateNoticePlacement: ui?.shadow?.getElementById("tdh-update-notice")?.dataset?.placement || null,
       generatedAt: new Date(now).toISOString(),
@@ -21270,41 +21237,17 @@ const ExtraPotionsCore = (() => {
     ExtraPotionsCore.bindLauncherDrag(ui.launcher, "dropper", { layout: layoutChrome });
   }
 
+  // Core owns inactivity, native-select protection and suite menu exclusivity.
   function clearMenuDismissTimer() {
-    clearTimeout(menuDismissTimer);
-    menuDismissTimer = null;
-    menuDismissAt = 0;
+    ui?.menuController?.cancelDismiss();
   }
 
   function scheduleMenuDismiss() {
-    clearTimeout(menuDismissTimer);
-    menuDismissTimer = null;
-    if (!railOpen || !ui) {
-      menuDismissAt = 0;
-      return;
-    }
-
-    menuDismissAt = Date.now() + MENU_INACTIVITY_DISMISS_MS;
-    menuDismissTimer = setTimeout(() => {
-      enforceAutoDismissDeadlines(Date.now());
-    }, MENU_INACTIVITY_DISMISS_MS + 20);
+    ui?.menuController?.scheduleDismiss();
   }
 
   function enforceAutoDismissDeadlines(now = Date.now()) {
-    if (railOpen && menuDismissAt && now >= menuDismissAt) {
-      setRailOpen(false);
-    }
-  }
-
-  function bindMenuInactivity() {
-    if (!ui?.dock) return;
-    const reset = () => {
-      if (railOpen) scheduleMenuDismiss();
-    };
-
-    ["pointerdown", "click", "wheel", "keydown", "input", "change"].forEach((type) => {
-      ui.dock.addEventListener(type, reset, { passive: type === "wheel" });
-    });
+    ui?.menuController?.enforceDeadline(now);
   }
 
   function setRailOpen(open, focus) {
@@ -21313,13 +21256,11 @@ const ExtraPotionsCore = (() => {
       collapseToolPanels();
       collapseNestedPanels();
     }
-    ui.dock.classList.toggle("fl-rail-open", open);
+    ui.menuController.state(open);
     ui.launcher.setAttribute("aria-expanded", String(open));
 
     if (open) {
       document.documentElement.dataset.expDropperMenuOpen = "1";
-      document.documentElement.setAttribute("data-exp-open-menu", "dropper");
-      document.dispatchEvent(new Event("exp-core:menu-open"));
       scheduleMenuDismiss();
       refreshTwitchAuthStatus();
     } else {
