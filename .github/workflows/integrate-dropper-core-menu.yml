@@ -1,0 +1,118 @@
+name: Integrate verified Dropper Core menu adapter
+on:
+  push:
+    branches: [release/dropper-core-menu]
+    paths: [.github/workflows/integrate-dropper-core-menu.yml]
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: integrate-dropper-core-menu
+  cancel-in-progress: false
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+          cache: npm
+      - name: Preserve the completed automatic Core rollout
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run watch 36926206052 -R ExtraPotions/Dropper --exit-status --interval 10
+          git config user.name expDARE
+          git config user.email 5340947+ExtraPotions@users.noreply.github.com
+          git fetch origin main
+          git merge --no-edit origin/main
+          test "$(cat vendor/exp-core/PIN)" = v3.4.10
+      - name: Verify published Core and recover tested adapter inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/core-release
+          gh release download v3.4.10 -R ExtraPotions/exp-core -p exp-core.js -p manifest.json -D evidence/core-release
+          echo 'c08d1c00985d593572d040d7615d9dd8aed2947e920a7780448453a23745533d  evidence/core-release/exp-core.js' | sha256sum --check
+          echo '2bb701b5c81bd58515c5442e4ddd12cce306a438e277353806df48f5f05c1e8d  evidence/core-release/manifest.json' | sha256sum --check
+          python3 <<'PY'
+          import base64, gzip, hashlib, pathlib, subprocess
+          ref = '61144785563c0398cb235c4bb537ec7700f8e034'
+          def source(name):
+              data = subprocess.check_output(['gh', 'api', 'repos/ExtraPotions/exp-core/contents/.release-staging/' + name + '?ref=' + ref, '--jq', '.content'], text=True)
+              return base64.b64decode(data)
+          encoded = source('dropper-menu.b64').decode().strip().replace('VryXWk/IeRZ', 'VryXyWk/IeRZ')
+          patch = gzip.decompress(base64.b64decode(encoded, validate=True))
+          if hashlib.sha256(patch).hexdigest() != 'bd9ce1bb0d8213c040bc4f3c893b2352bd7c87a4ff4f2533b0ffe8e7830b91ee': raise RuntimeError('Adapter patch checksum mismatch')
+          pathlib.Path('evidence/dropper-menu.patch').write_bytes(patch)
+          test = source('dropper-menu-coordination.test.cjs')
+          if hashlib.sha256(test).hexdigest() != 'f56019ca3adea56db0baa9cf890c75f65a086c1cb836c9aa26f296e0d60a5d18': raise RuntimeError('Coordination test checksum mismatch')
+          pathlib.Path('evidence/menu-coordination.test.cjs').write_bytes(test)
+          PY
+          # Three-way application preserves a concurrent Core-only version entry.
+          git apply --3way evidence/dropper-menu.patch
+          test -z "$(git diff --name-only --diff-filter=U)"
+          cp evidence/menu-coordination.test.cjs tests/menu-coordination.test.cjs
+          node scripts/sync-exp-core.cjs v3.4.10
+          cmp vendor/exp-core/exp-core.js evidence/core-release/exp-core.js
+          cmp vendor/exp-core/manifest.json evidence/core-release/manifest.json
+      - name: Prepare the product patch release
+        env:
+          RELEASE_NOTES_JSON: '["Moves menu exclusivity, outside-click dismissal and inactivity timing into exp-core 3.4.10 while preserving Dropper layout and saved preferences.","Removes the remaining private menu listeners and obsolete support-popover styles; support controls continue to come from Core.","Preserves the released Inventory recovery and exact-reward progress fixes without changing Twitch routing or claim safety."]'
+        run: |
+          node scripts/prepare-feature-release.cjs
+          python3 <<'PY'
+          import json, pathlib, re
+          version = json.loads(pathlib.Path('package.json').read_text())['version']
+          file = pathlib.Path('README.md')
+          text, count = re.subn(r'(## Current release\n\n).*?(?=\n\n## )', lambda m: m[1] + '**' + version + '** uses exp-core 3.4.10 for shared menu coordination, dismissal and inactivity timing while preserving Dropper layout and settings. It retains the Inventory recovery and exact-reward progress fixes. See [the changelog](CHANGELOG.md) for details.', file.read_text(), count=1, flags=re.S)
+          if count != 1: raise RuntimeError('README release section not found')
+          file.write_text(text)
+          PY
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Verify Core ownership and complete regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/verify-exp-core-pin.cjs | tee evidence/core-pin.txt
+          git clone --quiet --depth=1 --branch v3.4.10 https://github.com/ExtraPotions/exp-core.git /tmp/released-exp-core
+          node /tmp/released-exp-core/scripts/check-core-duplicates.cjs --enforce "$PWD" | tee evidence/ownership-scan.txt
+          npm test 2>&1 | tee evidence/tests.txt
+          npm run build:check
+          node --check src/dropper.user.js
+          node --check dropper.user.js
+          git diff --check
+          sha256sum dropper.user.js src/dropper.user.js > evidence/SHA256SUMS
+          npm run build
+          sha256sum --check evidence/SHA256SUMS
+      - name: Commit only the tested candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/integrate-dropper-core-menu.yml
+          git add src tests vendor package.json package-lock.json README.md CHANGELOG.md dropper.user.js
+          version="$(node -p "require('./package.json').version")"
+          git -c user.name=expDARE -c user.email=5340947+ExtraPotions@users.noreply.github.com commit -m "Prepare Dropper $version Core-owned menu correction"
+          git push origin HEAD:refs/heads/release/dropper-core-menu
+          git archive --format=zip --output=evidence/dropper-candidate.zip HEAD
+          cp dropper.user.js evidence/dropper.user.js
+          git rev-parse HEAD > evidence/commit.txt
+      - name: Retain verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: dropper-core-menu-${{ github.run_id }}
+          path: |
+            evidence/
+            test-artifacts/
+          retention-days: 7
+          if-no-files-found: error
