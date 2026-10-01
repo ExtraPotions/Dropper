@@ -142,8 +142,6 @@ test('progress visibility preserves the badge-only controls', () => {
   assert.match(source, /function syncProgressPanelPlacement\(\)/u);
   assert.match(source, /menuSlot\.append\(card\)/u);
   assert.match(source, /badgeRow\.insertBefore\(card, ui\.launcher\)/u);
-  assert.match(source, /function calculatedPanelWidth\(mode = normalizedCollapsedPanelWidth\(\)\)/u);
-  assert.match(source, /const panelWidth = calculatedPanelWidth\(panelMode\);/u);
   assert.match(source, /const menuPanelWidth = Math\.min\(panelWidth, Math\.max\(0, window\.innerWidth - 24\)\);/u);
   assert.match(source, /badgeOnlySlot\.style\.setProperty\("width", "100%", "important"\);/u);
   assert.match(source, /badgeOnlySlot\.style\.setProperty\("margin-left", "0", "important"\);/u);
@@ -167,7 +165,6 @@ test('all Dropper update and changelog notices share one menu-width card space',
   assert.match(source, /notice\.dataset\.placement = "menu";/u);
   assert.match(source, /delete notice\.dataset\.expFloatingNotice;/u);
   assert.match(source, /function noticePanelWidth\(\)/u);
-  assert.match(source, /return calculatedPanelWidth\(\);/u);
   assert.match(source, /placement: "menu"/u);
   // exp-core places the notice: beyond an open menu, above the progress card, or beside the launchers.
   assert.match(source, /ExtraPotionsCore\.placeNotice\(ui\.host, notice, railOpen \? ui\.dock : null\);/u);
@@ -222,7 +219,7 @@ test('unified progress panel follows the 3.2 layout without campaign navigation'
   assert.doesNotMatch(source, /campaign-topmenu/u);
   assert.doesNotMatch(source, /toggleCampaignNavigation/u);
   assert.match(source, /#tdh-settings-launcher \{[\s\S]*?width:48px;[\s\S]*?border-radius:10px;/u);
-  assert.match(source, /data-collapsed-width="compact"\] \{ width:min\(260px/u);
-  assert.match(source, /data-collapsed-width="narrow"\] \{ width:min\(220px/u);
-  assert.match(source, /data-collapsed-width="full"\] \{ width:min\(var\(--exp-menu-width,var\(--dropper-width, 312px\)\), calc/u);
 });
+
+assert.match(source, /ExtraPotionsCore\.menuWidth\(\)/u);
+assert.doesNotMatch(source, /normalizedCollapsedPanelWidth|calculatedPanelWidth|data-collapsed-width|data-panel-width|watchChatWidth|syncDropperWidthToChat/u);

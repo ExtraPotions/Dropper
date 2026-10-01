@@ -18,10 +18,11 @@ test('System tools fill both columns and remain contained when expanded', async 
   const host = page.locator('#tdh-root');
   await host.waitFor({ state: 'attached' });
   await host.evaluate(h => { const s=h.shadowRoot; s.querySelector('#tdh-settings-launcher').click(); s.querySelector('[data-panel="tdh-diagnostics-body"]').click(); });
-  for (const width of ['full','compact','narrow']) {
+  for (const width of [280, 596, 1280]) {
+    await page.setViewportSize({ width, height: 720 });
     for (const open of [false,true]) {
       const result = await host.evaluate((h,{width,open}) => {
-        const s=h.shadowRoot; s.querySelector('#tdh-cluster').dataset.panelWidth=width;
+        const s=h.shadowRoot;
         const group=s.querySelector('[data-dropper-tools]');
         const cards=[...group.children];cards.forEach(c=>c.open=open);
         const rect=group.getBoundingClientRect(),body=group.parentElement.getBoundingClientRect();
@@ -30,12 +31,12 @@ test('System tools fill both columns and remain contained when expanded', async 
           horizontal:group.scrollWidth-group.clientWidth,
           cards:cards.map(c=>{const r=c.getBoundingClientRect();return {left:r.left,top:r.top,right:r.right,height:r.height};}) };
       },{width,open});
-      assert.equal(result.columns,width==='narrow'?1:2,JSON.stringify({width,open,result}));
+      assert.equal(result.columns,2,JSON.stringify({width,open,result}));
       assert.ok(result.fullWidth,JSON.stringify(result));
       assert.ok(result.horizontal<=1,JSON.stringify(result));
       if(open)assert.ok(result.cards.every(c=>Math.abs((c.right-c.left)-(result.cards[0].right-result.cards[0].left))<2));
       if(!open)assert.ok(Math.max(...result.cards.map(c=>c.height))-Math.min(...result.cards.map(c=>c.height))<=1,JSON.stringify(result));
-      if(width!=='narrow' && !open){assert.ok(result.cards[1].left>result.cards[0].left);assert.equal(result.cards[1].top,result.cards[0].top);}
+      if(!open){assert.ok(result.cards[1].left>result.cards[0].left);assert.equal(result.cards[1].top,result.cards[0].top);}
     }
   }
 });

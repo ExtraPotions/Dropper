@@ -18,7 +18,7 @@ const exposed = source.replace('  startDropper();\n})();', `
     setGql: fn => { gql = fn; },
     configure: (drop, campaigns) => { currentDrop = drop; lastInventoryCampaigns = campaigns; lastCampaignCatalog = campaigns; },
     ignore: setCampaignGameIgnored, priority: campaignPriority, pickNext: pickNextOpenCampaignDrop,
-    setWidth: mode => { settings.collapsedPanelWidth = mode; applyAppearanceSettings(); },
+    relayout: () => { applyAppearanceSettings(); layoutChrome(); },
     setActiveClaims: value => { settings.claimBonus = value; settings.claimDrops = value; syncClaimWatchers(); },
     queueScan: queueClaimScan, setPriority: setCampaignPriority, priorityEntry: campaignPriorityEntry,
     priorityRank: campaignPriorityRank, priorityOrder: readCampaignPriorityOrder, movePriority: moveCampaignPriority,
@@ -318,7 +318,7 @@ test('an account change discards an in-flight response and cannot populate the n
   assert.equal(result.alice[0].outcome, 'discarded');
 }));
 
-test('ranked game priority is account-scoped, does not navigate, and existing chrome retains all three widths', async () => fixture(async page => {
+test('ranked game priority is account-scoped, does not navigate, and single-sized chrome fits different viewports', async () => fixture(async page => {
   const d = data(); d.campaigns[0].timeBasedDrops[0].self.currentMinutesWatched = 0;
   d.campaigns.push({
     id: 'campaign-b', name: 'Second campaign', status: 'ACTIVE',
@@ -328,8 +328,11 @@ test('ranked game priority is account-scoped, does not navigate, and existing ch
   });
   await page.evaluate(({ drop, campaigns }) => { window.__dropperTest.configure(drop, campaigns); window.__dropperTest.refresh(); window.dropperShow(); }, d);
   const widths = [];
-  for (const [mode, expected] of [['compact', 260]]) {
-    await page.evaluate(mode => { const t = window.__dropperTest; t.setWidth(mode); window.dropperShow(); const h = document.getElementById('tdh-root').shadowRoot.querySelector('[data-panel="tdh-drops-body"]'); const b = document.getElementById('tdh-root').shadowRoot.getElementById('tdh-drops-body'); if (b.classList.contains('fl-tool-hidden')) h.click(); }, mode);
+  for (const viewportWidth of [280, 596, 1280]) {
+    const expected = Math.min(260, viewportWidth - 24);
+    const mode = `viewport ${viewportWidth}`;
+    await page.setViewportSize({ width: viewportWidth, height: 900 });
+    await page.evaluate(mode => { const t = window.__dropperTest; t.relayout(); window.dropperShow(); const h = document.getElementById('tdh-root').shadowRoot.querySelector('[data-panel="tdh-drops-body"]'); const b = document.getElementById('tdh-root').shadowRoot.getElementById('tdh-drops-body'); if (b.classList.contains('fl-tool-hidden')) h.click(); }, mode);
     await page.waitForTimeout(300);
     const box = await page.evaluate(() => {
       const root = document.getElementById('tdh-root').shadowRoot;
@@ -348,7 +351,7 @@ test('ranked game priority is account-scoped, does not navigate, and existing ch
       };
     });
     widths.push(box.width); assert.ok(Math.abs(box.width - expected) <= 1, `${mode}: ${JSON.stringify(box)}`);
-    assert.ok(box.left >= 0 && box.right <= 1280); assert.ok(box.overflow <= 1, `${mode} content stays inside menu width`);
+    assert.ok(box.left >= 0 && box.right <= viewportWidth); assert.ok(box.overflow <= 1, `${mode} content stays inside menu width`);
     assert.ok(box.top >= 8 && box.bottom <= 892, `${mode} menu stays inside the viewport`);
     // The menu may sit beside the row (exp-core places it left of the launcher grid) or above/below it, never on it.
     const clear = box.bottom <= box.rowTop - 7 || box.top >= box.rowBottom + 7 || box.right <= box.rowLeft - 7;
@@ -789,11 +792,11 @@ test('account-link and deadline-risk cards render from verified campaign state',
 }));
 
 
-test('support popover stays inside narrow menu bounds', async () => fixture(async page => {
+test('support popover stays inside viewport-clamped menu bounds', async () => fixture(async page => {
   const geometry = await page.evaluate(async () => {
     window.dropperShow();
     const t = window.__dropperTest;
-    t.setWidth('narrow');
+    t.relayout();
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const root = document.getElementById('tdh-root').shadowRoot;
     root.getElementById('exp-support-button').click();
@@ -1181,8 +1184,9 @@ test('custom Dropper menu delegates outside closing, select protection and deadl
 }));
 
 test('custom Dropper menu yields suite ownership without replacing progress geometry', async () => fixture(async page => {
-  for (const mode of ['full', 'compact', 'narrow']) {
-    await page.evaluate(mode => { const t=window.__dropperTest; t.setWidth(mode); t.setMenuOpen(true, false); }, mode);
+  for (const mode of [360, 596, 1280]) {
+    await page.setViewportSize({ width: mode, height: 900 });
+    await page.evaluate(mode => { const t=window.__dropperTest; t.relayout(); t.setMenuOpen(true, false); }, mode);
     const before = await page.evaluate(() => {
       const root=document.getElementById('tdh-root').shadowRoot;
       const dock=root.getElementById('tdh-tools-dock');

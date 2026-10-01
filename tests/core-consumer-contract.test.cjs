@@ -67,12 +67,12 @@ test('private Core globals disappear once the public API is available', () => {
   assert.match(template, /ExtraPotionsCore\.mountMenuArrangement/u);
 });
 
-test('Dropper uses neutral Core width and opacity variables with temporary legacy mirrors', () => {
+test('Dropper uses neutral Core sizing and opacity from canonical Core variables', () => {
   assert.match(template, /--exp-menu-width/u);
   assert.match(template, /--exp-ui-opacity/u);
   assert.match(template, /setProperty\("--exp-menu-width"/u);
   assert.match(template, /setProperty\("--exp-ui-opacity"/u);
-  assert.match(template, /var\(--exp-menu-width,var\(--dropper-width, 312px\)\)/u);
+  assert.match(template, /var\(--exp-menu-width,260px\)/u);
   assert.match(template, /var\(--exp-ui-opacity,var\(--dropper-ui-opacity,1\)\)/u);
 });
 

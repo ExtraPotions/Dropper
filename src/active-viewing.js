@@ -13,7 +13,7 @@
       let state = null;
       let generation = 0;
       function persist() { try { save({ ...state }); } catch (_) {} }
-      function context(account, channel, automaticArrival = false) {
+      function context(account, channel, automaticArrival = false, arrivalSource = '') {
         account = text(account).toLowerCase(); channel = text(channel).toLowerCase();
         if (state && state.account === account && state.channel === channel) return false;
         const sameAccount = state?.account === account;
@@ -24,7 +24,8 @@
         state = {
           account, channel, paused: Boolean(saved?.paused),
           pauseReason: saved?.paused ? (saved.pauseReason === 'viewer' ? 'viewer' : 'unknown') : '',
-          manualStream: Boolean(channel && !automaticArrival && saved?.manualStream !== false),
+          manualStream: Boolean(channel && !automaticArrival && (arrivalSource === 'viewer-link' || saved?.manualStream !== false)),
+          arrivalSource: text(arrivalSource) || (automaticArrival ? 'dropper-navigation' : saved?.arrivalSource || (saved ? 'restored-selection' : 'unclassified-arrival')),
           playback: 'unknown', changedAt: now(),
           generation: ++generation,
           recoveryAttempts: previous?.channel === channel ? previous.recoveryAttempts || 0 : 0,
@@ -53,7 +54,7 @@
       }
       function allowSwitching() {
         if (!state) return;
-        state.manualStream = false; state.changedAt = now(); persist();
+        state.manualStream = false; state.arrivalSource = 'viewer-enabled-switching'; state.changedAt = now(); persist();
       }
       function navigationAllowed(explicit = false) {
         return Boolean(state && (explicit || (!state.paused && !state.manualStream)));
@@ -218,23 +219,41 @@
 
     function campaignSequence(campaign, now = Date.now(), bufferMinutes = 2) {
       const drops = campaign?.timeBasedDrops || campaign?.drops || [];
-      let remainingMinutes = 0, known = true, inProgress = false, pendingClaims = 0, watchRewards = 0;
+      let known = true, inProgress = false, pendingClaims = 0, watchRewards = 0;
+      let estimateReason = '', outstanding = [];
+      const fail = reason => { known = false; estimateReason ||= reason; };
+      const declaredModel = text(campaign?.timingModel).toLowerCase();
       for (const drop of drops) {
         if (drop?.self?.isClaimed === true) continue;
         const paid = Number(drop?.requiredSubs ?? drop?.requiredSubscriptions ?? drop?.requiredSubscriptionCount ?? drop?.subscriptionRequirement?.requiredSubs ?? 0) > 0;
         if (paid) continue;
-        const total = number(drop?.requiredMinutesWatched ?? drop?.requiredMinutes);
-        if (total === null || total <= 0) continue;
         watchRewards += 1;
+        const total = number(drop?.requiredMinutesWatched ?? drop?.requiredMinutes);
+        if (total === null || total <= 0) { fail('unknown-reward-duration'); continue; }
         const current = number(drop?.self?.currentMinutesWatched ?? drop?.currentMinutes);
-        if (current === null || current < 0) { known = false; continue; }
-        if (current > 0 && current < total) inProgress = true;
-        remainingMinutes += Math.max(0, total - current);
-        if (current >= total) pendingClaims += 1;
+        if (current === null || current < 0) { fail('unknown-reward-progress'); continue; }
+        if (current >= total) { pendingClaims += 1; continue; }
+        if (current > 0) inProgress = true;
+        const plan = planPrerequisites(drop, drops, declaredModel);
+        if (plan.totalRemainingMinutes === null) fail(plan.reason || 'prerequisite-timing-unverified');
+        const start = Date.parse(drop.startAt || campaign?.startAt || '');
+        const end = Date.parse(drop.endAt || campaign?.endAt || '');
+        if (Number.isFinite(start) && start > now) fail('reward-window-not-open');
+        outstanding.push({ remaining: Math.max(0, total - current), start, end });
       }
-      const knownRemaining = watchRewards > 0 && known ? remainingMinutes : null;
-      const deadline = deadlineAssessment(campaign, null, { totalRemainingMinutes: knownRemaining }, now, bufferMinutes);
-      return { watchRewards, remainingMinutes: knownRemaining, pendingClaims, inProgress, ...deadline };
+      // Twitch campaign watch-time milestones accrue simultaneously. Never add
+      // their overlapping bars, or transfer one reward's credit to another ID.
+      // https://dev.twitch.tv/docs/drops/campaign-guide/#time-based-drops
+      const windowKey = item => `${Number.isFinite(item.start) ? item.start : ''}:${Number.isFinite(item.end) ? item.end : ''}`;
+      if (new Set(outstanding.map(windowKey)).size > 1) fail('different-reward-windows');
+      const timingModel = !known ? 'unknown' : outstanding.length <= 1 ? 'single-reward' : declaredModel === 'sequential' ? 'sequential' : 'parallel';
+      const remainingMinutes = !watchRewards || !known ? null : timingModel === 'sequential'
+        ? outstanding.reduce((sum, item) => sum + item.remaining, 0)
+        : Math.max(0, ...outstanding.map(item => item.remaining));
+      const rewardEnd = outstanding.find(item => Number.isFinite(item.end))?.end;
+      const endAt = Number.isFinite(rewardEnd) ? new Date(rewardEnd).toISOString() : campaign?.endAt;
+      const deadline = deadlineAssessment({ ...campaign, endAt }, null, { totalRemainingMinutes: remainingMinutes }, now, bufferMinutes);
+      return { watchRewards, remainingMinutes, pendingClaims, inProgress, timingModel, estimateReason, ...deadline };
     }
 
     function rankCampaignCandidates(candidates, { priorityOf = () => 0, now = Date.now(), activeGame = '', bufferMinutes = 2 } = {}) {

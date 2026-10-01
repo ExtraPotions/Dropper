@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.47
+// @version      3.3.48
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -57,7 +57,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.47";
+  const APP_VERSION = "3.3.48";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -126,6 +126,7 @@
   const IGNORED_CAMPAIGN_GAMES_KEY = "dropper-ignored-campaign-games-v1";
   const CAMPAIGN_MEMORY_RESET_VERSION = "3.2.6";
   const STANDBY_REFRESH_KEY = "dropper-standby-refresh-at";
+  const STANDBY_MAINTENANCE_KEY = "dropper-standby-maintenance-at";
   const MUTE_PENDING_KEY = "dropper-mute-pending-v1";
   const MUTE_PENDING_MS = 45 * 1000;
   const TAB_PRESENCE_KEY = "dropper-tab-presence-v1";
@@ -201,6 +202,7 @@
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.3.48": ["Removes retired width settings, preset CSS and chat-width observers; menu sizing now comes from Core and fits the viewport.","Clears stale earning state when routing is held, records trustworthy manual-arrival evidence, and refreshes reward identity without inventing watch credit.","Uses simultaneous reward timing rather than adding overlapping campaign progress bars; ambiguous dependencies and windows remain unknown.","Separates standby cache maintenance from real observations and rediscoveries, preserving manual playback and navigation protections."],
     "3.3.47": ["Updates the shared foundation to exp-core 3.4.12.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.46": ["Updates the shared foundation to exp-core 3.4.11.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.45": ["Moves menu exclusivity, outside-click dismissal and inactivity timing into exp-core 3.4.10 while preserving Dropper layout and saved preferences.","Removes the remaining private menu listeners and obsolete support styles; support controls continue to come from Core.","Preserves the released Inventory recovery and exact-reward progress fixes without changing Twitch routing or claim safety."],
@@ -523,7 +525,6 @@
     resumeSessionOnRestart: true,
     restoreChannelPlayer: true,
     reduceMotion: false,
-    collapsedPanelWidth: "compact",
     uiTheme: "dropper",
     customOpacity: false,
     opacityPercent: 85,
@@ -660,7 +661,7 @@
       let state = null;
       let generation = 0;
       function persist() { try { save({ ...state }); } catch (_) {} }
-      function context(account, channel, automaticArrival = false) {
+      function context(account, channel, automaticArrival = false, arrivalSource = '') {
         account = text(account).toLowerCase(); channel = text(channel).toLowerCase();
         if (state && state.account === account && state.channel === channel) return false;
         const sameAccount = state?.account === account;
@@ -671,7 +672,8 @@
         state = {
           account, channel, paused: Boolean(saved?.paused),
           pauseReason: saved?.paused ? (saved.pauseReason === 'viewer' ? 'viewer' : 'unknown') : '',
-          manualStream: Boolean(channel && !automaticArrival && saved?.manualStream !== false),
+          manualStream: Boolean(channel && !automaticArrival && (arrivalSource === 'viewer-link' || saved?.manualStream !== false)),
+          arrivalSource: text(arrivalSource) || (automaticArrival ? 'dropper-navigation' : saved?.arrivalSource || (saved ? 'restored-selection' : 'unclassified-arrival')),
           playback: 'unknown', changedAt: now(),
           generation: ++generation,
           recoveryAttempts: previous?.channel === channel ? previous.recoveryAttempts || 0 : 0,
@@ -700,7 +702,7 @@
       }
       function allowSwitching() {
         if (!state) return;
-        state.manualStream = false; state.changedAt = now(); persist();
+        state.manualStream = false; state.arrivalSource = 'viewer-enabled-switching'; state.changedAt = now(); persist();
       }
       function navigationAllowed(explicit = false) {
         return Boolean(state && (explicit || (!state.paused && !state.manualStream)));
@@ -865,23 +867,41 @@
 
     function campaignSequence(campaign, now = Date.now(), bufferMinutes = 2) {
       const drops = campaign?.timeBasedDrops || campaign?.drops || [];
-      let remainingMinutes = 0, known = true, inProgress = false, pendingClaims = 0, watchRewards = 0;
+      let known = true, inProgress = false, pendingClaims = 0, watchRewards = 0;
+      let estimateReason = '', outstanding = [];
+      const fail = reason => { known = false; estimateReason ||= reason; };
+      const declaredModel = text(campaign?.timingModel).toLowerCase();
       for (const drop of drops) {
         if (drop?.self?.isClaimed === true) continue;
         const paid = Number(drop?.requiredSubs ?? drop?.requiredSubscriptions ?? drop?.requiredSubscriptionCount ?? drop?.subscriptionRequirement?.requiredSubs ?? 0) > 0;
         if (paid) continue;
-        const total = number(drop?.requiredMinutesWatched ?? drop?.requiredMinutes);
-        if (total === null || total <= 0) continue;
         watchRewards += 1;
+        const total = number(drop?.requiredMinutesWatched ?? drop?.requiredMinutes);
+        if (total === null || total <= 0) { fail('unknown-reward-duration'); continue; }
         const current = number(drop?.self?.currentMinutesWatched ?? drop?.currentMinutes);
-        if (current === null || current < 0) { known = false; continue; }
-        if (current > 0 && current < total) inProgress = true;
-        remainingMinutes += Math.max(0, total - current);
-        if (current >= total) pendingClaims += 1;
+        if (current === null || current < 0) { fail('unknown-reward-progress'); continue; }
+        if (current >= total) { pendingClaims += 1; continue; }
+        if (current > 0) inProgress = true;
+        const plan = planPrerequisites(drop, drops, declaredModel);
+        if (plan.totalRemainingMinutes === null) fail(plan.reason || 'prerequisite-timing-unverified');
+        const start = Date.parse(drop.startAt || campaign?.startAt || '');
+        const end = Date.parse(drop.endAt || campaign?.endAt || '');
+        if (Number.isFinite(start) && start > now) fail('reward-window-not-open');
+        outstanding.push({ remaining: Math.max(0, total - current), start, end });
       }
-      const knownRemaining = watchRewards > 0 && known ? remainingMinutes : null;
-      const deadline = deadlineAssessment(campaign, null, { totalRemainingMinutes: knownRemaining }, now, bufferMinutes);
-      return { watchRewards, remainingMinutes: knownRemaining, pendingClaims, inProgress, ...deadline };
+      // Twitch campaign watch-time milestones accrue simultaneously. Never add
+      // their overlapping bars, or transfer one reward's credit to another ID.
+      // https://dev.twitch.tv/docs/drops/campaign-guide/#time-based-drops
+      const windowKey = item => `${Number.isFinite(item.start) ? item.start : ''}:${Number.isFinite(item.end) ? item.end : ''}`;
+      if (new Set(outstanding.map(windowKey)).size > 1) fail('different-reward-windows');
+      const timingModel = !known ? 'unknown' : outstanding.length <= 1 ? 'single-reward' : declaredModel === 'sequential' ? 'sequential' : 'parallel';
+      const remainingMinutes = !watchRewards || !known ? null : timingModel === 'sequential'
+        ? outstanding.reduce((sum, item) => sum + item.remaining, 0)
+        : Math.max(0, ...outstanding.map(item => item.remaining));
+      const rewardEnd = outstanding.find(item => Number.isFinite(item.end))?.end;
+      const endAt = Number.isFinite(rewardEnd) ? new Date(rewardEnd).toISOString() : campaign?.endAt;
+      const deadline = deadlineAssessment({ ...campaign, endAt }, null, { totalRemainingMinutes: remainingMinutes }, now, bufferMinutes);
+      return { watchRewards, remainingMinutes, pendingClaims, inProgress, timingModel, estimateReason, ...deadline };
     }
 
     function rankCampaignCandidates(candidates, { priorityOf = () => 0, now = Date.now(), activeGame = '', bufferMinutes = 2 } = {}) {
@@ -1219,15 +1239,11 @@
   }
   restoreCurrentDropMetadataFromKnownCampaigns();
   repairRoutingIdentity();
-  let chatWidthObserver = null;
-  let chatDomObserver = null;
-  let observedChatElement = null;
   let bonusClaimObserver = null;
   let dropClaimObserver = null;
   let suppressedSubscriptionPromoCount = 0;
   let lastPromoScanAt = 0;
   let lastQueueRefreshAt = 0;
-  let lastStandbyRefreshAt = Number(readSession(STANDBY_REFRESH_KEY, 0)) || 0;
   let duplicateNavigationSkips = 0;
   let lastGqlPollAt = 0;
   let lastGqlSuccessAt = 0;
@@ -1256,6 +1272,12 @@
   let lastGqlReason = "";
   let activityLog = readSession(ACTIVITY_LOG_KEY, []);
   let standbyCache = readSession(STANDBY_CACHE_KEY, []);
+  if (!Array.isArray(standbyCache)) standbyCache = [];
+  // Only observed candidate timestamps count as discovery freshness. The old
+  // refresh key could record pruning alone, so do not trust it on upgrade.
+  let lastStandbyRefreshAt = Math.max(0, ...standbyCache.map(item => Number(item?.seenAt) || 0));
+  let lastStandbyMaintenanceAt = Number(readSession(STANDBY_MAINTENANCE_KEY, 0)) || 0;
+  let lastStandbyMaintenance = null;
   let lastRoutingCandidateSnapshot = {
     at: 0,
     game: "",
@@ -1297,6 +1319,7 @@
 
   const VIEWING_INTENT_KEY = 'dropper-viewing-intent-v1';
   const VIEWING_NAVIGATION_KEY = 'dropper-viewing-navigation-v1';
+  const VIEWING_SELECTION_KEY = 'dropper-viewing-selection-v1';
   const MANUAL_STREAM_LOCK_KEY = 'dropper-manual-stream-lock-v1';
   const CLAIM_HISTORY_KEY = 'dropper-claim-history-v1';
   const CAMPAIGN_PRIORITY_KEY = 'dropper-campaign-priority-v1';
@@ -1363,6 +1386,11 @@
     campaignMemory = loadCampaignMemory();
     ignoredCampaignGames = loadIgnoredCampaignGames();
     activityLog = readSession(ACTIVITY_LOG_KEY, []);
+    standbyCache = readSession(STANDBY_CACHE_KEY, []);
+    if (!Array.isArray(standbyCache)) standbyCache = [];
+    lastStandbyRefreshAt = Math.max(0, ...standbyCache.map(item => Number(item?.seenAt) || 0));
+    lastStandbyMaintenanceAt = Number(readSession(STANDBY_MAINTENANCE_KEY, 0)) || 0;
+    lastStandbyMaintenance = null;
     lastStreamVerification = null;
     lastSessionPoll = null;
     clientIntegrity = { token: '', clientId: '', expiresAt: 0, transport: '', deviceId: '' };
@@ -1377,6 +1405,8 @@
 
   function automaticViewingArrival(login = watchingLogin(), now = Date.now()) {
     const requested = readSession(VIEWING_NAVIGATION_KEY, null);
+    const selected = readSession(VIEWING_SELECTION_KEY, null);
+    if (selected?.channel === login && selected.until > now) return false;
     return Boolean(requested && requested.channel === login && requested.until > now);
   }
 
@@ -1385,9 +1415,12 @@
     if (viewingAccount !== account) resetViewingAccount(account);
     const login = watchingLogin() || '';
     const automaticArrival = automaticViewingArrival(login);
-    const changed = viewingIntent.context(account, login, automaticArrival);
+    const selected = readSession(VIEWING_SELECTION_KEY, null);
+    const arrivalSource = selected?.channel === login && selected.until > Date.now() ? 'viewer-link' : automaticArrival ? 'dropper-navigation' : '';
+    const changed = viewingIntent.context(account, login, automaticArrival, arrivalSource);
     if (changed) {
       viewingVideo = null;
+      lastStreamVerification = null;
       lastViewingNavigationBlock = '';
       recentPlaybackControl = { action: '', at: 0 };
     }

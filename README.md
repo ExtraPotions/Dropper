@@ -12,7 +12,15 @@ Track Twitch-credited progress, manage eligible streams, and claim available rew
 
 ## Current release
 
-**3.3.45** uses exp-core 3.4.10 for shared menu coordination, dismissal and inactivity timing while preserving Dropper layout and settings. It retains the Inventory recovery and exact-reward progress fixes. See [the changelog](CHANGELOG.md) for details.
+**3.3.48** uses exp-core 3.4.12 for one shared, viewport-clamped menu size and removes retired width settings and observers. It corrects held routing state, session identity diagnostics, overlapping campaign estimates, and standby freshness reporting while preserving manual viewing, reward identity, and claim safeguards. See [the changelog](CHANGELOG.md) for details.
+
+## Sizing and recovery behavior
+
+Menus use one shared preferred size from exp-core and clamp to the available viewport. There are no selectable width presets. Upgrading discards only the retired width preferences and retains other saved settings.
+
+When automatic routing is held by manual viewing or a playback pause, its controller reports a paused state and clears the previous channel's earning evidence. Unknown arrivals are identified as unclassified rather than attributed to a viewer click or an assumed raid. Explicit viewer selections remain protected; resuming automatic routing verifies the current eligible channel or rediscovers candidates in the target category.
+
+Campaign watch-time milestones use the longest outstanding bar instead of adding overlapping bars. Missing durations or progress, unverified dependencies, and differing reward windows retain an unknown estimate. Reward credit still belongs to its exact reward ID. Cache maintenance does not count as fresh stream discovery or interrupt a healthy viewing session.
 
 ## Get started
 
