@@ -1,0 +1,89 @@
+name: Integrate validated reward-data R2
+
+on:
+  push:
+    branches: [release/reward-data-r2-3.3.43]
+    paths: [.release-staging/**, .github/workflows/integrate-reward-data-r2.yml]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: integrate-reward-data-r2
+  cancel-in-progress: false
+
+jobs:
+  integrate:
+    if: github.repository == 'ExtraPotions/Dropper'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+          cache: npm
+      - name: Preserve integration inputs
+        run: zip -q -r integration-inputs.zip .release-staging .github/workflows/integrate-reward-data-r2.yml
+      - name: Verify and apply reviewed source patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 70bd30ed9e1da983ba87d82ce85020177b7ea880
+          node <<'NODE'
+          const fs = require('node:fs');
+          const crypto = require('node:crypto');
+          const zlib = require('node:zlib');
+          const chunks = Array.from({length:5}, (_,i) => fs.readFileSync(`.release-staging/reward-data-r2/patch-${i}.b64`, 'utf8').replace(/\s/g, ''));
+          // Restore a known single-character transport transcription before verifying the complete patch.
+          chunks[2] = chunks[2].replace('ne2425ra5vg', 'ne2425rq5vg');
+          const patch = zlib.gunzipSync(Buffer.from(chunks.join(''), 'base64'));
+          const hash = crypto.createHash('sha256').update(patch).digest('hex');
+          if (hash !== '06a9ce1988f0fe5e9d423a00bbce157654495ba2f143392f646a847c2dedab86') throw new Error('Reviewed source patch checksum mismatch');
+          fs.writeFileSync('/tmp/reward-data-release.patch', patch);
+          console.log('Verified source patch SHA256:', hash);
+          NODE
+          git apply --check /tmp/reward-data-release.patch
+          git apply /tmp/reward-data-release.patch
+          test "$(node -p "require('./package.json').version")" = 3.3.43
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Verify pinned Core
+        run: node scripts/verify-exp-core-pin.cjs
+      - name: Run complete regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test 2>&1 | tee integration-test-results.txt
+          npm run build:check
+          node --check src/dropper.user.js
+          node --check dropper.user.js
+          git diff --check
+          sha256sum dropper.user.js src/dropper.user.js > integration-sha256.txt
+          npm run build
+          sha256sum --check integration-sha256.txt
+      - name: Commit tested release candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -r .release-staging .github/workflows/integrate-reward-data-r2.yml
+          git add CHANGELOG.md README.md package.json package-lock.json src tests dropper.user.js
+          git -c user.name=expDARE -c user.email=5340947+ExtraPotions@users.noreply.github.com commit -m 'Prepare Dropper 3.3.43 validated reward-data release'
+          git push origin HEAD:refs/heads/release/reward-data-r2-3.3.43
+          git archive --format=zip --output=dropper-release-candidate.zip HEAD
+      - name: Retain verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: dropper-r2-integration-${{ github.run_id }}
+          path: |
+            integration-inputs.zip
+            integration-test-results.txt
+            integration-sha256.txt
+            dropper-release-candidate.zip
+            test-artifacts/
+            dropper.user.js
+          retention-days: 7
+          if-no-files-found: error
