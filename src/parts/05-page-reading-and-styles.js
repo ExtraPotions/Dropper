@@ -99,10 +99,38 @@
     return on.length ? `On: ${on.join(" · ")}` : "All features off";
   }
 
+  function hasConfirmedRewardProgress(drop = currentDrop, login = watchingLogin(), now = Date.now()) {
+    const proof = lastStreamVerification;
+    return Boolean(drop?.id && proof?.proof?.progressConfirmed === true &&
+      cleanText(proof.dropId) === cleanText(drop.id) && cleanText(proof.channel).toLowerCase() === cleanText(login).toLowerCase() &&
+      cleanText(proof.campaignKey).toLowerCase() === cleanText(drop.campaignKey || drop.campaignId).toLowerCase() &&
+      now >= Number(proof.at) && now - Number(proof.at) < HEALTHY_STREAM_DELAYED_MS);
+  }
+
+  function rewardCreditStatus(drop = currentDrop, login = watchingLogin()) {
+    const resolution = rewardSessionResolution;
+    const sameTarget = resolution && resolution.channel === login &&
+      resolution.targetDropId === cleanText(drop?.id) &&
+      campaignKeysMatch(resolution.campaignKey, drop?.campaignKey || drop?.campaignId) &&
+      Date.now() - resolution.at < HEALTHY_STREAM_DELAYED_MS;
+    if (sameTarget && ["prerequisite", "other-reward", "unresolved"].includes(resolution.relation)) {
+      const subject = resolution.relation === "prerequisite" ? "prerequisite" : "another reward";
+      const minutes = resolution.sessionMinutes == null ? "" : ` (${resolution.sessionMinutes} min)`;
+      return `Twitch reports ${subject}: ${resolution.sessionName}${minutes} · Selected: ${drop.name || "Drop"}`;
+    }
+    if (hasConfirmedRewardProgress(drop, login)) return `Earning ${drop.name || "Drop"} On ${login}`;
+    return inventoryResponseHealth.valid
+      ? "Eligible stream · syncing reward progress"
+      : "Eligible stream · inventory unavailable, syncing reward progress";
+  }
+
   function dropActivityStatus(drop = currentDrop, login = watchingLogin()) {
     if (!drop) return featureStatus();
     const reward = cleanText(drop.name || "Drop");
-    if (login) return `Working toward ${reward} on ${login}`;
+    if (login) {
+      if (readRoutingControllerSession().state === ROUTING_STATES.EARNING) return rewardCreditStatus(drop, login);
+      return `Working toward ${reward} on ${login}`;
+    }
 
     const current = Number(drop.currentMinutes);
     const required = Number(drop.requiredMinutes);
@@ -223,7 +251,11 @@
 
   function queueInventoryClaimSweep(campaigns, source = 'inventory') {
     if (inventoryClaimSweepPromise) return inventoryClaimSweepPromise;
-    const snapshot = Array.isArray(campaigns) ? campaigns : [];
+    if (!Array.isArray(campaigns)) {
+      inventoryClaimSweepState = { at: Date.now(), source, candidates: null, selected: 0, confirmed: 0, reason: 'inventory-unavailable' };
+      return Promise.resolve(0);
+    }
+    const snapshot = campaigns;
     inventoryClaimSweepPromise = Promise.resolve()
       .then(() => sweepClaimReadyInventory(snapshot, source))
       .catch(() => 0)

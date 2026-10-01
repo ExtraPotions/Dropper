@@ -205,7 +205,10 @@
       const endMs = Date.parse(drop?.endAt || campaign?.endAt || '');
       const deadlineMs = Number.isFinite(endMs) ? endMs : null;
       const minutesUntilDeadline = deadlineMs === null ? null : Math.max(0, Math.floor((deadlineMs - now) / 60000));
-      const requiredMinutes = Number.isFinite(Number(plan?.totalRemainingMinutes)) ? Math.max(0, Number(plan.totalRemainingMinutes)) : null;
+      const rawRemaining = plan?.totalRemainingMinutes;
+      const remaining = typeof rawRemaining === 'number' || (typeof rawRemaining === 'string' && rawRemaining.trim() !== '')
+        ? number(rawRemaining) : null;
+      const requiredMinutes = remaining !== null && remaining >= 0 ? remaining : null;
       const safeBufferMinutes = Math.max(0, Number(bufferMinutes) || 0);
       const finishable = minutesUntilDeadline === null || requiredMinutes === null ? null : requiredMinutes + safeBufferMinutes <= minutesUntilDeadline;
       const marginMinutes = minutesUntilDeadline === null || requiredMinutes === null ? null : minutesUntilDeadline - requiredMinutes - safeBufferMinutes;

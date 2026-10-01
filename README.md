@@ -10,6 +10,10 @@ Track Twitch-credited progress, manage eligible streams, and claim available rew
 [![Code: PolyForm Noncommercial 1.0.0](docs/badges/code.svg)](LICENSE-CODE.md)
 [![Artwork and documentation: CC BY-NC-SA 4.0](docs/badges/assets.svg)](LICENSE-ASSETS.md)
 
+## Current release
+
+**3.3.43** repairs Inventory requests and preserves exact-reward progress through claims and reward transitions. The validated `reward-data-r2` fixes are now included in the regular release. See [the changelog](CHANGELOG.md) for details.
+
 ## Get started
 
 1. Install a userscript manager such as [Violentmonkey](https://violentmonkey.github.io/get-it/) or [Tampermonkey](https://www.tampermonkey.net/).

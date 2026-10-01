@@ -594,6 +594,7 @@
     const sweep = inventoryClaimSweepState || {};
     if (sweep.reason === 'claimed') parts.push(`Inventory sweep: ${Number(sweep.confirmed || 0)} claimed`);
     else if (sweep.reason === 'none-ready') parts.push('Inventory sweep: none ready');
+    else if (sweep.reason === 'inventory-unavailable') parts.push('Inventory sweep: unavailable');
     else if (sweep.reason === 'secondary-tab') parts.push('Inventory sweep: managed by another tab');
     else if (sweep.reason === 'disabled') parts.push('Inventory sweep: disabled');
     return parts.join(' · ');
@@ -2528,6 +2529,7 @@
           ? "credited-progress"
           : "gql-campaign+game",
         channel: login || target || null,
+        dropId: currentDrop?.id || null,
         game: targetGame || null,
         campaign: session.targetCampaign || currentDrop?.campaign || null,
         campaignKey: session.targetCampaignKey || currentDrop?.campaignKey || currentDrop?.campaignId || null,
@@ -2800,7 +2802,7 @@
       );
     }
 
-    setStatus(`Earning ${currentDrop.name || "Drop"} On ${login}`);
+    setStatus(rewardCreditStatus(currentDrop, login));
     return false;
   }
 

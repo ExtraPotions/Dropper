@@ -101,8 +101,9 @@ assert.match(source, /CAMPAIGNS_URL = "https:\/\/www\.twitch\.tv\/drops\/campaig
 assert.match(source, /variables: \{ fetchRewardCampaigns: true \}/, "inventory requests include Twitch reward campaigns");
 assert.match(source, /CAMPAIGN_CATALOG_KEY = "dropper-campaign-catalog"/, "campaign catalog has cross-navigation storage");
 assert.match(source, /lastCampaignCatalog = campaignCatalogCache\.campaigns/, "saved campaigns are restored after Twitch navigation");
-assert.match(source, /rememberCampaignCatalog\(discoveredCampaigns, "dropper-inventory-poll"\)/, "inventory polling overlays discovered campaigns onto the dashboard catalog");
-assert.match(source, /applyInventorySnapshot\(inventoryCampaigns, "dropper-in-progress-poll"\)/, "inventory polling overlays in-progress progress without replacing dashboard membership");
+assert.match(source, /acceptInventoryResponse\(inventoryRow, "inventory-poll"\)/, "inventory polling uses the validated response consumer");
+assert.match(source, /if \(!result\.valid\)[\s\S]*return result;[\s\S]*rememberCampaignCatalog\(discovered, source\)/, "only valid inventory responses overlay discovered campaigns onto the dashboard catalog");
+assert.match(source, /applyInventorySnapshot\(result.campaigns, source\)/, "inventory polling overlays in-progress progress without replacing dashboard membership");
 assert.match(source, /replaceCatalogFromDashboard\(dashboardCampaigns, "viewer-drops-dashboard"\)/, "ViewerDropsDashboard replaces campaign catalog membership");
 assert.match(source, /op: "viewerDropsDashboard"/, "ViewerDropsDashboard is requested on Dropper GQL polls");
 assert.match(source, /name: "ViewerDropsDashboard"/, "ViewerDropsDashboard persisted query is registered");

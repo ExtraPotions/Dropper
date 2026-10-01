@@ -580,6 +580,11 @@
     lastCampaignCatalog = [];
     lastCampaignCatalogAt = 0;
     lastInventoryCampaigns = [];
+    inventoryResponseHealth = { valid: false, status: 'not-seen', at: 0, lastValidAt: 0, source: '', shape: null };
+    rewardSessionResolution = null;
+    campaignDetailsAttempts.clear();
+    campaignDetailsMisses.clear();
+    campaignDetailsCache.clear();
     lastInProgressKeys = new Set();
     haveSeenInventorySnapshot = false;
 
@@ -708,6 +713,7 @@
     const diagnosticQueueCandidates = discoverQueueCandidates(now);
     return {
       report: "Dropper Diagnostics",
+      build: "reward-data-r2",
       version: APP_VERSION,
       accountScope: {
         login: twitchSessionLogin() || null,
@@ -846,6 +852,10 @@
         activityEventsIncluded: diagnosticActivity.length,
         activityEventsOmitted: Math.max(0, activityEntries.length - diagnosticActivity.length),
       },
+      inventoryResponse: { ...inventoryResponseHealth,
+        at: inventoryResponseHealth.at ? new Date(inventoryResponseHealth.at).toISOString() : null,
+        lastValidAt: inventoryResponseHealth.lastValidAt ? new Date(inventoryResponseHealth.lastValidAt).toISOString() : null },
+      rewardResolution: rewardSessionResolution ? { ...rewardSessionResolution, at: new Date(rewardSessionResolution.at).toISOString() } : null,
       progressReconciliation: lastProgressReconcile ? {
         ...lastProgressReconcile,
         at: new Date(lastProgressReconcile.at).toISOString(),
@@ -938,6 +948,7 @@
         nextPollAt: nextGqlPollAt ? new Date(nextGqlPollAt).toISOString() : null,
         inFlight: gqlPollInFlight,
         errorStreak: gqlErrorStreak,
+        inventoryDegraded: inventoryResponseHealth.valid === false,
         lastReason: lastGqlReason || null,
         pendingReason: pendingGqlReason || null,
         lastPollAt: lastGqlPollAt ? new Date(lastGqlPollAt).toISOString() : null,

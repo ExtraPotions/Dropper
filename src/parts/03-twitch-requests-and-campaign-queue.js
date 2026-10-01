@@ -41,6 +41,8 @@
       if (!builtIn || !GQL_HASH_PATTERN.test(hash) || hash === builtIn.hash) return;
       const row = rows[index];
       if (!row?.data || (Array.isArray(row.errors) && row.errors.length)) return;
+      const expected = GQL_EXPECTED_SHAPES[name];
+      if (expected && !expected(row.data)) return;
       if (learnedGqlOperation(name)?.hash === hash) return;
       gqlLearnedOperations[name] = {
         hash,
@@ -60,8 +62,9 @@
 
   // A learned hash Twitch no longer recognises is dropped so the next request
   // falls back to the built-in one until the page shows a newer hash.
-  function forgetLearnedGqlOperation(name, reason) {
-    if (!learnedGqlOperation(name)) return;
+  function forgetLearnedGqlOperation(name, reason, expectedHash = "") {
+    const learned = learnedGqlOperation(name);
+    if (!learned || (expectedHash && learned.hash !== expectedHash)) return;
     delete gqlLearnedOperations[name];
     saveLearnedGqlOperations();
     logActivity("gql-operation", `Dropped the learned ${name} request`, { operation: name, reason });
@@ -188,23 +191,23 @@
     return token;
   }
 
-  function ingestTwitchGqlRows(rows, source = "twitch-page-intercept") {
+  function ingestTwitchGqlRows(rows, source = "twitch-page-intercept", operations = []) {
     if (!Array.isArray(rows) || !rows.length) return false;
     let touched = false;
-    let inventoryCampaigns = null;
+    let inventoryRow = null;
     let dashboardCampaigns = null;
     let sessionRow = null;
     let availableCampaigns = null;
 
-    for (const row of rows) {
+    for (const [index, row] of rows.entries()) {
       if (!row || typeof row !== "object") continue;
       const data = row.data;
-      if (!data || typeof data !== "object") continue;
-      const inventory = data.currentUser?.inventory?.dropCampaignsInProgress;
-      if (Array.isArray(inventory)) {
-        inventoryCampaigns = inventory;
+      if (operations?.[index]?.name === "Inventory" ||
+          Object.prototype.hasOwnProperty.call(data?.currentUser || {}, "inventory")) {
+        inventoryRow = row;
         touched = true;
       }
+      if (!data || typeof data !== "object" || (Array.isArray(row.errors) && row.errors.length)) continue;
       const dashboard = data.currentUser?.dropCampaigns;
       if (Array.isArray(dashboard)) {
         dashboardCampaigns = dashboard;
@@ -227,12 +230,20 @@
 
     if (!touched) return false;
 
-    lastTwitchGqlAt = Date.now();
-    lastGqlSuccessAt = Date.now();
-    lastGqlError = "";
-    clearGqlFailurePause(source);
-    networkState.consecutiveFailures = 0;
-    persistNetworkState();
+    // Observing an Inventory error is not evidence that the data service has
+    // recovered. Only successful read data can clear the network failure state.
+    const hasFreshRead = Boolean(
+      (inventoryRow && inventoryResponseState(inventoryRow).valid) ||
+      dashboardCampaigns || sessionRow || availableCampaigns
+    );
+    if (hasFreshRead) {
+      lastTwitchGqlAt = Date.now();
+      lastGqlSuccessAt = Date.now();
+      lastGqlError = "";
+      clearGqlFailurePause(source);
+      networkState.consecutiveFailures = 0;
+      persistNetworkState();
+    }
 
     if (Array.isArray(dashboardCampaigns)) {
       lastCampaignDashboardAt = Date.now();
@@ -242,13 +253,7 @@
         markCampaignPageImport(open.length, source, CAMPAIGN_PAGE_DISPLAY.GQL_AUTH);
       }
     }
-    if (Array.isArray(inventoryCampaigns)) {
-      const discovered = extractCampaignCatalog({ data: { currentUser: { inventory: { dropCampaignsInProgress: inventoryCampaigns } } } });
-      if (discovered.length) rememberCampaignCatalog(discovered, source);
-      applyInventorySnapshot(inventoryCampaigns, source);
-      reconcileClaimHistory(inventoryCampaigns);
-      void queueInventoryClaimSweep(inventoryCampaigns, source);
-    }
+    if (inventoryRow) acceptInventoryResponse(inventoryRow, source);
 
     const campaignPool = mergeCampaigns(
       lastCampaignCatalog,
@@ -256,9 +261,10 @@
     );
     const routingController = isAutoRoutingController();
     if (!routingController) noteDeferredAutoRouting("page-gql-deferred");
-    const sessionDrop = sessionRow ? parseSessionDrop(sessionRow, mergeCampaigns(lastInventoryCampaigns, availableCampaigns || [])) : null;
+    const sessionDrop = sessionRow ? parseSessionDrop(sessionRow, mergeCampaigns(routingCampaignPool(), availableCampaigns || [])) : null;
+    if (sessionRow) recordRewardSessionResolution(sessionDrop, routingCampaignPool());
     if (currentDrop) {
-      const liveInventoryDrop = findActiveDropInCampaigns(lastInventoryCampaigns, currentDrop);
+      const liveInventoryDrop = inventoryResponseHealth.valid ? findActiveDropInCampaigns(lastInventoryCampaigns, currentDrop) : null;
       const sessionIdentity = sessionDrop
         ? dropIdentityMatchesTarget(sessionDrop, currentDrop)
         : { matchesTarget: false };
@@ -326,7 +332,7 @@
     }
     try {
       const rows = parseGqlRows(json, status);
-      ingestTwitchGqlRows(rows, "twitch-page-intercept");
+      ingestTwitchGqlRows(rows, "twitch-page-intercept", operations || []);
     } catch (_) {
       /* ignore non-drops or error payloads from Twitch's own traffic */
     }
@@ -560,7 +566,7 @@
     );
   }
 
-  function parseGqlRows(json, status = 200) {
+  function parseGqlRows(json, status = 200, { requests = null, allowInventoryFailure = false } = {}) {
     if (status < 200 || status >= 300) throw new Error(`GQL HTTP ${status}`);
     const rows = Array.isArray(json) ? json : [json];
     if (
@@ -572,12 +578,22 @@
         (!Object.prototype.hasOwnProperty.call(row, "data") && !Array.isArray(row.errors))
       )
     ) throw new Error("Malformed Twitch GQL response");
+    if (requests && rows.length !== requests.length) {
+      throw new Error("Twitch GQL response count does not match the request batch");
+    }
+    // Only the read-only polling path may retain sibling responses when the
+    // Inventory document cannot be selected. Auth, integrity, HTTP and service
+    // failures remain fatal, as do all errors in mutation-containing batches.
+    const readOnly = Array.isArray(requests) && requests.length > 0 && requests.every((req) =>
+      ["inventory", "viewerDropsDashboard", "streamInfo", "currentDrop", "availableDrops", "dropCampaignDetails"].includes(req?.op)
+    );
     const hardErrors = [];
-    for (const row of rows) {
+    for (const [index, row] of rows.entries()) {
       const errors = Array.isArray(row?.errors) ? row.errors : [];
       if (!errors.length) continue;
       const hasData = row?.data != null && typeof row.data === "object";
       if (hasData && errors.every(isSoftGqlError)) continue;
+      if (allowInventoryFailure === true && readOnly && requests[index]?.op === "inventory" && gqlOperationFailureKind(row)) continue;
       hardErrors.push(...errors);
     }
     if (hardErrors.length) {
@@ -585,19 +601,85 @@
         .map((item) => cleanText(item?.message || ""))
         .filter(Boolean)
         .join(" · ");
-      throw new Error(message || "Twitch GQL error");
+      const error = new Error(message || "Twitch GQL error");
+      error.gqlDefinitionFailure = hardErrors.every((item) => gqlOperationFailureKind({ errors: [item] }));
+      const inventoryIndex = requests?.findIndex((req) => req?.op === "inventory") ?? -1;
+      if (inventoryIndex >= 0 && Array.isArray(rows[inventoryIndex]?.errors) && rows[inventoryIndex].errors.length) {
+        error.inventoryRow = rows[inventoryIndex];
+      }
+      throw error;
     }
     return rows;
   }
 
-  // Expected top-level keys per operation. A response missing them means Twitch
-  // changed the query under the hash, which is otherwise silent.
+  // Validate operation responses without treating missing or unavailable data as
+  // an empty inventory. A rejected shape alone does not prove a Twitch schema change.
   const GQL_EXPECTED_SHAPES = {
-    Inventory: (data) => Array.isArray(data?.currentUser?.inventory?.dropCampaignsInProgress) || data?.currentUser?.inventory === null,
+    Inventory: (data) => inventoryResponseState({ data }).valid,
     ViewerDropsDashboard: (data) => Array.isArray(data?.currentUser?.dropCampaigns) || data?.currentUser === null,
   };
 
-  function checkGqlOperationResults(requests, json, status) {
+  function gqlOperationFailureKind(row) {
+    // A missing operation is distinct from both authorization and a response
+    // schema change. Do not classify a partial data response as safe to defer.
+    if (row?.data != null || !Array.isArray(row?.errors) || !row.errors.length) return "";
+    const errors = row.errors.map((item) => ({
+      message: cleanText(item?.message || ""),
+      code: cleanText(item?.extensions?.code || ""),
+    }));
+    if (errors.some((item) => /auth|forbidden|integrity|rate.?limit|too.?many|429|401|403/i.test(item.code))) return "";
+    if (errors.every((item) => /^(PersistedQueryNotFound|PERSISTED_QUERY_NOT_FOUND)$/i.test(item.message) ||
+        /^(PersistedQueryNotFound|PERSISTED_QUERY_NOT_FOUND)$/i.test(item.code))) return "hash-not-found";
+    if (errors.every((item) => /^(?:operation with name ['"][A-Za-z_][A-Za-z0-9_]*['"] not found|unknown operation named ['"][A-Za-z_][A-Za-z0-9_]*['"])[.!]?$/i.test(item.message))) return "operation-not-found";
+    return "";
+  }
+
+  function inventoryResponseState(row) {
+    const data = row?.data;
+    const user = data?.currentUser;
+    const inventory = user?.inventory;
+    const campaigns = inventory?.dropCampaignsInProgress;
+    const errors = Array.isArray(row?.errors) ? row.errors : [];
+    const type = value => value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
+    // Keep bounded GraphQL field names and types, not response values, account
+    // values or tokens. Field names help identify a changed response envelope.
+    const fields = value => value && typeof value === "object" && !Array.isArray(value)
+      ? Object.keys(value).filter(key => /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(key)).slice(0, 12) : [];
+    const types = { data: type(data), currentUser: type(user), inventory: type(inventory),
+      campaigns: type(campaigns), errorCount: errors.length };
+    const shape = { ...types, dataFields: fields(data), userFields: fields(user), inventoryFields: fields(inventory) };
+    const validRows = Array.isArray(campaigns) && campaigns.every(campaign => (
+      campaign && typeof campaign === "object" && !Array.isArray(campaign)
+    ));
+    const valid = validRows && !errors.length;
+    const status = valid ? (campaigns.length ? "ok" : "empty")
+      : errors.length ? (validRows ? "partial-response" : "error")
+        : data === null || user === null || inventory === null || campaigns === null
+          ? "unavailable" : "shape-changed";
+    return { valid, status, campaigns: valid ? campaigns : null, shape,
+      detail: Object.entries(types).map(([key, value]) => `${key}=${value}`).join(";") };
+  }
+
+  function acceptInventoryResponse(row, source = "inventory-response") {
+    const result = inventoryResponseState(row);
+    const now = Date.now();
+    inventoryResponseHealth = { valid: result.valid, status: result.status, at: now,
+      lastValidAt: result.valid ? now : inventoryResponseHealth.lastValidAt,
+      source, shape: result.shape };
+    if (!result.valid) {
+      inventoryClaimSweepState = { at: now, source, candidates: null, selected: 0,
+        confirmed: 0, reason: "inventory-unavailable" };
+      return result;
+    }
+    const discovered = extractCampaignCatalog(row);
+    if (discovered.length) rememberCampaignCatalog(discovered, source);
+    applyInventorySnapshot(result.campaigns, source);
+    reconcileClaimHistory(result.campaigns);
+    void queueInventoryClaimSweep(result.campaigns, source);
+    return result;
+  }
+
+  function checkGqlOperationResults(requests, json, status, payloads = []) {
     if (status < 200 || status >= 300) return;
     const rows = Array.isArray(json) ? json : [json];
     (requests || []).forEach((req, index) => {
@@ -605,9 +687,20 @@
       const row = rows[index];
       if (!name || !row) return;
       const errors = (Array.isArray(row.errors) ? row.errors : []).map((item) => cleanText(item?.message || ""));
-      if (errors.some((message) => /PersistedQueryNotFound/i.test(message))) {
-        noteGqlOperationResult(name, "hash-not-found", errors.join(" · "));
-        forgetLearnedGqlOperation(name, "PersistedQueryNotFound");
+      const definitionFailure = gqlOperationFailureKind(row);
+      if (definitionFailure) {
+        noteGqlOperationResult(name, definitionFailure, errors.join(" · ") || definitionFailure);
+        // A response to an older in-flight payload must not discard a newer
+        // validated hash learned from Twitch while that request was pending.
+        forgetLearnedGqlOperation(name, definitionFailure, payloads[index]?.extensions?.persistedQuery?.sha256Hash || "");
+        return;
+      }
+      if (name === "Inventory") {
+        const inventory = inventoryResponseState(row);
+        if (!inventory.valid && gqlOperationHealth[name]?.result !== inventory.status) {
+          logActivity("gql-operation", `Inventory data unavailable (${inventory.status})`, { operation: name, shape: inventory.shape });
+        }
+        noteGqlOperationResult(name, inventory.valid ? "ok" : inventory.status, inventory.detail);
         return;
       }
       const expected = GQL_EXPECTED_SHAPES[name];
@@ -622,7 +715,7 @@
     });
   }
 
-  async function gql(requests) {
+  async function gql(requests, { allowInventoryFailure = false } = {}) {
     const token = getToken();
     if (!token) throw new Error("Not logged in");
     const claimOnly = Boolean(
@@ -653,8 +746,8 @@
         body,
         transport,
       });
-      checkGqlOperationResults(requests, result.json, result.status);
-      return parseGqlRows(result.json, result.status);
+      checkGqlOperationResults(requests, result.json, result.status, body);
+      return parseGqlRows(result.json, result.status, { requests, allowInventoryFailure });
     };
 
     const tryClient = async (clientId, { refreshIntegrity = false } = {}) => {
@@ -682,7 +775,7 @@
             clearClientIntegrity({ clearCapture: true });
             lastIntegrityTransport = "gm";
           }
-          if (error?.circuitOpen) throw error;
+          if (error?.circuitOpen || error?.gqlDefinitionFailure) throw error;
           if (/page integrity unavailable/i.test(error?.message || "")) {
             pageDeadEnd = true;
             lastIntegrityTransport = "gm";

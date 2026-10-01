@@ -1217,6 +1217,9 @@
     if (health?.recovery?.code === 'credit-stalled') {
       return { label: 'Progress stalled', detail: health.creditedProgressAgeMs ? `Last Twitch credit ${briefAge(health.creditedProgressAgeMs)} ago.` : 'Twitch has not credited new progress.', tone: 'bad' };
     }
+    if (health?.earningVerified && !hasConfirmedRewardProgress()) {
+      return { label: 'Eligible stream', detail: rewardCreditStatus(), tone: 'warn' };
+    }
     if (health?.earningVerified) {
       return { label: 'Verified', detail: health.creditedProgressAgeMs ? `Last Twitch credit ${briefAge(health.creditedProgressAgeMs)} ago.` : 'Campaign and stream evidence are verified.', tone: 'good' };
     }
@@ -1365,8 +1368,9 @@
     } else if ((routing.state === ROUTING_STATES.EARNING || health.earningVerified) && currentDrop) {
       const recoveryCode = health.recovery?.code || "healthy";
       if (health.inVerificationGrace) {
-        label = settings.backgroundEarning ? "BG Earning" : "Earning";
-        cls += " good";
+        const confirmed = hasConfirmedRewardProgress();
+        label = confirmed ? (settings.backgroundEarning ? "BG Earning" : "Earning") : "Syncing";
+        cls += confirmed ? " good" : " warn";
       } else if (recoveryCode === "credit-delayed-background") {
         label = "BG Delayed";
         cls += " warn";
@@ -1380,8 +1384,9 @@
         label = "Delayed";
         cls += " warn";
       } else {
-        label = settings.backgroundEarning ? "BG Earning" : "Earning";
-        cls += " good";
+        const confirmed = hasConfirmedRewardProgress();
+        label = confirmed ? (settings.backgroundEarning ? "BG Earning" : "Earning") : "Syncing";
+        cls += confirmed ? " good" : " warn";
       }
     } else if (currentDrop) {
       label = "Waiting";

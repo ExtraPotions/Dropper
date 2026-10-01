@@ -382,7 +382,7 @@ test('malformed Twitch GQL rows fail closed instead of counting as network succe
     cleanText: value => String(value ?? '').trim(),
     isSoftGqlError: () => false,
   };
-  vm.runInNewContext(extract('parseGqlRows'), context);
+  vm.runInNewContext(extract('gqlOperationFailureKind') + '\n' + extract('parseGqlRows'), context);
   assert.throws(() => context.parseGqlRows(null), /Malformed Twitch GQL response/);
   assert.throws(() => context.parseGqlRows({}), /Malformed Twitch GQL response/);
   assert.throws(() => context.parseGqlRows([]), /Malformed Twitch GQL response/);

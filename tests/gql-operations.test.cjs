@@ -72,3 +72,20 @@ test("a response without the expected fields is reported as a shape change", () 
   ops.check([{ op: "inventory" }], [okRow], 200);
   assert.equal(ops.snapshot().Inventory.lastResult, "ok");
 });
+
+test('unavailable and partial inventory have explicit outcomes instead of ok or valid-empty', () => {
+  const ops = loadOperations();
+  ops.check([{ op: 'inventory' }], [{ data: { currentUser: { inventory: null } } }], 200);
+  assert.equal(ops.snapshot().Inventory.lastResult, 'unavailable');
+  ops.check([{ op: 'inventory' }], [{ ...okRow, errors: [{ message: 'Service Error' }] }], 200);
+  assert.equal(ops.snapshot().Inventory.lastResult, 'partial-response');
+});
+test('the page cannot teach an Inventory hash from an unusable response shape', () => {
+  const ops = loadOperations();
+  ops.learn([{ name: 'Inventory', hash: TWITCH_NEW, variableKeys: [] }], [{ data: { currentUser: { inventory: null } } }]);
+  assert.equal(ops.snapshot().Inventory.source, 'built-in');
+  ops.learn([{ name: 'Inventory', hash: TWITCH_NEW, variableKeys: [] }], [{ data: { currentUser: { inventory: { changed: [] } } } }]);
+  assert.equal(ops.snapshot().Inventory.source, 'built-in');
+  ops.learn([{ name: 'Inventory', hash: TWITCH_NEW, variableKeys: [] }], [okRow]);
+  assert.equal(ops.snapshot().Inventory.source, 'learned-from-twitch');
+});

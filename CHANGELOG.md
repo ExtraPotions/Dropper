@@ -1,3 +1,10 @@
+## 3.3.43 — 2026-10-01
+
+- Repairs the Inventory request and preserves the last valid reward snapshot when Twitch returns unavailable or partial data.
+- Keeps successful read-only session updates running through Inventory lookup failures without weakening claim, authorization, rate-limit or integrity checks.
+- Resolves active reward details and keeps watch minutes tied to the exact reward across claims and next-reward transitions.
+- Reports syncing and unknown deadline estimates honestly; retains Core 3.4.9 and existing manual viewing protections.
+
 ## 3.3.42 — 2026-10-01
 
 - Updates to exp-core 3.4.9.

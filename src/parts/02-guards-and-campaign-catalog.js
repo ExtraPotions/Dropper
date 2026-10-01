@@ -2018,7 +2018,7 @@
     });
   }
 
-  async function enrichCampaignsWithDropDetails(campaigns, source = "drop-campaign-details") {
+  async function enrichCampaignsWithDropDetails(campaigns, source = "drop-campaign-details", { force = false } = {}) {
     const list = Array.isArray(campaigns) ? campaigns.filter(Boolean) : [];
     if (!list.length || !getToken()) return list;
     const login = cleanText(
@@ -2028,7 +2028,7 @@
     ).toLowerCase() || watchingLogin();
     const needsDetails = list.filter((campaign) => {
       const drops = campaign?.timeBasedDrops || campaign?.drops || [];
-      return Boolean(campaign?.id) && drops.length === 0;
+      return Boolean(campaign?.id) && (force || drops.length === 0);
     }).slice(0, 40);
     if (!needsDetails.length) return list;
     const byId = new Map(list.map((campaign) => [String(campaign.id || ""), campaign]));
@@ -2044,7 +2044,8 @@
         })));
         for (const row of rows || []) {
           const detailed = row?.data?.user?.dropCampaign || row?.data?.dropCampaign || null;
-          if (!detailed?.id) continue;
+          if (!detailed?.id || (Array.isArray(row?.errors) && row.errors.length)) continue;
+          if (!batch.some(campaign => String(campaign.id) === String(detailed.id))) continue;
           byId.set(String(detailed.id), detailed);
         }
       } catch (error) {
@@ -2062,6 +2063,8 @@
   // Campaign keys whose DropCampaignDetails came back without a watch-time
   // reward, so routing stops waiting on them. key -> checked-at ms.
   const campaignDetailsMisses = new Map();
+  const campaignDetailsAttempts = new Map();
+  const CAMPAIGN_DETAILS_RETRY_MS = 60 * 1000;
   const CAMPAIGN_DETAILS_MISS_TTL_MS = 15 * 60 * 1000;
 
   function campaignDetailsMissedRecently(key, now = Date.now()) {
@@ -2069,35 +2072,79 @@
     return Boolean(at && now - at < CAMPAIGN_DETAILS_MISS_TTL_MS);
   }
 
-  // The routing controller waits on "campaign-details" when its pick is a
-  // dashboard row without rewards. Fetch that one campaign's details so the
-  // wait can end; one request, at most once per miss window.
-  async function enrichRoutingTargetCampaign(source = "routing-campaign-details") {
+  // Resolve waiting catalog shells and incomplete active rewards through the
+  // same detail path. Requests are account/context guarded and rate-limited;
+  // a session on another reward does not replace the selected reward.
+  async function enrichRoutingTargetCampaign(source = "routing-campaign-details", sessionDrop = null) {
+    const requestContext = pollContext();
     const routing = readRoutingControllerSession();
-    if (routing.state !== ROUTING_STATES.WAITING || routing.waitReason !== "campaign-details") return false;
-    const key = cleanText(routing.targetCampaignKey).toLowerCase();
-    if (!key || campaignDetailsMissedRecently(key)) return false;
-    // Routing also picks campaigns that only campaign memory knows about, and
-    // those rows never carry rewards, so look in the full routing pool.
-    const target = routingCampaignPool().find((campaign) => campaignKey(campaign) === key);
+    const waiting = routing.state === ROUTING_STATES.WAITING && routing.waitReason === "campaign-details";
+    const active = currentDrop && !currentDrop.isClaimed ? currentDrop : null;
+    const key = cleanText(waiting ? routing.targetCampaignKey : active?.campaignKey || active?.campaignId).toLowerCase();
+    if (!key || isPageScrapedCampaignKey(key) || campaignDetailsMissedRecently(key)) return false;
+    const target = routingCampaignPool().find(campaign => campaignKey(campaign) === key);
     if (!target?.id) return false;
-    if ((target.timeBasedDrops || []).length) {
-      // Rewards are known but none earn by watching: nothing to wait for.
-      if (!campaignWatchDrops(target).length) campaignDetailsMisses.set(key, Date.now());
+    const drops = target.timeBasedDrops || target.drops || [];
+    const record = drops.find(drop => String(drop?.id) === String(active?.id));
+    const name = cleanText(record?.name || record?.benefitEdges?.[0]?.benefit?.name);
+    const mismatch = sessionDrop && active && dropIdentityMatchesTarget(sessionDrop, active).sameCampaignDifferentDrop;
+    const incomplete = Boolean(active && (active.needsDropDetails || !record || !name || name === "Drop" ||
+      !(Number(record.requiredMinutesWatched) > 0)));
+    if (!waiting && !incomplete && !mismatch) return false;
+    if (waiting && drops.length && !campaignWatchDrops(target).length) {
+      campaignDetailsMisses.set(key, Date.now());
       return false;
     }
-    const [detailed] = await enrichCampaignsWithDropDetails([target], source);
-    const found = (detailed?.timeBasedDrops || detailed?.drops || []).length > 0;
-    if (found) campaignDetailsCache.set(key, compactCampaignCatalog([detailed])[0]);
+    const now = Date.now();
+    const lastAttempt = campaignDetailsAttempts.get(key);
+    if (lastAttempt != null && now - lastAttempt < CAMPAIGN_DETAILS_RETRY_MS) return false;
+    // Once resolved, a different session reward is not a reason to refetch the
+    // same metadata every minute. Keep its progress separate from the selection.
+    if (!incomplete && campaignDetailsCache.has(key)) return false;
+    campaignDetailsAttempts.set(key, now);
+    const [detailed] = await enrichCampaignsWithDropDetails([target], source, { force: true });
+    if (!pollContextIsCurrent(requestContext)) return false;
+    // Returning the input means the request failed or returned no matching data.
+    if (!detailed || detailed === target) return false;
+    const detailedDrops = detailed.timeBasedDrops || detailed.drops;
+    if (!Array.isArray(detailedDrops)) return false;
+    const merged = mergeCampaigns([target], [detailed])[0];
+    const found = detailedDrops.length > 0;
+    if (found) {
+      campaignDetailsCache.set(key, compactCampaignCatalog([merged])[0]);
+      hydrateCurrentRewardDetails(merged);
+    }
     if (!found || !campaignWatchDrops(detailed).length) campaignDetailsMisses.set(key, Date.now());
     logActivity("campaign-details", found
       ? `Loaded reward details for ${target.name || key}`
       : `No reward details returned for ${target.name || key}`, {
-      source,
-      campaignKey: key,
-      watchDrops: found ? campaignWatchDrops(detailed).length : 0,
+      source, campaignKey: key, watchDrops: found ? campaignWatchDrops(detailed).length : 0,
     });
     return found;
+  }
+
+  function hydrateCurrentRewardDetails(campaign) {
+    const active = currentDrop;
+    if (!active?.id || !campaignKeysMatch(campaignKey(campaign), active.campaignKey || active.campaignId)) return false;
+    const record = (campaign.timeBasedDrops || campaign.drops || []).find(drop => cleanText(drop?.id) === cleanText(active.id));
+    if (!record || requiresSubscription(record)) return false;
+    const name = cleanText(record.name || record.benefitEdges?.[0]?.benefit?.name);
+    const required = Number(record.requiredMinutesWatched);
+    // This is metadata enrichment, not a fresh inventory or an invitation to
+    // select a sibling reward. Preserve the exact target's credited minutes.
+    const updated = { ...active, name: name || active.name,
+      rewardImage: dropBenefitImage(record) || active.rewardImage || "",
+      game: campaign.game?.displayName || campaign.game?.name || active.game,
+      gameId: campaign.game?.id || active.gameId || "", gameSlug: campaign.game?.slug || active.gameSlug || "",
+      campaign: campaign.name || active.campaign, campaignStartAt: campaign.startAt || active.campaignStartAt,
+      campaignEndAt: campaign.endAt || active.campaignEndAt, dropStartAt: record.startAt || active.dropStartAt,
+      dropEndAt: record.endAt || active.dropEndAt,
+      requiredMinutes: Number.isFinite(required) && required > 0 ? required : active.requiredMinutes,
+      needsDropDetails: !(name && Number.isFinite(required) && required > 0) };
+    updated.remainingMinutes = updated.currentMinutes == null || updated.requiredMinutes == null
+      ? null : Math.max(0, updated.requiredMinutes - updated.currentMinutes);
+    applyDrop(updated);
+    return true;
   }
 
   let campaignAuthImportPromise = null;
