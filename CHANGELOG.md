@@ -1,3 +1,8 @@
+## 3.3.37 — 2026-10-01
+
+- Fixes the progress card being cut off at the top of the window when the launchers are dragged to the top: it now hangs below its launcher instead.
+- Nothing changes when the launchers are at the bottom of the window.
+
 ## 3.3.36 — 2026-09-30
 
 - Checks GitHub for new versions with one small request instead of downloading the whole script from the main branch every 15 minutes.
