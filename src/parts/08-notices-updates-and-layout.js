@@ -285,7 +285,7 @@
     });
 
     logActivity("update-reload", `Started install for Dropper v${version}`, {
-      installUrl: INSTALL_URL,
+      installUrl: updateChecker.INSTALL_URL,
       fallbackSeconds: Math.round(UPDATE_RELOAD_FALLBACK_MS / 1000),
       expiresSeconds: Math.round(UPDATE_RELOAD_PENDING_TTL_MS / 1000),
     });
@@ -468,7 +468,7 @@
           "Install the latest userscript to get the newest fixes and improvements.",
           "After reinstalling, return to Twitch and Dropper will refresh this page automatically.",
         ],
-        actionUrl: INSTALL_URL,
+        actionUrl: updateChecker.INSTALL_URL,
         placement: "menu",
       },
     );

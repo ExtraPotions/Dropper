@@ -616,7 +616,7 @@ test('support heart replaces the permanent donation note and opens a compact pop
   const before = await page.evaluate(() => {
     window.dropperShow();
     const root = document.getElementById('tdh-root').shadowRoot;
-    const button = root.getElementById('tdh-support-button');
+    const button = root.getElementById('exp-support-button');
     const close = root.getElementById('tdh-rail-close');
     const actions = button?.closest('.header-actions');
     return {
@@ -624,7 +624,7 @@ test('support heart replaces the permanent donation note and opens a compact pop
       close: Boolean(close),
       siblings: actions ? [...actions.children].map(node => node.id || node.className) : [],
       expanded: button?.getAttribute('aria-expanded'),
-      popoverHidden: root.getElementById('tdh-support-popover')?.hidden,
+      popoverHidden: root.getElementById('exp-support-popover')?.hidden,
       permanentNote: Boolean(root.getElementById('tdh-support-note')),
     };
   });
@@ -637,13 +637,13 @@ test('support heart replaces the permanent donation note and opens a compact pop
 
   const opened = await page.evaluate(() => {
     const root = document.getElementById('tdh-root').shadowRoot;
-    root.getElementById('tdh-support-button').click();
-    const popover = root.getElementById('tdh-support-popover');
-    const supportLink = root.getElementById('tdh-support-link');
+    root.getElementById('exp-support-button').click();
+    const popover = root.getElementById('exp-support-popover');
+    const supportLink = root.querySelector('#exp-support-popover a');
     return {
       hidden: popover.hidden,
       text: popover.textContent.replace(/\s+/g, ' ').trim(),
-      expanded: root.getElementById('tdh-support-button').getAttribute('aria-expanded'),
+      expanded: root.getElementById('exp-support-button').getAttribute('aria-expanded'),
       href: supportLink?.href || '',
       target: supportLink?.target || '',
       rel: supportLink?.rel || '',
@@ -793,10 +793,10 @@ test('support popover stays inside narrow menu bounds', async () => fixture(asyn
     t.setWidth('narrow');
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const root = document.getElementById('tdh-root').shadowRoot;
-    root.getElementById('tdh-support-button').click();
+    root.getElementById('exp-support-button').click();
     await new Promise(resolve => requestAnimationFrame(resolve));
     const menu = root.getElementById('tdh-tools-dock').getBoundingClientRect();
-    const popover = root.getElementById('tdh-support-popover').getBoundingClientRect();
+    const popover = root.getElementById('exp-support-popover').getBoundingClientRect();
     return {
       menu: { left: menu.left, right: menu.right, width: menu.width },
       popover: { left: popover.left, right: popover.right, width: popover.width },

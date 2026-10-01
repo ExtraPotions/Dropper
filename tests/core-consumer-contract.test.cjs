@@ -41,8 +41,9 @@ test('Dropper delegates shared launcher and notice infrastructure to exp-core', 
 
 test('Dropper uses the public Core API for shared tool services', () => {
   assert.doesNotMatch(template, /ExtraPotionsTools\./u);
-  assert.match(template, /ExtraPotionsCore\.createBitcoinDonation\(\)/u);
-  assert.match(template, /ExtraPotionsCore\.placeDonationPanel\(/u);
+  // Core's support control brings its own donation options and placement.
+  assert.match(template, /ExtraPotionsCore\.createSupportControl\(/u);
+  assert.doesNotMatch(template, /ExtraPotionsCore\.(?:createBitcoinDonation|placeDonationPanel)\(/u);
   assert.match(template, /ExtraPotionsCore\.createCompatibilityControls\(\)/u);
   assert.match(template, /ExtraPotionsCore\.createDiagnosticsReport\(/u);
   assert.doesNotMatch(template, /ExtraPotionsDiagnostics\.createReport/u);

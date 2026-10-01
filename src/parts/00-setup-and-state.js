@@ -194,7 +194,6 @@
     COMPLETE: "complete",
     FAILED: "failed",
   });
-  const INSTALL_URL = "https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js";
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const UPDATE_RELOAD_KEY = "dropper-update-reload-pending";

@@ -1326,14 +1326,14 @@
       }
       .header-actions { display:flex; align-items:flex-start; gap:5px; position:static; }
       .support-wrap { position:static; }
-      #tdh-support-button, #tdh-rail-close {
+      .support-button, #tdh-rail-close {
         width:30px; height:30px; min-width:30px; padding:0;
         border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0;
         cursor:pointer;
       }
-      #tdh-support-button { display:grid; place-items:center; }
-      #tdh-support-button svg { width:15px; height:15px; fill:currentColor; }
-      #tdh-support-button:hover, #tdh-support-button:focus-visible {
+      .support-button { display:grid; place-items:center; }
+      .support-button svg { width:15px; height:15px; fill:currentColor; }
+      .support-button:hover, .support-button:focus-visible {
         border-color:var(--theme-accent); color:var(--theme-accent2); background:#211b2b; outline:none;
       }
       .support-popover {

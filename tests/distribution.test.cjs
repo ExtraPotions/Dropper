@@ -89,7 +89,9 @@ test('in-app release notes and update checker stay current-only but functional',
   assert.match(source, /^\/\/ @supportURL\s+https:\/\/github\.com\/ExtraPotions\/Dropper\/issues$/mu);
   assert.match(source, /^\/\/ @connect\s+api\.github\.com$/mu);
   assert.doesNotMatch(source, /^\/\/ @(?:updateURL|downloadURL)\s+https:\/\/raw\.githubusercontent\.com/mu);
-  assert.match(source, /const INSTALL_URL = "https:\/\/github\.com\/ExtraPotions\/Dropper\/releases\/latest\/download\/dropper\.user\.js";/u);
+  // Install links come from exp-core's checker, which only points at published releases.
+  assert.match(source, /actionUrl: updateChecker\.INSTALL_URL/u);
+  assert.doesNotMatch(source, /INSTALL_URL = "https:/u, 'Dropper keeps no private copy of its install address');
   assert.doesNotMatch(source, /const UPDATE_URL\b|dropper_check/u, 'Dropper no longer downloads its own script from main to read a version');
   // The update check is exp-core's shared release checker.
   assert.match(source, /const updateChecker = ExtraPotionsCore\.createReleaseUpdateChecker\(\{\s*productId: "dropper",\s*repository: "ExtraPotions\/Dropper",\s*currentVersion: APP_VERSION,\s*\}\);/u);

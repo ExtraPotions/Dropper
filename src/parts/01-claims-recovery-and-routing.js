@@ -159,6 +159,7 @@
       playerPresentationRecovery.viewerInteracted = true;
     };
     for (const type of ['pointerdown','wheel','touchmove','keydown']) document.addEventListener(type, preserveLayoutChoice, {capture:true,passive:true});
+    // exp-core-allow: records the viewer's own player controls (pause/play), not a menu.
     document.addEventListener('pointerdown', control, true);
     document.addEventListener('keydown', control, true);
     for (const type of ['pause', 'playing', 'waiting', 'stalled', 'ended', 'error']) document.addEventListener(type, media, true);

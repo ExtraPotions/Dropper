@@ -25,16 +25,6 @@
               </div>
             </div>
             <div class="header-actions">
-              <div class="support-wrap">
-                <button type="button" id="tdh-support-button" aria-label="Support Dropper" aria-expanded="false" aria-controls="tdh-support-popover" title="Support Dropper">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.2-4.35-9.55-8.45C.42 9.02 2.3 5 6.25 5c2.15 0 3.56 1.21 4.33 2.3C11.36 6.21 12.77 5 14.92 5c3.95 0 5.83 4.02 3.8 7.55C16.36 16.65 12 21 12 21Z"/></svg>
-                </button>
-                <div class="support-popover" id="tdh-support-popover" role="dialog" aria-label="Support Dropper" hidden>
-                  <strong>Support Dropper</strong>
-                  <span>Donations are optional. All features stay free.</span>
-                  <a id="tdh-support-link" href="https://ko-fi.com/expdare" target="_blank" rel="noopener noreferrer">Open Ko-fi</a>
-                </div>
-              </div>
               <button type="button" id="tdh-rail-close" aria-label="Close">×</button>
             </div>
           </div>
@@ -284,22 +274,11 @@
       showCurrentChangelog();
       scheduleMenuDismiss();
     });
-    const supportButton = shadow.getElementById("tdh-support-button");
-    const supportPopover = shadow.getElementById("tdh-support-popover");
-    supportPopover?.append(ExtraPotionsCore.createBitcoinDonation());
-    if(supportPopover && supportButton) ExtraPotionsCore.placeDonationPanel(supportPopover,supportButton);
-    const closeSupportPopover = () => {
-      if (!supportPopover || !supportButton) return;
-      supportPopover.hidden = true;
-      supportButton.setAttribute("aria-expanded", "false");
-    };
-    supportButton?.addEventListener("click", (event) => {
-      event.stopPropagation();
-      const open = supportPopover?.hidden !== false;
-      if (!supportPopover) return;
-      supportPopover.hidden = !open;
-      supportButton.setAttribute("aria-expanded", open ? "true" : "false");
-    });
+    // Core owns the support control: its button, popover, donation options and outside-press closing.
+    const support = ExtraPotionsCore.createSupportControl({ label: "Support Dropper" });
+    if (support) shadow.querySelector(".header-actions")?.prepend(support.element);
+    const supportPopover = support?.popover || null;
+    const closeSupportPopover = () => support?.hide();
     shadow.getElementById("tdh-rail-close").addEventListener("click", () => {
       closeSupportPopover();
       setRailOpen(false);
@@ -310,10 +289,9 @@
       if (event.key === "Escape" && railOpen) setRailOpen(false, true);
       if (!event.altKey && (event.key === "r" || event.key === "R") && railOpen) requestGqlPoll("keyboard-refresh", true);
     });
+    // exp-core-allow: Dropper's menu does not run on Core's create() controller yet; remove with that migration.
     document.addEventListener("pointerdown", (event) => {
-      const path = event.composedPath();
-      if (supportPopover?.hidden === false && !path.includes(supportButton) && !path.includes(supportPopover)) closeSupportPopover();
-      if (railOpen && !path.includes(host)) setRailOpen(false);
+      if (railOpen && !event.composedPath().includes(host)) setRailOpen(false);
     });
     return ui;
   }
