@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.42
+// @version      3.3.43
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -57,7 +57,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.42";
+  const APP_VERSION = "3.3.43";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -202,6 +202,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.43": ["Repairs the Inventory request and preserves the last valid reward snapshot when Twitch returns unavailable or partial data.","Keeps successful read-only session updates running through Inventory lookup failures without weakening claim, authorization, rate-limit or integrity checks.","Resolves active reward details and keeps watch minutes tied to the exact reward across claims and next-reward transitions.","Reports syncing and unknown deadline estimates honestly; retains Core 3.4.9 and existing manual viewing protections."],
     "3.3.42": ["Updates to exp-core 3.4.9.","The support button and popover now come from exp-core, shared with the rest of the suite.","The install link now comes from the exp-core update checker, which only points at published releases."],
     "3.3.41": ["Fixes watch progress and claimed rewards not being seen, after Twitch changed its Inventory request.","Learns Twitch's current requests from its own pages and reports when one stops working, so future Twitch changes are caught.","Stops picking remembered campaigns that Twitch no longer lists."],
     "3.3.40": ["Streams in a Streaming Together session are no longer rejected as being in the wrong category.","When a stream shows several categories, Dropper uses the one that matches the Drop it is earning.","Loads reward details for campaigns Dropper only remembers from earlier, so it no longer waits on them."],
@@ -600,8 +601,9 @@
   const GQL_OPS = {
     inventory: {
       name: "Inventory",
-      hash: "2ccf98c1806c3aec3c44f49984d44397ff1df5644b561f887f4e159254db03be",
-      variables: {},
+      // Keep the operation name, document hash and declared variables together.
+      hash: "8337eb8541b314040b0edde0c09c5c7a2783ba1960aa9edfbf3bac16d0fec404",
+      variables: { fetchRewardCampaigns: false },
     },
     viewerDropsDashboard: {
       name: "ViewerDropsDashboard",
@@ -847,7 +849,10 @@
       const endMs = Date.parse(drop?.endAt || campaign?.endAt || '');
       const deadlineMs = Number.isFinite(endMs) ? endMs : null;
       const minutesUntilDeadline = deadlineMs === null ? null : Math.max(0, Math.floor((deadlineMs - now) / 60000));
-      const requiredMinutes = Number.isFinite(Number(plan?.totalRemainingMinutes)) ? Math.max(0, Number(plan.totalRemainingMinutes)) : null;
+      const rawRemaining = plan?.totalRemainingMinutes;
+      const remaining = typeof rawRemaining === 'number' || (typeof rawRemaining === 'string' && rawRemaining.trim() !== '')
+        ? number(rawRemaining) : null;
+      const requiredMinutes = remaining !== null && remaining >= 0 ? remaining : null;
       const safeBufferMinutes = Math.max(0, Number(bufferMinutes) || 0);
       const finishable = minutesUntilDeadline === null || requiredMinutes === null ? null : requiredMinutes + safeBufferMinutes <= minutesUntilDeadline;
       const marginMinutes = minutesUntilDeadline === null || requiredMinutes === null ? null : minutesUntilDeadline - requiredMinutes - safeBufferMinutes;
@@ -1111,6 +1116,7 @@
   let inventoryClaimSweepState = { at: 0, source: '', candidates: 0, selected: 0, confirmed: 0, reason: 'not-run' };
   let lastProgressReconcile = null;
   let lastSessionPoll = null;
+  let rewardSessionResolution = null;
   let twitchNetworkHookMode = "";
   let lastStreamVerification = null;
   let finalVerificationPollTarget = "";
@@ -1152,6 +1158,7 @@
   let updateFallbackTimer = null;
   let pauseAutoSwitchUntil = Number(settings.pauseAutoSwitchUntil || 0);
   let lastInventoryCampaigns = [];
+  let inventoryResponseHealth = { valid: false, status: 'not-seen', at: 0, lastValidAt: 0, source: '', shape: null };
   let campaignCatalogCache = loadCampaignCatalogCache();
   let lastCampaignCatalog = campaignCatalogCache.campaigns;
   let lastCampaignCatalogAt = campaignCatalogCache.at;
@@ -1341,6 +1348,11 @@
     lastProgress = readSession('tdh-progress', 0);
     lastProgressAt = readSession('tdh-progress-at', Date.now());
     lastInventoryCampaigns = [];
+    inventoryResponseHealth = { valid: false, status: 'not-seen', at: 0, lastValidAt: 0, source: '', shape: null };
+    rewardSessionResolution = null;
+    campaignDetailsAttempts.clear();
+    campaignDetailsMisses.clear();
+    campaignDetailsCache.clear();
     haveSeenInventorySnapshot = false;
     lastInProgressKeys = new Set();
     campaignCatalogCache = loadCampaignCatalogCache();

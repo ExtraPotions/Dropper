@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.42
+// @version      3.3.43
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -3634,7 +3634,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.42";
+  const APP_VERSION = "3.3.43";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -3779,6 +3779,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.43": ["Repairs the Inventory request and preserves the last valid reward snapshot when Twitch returns unavailable or partial data.","Keeps successful read-only session updates running through Inventory lookup failures without weakening claim, authorization, rate-limit or integrity checks.","Resolves active reward details and keeps watch minutes tied to the exact reward across claims and next-reward transitions.","Reports syncing and unknown deadline estimates honestly; retains Core 3.4.9 and existing manual viewing protections."],
     "3.3.42": ["Updates to exp-core 3.4.9.","The support button and popover now come from exp-core, shared with the rest of the suite.","The install link now comes from the exp-core update checker, which only points at published releases."],
     "3.3.41": ["Fixes watch progress and claimed rewards not being seen, after Twitch changed its Inventory request.","Learns Twitch's current requests from its own pages and reports when one stops working, so future Twitch changes are caught.","Stops picking remembered campaigns that Twitch no longer lists."],
     "3.3.40": ["Streams in a Streaming Together session are no longer rejected as being in the wrong category.","When a stream shows several categories, Dropper uses the one that matches the Drop it is earning.","Loads reward details for campaigns Dropper only remembers from earlier, so it no longer waits on them."],
@@ -4177,8 +4178,9 @@ const ExtraPotionsCore = (() => {
   const GQL_OPS = {
     inventory: {
       name: "Inventory",
-      hash: "2ccf98c1806c3aec3c44f49984d44397ff1df5644b561f887f4e159254db03be",
-      variables: {},
+      // Keep the operation name, document hash and declared variables together.
+      hash: "8337eb8541b314040b0edde0c09c5c7a2783ba1960aa9edfbf3bac16d0fec404",
+      variables: { fetchRewardCampaigns: false },
     },
     viewerDropsDashboard: {
       name: "ViewerDropsDashboard",
@@ -4424,7 +4426,10 @@ const ExtraPotionsCore = (() => {
       const endMs = Date.parse(drop?.endAt || campaign?.endAt || '');
       const deadlineMs = Number.isFinite(endMs) ? endMs : null;
       const minutesUntilDeadline = deadlineMs === null ? null : Math.max(0, Math.floor((deadlineMs - now) / 60000));
-      const requiredMinutes = Number.isFinite(Number(plan?.totalRemainingMinutes)) ? Math.max(0, Number(plan.totalRemainingMinutes)) : null;
+      const rawRemaining = plan?.totalRemainingMinutes;
+      const remaining = typeof rawRemaining === 'number' || (typeof rawRemaining === 'string' && rawRemaining.trim() !== '')
+        ? number(rawRemaining) : null;
+      const requiredMinutes = remaining !== null && remaining >= 0 ? remaining : null;
       const safeBufferMinutes = Math.max(0, Number(bufferMinutes) || 0);
       const finishable = minutesUntilDeadline === null || requiredMinutes === null ? null : requiredMinutes + safeBufferMinutes <= minutesUntilDeadline;
       const marginMinutes = minutesUntilDeadline === null || requiredMinutes === null ? null : minutesUntilDeadline - requiredMinutes - safeBufferMinutes;
@@ -4688,6 +4693,7 @@ const ExtraPotionsCore = (() => {
   let inventoryClaimSweepState = { at: 0, source: '', candidates: 0, selected: 0, confirmed: 0, reason: 'not-run' };
   let lastProgressReconcile = null;
   let lastSessionPoll = null;
+  let rewardSessionResolution = null;
   let twitchNetworkHookMode = "";
   let lastStreamVerification = null;
   let finalVerificationPollTarget = "";
@@ -4729,6 +4735,7 @@ const ExtraPotionsCore = (() => {
   let updateFallbackTimer = null;
   let pauseAutoSwitchUntil = Number(settings.pauseAutoSwitchUntil || 0);
   let lastInventoryCampaigns = [];
+  let inventoryResponseHealth = { valid: false, status: 'not-seen', at: 0, lastValidAt: 0, source: '', shape: null };
   let campaignCatalogCache = loadCampaignCatalogCache();
   let lastCampaignCatalog = campaignCatalogCache.campaigns;
   let lastCampaignCatalogAt = campaignCatalogCache.at;
@@ -4918,6 +4925,11 @@ const ExtraPotionsCore = (() => {
     lastProgress = readSession('tdh-progress', 0);
     lastProgressAt = readSession('tdh-progress-at', Date.now());
     lastInventoryCampaigns = [];
+    inventoryResponseHealth = { valid: false, status: 'not-seen', at: 0, lastValidAt: 0, source: '', shape: null };
+    rewardSessionResolution = null;
+    campaignDetailsAttempts.clear();
+    campaignDetailsMisses.clear();
+    campaignDetailsCache.clear();
     haveSeenInventorySnapshot = false;
     lastInProgressKeys = new Set();
     campaignCatalogCache = loadCampaignCatalogCache();
@@ -5667,6 +5679,7 @@ const ExtraPotionsCore = (() => {
     const sweep = inventoryClaimSweepState || {};
     if (sweep.reason === 'claimed') parts.push(`Inventory sweep: ${Number(sweep.confirmed || 0)} claimed`);
     else if (sweep.reason === 'none-ready') parts.push('Inventory sweep: none ready');
+    else if (sweep.reason === 'inventory-unavailable') parts.push('Inventory sweep: unavailable');
     else if (sweep.reason === 'secondary-tab') parts.push('Inventory sweep: managed by another tab');
     else if (sweep.reason === 'disabled') parts.push('Inventory sweep: disabled');
     return parts.join(' · ');
@@ -7601,6 +7614,7 @@ const ExtraPotionsCore = (() => {
           ? "credited-progress"
           : "gql-campaign+game",
         channel: login || target || null,
+        dropId: currentDrop?.id || null,
         game: targetGame || null,
         campaign: session.targetCampaign || currentDrop?.campaign || null,
         campaignKey: session.targetCampaignKey || currentDrop?.campaignKey || currentDrop?.campaignId || null,
@@ -7873,7 +7887,7 @@ const ExtraPotionsCore = (() => {
       );
     }
 
-    setStatus(`Earning ${currentDrop.name || "Drop"} On ${login}`);
+    setStatus(rewardCreditStatus(currentDrop, login));
     return false;
   }
 
@@ -10178,7 +10192,7 @@ const ExtraPotionsCore = (() => {
     });
   }
 
-  async function enrichCampaignsWithDropDetails(campaigns, source = "drop-campaign-details") {
+  async function enrichCampaignsWithDropDetails(campaigns, source = "drop-campaign-details", { force = false } = {}) {
     const list = Array.isArray(campaigns) ? campaigns.filter(Boolean) : [];
     if (!list.length || !getToken()) return list;
     const login = cleanText(
@@ -10188,7 +10202,7 @@ const ExtraPotionsCore = (() => {
     ).toLowerCase() || watchingLogin();
     const needsDetails = list.filter((campaign) => {
       const drops = campaign?.timeBasedDrops || campaign?.drops || [];
-      return Boolean(campaign?.id) && drops.length === 0;
+      return Boolean(campaign?.id) && (force || drops.length === 0);
     }).slice(0, 40);
     if (!needsDetails.length) return list;
     const byId = new Map(list.map((campaign) => [String(campaign.id || ""), campaign]));
@@ -10204,7 +10218,8 @@ const ExtraPotionsCore = (() => {
         })));
         for (const row of rows || []) {
           const detailed = row?.data?.user?.dropCampaign || row?.data?.dropCampaign || null;
-          if (!detailed?.id) continue;
+          if (!detailed?.id || (Array.isArray(row?.errors) && row.errors.length)) continue;
+          if (!batch.some(campaign => String(campaign.id) === String(detailed.id))) continue;
           byId.set(String(detailed.id), detailed);
         }
       } catch (error) {
@@ -10222,6 +10237,8 @@ const ExtraPotionsCore = (() => {
   // Campaign keys whose DropCampaignDetails came back without a watch-time
   // reward, so routing stops waiting on them. key -> checked-at ms.
   const campaignDetailsMisses = new Map();
+  const campaignDetailsAttempts = new Map();
+  const CAMPAIGN_DETAILS_RETRY_MS = 60 * 1000;
   const CAMPAIGN_DETAILS_MISS_TTL_MS = 15 * 60 * 1000;
 
   function campaignDetailsMissedRecently(key, now = Date.now()) {
@@ -10229,35 +10246,79 @@ const ExtraPotionsCore = (() => {
     return Boolean(at && now - at < CAMPAIGN_DETAILS_MISS_TTL_MS);
   }
 
-  // The routing controller waits on "campaign-details" when its pick is a
-  // dashboard row without rewards. Fetch that one campaign's details so the
-  // wait can end; one request, at most once per miss window.
-  async function enrichRoutingTargetCampaign(source = "routing-campaign-details") {
+  // Resolve waiting catalog shells and incomplete active rewards through the
+  // same detail path. Requests are account/context guarded and rate-limited;
+  // a session on another reward does not replace the selected reward.
+  async function enrichRoutingTargetCampaign(source = "routing-campaign-details", sessionDrop = null) {
+    const requestContext = pollContext();
     const routing = readRoutingControllerSession();
-    if (routing.state !== ROUTING_STATES.WAITING || routing.waitReason !== "campaign-details") return false;
-    const key = cleanText(routing.targetCampaignKey).toLowerCase();
-    if (!key || campaignDetailsMissedRecently(key)) return false;
-    // Routing also picks campaigns that only campaign memory knows about, and
-    // those rows never carry rewards, so look in the full routing pool.
-    const target = routingCampaignPool().find((campaign) => campaignKey(campaign) === key);
+    const waiting = routing.state === ROUTING_STATES.WAITING && routing.waitReason === "campaign-details";
+    const active = currentDrop && !currentDrop.isClaimed ? currentDrop : null;
+    const key = cleanText(waiting ? routing.targetCampaignKey : active?.campaignKey || active?.campaignId).toLowerCase();
+    if (!key || isPageScrapedCampaignKey(key) || campaignDetailsMissedRecently(key)) return false;
+    const target = routingCampaignPool().find(campaign => campaignKey(campaign) === key);
     if (!target?.id) return false;
-    if ((target.timeBasedDrops || []).length) {
-      // Rewards are known but none earn by watching: nothing to wait for.
-      if (!campaignWatchDrops(target).length) campaignDetailsMisses.set(key, Date.now());
+    const drops = target.timeBasedDrops || target.drops || [];
+    const record = drops.find(drop => String(drop?.id) === String(active?.id));
+    const name = cleanText(record?.name || record?.benefitEdges?.[0]?.benefit?.name);
+    const mismatch = sessionDrop && active && dropIdentityMatchesTarget(sessionDrop, active).sameCampaignDifferentDrop;
+    const incomplete = Boolean(active && (active.needsDropDetails || !record || !name || name === "Drop" ||
+      !(Number(record.requiredMinutesWatched) > 0)));
+    if (!waiting && !incomplete && !mismatch) return false;
+    if (waiting && drops.length && !campaignWatchDrops(target).length) {
+      campaignDetailsMisses.set(key, Date.now());
       return false;
     }
-    const [detailed] = await enrichCampaignsWithDropDetails([target], source);
-    const found = (detailed?.timeBasedDrops || detailed?.drops || []).length > 0;
-    if (found) campaignDetailsCache.set(key, compactCampaignCatalog([detailed])[0]);
+    const now = Date.now();
+    const lastAttempt = campaignDetailsAttempts.get(key);
+    if (lastAttempt != null && now - lastAttempt < CAMPAIGN_DETAILS_RETRY_MS) return false;
+    // Once resolved, a different session reward is not a reason to refetch the
+    // same metadata every minute. Keep its progress separate from the selection.
+    if (!incomplete && campaignDetailsCache.has(key)) return false;
+    campaignDetailsAttempts.set(key, now);
+    const [detailed] = await enrichCampaignsWithDropDetails([target], source, { force: true });
+    if (!pollContextIsCurrent(requestContext)) return false;
+    // Returning the input means the request failed or returned no matching data.
+    if (!detailed || detailed === target) return false;
+    const detailedDrops = detailed.timeBasedDrops || detailed.drops;
+    if (!Array.isArray(detailedDrops)) return false;
+    const merged = mergeCampaigns([target], [detailed])[0];
+    const found = detailedDrops.length > 0;
+    if (found) {
+      campaignDetailsCache.set(key, compactCampaignCatalog([merged])[0]);
+      hydrateCurrentRewardDetails(merged);
+    }
     if (!found || !campaignWatchDrops(detailed).length) campaignDetailsMisses.set(key, Date.now());
     logActivity("campaign-details", found
       ? `Loaded reward details for ${target.name || key}`
       : `No reward details returned for ${target.name || key}`, {
-      source,
-      campaignKey: key,
-      watchDrops: found ? campaignWatchDrops(detailed).length : 0,
+      source, campaignKey: key, watchDrops: found ? campaignWatchDrops(detailed).length : 0,
     });
     return found;
+  }
+
+  function hydrateCurrentRewardDetails(campaign) {
+    const active = currentDrop;
+    if (!active?.id || !campaignKeysMatch(campaignKey(campaign), active.campaignKey || active.campaignId)) return false;
+    const record = (campaign.timeBasedDrops || campaign.drops || []).find(drop => cleanText(drop?.id) === cleanText(active.id));
+    if (!record || requiresSubscription(record)) return false;
+    const name = cleanText(record.name || record.benefitEdges?.[0]?.benefit?.name);
+    const required = Number(record.requiredMinutesWatched);
+    // This is metadata enrichment, not a fresh inventory or an invitation to
+    // select a sibling reward. Preserve the exact target's credited minutes.
+    const updated = { ...active, name: name || active.name,
+      rewardImage: dropBenefitImage(record) || active.rewardImage || "",
+      game: campaign.game?.displayName || campaign.game?.name || active.game,
+      gameId: campaign.game?.id || active.gameId || "", gameSlug: campaign.game?.slug || active.gameSlug || "",
+      campaign: campaign.name || active.campaign, campaignStartAt: campaign.startAt || active.campaignStartAt,
+      campaignEndAt: campaign.endAt || active.campaignEndAt, dropStartAt: record.startAt || active.dropStartAt,
+      dropEndAt: record.endAt || active.dropEndAt,
+      requiredMinutes: Number.isFinite(required) && required > 0 ? required : active.requiredMinutes,
+      needsDropDetails: !(name && Number.isFinite(required) && required > 0) };
+    updated.remainingMinutes = updated.currentMinutes == null || updated.requiredMinutes == null
+      ? null : Math.max(0, updated.requiredMinutes - updated.currentMinutes);
+    applyDrop(updated);
+    return true;
   }
 
   let campaignAuthImportPromise = null;
@@ -10434,6 +10495,8 @@ const ExtraPotionsCore = (() => {
       if (!builtIn || !GQL_HASH_PATTERN.test(hash) || hash === builtIn.hash) return;
       const row = rows[index];
       if (!row?.data || (Array.isArray(row.errors) && row.errors.length)) return;
+      const expected = GQL_EXPECTED_SHAPES[name];
+      if (expected && !expected(row.data)) return;
       if (learnedGqlOperation(name)?.hash === hash) return;
       gqlLearnedOperations[name] = {
         hash,
@@ -10453,8 +10516,9 @@ const ExtraPotionsCore = (() => {
 
   // A learned hash Twitch no longer recognises is dropped so the next request
   // falls back to the built-in one until the page shows a newer hash.
-  function forgetLearnedGqlOperation(name, reason) {
-    if (!learnedGqlOperation(name)) return;
+  function forgetLearnedGqlOperation(name, reason, expectedHash = "") {
+    const learned = learnedGqlOperation(name);
+    if (!learned || (expectedHash && learned.hash !== expectedHash)) return;
     delete gqlLearnedOperations[name];
     saveLearnedGqlOperations();
     logActivity("gql-operation", `Dropped the learned ${name} request`, { operation: name, reason });
@@ -10581,23 +10645,23 @@ const ExtraPotionsCore = (() => {
     return token;
   }
 
-  function ingestTwitchGqlRows(rows, source = "twitch-page-intercept") {
+  function ingestTwitchGqlRows(rows, source = "twitch-page-intercept", operations = []) {
     if (!Array.isArray(rows) || !rows.length) return false;
     let touched = false;
-    let inventoryCampaigns = null;
+    let inventoryRow = null;
     let dashboardCampaigns = null;
     let sessionRow = null;
     let availableCampaigns = null;
 
-    for (const row of rows) {
+    for (const [index, row] of rows.entries()) {
       if (!row || typeof row !== "object") continue;
       const data = row.data;
-      if (!data || typeof data !== "object") continue;
-      const inventory = data.currentUser?.inventory?.dropCampaignsInProgress;
-      if (Array.isArray(inventory)) {
-        inventoryCampaigns = inventory;
+      if (operations?.[index]?.name === "Inventory" ||
+          Object.prototype.hasOwnProperty.call(data?.currentUser || {}, "inventory")) {
+        inventoryRow = row;
         touched = true;
       }
+      if (!data || typeof data !== "object" || (Array.isArray(row.errors) && row.errors.length)) continue;
       const dashboard = data.currentUser?.dropCampaigns;
       if (Array.isArray(dashboard)) {
         dashboardCampaigns = dashboard;
@@ -10620,12 +10684,20 @@ const ExtraPotionsCore = (() => {
 
     if (!touched) return false;
 
-    lastTwitchGqlAt = Date.now();
-    lastGqlSuccessAt = Date.now();
-    lastGqlError = "";
-    clearGqlFailurePause(source);
-    networkState.consecutiveFailures = 0;
-    persistNetworkState();
+    // Observing an Inventory error is not evidence that the data service has
+    // recovered. Only successful read data can clear the network failure state.
+    const hasFreshRead = Boolean(
+      (inventoryRow && inventoryResponseState(inventoryRow).valid) ||
+      dashboardCampaigns || sessionRow || availableCampaigns
+    );
+    if (hasFreshRead) {
+      lastTwitchGqlAt = Date.now();
+      lastGqlSuccessAt = Date.now();
+      lastGqlError = "";
+      clearGqlFailurePause(source);
+      networkState.consecutiveFailures = 0;
+      persistNetworkState();
+    }
 
     if (Array.isArray(dashboardCampaigns)) {
       lastCampaignDashboardAt = Date.now();
@@ -10635,13 +10707,7 @@ const ExtraPotionsCore = (() => {
         markCampaignPageImport(open.length, source, CAMPAIGN_PAGE_DISPLAY.GQL_AUTH);
       }
     }
-    if (Array.isArray(inventoryCampaigns)) {
-      const discovered = extractCampaignCatalog({ data: { currentUser: { inventory: { dropCampaignsInProgress: inventoryCampaigns } } } });
-      if (discovered.length) rememberCampaignCatalog(discovered, source);
-      applyInventorySnapshot(inventoryCampaigns, source);
-      reconcileClaimHistory(inventoryCampaigns);
-      void queueInventoryClaimSweep(inventoryCampaigns, source);
-    }
+    if (inventoryRow) acceptInventoryResponse(inventoryRow, source);
 
     const campaignPool = mergeCampaigns(
       lastCampaignCatalog,
@@ -10649,9 +10715,10 @@ const ExtraPotionsCore = (() => {
     );
     const routingController = isAutoRoutingController();
     if (!routingController) noteDeferredAutoRouting("page-gql-deferred");
-    const sessionDrop = sessionRow ? parseSessionDrop(sessionRow, mergeCampaigns(lastInventoryCampaigns, availableCampaigns || [])) : null;
+    const sessionDrop = sessionRow ? parseSessionDrop(sessionRow, mergeCampaigns(routingCampaignPool(), availableCampaigns || [])) : null;
+    if (sessionRow) recordRewardSessionResolution(sessionDrop, routingCampaignPool());
     if (currentDrop) {
-      const liveInventoryDrop = findActiveDropInCampaigns(lastInventoryCampaigns, currentDrop);
+      const liveInventoryDrop = inventoryResponseHealth.valid ? findActiveDropInCampaigns(lastInventoryCampaigns, currentDrop) : null;
       const sessionIdentity = sessionDrop
         ? dropIdentityMatchesTarget(sessionDrop, currentDrop)
         : { matchesTarget: false };
@@ -10719,7 +10786,7 @@ const ExtraPotionsCore = (() => {
     }
     try {
       const rows = parseGqlRows(json, status);
-      ingestTwitchGqlRows(rows, "twitch-page-intercept");
+      ingestTwitchGqlRows(rows, "twitch-page-intercept", operations || []);
     } catch (_) {
       /* ignore non-drops or error payloads from Twitch's own traffic */
     }
@@ -10953,7 +11020,7 @@ const ExtraPotionsCore = (() => {
     );
   }
 
-  function parseGqlRows(json, status = 200) {
+  function parseGqlRows(json, status = 200, { requests = null, allowInventoryFailure = false } = {}) {
     if (status < 200 || status >= 300) throw new Error(`GQL HTTP ${status}`);
     const rows = Array.isArray(json) ? json : [json];
     if (
@@ -10965,12 +11032,22 @@ const ExtraPotionsCore = (() => {
         (!Object.prototype.hasOwnProperty.call(row, "data") && !Array.isArray(row.errors))
       )
     ) throw new Error("Malformed Twitch GQL response");
+    if (requests && rows.length !== requests.length) {
+      throw new Error("Twitch GQL response count does not match the request batch");
+    }
+    // Only the read-only polling path may retain sibling responses when the
+    // Inventory document cannot be selected. Auth, integrity, HTTP and service
+    // failures remain fatal, as do all errors in mutation-containing batches.
+    const readOnly = Array.isArray(requests) && requests.length > 0 && requests.every((req) =>
+      ["inventory", "viewerDropsDashboard", "streamInfo", "currentDrop", "availableDrops", "dropCampaignDetails"].includes(req?.op)
+    );
     const hardErrors = [];
-    for (const row of rows) {
+    for (const [index, row] of rows.entries()) {
       const errors = Array.isArray(row?.errors) ? row.errors : [];
       if (!errors.length) continue;
       const hasData = row?.data != null && typeof row.data === "object";
       if (hasData && errors.every(isSoftGqlError)) continue;
+      if (allowInventoryFailure === true && readOnly && requests[index]?.op === "inventory" && gqlOperationFailureKind(row)) continue;
       hardErrors.push(...errors);
     }
     if (hardErrors.length) {
@@ -10978,19 +11055,85 @@ const ExtraPotionsCore = (() => {
         .map((item) => cleanText(item?.message || ""))
         .filter(Boolean)
         .join(" · ");
-      throw new Error(message || "Twitch GQL error");
+      const error = new Error(message || "Twitch GQL error");
+      error.gqlDefinitionFailure = hardErrors.every((item) => gqlOperationFailureKind({ errors: [item] }));
+      const inventoryIndex = requests?.findIndex((req) => req?.op === "inventory") ?? -1;
+      if (inventoryIndex >= 0 && Array.isArray(rows[inventoryIndex]?.errors) && rows[inventoryIndex].errors.length) {
+        error.inventoryRow = rows[inventoryIndex];
+      }
+      throw error;
     }
     return rows;
   }
 
-  // Expected top-level keys per operation. A response missing them means Twitch
-  // changed the query under the hash, which is otherwise silent.
+  // Validate operation responses without treating missing or unavailable data as
+  // an empty inventory. A rejected shape alone does not prove a Twitch schema change.
   const GQL_EXPECTED_SHAPES = {
-    Inventory: (data) => Array.isArray(data?.currentUser?.inventory?.dropCampaignsInProgress) || data?.currentUser?.inventory === null,
+    Inventory: (data) => inventoryResponseState({ data }).valid,
     ViewerDropsDashboard: (data) => Array.isArray(data?.currentUser?.dropCampaigns) || data?.currentUser === null,
   };
 
-  function checkGqlOperationResults(requests, json, status) {
+  function gqlOperationFailureKind(row) {
+    // A missing operation is distinct from both authorization and a response
+    // schema change. Do not classify a partial data response as safe to defer.
+    if (row?.data != null || !Array.isArray(row?.errors) || !row.errors.length) return "";
+    const errors = row.errors.map((item) => ({
+      message: cleanText(item?.message || ""),
+      code: cleanText(item?.extensions?.code || ""),
+    }));
+    if (errors.some((item) => /auth|forbidden|integrity|rate.?limit|too.?many|429|401|403/i.test(item.code))) return "";
+    if (errors.every((item) => /^(PersistedQueryNotFound|PERSISTED_QUERY_NOT_FOUND)$/i.test(item.message) ||
+        /^(PersistedQueryNotFound|PERSISTED_QUERY_NOT_FOUND)$/i.test(item.code))) return "hash-not-found";
+    if (errors.every((item) => /^(?:operation with name ['"][A-Za-z_][A-Za-z0-9_]*['"] not found|unknown operation named ['"][A-Za-z_][A-Za-z0-9_]*['"])[.!]?$/i.test(item.message))) return "operation-not-found";
+    return "";
+  }
+
+  function inventoryResponseState(row) {
+    const data = row?.data;
+    const user = data?.currentUser;
+    const inventory = user?.inventory;
+    const campaigns = inventory?.dropCampaignsInProgress;
+    const errors = Array.isArray(row?.errors) ? row.errors : [];
+    const type = value => value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
+    // Keep bounded GraphQL field names and types, not response values, account
+    // values or tokens. Field names help identify a changed response envelope.
+    const fields = value => value && typeof value === "object" && !Array.isArray(value)
+      ? Object.keys(value).filter(key => /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(key)).slice(0, 12) : [];
+    const types = { data: type(data), currentUser: type(user), inventory: type(inventory),
+      campaigns: type(campaigns), errorCount: errors.length };
+    const shape = { ...types, dataFields: fields(data), userFields: fields(user), inventoryFields: fields(inventory) };
+    const validRows = Array.isArray(campaigns) && campaigns.every(campaign => (
+      campaign && typeof campaign === "object" && !Array.isArray(campaign)
+    ));
+    const valid = validRows && !errors.length;
+    const status = valid ? (campaigns.length ? "ok" : "empty")
+      : errors.length ? (validRows ? "partial-response" : "error")
+        : data === null || user === null || inventory === null || campaigns === null
+          ? "unavailable" : "shape-changed";
+    return { valid, status, campaigns: valid ? campaigns : null, shape,
+      detail: Object.entries(types).map(([key, value]) => `${key}=${value}`).join(";") };
+  }
+
+  function acceptInventoryResponse(row, source = "inventory-response") {
+    const result = inventoryResponseState(row);
+    const now = Date.now();
+    inventoryResponseHealth = { valid: result.valid, status: result.status, at: now,
+      lastValidAt: result.valid ? now : inventoryResponseHealth.lastValidAt,
+      source, shape: result.shape };
+    if (!result.valid) {
+      inventoryClaimSweepState = { at: now, source, candidates: null, selected: 0,
+        confirmed: 0, reason: "inventory-unavailable" };
+      return result;
+    }
+    const discovered = extractCampaignCatalog(row);
+    if (discovered.length) rememberCampaignCatalog(discovered, source);
+    applyInventorySnapshot(result.campaigns, source);
+    reconcileClaimHistory(result.campaigns);
+    void queueInventoryClaimSweep(result.campaigns, source);
+    return result;
+  }
+
+  function checkGqlOperationResults(requests, json, status, payloads = []) {
     if (status < 200 || status >= 300) return;
     const rows = Array.isArray(json) ? json : [json];
     (requests || []).forEach((req, index) => {
@@ -10998,9 +11141,20 @@ const ExtraPotionsCore = (() => {
       const row = rows[index];
       if (!name || !row) return;
       const errors = (Array.isArray(row.errors) ? row.errors : []).map((item) => cleanText(item?.message || ""));
-      if (errors.some((message) => /PersistedQueryNotFound/i.test(message))) {
-        noteGqlOperationResult(name, "hash-not-found", errors.join(" · "));
-        forgetLearnedGqlOperation(name, "PersistedQueryNotFound");
+      const definitionFailure = gqlOperationFailureKind(row);
+      if (definitionFailure) {
+        noteGqlOperationResult(name, definitionFailure, errors.join(" · ") || definitionFailure);
+        // A response to an older in-flight payload must not discard a newer
+        // validated hash learned from Twitch while that request was pending.
+        forgetLearnedGqlOperation(name, definitionFailure, payloads[index]?.extensions?.persistedQuery?.sha256Hash || "");
+        return;
+      }
+      if (name === "Inventory") {
+        const inventory = inventoryResponseState(row);
+        if (!inventory.valid && gqlOperationHealth[name]?.result !== inventory.status) {
+          logActivity("gql-operation", `Inventory data unavailable (${inventory.status})`, { operation: name, shape: inventory.shape });
+        }
+        noteGqlOperationResult(name, inventory.valid ? "ok" : inventory.status, inventory.detail);
         return;
       }
       const expected = GQL_EXPECTED_SHAPES[name];
@@ -11015,7 +11169,7 @@ const ExtraPotionsCore = (() => {
     });
   }
 
-  async function gql(requests) {
+  async function gql(requests, { allowInventoryFailure = false } = {}) {
     const token = getToken();
     if (!token) throw new Error("Not logged in");
     const claimOnly = Boolean(
@@ -11046,8 +11200,8 @@ const ExtraPotionsCore = (() => {
         body,
         transport,
       });
-      checkGqlOperationResults(requests, result.json, result.status);
-      return parseGqlRows(result.json, result.status);
+      checkGqlOperationResults(requests, result.json, result.status, body);
+      return parseGqlRows(result.json, result.status, { requests, allowInventoryFailure });
     };
 
     const tryClient = async (clientId, { refreshIntegrity = false } = {}) => {
@@ -11075,7 +11229,7 @@ const ExtraPotionsCore = (() => {
             clearClientIntegrity({ clearCapture: true });
             lastIntegrityTransport = "gm";
           }
-          if (error?.circuitOpen) throw error;
+          if (error?.circuitOpen || error?.gqlDefinitionFailure) throw error;
           if (/page integrity unavailable/i.test(error?.message || "")) {
             pageDeadEnd = true;
             lastIntegrityTransport = "gm";
@@ -14068,6 +14222,7 @@ const ExtraPotionsCore = (() => {
     lastStreamVerification = {
       at: Date.now(),
       method,
+      dropId: currentDrop?.id || null,
       channel: channel || null,
       game: targetGame || null,
       campaign: pending.targetCampaign || currentDrop?.campaign || null,
@@ -14813,6 +14968,7 @@ const ExtraPotionsCore = (() => {
       error: null,
     };
     let sessionDrop = null;
+    let sessionRow = null;
     let available = [];
     if (!vars) {
       lastSessionPoll = note;
@@ -14824,9 +14980,10 @@ const ExtraPotionsCore = (() => {
       const extra = await gql(ops);
       if (!pollContextIsCurrent(requestContext)) return { sessionDrop: null, available: [] };
       available = id ? parseAvailableCampaigns(extra[1]) : [];
-      sessionDrop = parseSessionDrop(extra[0], [...campaigns, ...available]);
+      sessionRow = extra[0];
+      sessionDrop = parseSessionDrop(sessionRow, mergeCampaigns(campaigns, available));
       note.session = Boolean(sessionDrop);
-      note.minutes = Number.isFinite(Number(sessionDrop?.currentMinutes))
+      note.minutes = sessionDrop?.currentMinutes != null && Number.isFinite(Number(sessionDrop.currentMinutes))
         ? Number(sessionDrop.currentMinutes)
         : null;
       note.dropId = cleanText(sessionDrop?.id) || null;
@@ -14851,7 +15008,7 @@ const ExtraPotionsCore = (() => {
     }
     if (!pollContextIsCurrent(requestContext)) return { sessionDrop: null, available: [] };
     lastSessionPoll = note;
-    return { sessionDrop, available };
+    return { sessionDrop, available, sessionRow };
   }
 
   function parseSessionDrop(result, campaigns) {
@@ -14962,12 +15119,19 @@ const ExtraPotionsCore = (() => {
     const options = [];
     for (const drop of drops) {
       const self = drop?.self || {};
-      if (self.isClaimed || requiresSubscription(drop)) continue;
-      const required = Number(drop?.requiredMinutesWatched || 0);
-      if (required <= 0) continue;
-
-      const current = Number(self.currentMinutesWatched || 0);
       const id = cleanText(drop?.id);
+      if (wantId && id !== wantId) continue;
+      if ((self.isClaimed && !wantId) || requiresSubscription(drop)) continue;
+      const required = Number(drop?.requiredMinutesWatched || 0);
+      if (!Number.isFinite(required) || required <= 0) continue;
+
+      // An explicit claim on the selected ID is completion proof. A sibling
+      // reward or an absent row is not: leave advancement to the routing logic.
+      const observed = self.currentMinutesWatched;
+      const missingMinutes = observed == null || observed === "";
+      if (missingMinutes && self.isClaimed !== true) continue;
+      const current = missingMinutes ? required : Number(observed);
+      if (!Number.isFinite(current) || current < 0) continue;
       const name = cleanText(drop?.name || drop?.benefitEdges?.[0]?.benefit?.name || "Drop");
       const idMatch = Boolean(wantId && id && wantId === id);
       const nameMatch = Boolean(wantName && name && wantName === name.toLowerCase());
@@ -15096,6 +15260,38 @@ const ExtraPotionsCore = (() => {
         ? "same-campaign-different-drop"
         : (!campaignMatched && bothCampaignKeysKnown ? "different-campaign" : null),
     };
+  }
+
+  function recordRewardSessionResolution(sessionDrop, campaigns = []) {
+    if (!sessionDrop || !currentDrop) { rewardSessionResolution = null; return null; }
+    const identity = dropIdentityMatchesTarget(sessionDrop, currentDrop);
+    const campaign = (campaigns || []).find(item => campaignKeysMatch(campaignKey(item), currentDrop.campaignKey || currentDrop.campaignId));
+    const drops = campaign?.timeBasedDrops || campaign?.drops || [];
+    const selected = drops.find(item => cleanText(item?.id) === cleanText(currentDrop.id));
+    const credited = drops.find(item => cleanText(item?.id) === cleanText(sessionDrop.id));
+    const byId = new Map(drops.map(item => [cleanText(item?.id), item]));
+    const pending = [...(selected?.preconditionDrops || [])];
+    const visited = new Set();
+    let prerequisite = false;
+    while (pending.length && visited.size < 100) {
+      const id = cleanText(pending.pop()?.id);
+      if (!id || visited.has(id)) continue;
+      visited.add(id);
+      if (id === cleanText(sessionDrop.id)) { prerequisite = true; break; }
+      pending.push(...(byId.get(id)?.preconditionDrops || []));
+    }
+    const minutes = sessionDrop.currentMinutes == null ? null : Number(sessionDrop.currentMinutes);
+    rewardSessionResolution = {
+      at: Date.now(), channel: watchingLogin(), targetDropId: cleanText(currentDrop.id),
+      campaignKey: cleanText(currentDrop.campaignKey || currentDrop.campaignId), sessionDropId: cleanText(sessionDrop.id),
+      sessionName: cleanText(credited?.name || credited?.benefitEdges?.[0]?.benefit?.name || sessionDrop.name || "Drop"),
+      sessionMinutes: Number.isFinite(minutes) ? minutes : null,
+      relation: identity.exactDropMatched ? "selected-reward"
+        : identity.sameCampaignDifferentDrop ? (prerequisite ? "prerequisite" : selected && credited ? "other-reward" : "unresolved")
+          : "different-or-unresolved-campaign",
+      identityLevel: identity.identityLevel,
+    };
+    return rewardSessionResolution;
   }
 
   function reconcileDropProgress(sessionDrop, inventoryDrop, options = {}) {
@@ -15283,6 +15479,7 @@ const ExtraPotionsCore = (() => {
   }
   async function pollGqlDrops() {
     const requestContext = pollContext();
+    let inventoryReadCompleted = false;
     lastGqlPollAt = Date.now();
     try {
       if (!getToken()) {
@@ -15295,13 +15492,17 @@ const ExtraPotionsCore = (() => {
       const requests = [{ op: "inventory" }];
       if (fetchDashboard) requests.push({ op: "viewerDropsDashboard" });
       if (login) requests.push({ op: "streamInfo", variables: { channel: login } });
-      const first = await gql(requests);
+      const first = await gql(requests, { allowInventoryFailure: true });
       if (!pollContextIsCurrent(requestContext)) return;
       lastGqlSuccessAt = Date.now();
       lastGqlError = "";
       let responseIndex = 0;
       const inventoryRow = first[responseIndex++];
-      const inventoryCampaigns = inventoryRow?.data?.currentUser?.inventory?.dropCampaignsInProgress || [];
+      const inventoryResult = acceptInventoryResponse(inventoryRow, "inventory-poll");
+      inventoryReadCompleted = true;
+      // Empty local input means no *fresh* inventory. The last valid snapshot
+      // remains in memory, but must not be relabelled as a successful new read.
+      const inventoryCampaigns = inventoryResult.campaigns || [];
       if (fetchDashboard) {
         const dashboardRow = first[responseIndex++];
         const dashboardCampaigns = dashboardRow?.data?.currentUser?.dropCampaigns;
@@ -15313,15 +15514,10 @@ const ExtraPotionsCore = (() => {
             markCampaignPageImport(open.length, "viewer-drops-dashboard", CAMPAIGN_PAGE_DISPLAY.GQL_AUTH);
           }
         }
-        await enrichRoutingTargetCampaign("routing-campaign-details");
-        if (!pollContextIsCurrent(requestContext)) return;
       }
       const streamRow = login ? first[responseIndex++] : null;
-      const discoveredCampaigns = extractCampaignCatalog(inventoryRow);
-      if (discoveredCampaigns.length) rememberCampaignCatalog(discoveredCampaigns, "dropper-inventory-poll");
-      applyInventorySnapshot(inventoryCampaigns, "dropper-in-progress-poll");
-      reconcileClaimHistory(inventoryCampaigns);
-      void queueInventoryClaimSweep(inventoryCampaigns, "inventory-poll");
+      await enrichRoutingTargetCampaign("routing-campaign-details");
+      if (!pollContextIsCurrent(requestContext)) return;
 
       // Live Inventory is authoritative for credited watch minutes. Apply the
       // active Inventory Drop immediately, even on category/search pages where
@@ -15339,10 +15535,16 @@ const ExtraPotionsCore = (() => {
       const stream = streamRow?.data?.user;
       const channelId = stream?.id ? String(stream.id) : "";
       const gameName = stream?.stream?.game?.name || stream?.stream?.game?.displayName || "";
-      const sessionState = await fetchSessionDropState(channelId, login, inventoryCampaigns);
+      const sessionState = await fetchSessionDropState(channelId, login, routingCampaignPool());
       if (!pollContextIsCurrent(requestContext)) return;
       let sessionDrop = sessionState.sessionDrop;
       let available = sessionState.available;
+      if (await enrichRoutingTargetCampaign("session-reward-details", sessionDrop)) {
+        if (!pollContextIsCurrent(requestContext)) return;
+        sessionDrop = parseSessionDrop(sessionState.sessionRow, mergeCampaigns(routingCampaignPool(), available)) || sessionDrop;
+      }
+      if (!pollContextIsCurrent(requestContext)) return;
+      recordRewardSessionResolution(sessionDrop, mergeCampaigns(routingCampaignPool(), available));
       updateRoutingCampaignSupportEvidence(login, available, sessionDrop);
       const activeUnclaimed = Boolean(currentDrop && !currentDrop.isClaimed);
       const preferredGame = activeUnclaimed ? currentDrop.game || "" : gameName || "";
@@ -15496,6 +15698,7 @@ const ExtraPotionsCore = (() => {
       }
     } catch (error) {
       if (!pollContextIsCurrent(requestContext)) return;
+      if (!inventoryReadCompleted) acceptInventoryResponse(error?.inventoryRow || { data: null }, "inventory-request-failed");
       lastGqlError = error?.message || String(error);
       logActivity("poll-error", "Drop state refresh failed", { message: lastGqlError, reason: lastGqlReason || null });
       if (error.message === "Not logged in") {
@@ -15634,6 +15837,7 @@ const ExtraPotionsCore = (() => {
         lastStreamVerification = {
           at: Date.now(),
           method: "credited-progress",
+          dropId: currentDrop?.id || null,
           channel: login,
           game: targetGame || null,
           campaign: currentDrop?.campaign || null,
@@ -15785,10 +15989,38 @@ const ExtraPotionsCore = (() => {
     return on.length ? `On: ${on.join(" · ")}` : "All features off";
   }
 
+  function hasConfirmedRewardProgress(drop = currentDrop, login = watchingLogin(), now = Date.now()) {
+    const proof = lastStreamVerification;
+    return Boolean(drop?.id && proof?.proof?.progressConfirmed === true &&
+      cleanText(proof.dropId) === cleanText(drop.id) && cleanText(proof.channel).toLowerCase() === cleanText(login).toLowerCase() &&
+      cleanText(proof.campaignKey).toLowerCase() === cleanText(drop.campaignKey || drop.campaignId).toLowerCase() &&
+      now >= Number(proof.at) && now - Number(proof.at) < HEALTHY_STREAM_DELAYED_MS);
+  }
+
+  function rewardCreditStatus(drop = currentDrop, login = watchingLogin()) {
+    const resolution = rewardSessionResolution;
+    const sameTarget = resolution && resolution.channel === login &&
+      resolution.targetDropId === cleanText(drop?.id) &&
+      campaignKeysMatch(resolution.campaignKey, drop?.campaignKey || drop?.campaignId) &&
+      Date.now() - resolution.at < HEALTHY_STREAM_DELAYED_MS;
+    if (sameTarget && ["prerequisite", "other-reward", "unresolved"].includes(resolution.relation)) {
+      const subject = resolution.relation === "prerequisite" ? "prerequisite" : "another reward";
+      const minutes = resolution.sessionMinutes == null ? "" : ` (${resolution.sessionMinutes} min)`;
+      return `Twitch reports ${subject}: ${resolution.sessionName}${minutes} · Selected: ${drop.name || "Drop"}`;
+    }
+    if (hasConfirmedRewardProgress(drop, login)) return `Earning ${drop.name || "Drop"} On ${login}`;
+    return inventoryResponseHealth.valid
+      ? "Eligible stream · syncing reward progress"
+      : "Eligible stream · inventory unavailable, syncing reward progress";
+  }
+
   function dropActivityStatus(drop = currentDrop, login = watchingLogin()) {
     if (!drop) return featureStatus();
     const reward = cleanText(drop.name || "Drop");
-    if (login) return `Working toward ${reward} on ${login}`;
+    if (login) {
+      if (readRoutingControllerSession().state === ROUTING_STATES.EARNING) return rewardCreditStatus(drop, login);
+      return `Working toward ${reward} on ${login}`;
+    }
 
     const current = Number(drop.currentMinutes);
     const required = Number(drop.requiredMinutes);
@@ -15909,7 +16141,11 @@ const ExtraPotionsCore = (() => {
 
   function queueInventoryClaimSweep(campaigns, source = 'inventory') {
     if (inventoryClaimSweepPromise) return inventoryClaimSweepPromise;
-    const snapshot = Array.isArray(campaigns) ? campaigns : [];
+    if (!Array.isArray(campaigns)) {
+      inventoryClaimSweepState = { at: Date.now(), source, candidates: null, selected: 0, confirmed: 0, reason: 'inventory-unavailable' };
+      return Promise.resolve(0);
+    }
+    const snapshot = campaigns;
     inventoryClaimSweepPromise = Promise.resolve()
       .then(() => sweepClaimReadyInventory(snapshot, source))
       .catch(() => 0)
@@ -19001,6 +19237,9 @@ const ExtraPotionsCore = (() => {
     if (health?.recovery?.code === 'credit-stalled') {
       return { label: 'Progress stalled', detail: health.creditedProgressAgeMs ? `Last Twitch credit ${briefAge(health.creditedProgressAgeMs)} ago.` : 'Twitch has not credited new progress.', tone: 'bad' };
     }
+    if (health?.earningVerified && !hasConfirmedRewardProgress()) {
+      return { label: 'Eligible stream', detail: rewardCreditStatus(), tone: 'warn' };
+    }
     if (health?.earningVerified) {
       return { label: 'Verified', detail: health.creditedProgressAgeMs ? `Last Twitch credit ${briefAge(health.creditedProgressAgeMs)} ago.` : 'Campaign and stream evidence are verified.', tone: 'good' };
     }
@@ -19149,8 +19388,9 @@ const ExtraPotionsCore = (() => {
     } else if ((routing.state === ROUTING_STATES.EARNING || health.earningVerified) && currentDrop) {
       const recoveryCode = health.recovery?.code || "healthy";
       if (health.inVerificationGrace) {
-        label = settings.backgroundEarning ? "BG Earning" : "Earning";
-        cls += " good";
+        const confirmed = hasConfirmedRewardProgress();
+        label = confirmed ? (settings.backgroundEarning ? "BG Earning" : "Earning") : "Syncing";
+        cls += confirmed ? " good" : " warn";
       } else if (recoveryCode === "credit-delayed-background") {
         label = "BG Delayed";
         cls += " warn";
@@ -19164,8 +19404,9 @@ const ExtraPotionsCore = (() => {
         label = "Delayed";
         cls += " warn";
       } else {
-        label = settings.backgroundEarning ? "BG Earning" : "Earning";
-        cls += " good";
+        const confirmed = hasConfirmedRewardProgress();
+        label = confirmed ? (settings.backgroundEarning ? "BG Earning" : "Earning") : "Syncing";
+        cls += confirmed ? " good" : " warn";
       }
     } else if (currentDrop) {
       label = "Waiting";
@@ -20213,6 +20454,11 @@ const ExtraPotionsCore = (() => {
     lastCampaignCatalog = [];
     lastCampaignCatalogAt = 0;
     lastInventoryCampaigns = [];
+    inventoryResponseHealth = { valid: false, status: 'not-seen', at: 0, lastValidAt: 0, source: '', shape: null };
+    rewardSessionResolution = null;
+    campaignDetailsAttempts.clear();
+    campaignDetailsMisses.clear();
+    campaignDetailsCache.clear();
     lastInProgressKeys = new Set();
     haveSeenInventorySnapshot = false;
 
@@ -20341,6 +20587,7 @@ const ExtraPotionsCore = (() => {
     const diagnosticQueueCandidates = discoverQueueCandidates(now);
     return {
       report: "Dropper Diagnostics",
+      build: "reward-data-r2",
       version: APP_VERSION,
       accountScope: {
         login: twitchSessionLogin() || null,
@@ -20479,6 +20726,10 @@ const ExtraPotionsCore = (() => {
         activityEventsIncluded: diagnosticActivity.length,
         activityEventsOmitted: Math.max(0, activityEntries.length - diagnosticActivity.length),
       },
+      inventoryResponse: { ...inventoryResponseHealth,
+        at: inventoryResponseHealth.at ? new Date(inventoryResponseHealth.at).toISOString() : null,
+        lastValidAt: inventoryResponseHealth.lastValidAt ? new Date(inventoryResponseHealth.lastValidAt).toISOString() : null },
+      rewardResolution: rewardSessionResolution ? { ...rewardSessionResolution, at: new Date(rewardSessionResolution.at).toISOString() } : null,
       progressReconciliation: lastProgressReconcile ? {
         ...lastProgressReconcile,
         at: new Date(lastProgressReconcile.at).toISOString(),
@@ -20571,6 +20822,7 @@ const ExtraPotionsCore = (() => {
         nextPollAt: nextGqlPollAt ? new Date(nextGqlPollAt).toISOString() : null,
         inFlight: gqlPollInFlight,
         errorStreak: gqlErrorStreak,
+        inventoryDegraded: inventoryResponseHealth.valid === false,
         lastReason: lastGqlReason || null,
         pendingReason: pendingGqlReason || null,
         lastPollAt: lastGqlPollAt ? new Date(lastGqlPollAt).toISOString() : null,

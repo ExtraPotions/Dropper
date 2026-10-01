@@ -1470,6 +1470,7 @@
     lastStreamVerification = {
       at: Date.now(),
       method,
+      dropId: currentDrop?.id || null,
       channel: channel || null,
       game: targetGame || null,
       campaign: pending.targetCampaign || currentDrop?.campaign || null,
@@ -2215,6 +2216,7 @@
       error: null,
     };
     let sessionDrop = null;
+    let sessionRow = null;
     let available = [];
     if (!vars) {
       lastSessionPoll = note;
@@ -2226,9 +2228,10 @@
       const extra = await gql(ops);
       if (!pollContextIsCurrent(requestContext)) return { sessionDrop: null, available: [] };
       available = id ? parseAvailableCampaigns(extra[1]) : [];
-      sessionDrop = parseSessionDrop(extra[0], [...campaigns, ...available]);
+      sessionRow = extra[0];
+      sessionDrop = parseSessionDrop(sessionRow, mergeCampaigns(campaigns, available));
       note.session = Boolean(sessionDrop);
-      note.minutes = Number.isFinite(Number(sessionDrop?.currentMinutes))
+      note.minutes = sessionDrop?.currentMinutes != null && Number.isFinite(Number(sessionDrop.currentMinutes))
         ? Number(sessionDrop.currentMinutes)
         : null;
       note.dropId = cleanText(sessionDrop?.id) || null;
@@ -2253,7 +2256,7 @@
     }
     if (!pollContextIsCurrent(requestContext)) return { sessionDrop: null, available: [] };
     lastSessionPoll = note;
-    return { sessionDrop, available };
+    return { sessionDrop, available, sessionRow };
   }
 
   function parseSessionDrop(result, campaigns) {
@@ -2364,12 +2367,19 @@
     const options = [];
     for (const drop of drops) {
       const self = drop?.self || {};
-      if (self.isClaimed || requiresSubscription(drop)) continue;
-      const required = Number(drop?.requiredMinutesWatched || 0);
-      if (required <= 0) continue;
-
-      const current = Number(self.currentMinutesWatched || 0);
       const id = cleanText(drop?.id);
+      if (wantId && id !== wantId) continue;
+      if ((self.isClaimed && !wantId) || requiresSubscription(drop)) continue;
+      const required = Number(drop?.requiredMinutesWatched || 0);
+      if (!Number.isFinite(required) || required <= 0) continue;
+
+      // An explicit claim on the selected ID is completion proof. A sibling
+      // reward or an absent row is not: leave advancement to the routing logic.
+      const observed = self.currentMinutesWatched;
+      const missingMinutes = observed == null || observed === "";
+      if (missingMinutes && self.isClaimed !== true) continue;
+      const current = missingMinutes ? required : Number(observed);
+      if (!Number.isFinite(current) || current < 0) continue;
       const name = cleanText(drop?.name || drop?.benefitEdges?.[0]?.benefit?.name || "Drop");
       const idMatch = Boolean(wantId && id && wantId === id);
       const nameMatch = Boolean(wantName && name && wantName === name.toLowerCase());
@@ -2498,6 +2508,38 @@
         ? "same-campaign-different-drop"
         : (!campaignMatched && bothCampaignKeysKnown ? "different-campaign" : null),
     };
+  }
+
+  function recordRewardSessionResolution(sessionDrop, campaigns = []) {
+    if (!sessionDrop || !currentDrop) { rewardSessionResolution = null; return null; }
+    const identity = dropIdentityMatchesTarget(sessionDrop, currentDrop);
+    const campaign = (campaigns || []).find(item => campaignKeysMatch(campaignKey(item), currentDrop.campaignKey || currentDrop.campaignId));
+    const drops = campaign?.timeBasedDrops || campaign?.drops || [];
+    const selected = drops.find(item => cleanText(item?.id) === cleanText(currentDrop.id));
+    const credited = drops.find(item => cleanText(item?.id) === cleanText(sessionDrop.id));
+    const byId = new Map(drops.map(item => [cleanText(item?.id), item]));
+    const pending = [...(selected?.preconditionDrops || [])];
+    const visited = new Set();
+    let prerequisite = false;
+    while (pending.length && visited.size < 100) {
+      const id = cleanText(pending.pop()?.id);
+      if (!id || visited.has(id)) continue;
+      visited.add(id);
+      if (id === cleanText(sessionDrop.id)) { prerequisite = true; break; }
+      pending.push(...(byId.get(id)?.preconditionDrops || []));
+    }
+    const minutes = sessionDrop.currentMinutes == null ? null : Number(sessionDrop.currentMinutes);
+    rewardSessionResolution = {
+      at: Date.now(), channel: watchingLogin(), targetDropId: cleanText(currentDrop.id),
+      campaignKey: cleanText(currentDrop.campaignKey || currentDrop.campaignId), sessionDropId: cleanText(sessionDrop.id),
+      sessionName: cleanText(credited?.name || credited?.benefitEdges?.[0]?.benefit?.name || sessionDrop.name || "Drop"),
+      sessionMinutes: Number.isFinite(minutes) ? minutes : null,
+      relation: identity.exactDropMatched ? "selected-reward"
+        : identity.sameCampaignDifferentDrop ? (prerequisite ? "prerequisite" : selected && credited ? "other-reward" : "unresolved")
+          : "different-or-unresolved-campaign",
+      identityLevel: identity.identityLevel,
+    };
+    return rewardSessionResolution;
   }
 
   function reconcileDropProgress(sessionDrop, inventoryDrop, options = {}) {
@@ -2685,6 +2727,7 @@
   }
   async function pollGqlDrops() {
     const requestContext = pollContext();
+    let inventoryReadCompleted = false;
     lastGqlPollAt = Date.now();
     try {
       if (!getToken()) {
@@ -2697,13 +2740,17 @@
       const requests = [{ op: "inventory" }];
       if (fetchDashboard) requests.push({ op: "viewerDropsDashboard" });
       if (login) requests.push({ op: "streamInfo", variables: { channel: login } });
-      const first = await gql(requests);
+      const first = await gql(requests, { allowInventoryFailure: true });
       if (!pollContextIsCurrent(requestContext)) return;
       lastGqlSuccessAt = Date.now();
       lastGqlError = "";
       let responseIndex = 0;
       const inventoryRow = first[responseIndex++];
-      const inventoryCampaigns = inventoryRow?.data?.currentUser?.inventory?.dropCampaignsInProgress || [];
+      const inventoryResult = acceptInventoryResponse(inventoryRow, "inventory-poll");
+      inventoryReadCompleted = true;
+      // Empty local input means no *fresh* inventory. The last valid snapshot
+      // remains in memory, but must not be relabelled as a successful new read.
+      const inventoryCampaigns = inventoryResult.campaigns || [];
       if (fetchDashboard) {
         const dashboardRow = first[responseIndex++];
         const dashboardCampaigns = dashboardRow?.data?.currentUser?.dropCampaigns;
@@ -2715,15 +2762,10 @@
             markCampaignPageImport(open.length, "viewer-drops-dashboard", CAMPAIGN_PAGE_DISPLAY.GQL_AUTH);
           }
         }
-        await enrichRoutingTargetCampaign("routing-campaign-details");
-        if (!pollContextIsCurrent(requestContext)) return;
       }
       const streamRow = login ? first[responseIndex++] : null;
-      const discoveredCampaigns = extractCampaignCatalog(inventoryRow);
-      if (discoveredCampaigns.length) rememberCampaignCatalog(discoveredCampaigns, "dropper-inventory-poll");
-      applyInventorySnapshot(inventoryCampaigns, "dropper-in-progress-poll");
-      reconcileClaimHistory(inventoryCampaigns);
-      void queueInventoryClaimSweep(inventoryCampaigns, "inventory-poll");
+      await enrichRoutingTargetCampaign("routing-campaign-details");
+      if (!pollContextIsCurrent(requestContext)) return;
 
       // Live Inventory is authoritative for credited watch minutes. Apply the
       // active Inventory Drop immediately, even on category/search pages where
@@ -2741,10 +2783,16 @@
       const stream = streamRow?.data?.user;
       const channelId = stream?.id ? String(stream.id) : "";
       const gameName = stream?.stream?.game?.name || stream?.stream?.game?.displayName || "";
-      const sessionState = await fetchSessionDropState(channelId, login, inventoryCampaigns);
+      const sessionState = await fetchSessionDropState(channelId, login, routingCampaignPool());
       if (!pollContextIsCurrent(requestContext)) return;
       let sessionDrop = sessionState.sessionDrop;
       let available = sessionState.available;
+      if (await enrichRoutingTargetCampaign("session-reward-details", sessionDrop)) {
+        if (!pollContextIsCurrent(requestContext)) return;
+        sessionDrop = parseSessionDrop(sessionState.sessionRow, mergeCampaigns(routingCampaignPool(), available)) || sessionDrop;
+      }
+      if (!pollContextIsCurrent(requestContext)) return;
+      recordRewardSessionResolution(sessionDrop, mergeCampaigns(routingCampaignPool(), available));
       updateRoutingCampaignSupportEvidence(login, available, sessionDrop);
       const activeUnclaimed = Boolean(currentDrop && !currentDrop.isClaimed);
       const preferredGame = activeUnclaimed ? currentDrop.game || "" : gameName || "";
@@ -2898,6 +2946,7 @@
       }
     } catch (error) {
       if (!pollContextIsCurrent(requestContext)) return;
+      if (!inventoryReadCompleted) acceptInventoryResponse(error?.inventoryRow || { data: null }, "inventory-request-failed");
       lastGqlError = error?.message || String(error);
       logActivity("poll-error", "Drop state refresh failed", { message: lastGqlError, reason: lastGqlReason || null });
       if (error.message === "Not logged in") {
@@ -3036,6 +3085,7 @@
         lastStreamVerification = {
           at: Date.now(),
           method: "credited-progress",
+          dropId: currentDrop?.id || null,
           channel: login,
           game: targetGame || null,
           campaign: currentDrop?.campaign || null,
