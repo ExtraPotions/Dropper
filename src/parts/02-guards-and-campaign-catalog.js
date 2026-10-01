@@ -1134,7 +1134,7 @@
     for (const [key, record] of Object.entries(campaignMemory?.campaigns || {})) {
       if (!record || record.completedAt) continue;
       const status = cleanText(record.status).toLowerCase();
-      if (status === "expired" || status === "completed") continue;
+      if (status === "expired" || status === "completed" || status === "closed") continue;
       const game = cleanText(record.game);
       if (!game || campaignIsExcluded({ game, campaign: record.name || "", gameSlug: "" })) continue;
       const memoryState = campaignMemoryRoutingState(key, now, options);
@@ -1889,8 +1889,37 @@
     };
   }
 
+  // A full campaign list from Twitch is authoritative for what is open. Close
+  // memory records it no longer lists so routing stops picking them; a record
+  // reopens when Twitch lists it again, because rememberCampaignStates
+  // recomputes its status. Short lists are not trusted to be complete.
+  function retireUnlistedMemoryCampaigns(campaigns, source = "viewer-drops-dashboard") {
+    if (!Array.isArray(campaigns) || campaigns.length < PAGE_CAMPAIGN_IMPORT_MIN) return 0;
+    const listed = new Set(campaigns.map((campaign) => campaignKey(campaign)).filter(Boolean));
+    for (const campaign of lastInventoryCampaigns || []) listed.add(campaignKey(campaign));
+    const active = cleanText(currentDrop?.campaignKey || currentDrop?.campaignId || "").toLowerCase();
+    if (active) listed.add(active);
+    const now = Date.now();
+    const retired = [];
+    for (const [key, record] of Object.entries(campaignMemory?.campaigns || {})) {
+      if (!record || record.completedAt || listed.has(key) || isPageScrapedCampaignKey(key)) continue;
+      if (["expired", "completed", "closed"].includes(cleanText(record.status).toLowerCase())) continue;
+      campaignMemory.campaigns[key] = { ...record, status: "closed", closedAt: now, source };
+      retired.push(record.name || key);
+    }
+    if (!retired.length) return 0;
+    saveCampaignMemory();
+    logActivity("campaign-memory", `Closed ${retired.length} remembered campaign${retired.length === 1 ? "" : "s"} Twitch no longer lists`, {
+      source,
+      listed: campaigns.length,
+      campaigns: retired.slice(0, 8),
+    });
+    return retired.length;
+  }
+
   function replaceCatalogFromDashboard(campaigns, source = "viewer-drops-dashboard") {
     if (!Array.isArray(campaigns)) return lastCampaignCatalog;
+    retireUnlistedMemoryCampaigns(campaigns, source);
     const replaced = campaigns.map((campaign) => {
       const key = campaignKey(campaign);
       const known = withKnownCampaignDetails(campaign, key);

@@ -91,9 +91,13 @@ const catalogContext = {
     return { key, startAt, endAt, startMs, endMs, windowKnown: Boolean(startMs && endMs && endMs > startMs), open: reason === "open", reason };
   },
   isPageScrapedCampaignKey: (key) => /^page:/i.test(String(key || "")),
+  PAGE_CAMPAIGN_IMPORT_MIN: 12,
+  campaignMemory: { campaigns: {} },
+  saveCampaignMemory: () => {},
+  currentDrop: null,
 };
 vm.runInNewContext(
-  `${source.slice(catalogStart, catalogEnd)}\nthis.replace=replaceCatalogFromDashboard;this.overlay=overlayKnownCampaignProgress;this.apply=applyInventorySnapshot;this.remember=rememberCampaignCatalog;`,
+  `${source.slice(catalogStart, catalogEnd)}\nthis.retire=retireUnlistedMemoryCampaigns;this.replace=replaceCatalogFromDashboard;this.overlay=overlayKnownCampaignProgress;this.apply=applyInventorySnapshot;this.remember=rememberCampaignCatalog;`,
   catalogContext,
 );
 const dashboardOnly = dashboardPayload.data.currentUser.dropCampaigns;
@@ -203,6 +207,28 @@ catalogContext.apply([{
 }]);
 catalogContext.apply([]);
 assert.equal(completedKeys.has("open-campaign"), false, "a campaign leaving one Inventory snapshot is not treated as completion proof");
+
+const listedCampaigns = Array.from({ length: 12 }, (_, index) => ({ id: `listed-${index}`, name: `Listed ${index}` }));
+const freshMemory = () => ({
+  "listed-0": { name: "Listed 0", status: "open" },
+  gone: { name: "Gone", status: "open" },
+  "done": { name: "Done", status: "completed", completedAt: 1 },
+  "page:scraped": { name: "Scraped", status: "open" },
+  "earning-now": { name: "Earning Now", status: "open" },
+});
+catalogContext.campaignMemory = { campaigns: freshMemory() };
+catalogContext.currentDrop = { campaignKey: "earning-now" };
+assert.equal(catalogContext.retire(listedCampaigns.slice(0, 3)), 0, "a short campaign list is not trusted to retire remembered campaigns");
+assert.equal(catalogContext.campaignMemory.campaigns.gone.status, "open");
+assert.equal(catalogContext.retire(listedCampaigns), 1, "a full list closes only the remembered campaign Twitch no longer lists");
+const retiredMemory = catalogContext.campaignMemory.campaigns;
+assert.equal(retiredMemory.gone.status, "closed");
+assert.equal(retiredMemory["listed-0"].status, "open", "listed campaigns stay open");
+assert.equal(retiredMemory.done.status, "completed", "completed history is left alone");
+assert.equal(retiredMemory["page:scraped"].status, "open", "page-scraped rows keep their own pruning");
+assert.equal(retiredMemory["earning-now"].status, "open", "the campaign being earned is never closed");
+catalogContext.campaignMemory = { campaigns: {} };
+catalogContext.currentDrop = null;
 
 const pickerStart = source.indexOf("  function requiresSubscription");
 const pickerEnd = source.indexOf("\n  function maybeAdvanceExpiredCampaign", pickerStart);

@@ -383,7 +383,7 @@
     const open = (records || []).filter((record) => {
       if (!record) return false;
       const status = cleanText(record.status).toLowerCase();
-      if (status === "expired" || status === "completed" || record.completedAt) return false;
+      if (status === "expired" || status === "completed" || status === "closed" || record.completedAt) return false;
       return campaignTitleKey(record.name) === wanted;
     });
     if (!open.length) return null;
