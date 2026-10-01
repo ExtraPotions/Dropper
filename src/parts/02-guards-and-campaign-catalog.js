@@ -1871,12 +1871,26 @@
     return (catalog || []).filter((campaign) => isPageScrapedCampaignKey(campaignKey(campaign)));
   }
 
+  // ViewerDropsDashboard rows carry no rewards or allow list. Keep what an
+  // earlier DropCampaignDetails request supplied instead of erasing it on every poll.
+  function withKnownCampaignDetails(campaign, key = campaignKey(campaign)) {
+    if ((campaign?.timeBasedDrops || campaign?.drops || []).length) return campaign;
+    const prior = lastCampaignCatalog.find((item) => campaignKey(item) === key);
+    if (!(prior?.timeBasedDrops || []).length) return campaign;
+    return {
+      ...campaign,
+      timeBasedDrops: prior.timeBasedDrops,
+      allow: campaign?.allow?.channels?.length ? campaign.allow : prior.allow,
+    };
+  }
+
   function replaceCatalogFromDashboard(campaigns, source = "viewer-drops-dashboard") {
     if (!Array.isArray(campaigns)) return lastCampaignCatalog;
     const replaced = campaigns.map((campaign) => {
       const key = campaignKey(campaign);
+      const known = withKnownCampaignDetails(campaign, key);
       const progress = (lastInventoryCampaigns || []).find((item) => campaignKey(item) === key);
-      return progress ? mergeCampaigns([campaign], [progress])[0] : campaign;
+      return progress ? mergeCampaigns([known], [progress])[0] : known;
     });
     // ViewerDropsDashboard is often a short inventory-linked subset. Keep All Campaigns
     // page rows for games the dashboard did not return so open campaigns stay selectable.
@@ -2009,6 +2023,40 @@
       }
     }
     return list.map((campaign) => byId.get(String(campaign.id || "")) || campaign);
+  }
+
+  // Campaign keys whose DropCampaignDetails came back without a watch-time
+  // reward, so routing stops waiting on them. key -> checked-at ms.
+  const campaignDetailsMisses = new Map();
+  const CAMPAIGN_DETAILS_MISS_TTL_MS = 15 * 60 * 1000;
+
+  function campaignDetailsMissedRecently(key, now = Date.now()) {
+    const at = campaignDetailsMisses.get(cleanText(key).toLowerCase()) || 0;
+    return Boolean(at && now - at < CAMPAIGN_DETAILS_MISS_TTL_MS);
+  }
+
+  // The routing controller waits on "campaign-details" when its pick is a
+  // dashboard row without rewards. Fetch that one campaign's details so the
+  // wait can end; one request, at most once per miss window.
+  async function enrichRoutingTargetCampaign(source = "routing-campaign-details") {
+    const routing = readRoutingControllerSession();
+    if (routing.state !== ROUTING_STATES.WAITING || routing.waitReason !== "campaign-details") return false;
+    const key = cleanText(routing.targetCampaignKey).toLowerCase();
+    if (!key || campaignDetailsMissedRecently(key)) return false;
+    const target = lastCampaignCatalog.find((campaign) => campaignKey(campaign) === key);
+    if (!target?.id || (target.timeBasedDrops || []).length) return false;
+    const [detailed] = await enrichCampaignsWithDropDetails([target], source);
+    const found = (detailed?.timeBasedDrops || detailed?.drops || []).length > 0;
+    if (found) overlayKnownCampaignProgress([detailed], source);
+    if (!found || !campaignWatchDrops(detailed).length) campaignDetailsMisses.set(key, Date.now());
+    logActivity("campaign-details", found
+      ? `Loaded reward details for ${target.name || key}`
+      : `No reward details returned for ${target.name || key}`, {
+      source,
+      campaignKey: key,
+      watchDrops: found ? campaignWatchDrops(detailed).length : 0,
+    });
+    return found;
   }
 
   let campaignAuthImportPromise = null;

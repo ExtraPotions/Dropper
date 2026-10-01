@@ -2986,13 +2986,21 @@
   // keys so callers can keep them out of later picks. preferCurrent: false ranks purely by Campaign Order.
   function pickViableCampaign(session, { preferCurrent = true } = {}) {
     const excluded = new Set((session.excludedCampaignKeys || []).map((key) => cleanText(key).toLowerCase()).filter(Boolean));
+    // Details-pending campaigns whose details already came back empty are
+    // skipped only until the miss expires, so they stay out of `excluded`.
+    const missed = new Set();
     let next = null;
     for (let attempts = 0; attempts < 12; attempts += 1) {
-      next = pickNextOpenCampaignDrop(routingCampaignPool(), [...excluded], [], { preferCurrent });
+      next = pickNextOpenCampaignDrop(routingCampaignPool(), [...excluded, ...missed], [], { preferCurrent });
       if (!next) break;
       const key = cleanText(next.campaignKey || next.campaignId).toLowerCase();
       if (campaignIsExcluded(next) || (!next.needsDropDetails && !dropFitsCampaignWindow(next))) {
         if (key) excluded.add(key);
+        next = null;
+        continue;
+      }
+      if (next.needsDropDetails && key && campaignDetailsMissedRecently(key)) {
+        missed.add(key);
         next = null;
         continue;
       }

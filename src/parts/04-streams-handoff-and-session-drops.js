@@ -2715,6 +2715,8 @@
             markCampaignPageImport(open.length, "viewer-drops-dashboard", CAMPAIGN_PAGE_DISPLAY.GQL_AUTH);
           }
         }
+        await enrichRoutingTargetCampaign("routing-campaign-details");
+        if (!pollContextIsCurrent(requestContext)) return;
       }
       const streamRow = login ? first[responseIndex++] : null;
       const discoveredCampaigns = extractCampaignCatalog(inventoryRow);
