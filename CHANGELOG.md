@@ -1,3 +1,9 @@
+## 3.3.39 — 2026-10-01
+
+- Fixes Dropper getting stuck on "Waiting for authoritative Drop details" and never opening a stream.
+- Remembers a campaign's rewards between checks and asks Twitch for the missing ones directly.
+- Moves on to the next campaign when Twitch reports no watch-time rewards for one, and tries it again after 15 minutes.
+
 ## 3.3.38 — 2026-10-01
 
 - Updates the shared foundation to exp-core 3.4.8.
