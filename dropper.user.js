@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.48
+// @version      3.3.49
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -656,6 +656,11 @@ const ExtraPotionsDiagnostics = (() => {
     .replace(/\b\d{3}-\d{7}-\d{7}\b/g, '[order-id]')
     .replace(/\b[A-Za-z0-9_-]{40,}\b/g, '[opaque-id]')
     .slice(0, 2000);
+  const RESOURCE_INITIATOR_TYPES = new Set(['audio','beacon','css','embed','fetch','font','iframe','img','link','navigation','object','ping','script','track','video','xmlhttprequest','other']);
+  const resourceInitiatorType = value => {
+    const type = String(value || '').trim().toLowerCase();
+    return RESOURCE_INITIATOR_TYPES.has(type) ? type : 'other';
+  };
   function clean(value, depth = 0, seen = new WeakSet()) {
     if (depth > 8) return '[depth limit]';
     if (typeof value === 'string') return redact(value);
@@ -673,7 +678,8 @@ const ExtraPotionsDiagnostics = (() => {
         if (/token|cookie|authorization|password|secret|pageText|innerHTML|outerHTML|formValue|matchText|__proto__|constructor|prototype/i.test(key)) continue;
         if (!('value' in descriptor)) continue;
         const item = clean(descriptor.value, depth + 1, seen);
-        if (item !== undefined) result[key] = item;
+        const safeKey = redact(key);
+        if (item !== undefined && safeKey) result[safeKey] = item;
       }
       return result;
     } catch { return '[unavailable]'; } finally { seen.delete(value); }
@@ -781,7 +787,7 @@ const ExtraPotionsDiagnostics = (() => {
     const resources = performance.getEntriesByType('resource');
     const byType = {};
     for (const entry of resources) {
-      const summary = byType[entry.initiatorType || 'other'] ||= { count: 0, durationMs: 0, transferBytes: 0 };
+      const summary = byType[resourceInitiatorType(entry.initiatorType)] ||= { count: 0, durationMs: 0, transferBytes: 0 };
       summary.count++; summary.durationMs += Math.round(entry.duration); summary.transferBytes += entry.transferSize || 0;
     }
     const page = { origin: location.origin, protocol: location.protocol, readyState: document.readyState, contentType: document.contentType, characterSet: document.characterSet, compatibilityMode: document.compatMode, language: document.documentElement?.lang || null, direction: document.documentElement?.dir || 'auto',
@@ -1520,7 +1526,7 @@ const ExpMenuArrangement = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.4.12';
+  const version = '3.4.13';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -3697,7 +3703,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.48";
+  const APP_VERSION = "3.3.49";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -3842,6 +3848,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.3.49": ["Updates the shared foundation to exp-core 3.4.13.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.48": ["Removes retired width settings, preset CSS and chat-width observers; menu sizing now comes from Core and fits the viewport.","Clears stale earning state when routing is held, records trustworthy manual-arrival evidence, and refreshes reward identity without inventing watch credit.","Uses simultaneous reward timing rather than adding overlapping campaign progress bars; ambiguous dependencies and windows remain unknown.","Separates standby cache maintenance from real observations and rediscoveries, preserving manual playback and navigation protections."],
     "3.3.47": ["Updates the shared foundation to exp-core 3.4.12.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.46": ["Updates the shared foundation to exp-core 3.4.11.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],

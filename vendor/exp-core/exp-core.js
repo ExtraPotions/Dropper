@@ -616,6 +616,11 @@ const ExtraPotionsDiagnostics = (() => {
     .replace(/\b\d{3}-\d{7}-\d{7}\b/g, '[order-id]')
     .replace(/\b[A-Za-z0-9_-]{40,}\b/g, '[opaque-id]')
     .slice(0, 2000);
+  const RESOURCE_INITIATOR_TYPES = new Set(['audio','beacon','css','embed','fetch','font','iframe','img','link','navigation','object','ping','script','track','video','xmlhttprequest','other']);
+  const resourceInitiatorType = value => {
+    const type = String(value || '').trim().toLowerCase();
+    return RESOURCE_INITIATOR_TYPES.has(type) ? type : 'other';
+  };
   function clean(value, depth = 0, seen = new WeakSet()) {
     if (depth > 8) return '[depth limit]';
     if (typeof value === 'string') return redact(value);
@@ -633,7 +638,8 @@ const ExtraPotionsDiagnostics = (() => {
         if (/token|cookie|authorization|password|secret|pageText|innerHTML|outerHTML|formValue|matchText|__proto__|constructor|prototype/i.test(key)) continue;
         if (!('value' in descriptor)) continue;
         const item = clean(descriptor.value, depth + 1, seen);
-        if (item !== undefined) result[key] = item;
+        const safeKey = redact(key);
+        if (item !== undefined && safeKey) result[safeKey] = item;
       }
       return result;
     } catch { return '[unavailable]'; } finally { seen.delete(value); }
@@ -741,7 +747,7 @@ const ExtraPotionsDiagnostics = (() => {
     const resources = performance.getEntriesByType('resource');
     const byType = {};
     for (const entry of resources) {
-      const summary = byType[entry.initiatorType || 'other'] ||= { count: 0, durationMs: 0, transferBytes: 0 };
+      const summary = byType[resourceInitiatorType(entry.initiatorType)] ||= { count: 0, durationMs: 0, transferBytes: 0 };
       summary.count++; summary.durationMs += Math.round(entry.duration); summary.transferBytes += entry.transferSize || 0;
     }
     const page = { origin: location.origin, protocol: location.protocol, readyState: document.readyState, contentType: document.contentType, characterSet: document.characterSet, compatibilityMode: document.compatMode, language: document.documentElement?.lang || null, direction: document.documentElement?.dir || 'auto',
@@ -1480,7 +1486,7 @@ const ExpMenuArrangement = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.4.12';
+  const version = '3.4.13';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
