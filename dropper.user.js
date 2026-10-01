@@ -16091,6 +16091,8 @@ const ExtraPotionsCore = (() => {
     return false;
   }
 
+  const STREAMING_TOGETHER_LABEL = /^stream(?:ing)?\s+together\b/i;
+
   function readStreamInfo() {
     const root = document.querySelector("#live-channel-stream-information");
     const login = watchingLogin();
@@ -16109,8 +16111,19 @@ const ExtraPotionsCore = (() => {
     }
     const channelName = cleanText(root.querySelector("h1.tw-title, h1")?.textContent) || login;
     const title = cleanText(document.querySelector('[data-a-target="stream-title"]')?.textContent);
-    const gameLink = document.querySelector('[data-a-target="stream-game-link"]');
-    const game = cleanText(gameLink?.textContent);
+    // A Streaming Together session can show the collaboration label and every
+    // participant's category. The label is not a game, and the stream belongs
+    // to the target game when any shown category matches it.
+    const gameLinks = [...new Set([
+      ...document.querySelectorAll('[data-a-target="stream-game-link"]'),
+      ...root.querySelectorAll('a[href*="/directory/category/"], a[href*="/directory/game/"]'),
+    ])]
+      .map((link) => ({ name: cleanText(link.textContent), href: link.href || "" }))
+      .filter((link) => link.name && !STREAMING_TOGETHER_LABEL.test(link.name));
+    const wantedGame = cleanText(readRoutingControllerSession()?.targetGame || currentDrop?.game || "");
+    const gameLink = (wantedGame && gameLinks.find((link) => gameNamesMatch(wantedGame, link.name))) || gameLinks[0] || null;
+    const game = gameLink?.name || "";
+    const games = [...new Set(gameLinks.map((link) => link.name))];
     const gameCategoryUrl = gameLink?.href || "";
     const gameSlug = categorySlugFromUrl(gameCategoryUrl);
     if (game && gameSlug) rememberCategorySlug(game, gameSlug, "active-stream");
@@ -16118,7 +16131,7 @@ const ExtraPotionsCore = (() => {
     const uptime = cleanText(document.querySelector('.live-time span[aria-hidden="true"]')?.textContent);
     const dropsEnabled = streamHasDropsEnabledTag(root);
     const live = Boolean(root.querySelector('.tw-channel-status-text-indicator, [class*="ChannelStatusTextIndicator"]')) || /\bLIVE\b/i.test(root.textContent || "");
-    return { channelName, title, game, gameSlug, gameCategoryUrl, viewers, uptime, dropsEnabled, live };
+    return { channelName, title, game, games, gameSlug, gameCategoryUrl, viewers, uptime, dropsEnabled, live };
   }
 
   function refreshStreamInfo() {
