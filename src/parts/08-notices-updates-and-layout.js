@@ -732,10 +732,10 @@
         manualDelta: launcherGridDelta,
       },
       autoDismiss: {
-        menuSeconds: Math.round(MENU_INACTIVITY_DISMISS_MS / 1000),
-        menuTimerActive: Boolean(menuDismissTimer),
-        menuDismissAt: menuDismissAt ? new Date(menuDismissAt).toISOString() : null,
-        menuRemainingSeconds: menuDismissAt ? Math.max(0, Math.ceil((menuDismissAt - now) / 1000)) : null,
+        menuSeconds: Math.round((ui?.menuController?.idleTimeoutMs || 15000) / 1000),
+        menuTimerActive: Boolean(ui?.menuController?.timerActive),
+        menuDismissAt: ui?.menuController?.dismissAt ? new Date(ui.menuController.dismissAt).toISOString() : null,
+        menuRemainingSeconds: ui?.menuController?.dismissAt ? Math.max(0, Math.ceil((ui.menuController.dismissAt - now) / 1000)) : null,
       },
       updateNoticePlacement: ui?.shadow?.getElementById("tdh-update-notice")?.dataset?.placement || null,
       generatedAt: new Date(now).toISOString(),
@@ -1327,41 +1327,17 @@
     ExtraPotionsCore.bindLauncherDrag(ui.launcher, "dropper", { layout: layoutChrome });
   }
 
+  // Core owns inactivity, native-select protection and suite menu exclusivity.
   function clearMenuDismissTimer() {
-    clearTimeout(menuDismissTimer);
-    menuDismissTimer = null;
-    menuDismissAt = 0;
+    ui?.menuController?.cancelDismiss();
   }
 
   function scheduleMenuDismiss() {
-    clearTimeout(menuDismissTimer);
-    menuDismissTimer = null;
-    if (!railOpen || !ui) {
-      menuDismissAt = 0;
-      return;
-    }
-
-    menuDismissAt = Date.now() + MENU_INACTIVITY_DISMISS_MS;
-    menuDismissTimer = setTimeout(() => {
-      enforceAutoDismissDeadlines(Date.now());
-    }, MENU_INACTIVITY_DISMISS_MS + 20);
+    ui?.menuController?.scheduleDismiss();
   }
 
   function enforceAutoDismissDeadlines(now = Date.now()) {
-    if (railOpen && menuDismissAt && now >= menuDismissAt) {
-      setRailOpen(false);
-    }
-  }
-
-  function bindMenuInactivity() {
-    if (!ui?.dock) return;
-    const reset = () => {
-      if (railOpen) scheduleMenuDismiss();
-    };
-
-    ["pointerdown", "click", "wheel", "keydown", "input", "change"].forEach((type) => {
-      ui.dock.addEventListener(type, reset, { passive: type === "wheel" });
-    });
+    ui?.menuController?.enforceDeadline(now);
   }
 
   function setRailOpen(open, focus) {
@@ -1370,13 +1346,11 @@
       collapseToolPanels();
       collapseNestedPanels();
     }
-    ui.dock.classList.toggle("fl-rail-open", open);
+    ui.menuController.state(open);
     ui.launcher.setAttribute("aria-expanded", String(open));
 
     if (open) {
       document.documentElement.dataset.expDropperMenuOpen = "1";
-      document.documentElement.setAttribute("data-exp-open-menu", "dropper");
-      document.dispatchEvent(new Event("exp-core:menu-open"));
       scheduleMenuDismiss();
       refreshTwitchAuthStatus();
     } else {

@@ -8,6 +8,9 @@ const { loadDropperSource } = require('./load-source.cjs');
 const source = loadDropperSource();
 const exposed = source.replace('  startDropper();\n})();', `
   window.__dropperTest = {
+    setMenuOpen: setRailOpen,
+    menuState: () => ({ open: railOpen, coreOpen: ui.menuController.isOpen, dismissAt: ui.menuController.dismissAt, timer: ui.menuController.timerActive }),
+    enforceMenuAt: now => ui.menuController.enforceDeadline(now),
     intent: viewingIntent, sync: syncViewingContext, ensure: ensureStreamPlaying,
     install: installViewingIntent, claim: claimDropViaGql, scan: scanClaimGroups,
     history: () => claimLedger().snapshot(), reconcile: reconcileClaimHistory,
@@ -1146,5 +1149,56 @@ test('the progress card stays fully inside the window wherever the launchers are
     if (geo.card.height > 0) assert.ok(geo.card.top >= 7 && geo.card.bottom <= geo.viewport - 7, `the progress card stays inside the window. ${detail}`);
     if (anchor === 'top') assert.ok(Math.abs(geo.launcher.top - geo.row.top) <= 1, `anchored at the top, the launcher is at the top of the row. ${detail}`);
     else assert.ok(Math.abs(geo.launcher.bottom - geo.row.bottom) <= 1, `anchored at the bottom, the launcher is at the bottom of the row. ${detail}`);
+  }
+}));
+
+
+test('custom Dropper menu delegates outside closing, select protection and deadline enforcement to Core', async () => fixture(async page => {
+  await page.evaluate(() => window.__dropperTest.setMenuOpen(true, false));
+  let state = await page.evaluate(() => window.__dropperTest.menuState());
+  assert.equal(state.open, true); assert.equal(state.coreOpen, true); assert.equal(state.timer, true);
+  assert.ok(state.dismissAt > Date.now());
+  await page.evaluate(() => document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })));
+  assert.equal((await page.evaluate(() => window.__dropperTest.menuState())).open, true, 'synthetic outside events do not dismiss');
+  await page.evaluate(() => {
+    const root = document.getElementById('tdh-root').shadowRoot;
+    const select = document.createElement('select'); select.id = 'fixture-native-select';
+    select.innerHTML = '<option>One</option><option>Two</option>';
+    root.getElementById('tdh-tools-dock').append(select); select.focus();
+  });
+  await page.mouse.click(20, 800);
+  assert.equal((await page.evaluate(() => window.__dropperTest.menuState())).open, true, 'native select focus protects outside presses');
+  await page.evaluate(() => document.getElementById('tdh-root').shadowRoot.getElementById('fixture-native-select').blur());
+  await page.mouse.click(20, 800);
+  state = await page.evaluate(() => window.__dropperTest.menuState());
+  assert.equal(state.open, false); assert.equal(state.coreOpen, false); assert.equal(state.timer, false);
+  const deadline = await page.evaluate(() => {
+    const t = window.__dropperTest; t.setMenuOpen(true, false);
+    return t.menuState().dismissAt;
+  });
+  assert.equal(await page.evaluate(time => window.__dropperTest.enforceMenuAt(time), deadline), true);
+  assert.equal((await page.evaluate(() => window.__dropperTest.menuState())).open, false);
+}));
+
+test('custom Dropper menu yields suite ownership without replacing progress geometry', async () => fixture(async page => {
+  for (const mode of ['full', 'compact', 'narrow']) {
+    await page.evaluate(mode => { const t=window.__dropperTest; t.setWidth(mode); t.setMenuOpen(true, false); }, mode);
+    const before = await page.evaluate(() => {
+      const root=document.getElementById('tdh-root').shadowRoot;
+      const dock=root.getElementById('tdh-tools-dock');
+      window.__menuNodeBefore=dock;
+      return { width:dock.getBoundingClientRect().width, owner:document.documentElement.getAttribute('data-exp-open-menu') };
+    });
+    assert.equal(before.owner, 'dropper');
+    const result = await page.evaluate(() => {
+      document.documentElement.setAttribute('data-exp-open-menu','shift');
+      document.dispatchEvent(new Event('exp-core:menu-open'));
+      const t=window.__dropperTest; const closed=t.menuState(); t.setMenuOpen(true,false);
+      const dock=document.getElementById('tdh-root').shadowRoot.getElementById('tdh-tools-dock');
+      return { closed, sameNode: dock === window.__menuNodeBefore, width:dock.getBoundingClientRect().width, owner:document.documentElement.getAttribute('data-exp-open-menu') };
+    });
+    assert.equal(result.closed.open, false); assert.equal(result.closed.coreOpen, false);
+    assert.equal(result.sameNode, true); assert.equal(result.width,before.width);
+    assert.equal(result.owner,'dropper');
   }
 }));

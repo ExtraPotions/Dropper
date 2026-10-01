@@ -1357,37 +1357,10 @@
         align-items:start; gap:8px; width:100%;
       }
       .header-actions { display:flex; align-items:flex-start; gap:5px; position:static; }
-      .support-wrap { position:static; }
-      .support-button, #tdh-rail-close {
+      #tdh-rail-close {
         width:30px; height:30px; min-width:30px; padding:0;
         border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0;
         cursor:pointer;
-      }
-      .support-button { display:grid; place-items:center; }
-      .support-button svg { width:15px; height:15px; fill:currentColor; }
-      .support-button:hover, .support-button:focus-visible {
-        border-color:var(--theme-accent); color:var(--theme-accent2); background:#211b2b; outline:none;
-      }
-      .support-popover {
-        position:absolute; z-index:14; top:35px; right:0;
-        width:min(190px,100%); max-width:100%;
-        box-sizing:border-box; padding:8px 9px;
-        border:1px solid color-mix(in srgb,var(--theme-accent) 46%,var(--theme-line));
-        border-radius:9px; background:var(--theme-panel); color:var(--theme-text);
-        box-shadow:0 10px 28px #0009;
-      }
-      .support-popover[hidden] { display:none; }
-      .support-popover strong { display:block; margin-bottom:3px; font-size:10px; }
-      .support-popover span { display:block; color:var(--theme-muted); font-size:8px; line-height:1.35; }
-      .support-popover a {
-        display:flex; align-items:center; justify-content:center; min-height:26px; margin-top:7px; padding:0 9px;
-        border:1px solid color-mix(in srgb,var(--theme-accent) 58%,var(--theme-line));
-        border-radius:7px; background:color-mix(in srgb,var(--theme-panel) 76%,var(--theme-accent) 24%);
-        color:var(--theme-text); text-decoration:none; font-size:9px; font-weight:800;
-      }
-      .support-popover a:hover, .support-popover a:focus-visible {
-        border-color:var(--theme-accent2); outline:none;
-        background:color-mix(in srgb,var(--theme-panel) 66%,var(--theme-accent) 34%);
       }
       .header-brand {
         display:grid; grid-template-columns:38px minmax(0,1fr);

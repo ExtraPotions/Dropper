@@ -1044,9 +1044,6 @@
       syncDropperWidthToChat();
       layoutChrome();
     }, { passive: true });
-    document.addEventListener("exp-core:menu-open", () => {
-      if (railOpen && document.documentElement.getAttribute("data-exp-open-menu") !== "dropper") setRailOpen(false, false);
-    });
     window.addEventListener("storage", (event) => {
       if (event.key !== scopedLocalStorageKey(IGNORED_CAMPAIGN_GAMES_KEY)) return;
       ignoredCampaignGames = loadIgnoredCampaignGames();

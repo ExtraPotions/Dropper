@@ -12,7 +12,7 @@ Track Twitch-credited progress, manage eligible streams, and claim available rew
 
 ## Current release
 
-**3.3.43** repairs Inventory requests and preserves exact-reward progress through claims and reward transitions. The validated `reward-data-r2` fixes are now included in the regular release. See [the changelog](CHANGELOG.md) for details.
+**3.3.45** uses exp-core 3.4.10 for shared menu coordination, dismissal and inactivity timing while preserving Dropper layout and settings. It retains the Inventory recovery and exact-reward progress fixes. See [the changelog](CHANGELOG.md) for details.
 
 ## Get started
 
