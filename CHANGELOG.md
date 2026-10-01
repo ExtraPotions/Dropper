@@ -1,3 +1,10 @@
+## 3.3.44 — 2026-10-01
+
+- Updates the shared foundation to exp-core 3.4.10.
+- Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.
+- Leaves Dropper Twitch routing, campaign, claim, and playback behavior unchanged.
+- Keeps the standalone userscript distribution while Core remains the single shared source.
+
 ## 3.3.43 — 2026-10-01
 
 - Repairs the Inventory request and preserves the last valid reward snapshot when Twitch returns unavailable or partial data.
