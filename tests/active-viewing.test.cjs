@@ -227,7 +227,7 @@ test('deadline assessment stays explicit about safe, tight, impossible, and unkn
   assert.equal(active.deadlineAssessment({}, null, { totalRemainingMinutes: 20 }, now).finishable, null);
 });
 
-test('campaign sequence sums free watch work and keeps claim-ready rewards visible', () => {
+test('campaign plan keeps outstanding free watch work and claim-ready rewards visible', () => {
   const now = Date.parse('2026-09-25T12:00:00Z');
   const campaign = {
     endAt: '2026-09-25T15:00:00Z',

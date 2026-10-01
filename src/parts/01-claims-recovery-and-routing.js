@@ -100,7 +100,7 @@
       return false;
     }
     if (viewingIntent.navigationAllowed(manualAction)) return true;
-    lastViewingNavigationBlock = state.paused ? 'Playback Paused' : 'Your Stream Is Selected';
+    lastViewingNavigationBlock = state.paused ? 'Playback Paused' : state.arrivalSource === 'unclassified-arrival' ? 'Automatic Switching Needs Approval' : 'Your Stream Is Selected';
     return false;
   }
 
@@ -111,20 +111,34 @@
       ? { label: 'Playback Paused', detail: 'Dropper will not resume playback or switch streams while your pause is active.' }
       : { label: 'Playback Needs Attention', detail: 'Playback is paused. Resume it yourself or choose Resume Playback; Dropper will not guess why it stopped.' };
     if (lock) return { label: 'Staying On This Stream', detail: `Automatic routing is held on ${lock.login}. Dropper will still monitor Twitch credit and release the lock if the stream becomes unusable.` };
+    if (lastViewingNavigationBlock && state.manualStream && state.arrivalSource === 'unclassified-arrival') return { label: 'Automatic Switching Needs Approval', detail: 'Dropper could not verify how this channel was opened. Your saved campaign is retained; enable automatic switching to resume routing.' };
     if (lastViewingNavigationBlock && state.manualStream) return { label: 'Your Stream Is Selected', detail: 'Campaign recommendations will not change this stream. Use Skip Streamer or enable automatic switching when ready.' };
     return null;
   }
 
   function noteRequestedViewingNavigation(target) {
     const channel = streamLoginFromUrl(target) || '';
+    removeSession(VIEWING_SELECTION_KEY);
     if (channel) writeSession(VIEWING_NAVIGATION_KEY, { channel, until: Date.now() + 30000 });
     else removeSession(VIEWING_NAVIGATION_KEY);
+  }
+
+  function recordViewerChannelSelection(event) {
+    if (!event.isTrusted || event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (event.composedPath?.().some(node => node?.id === 'tdh-root')) return;
+    const anchor = event.target?.closest?.('a[href]');
+    if (!anchor || anchor.hasAttribute('download') || (anchor.target && anchor.target !== '_self')) return;
+    if (!isTrustedTwitchUrl(anchor.href)) return;
+    const channel = streamLoginFromUrl(anchor.href);
+    if (!channel) return;
+    writeSession(VIEWING_SELECTION_KEY, { channel, until: Date.now() + 30000 });
   }
 
   function installViewingIntent() {
     if (viewingListenersInstalled) return;
     viewingListenersInstalled = true;
     syncViewingContext();
+    document.addEventListener('click', recordViewerChannelSelection, true);
     const editable = node => Boolean(node?.closest?.('input,textarea,select,[contenteditable="true"],[role="textbox"]'));
     const control = event => {
       if (!event.isTrusted || !watchingLogin() || editable(event.target)) return;
@@ -1041,7 +1055,7 @@
       syncAutoPictureInPicture.owns = false;
     }, true);
     window.addEventListener("resize", () => {
-      syncDropperWidthToChat();
+      syncMenuSizing();
       layoutChrome();
     }, { passive: true });
     window.addEventListener("storage", (event) => {
@@ -1894,6 +1908,7 @@
       gqlSessionMatched: true,
       gqlSessionCampaignMatched: true,
       gqlSessionDropMatched: true,
+      gqlSessionIdentityLevel: "exact-drop",
       gqlEvidenceAt: now,
     };
     writeRoutingControllerSession({
@@ -3051,7 +3066,19 @@
       return false;
     }
 
-    if (!viewingNavigationAllowed(reason)) { refreshViewingControls(); return false; }
+    if (!viewingNavigationAllowed(reason)) {
+      const session = readRoutingControllerSession();
+      const viewing = viewingIntent.snapshot();
+      const waitReason = viewing.paused ? 'viewer-paused' : viewing.manualStream ? 'manual-stream' : 'stream-locked';
+      if (session.state !== ROUTING_STATES.PAUSED || session.waitReason !== waitReason || session.candidateEvidence || session.targetStream) {
+        transitionRoutingController(ROUTING_STATES.PAUSED, {
+          waitReason, targetStream: '', candidateEvidence: null, deadlineAt: 0,
+          mismatchSince: 0, offlineSince: 0,
+        }, lastViewingNavigationBlock || 'Viewing intent holds automatic routing');
+      }
+      refreshViewingControls();
+      return false;
+    }
 
     clearSyntheticWaitingDrop("Cleared empty Active drop before 3.1 routing");
     expireEndedOpenCampaigns(now);

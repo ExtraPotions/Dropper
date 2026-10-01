@@ -37,7 +37,7 @@
 
     if (now - lastQueueRefreshAt >= UI_DOM_SCAN_INTERVAL_MS) refreshQueueList();
     if (now - lastPromoScanAt >= UI_DOM_SCAN_INTERVAL_MS) suppressTwitchSubscriptionPromos();
-    if (now - lastStandbyRefreshAt >= STANDBY_REFRESH_INTERVAL_MS) refreshStandbyCampaignCache(now);
+    if (now - lastStandbyMaintenanceAt >= STANDBY_REFRESH_INTERVAL_MS) refreshStandbyCampaignCache(now);
 
     routingControllerTick(Date.now(), "heartbeat");
 
@@ -297,47 +297,9 @@
     return null;
   }
 
-  function syncDropperWidthToChat() {
+  function syncMenuSizing() {
     if (!ui?.cluster) return;
-    const chat = findTwitchChatColumn();
-    const measured = chat ? Math.round(chat.getBoundingClientRect().width) : 312;
-    const width = Math.max(280, Math.min(measured || 312, 340));
-    ui.cluster.style.setProperty("--exp-menu-width", `${width}px`);
-    ui.cluster.style.setProperty("--dropper-width", `${width}px`);
-  }
-
-  function watchChatWidth() {
-    if (!ui?.cluster) return;
-    const attach = () => {
-      const chat = findTwitchChatColumn();
-      if (!chat) {
-        if (observedChatElement && !observedChatElement.isConnected) {
-          chatWidthObserver?.disconnect();
-          chatWidthObserver = null;
-          observedChatElement = null;
-        }
-        syncDropperWidthToChat();
-        return;
-      }
-      if (chat === observedChatElement && chatWidthObserver) return;
-
-      chatWidthObserver?.disconnect();
-      observedChatElement = chat;
-      syncDropperWidthToChat();
-      if (typeof ResizeObserver !== "function") return;
-      chatWidthObserver = new ResizeObserver(() => {
-        syncDropperWidthToChat();
-        layoutChrome();
-      });
-      chatWidthObserver.observe(chat);
-    };
-
-    attach();
-    if (chatDomObserver || typeof MutationObserver !== "function") return;
-    chatDomObserver = new MutationObserver(() => {
-      attach();
-    });
-    chatDomObserver.observe(document.documentElement, { childList: true, subtree: true });
+    ui.cluster.style.setProperty("--exp-menu-width", `${ExtraPotionsCore.menuWidth()}px`);
   }
 
   function sanitizeDiagnosticMeta(value, depth = 0) {

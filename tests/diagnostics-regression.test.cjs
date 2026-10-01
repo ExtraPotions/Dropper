@@ -125,9 +125,6 @@ assert.match(source, /const domVideoPlaying = Boolean\(login && streamVideoIsPla
 assert.match(source, /dropsEnabledTag: Boolean\(login && streamRoot && streamHasDropsEnabledTag\(streamRoot\)\)/, "Drops Enabled diagnostics are scoped to the active stream root");
 assert.doesNotMatch(source, /temporaryCampaignSkips: loadTemporaryCampaignSkips/, "diagnostics no longer expose removed 24-hour campaign skips");
 assert.match(source, /function authoritativeProgressPercent/, "all visible progress surfaces can resolve one authoritative percentage");
-assert.match(source, /data-collapsed-width="compact"\] \{ width:min\(260px/, "compact mode remains exactly 260px");
-assert.match(source, /data-collapsed-width="narrow"\] \{ width:min\(220px/, "narrow mode remains exactly 220px");
-assert.match(source, /data-collapsed-width="full"\] \{ width:min\(var\(--exp-menu-width,var\(--dropper-width, 312px\)\), calc/u, "full mode still uses the live chat-matched Dropper width");
 assert.match(source, /function syncProgressSurfaces/, "panel, compact state, and launcher ring share one progress renderer");
 assert.match(source, /syncProgressSurfaces\(\);\s*updateTitle\(\);/, "heartbeat keeps visible progress surfaces synchronized with the tab title");
 assert.match(source, /syncProgressSurfaces\(\);\s*refreshDropCard\(\);/, "authoritative Drop updates push progress to the visible UI immediately");
@@ -547,3 +544,6 @@ assert.match(
 );
 
 console.log("Dropper diagnostic regression checks passed.");
+
+assert.match(source, /ExtraPotionsCore\.menuWidth\(\)/u);
+assert.doesNotMatch(source, /normalizedCollapsedPanelWidth|calculatedPanelWidth|data-collapsed-width|data-panel-width|watchChatWidth|syncDropperWidthToChat/u);

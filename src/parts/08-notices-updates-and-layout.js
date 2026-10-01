@@ -331,7 +331,7 @@
   }
 
   function noticePanelWidth() {
-    return calculatedPanelWidth();
+    return ExtraPotionsCore.menuWidth();
   }
 
   function positionMenuUpdateNotice() {
@@ -563,6 +563,8 @@
       NAVIGATION_FLIGHT_KEY,
       STANDBY_CACHE_KEY,
       STANDBY_REFRESH_KEY,
+      STANDBY_MAINTENANCE_KEY,
+      VIEWING_SELECTION_KEY,
       MUTE_PENDING_KEY,
       CAMPAIGN_CATALOG_KEY,
       CAMPAIGN_PAGE_IMPORT_KEY,
@@ -590,6 +592,8 @@
 
     standbyCache = [];
     lastStandbyRefreshAt = 0;
+    lastStandbyMaintenanceAt = 0;
+    lastStandbyMaintenance = null;
     lastRoutingCandidateSnapshot = {
       at: 0,
       game: "",
@@ -1136,7 +1140,9 @@
       streamCandidates: routingCandidateDiagnosticsSnapshot(now),
       standbyCache: {
         refreshIntervalMinutes: Math.round(STANDBY_REFRESH_INTERVAL_MS / 60000),
-        lastRefreshAt: lastStandbyRefreshAt ? new Date(lastStandbyRefreshAt).toISOString() : null,
+        lastObservedAt: lastStandbyRefreshAt ? new Date(lastStandbyRefreshAt).toISOString() : null,
+        lastMaintenanceAt: lastStandbyMaintenanceAt ? new Date(lastStandbyMaintenanceAt).toISOString() : null,
+        maintenance: lastStandbyMaintenance,
         total: pruneStandbyCache().length,
         matchingActiveCampaign: cachedStandbyCandidates(
           readRoutingControllerSession().targetGame || currentDrop?.game || "",
@@ -1180,7 +1186,7 @@
         renderedTitle: document.title || null,
         titleObserverActive: Boolean(progressTitleObserver),
       },
-      panelAndMenuWidth: normalizedCollapsedPanelWidth(),
+      menuSizing: 'viewport-clamped',
       skipStreamerConfirmation: (() => {
         const armed = skipStreamerArmSnapshot(now);
         return {
@@ -1231,14 +1237,13 @@
 
   function layoutChrome() {
     if (!ui?.cluster) return;
-    syncDropperWidthToChat();
+    syncMenuSizing();
 
     const badgeRow = ui.shadow.querySelector(".badge-row");
     const progressStack = ui.shadow.querySelector(".progress-stack");
     const progressCard = ui.shadow.getElementById("tdh-drop-card");
     const rowHeight = settings.badgeOnly ? 48 : Math.max(112, progressCard?.offsetHeight || 112);
-    const panelMode = normalizedCollapsedPanelWidth();
-    const panelWidth = calculatedPanelWidth(panelMode);
+    const panelWidth = ExtraPotionsCore.menuWidth();
     const menuPanelWidth = Math.min(panelWidth, Math.max(0, window.innerWidth - 24));
     const launcherWidth = 48;
     const rowGap = settings.badgeOnly ? 0 : 8;
@@ -1287,7 +1292,7 @@
       for (const property of ["left", "right", "top", "bottom"]) progressCard.style.removeProperty(property);
     } else if (progressCard?.dataset.presentation === "menu-card" && badgeOnlySlot) {
       // Inside the menu, match the same inner content width used by every
-      // .fl-tool-panel. The dock owns the outer Full/Compact/Narrow width.
+      // .fl-tool-panel. Core owns the viewport-clamped outer menu width.
       badgeOnlySlot.style.setProperty("width", "100%", "important");
       badgeOnlySlot.style.setProperty("margin-left", "0", "important");
       badgeOnlySlot.style.setProperty("margin-right", "0", "important");

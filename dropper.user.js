@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.47
+// @version      3.3.48
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -3697,7 +3697,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.47";
+  const APP_VERSION = "3.3.48";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -3766,6 +3766,7 @@ const ExtraPotionsCore = (() => {
   const IGNORED_CAMPAIGN_GAMES_KEY = "dropper-ignored-campaign-games-v1";
   const CAMPAIGN_MEMORY_RESET_VERSION = "3.2.6";
   const STANDBY_REFRESH_KEY = "dropper-standby-refresh-at";
+  const STANDBY_MAINTENANCE_KEY = "dropper-standby-maintenance-at";
   const MUTE_PENDING_KEY = "dropper-mute-pending-v1";
   const MUTE_PENDING_MS = 45 * 1000;
   const TAB_PRESENCE_KEY = "dropper-tab-presence-v1";
@@ -3841,6 +3842,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.3.48": ["Removes retired width settings, preset CSS and chat-width observers; menu sizing now comes from Core and fits the viewport.","Clears stale earning state when routing is held, records trustworthy manual-arrival evidence, and refreshes reward identity without inventing watch credit.","Uses simultaneous reward timing rather than adding overlapping campaign progress bars; ambiguous dependencies and windows remain unknown.","Separates standby cache maintenance from real observations and rediscoveries, preserving manual playback and navigation protections."],
     "3.3.47": ["Updates the shared foundation to exp-core 3.4.12.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.46": ["Updates the shared foundation to exp-core 3.4.11.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.45": ["Moves menu exclusivity, outside-click dismissal and inactivity timing into exp-core 3.4.10 while preserving Dropper layout and saved preferences.","Removes the remaining private menu listeners and obsolete support styles; support controls continue to come from Core.","Preserves the released Inventory recovery and exact-reward progress fixes without changing Twitch routing or claim safety."],
@@ -4163,7 +4165,6 @@ const ExtraPotionsCore = (() => {
     resumeSessionOnRestart: true,
     restoreChannelPlayer: true,
     reduceMotion: false,
-    collapsedPanelWidth: "compact",
     uiTheme: "dropper",
     customOpacity: false,
     opacityPercent: 85,
@@ -4300,7 +4301,7 @@ const ExtraPotionsCore = (() => {
       let state = null;
       let generation = 0;
       function persist() { try { save({ ...state }); } catch (_) {} }
-      function context(account, channel, automaticArrival = false) {
+      function context(account, channel, automaticArrival = false, arrivalSource = '') {
         account = text(account).toLowerCase(); channel = text(channel).toLowerCase();
         if (state && state.account === account && state.channel === channel) return false;
         const sameAccount = state?.account === account;
@@ -4311,7 +4312,8 @@ const ExtraPotionsCore = (() => {
         state = {
           account, channel, paused: Boolean(saved?.paused),
           pauseReason: saved?.paused ? (saved.pauseReason === 'viewer' ? 'viewer' : 'unknown') : '',
-          manualStream: Boolean(channel && !automaticArrival && saved?.manualStream !== false),
+          manualStream: Boolean(channel && !automaticArrival && (arrivalSource === 'viewer-link' || saved?.manualStream !== false)),
+          arrivalSource: text(arrivalSource) || (automaticArrival ? 'dropper-navigation' : saved?.arrivalSource || (saved ? 'restored-selection' : 'unclassified-arrival')),
           playback: 'unknown', changedAt: now(),
           generation: ++generation,
           recoveryAttempts: previous?.channel === channel ? previous.recoveryAttempts || 0 : 0,
@@ -4340,7 +4342,7 @@ const ExtraPotionsCore = (() => {
       }
       function allowSwitching() {
         if (!state) return;
-        state.manualStream = false; state.changedAt = now(); persist();
+        state.manualStream = false; state.arrivalSource = 'viewer-enabled-switching'; state.changedAt = now(); persist();
       }
       function navigationAllowed(explicit = false) {
         return Boolean(state && (explicit || (!state.paused && !state.manualStream)));
@@ -4505,23 +4507,41 @@ const ExtraPotionsCore = (() => {
 
     function campaignSequence(campaign, now = Date.now(), bufferMinutes = 2) {
       const drops = campaign?.timeBasedDrops || campaign?.drops || [];
-      let remainingMinutes = 0, known = true, inProgress = false, pendingClaims = 0, watchRewards = 0;
+      let known = true, inProgress = false, pendingClaims = 0, watchRewards = 0;
+      let estimateReason = '', outstanding = [];
+      const fail = reason => { known = false; estimateReason ||= reason; };
+      const declaredModel = text(campaign?.timingModel).toLowerCase();
       for (const drop of drops) {
         if (drop?.self?.isClaimed === true) continue;
         const paid = Number(drop?.requiredSubs ?? drop?.requiredSubscriptions ?? drop?.requiredSubscriptionCount ?? drop?.subscriptionRequirement?.requiredSubs ?? 0) > 0;
         if (paid) continue;
-        const total = number(drop?.requiredMinutesWatched ?? drop?.requiredMinutes);
-        if (total === null || total <= 0) continue;
         watchRewards += 1;
+        const total = number(drop?.requiredMinutesWatched ?? drop?.requiredMinutes);
+        if (total === null || total <= 0) { fail('unknown-reward-duration'); continue; }
         const current = number(drop?.self?.currentMinutesWatched ?? drop?.currentMinutes);
-        if (current === null || current < 0) { known = false; continue; }
-        if (current > 0 && current < total) inProgress = true;
-        remainingMinutes += Math.max(0, total - current);
-        if (current >= total) pendingClaims += 1;
+        if (current === null || current < 0) { fail('unknown-reward-progress'); continue; }
+        if (current >= total) { pendingClaims += 1; continue; }
+        if (current > 0) inProgress = true;
+        const plan = planPrerequisites(drop, drops, declaredModel);
+        if (plan.totalRemainingMinutes === null) fail(plan.reason || 'prerequisite-timing-unverified');
+        const start = Date.parse(drop.startAt || campaign?.startAt || '');
+        const end = Date.parse(drop.endAt || campaign?.endAt || '');
+        if (Number.isFinite(start) && start > now) fail('reward-window-not-open');
+        outstanding.push({ remaining: Math.max(0, total - current), start, end });
       }
-      const knownRemaining = watchRewards > 0 && known ? remainingMinutes : null;
-      const deadline = deadlineAssessment(campaign, null, { totalRemainingMinutes: knownRemaining }, now, bufferMinutes);
-      return { watchRewards, remainingMinutes: knownRemaining, pendingClaims, inProgress, ...deadline };
+      // Twitch campaign watch-time milestones accrue simultaneously. Never add
+      // their overlapping bars, or transfer one reward's credit to another ID.
+      // https://dev.twitch.tv/docs/drops/campaign-guide/#time-based-drops
+      const windowKey = item => `${Number.isFinite(item.start) ? item.start : ''}:${Number.isFinite(item.end) ? item.end : ''}`;
+      if (new Set(outstanding.map(windowKey)).size > 1) fail('different-reward-windows');
+      const timingModel = !known ? 'unknown' : outstanding.length <= 1 ? 'single-reward' : declaredModel === 'sequential' ? 'sequential' : 'parallel';
+      const remainingMinutes = !watchRewards || !known ? null : timingModel === 'sequential'
+        ? outstanding.reduce((sum, item) => sum + item.remaining, 0)
+        : Math.max(0, ...outstanding.map(item => item.remaining));
+      const rewardEnd = outstanding.find(item => Number.isFinite(item.end))?.end;
+      const endAt = Number.isFinite(rewardEnd) ? new Date(rewardEnd).toISOString() : campaign?.endAt;
+      const deadline = deadlineAssessment({ ...campaign, endAt }, null, { totalRemainingMinutes: remainingMinutes }, now, bufferMinutes);
+      return { watchRewards, remainingMinutes, pendingClaims, inProgress, timingModel, estimateReason, ...deadline };
     }
 
     function rankCampaignCandidates(candidates, { priorityOf = () => 0, now = Date.now(), activeGame = '', bufferMinutes = 2 } = {}) {
@@ -4859,15 +4879,11 @@ const ExtraPotionsCore = (() => {
   }
   restoreCurrentDropMetadataFromKnownCampaigns();
   repairRoutingIdentity();
-  let chatWidthObserver = null;
-  let chatDomObserver = null;
-  let observedChatElement = null;
   let bonusClaimObserver = null;
   let dropClaimObserver = null;
   let suppressedSubscriptionPromoCount = 0;
   let lastPromoScanAt = 0;
   let lastQueueRefreshAt = 0;
-  let lastStandbyRefreshAt = Number(readSession(STANDBY_REFRESH_KEY, 0)) || 0;
   let duplicateNavigationSkips = 0;
   let lastGqlPollAt = 0;
   let lastGqlSuccessAt = 0;
@@ -4896,6 +4912,12 @@ const ExtraPotionsCore = (() => {
   let lastGqlReason = "";
   let activityLog = readSession(ACTIVITY_LOG_KEY, []);
   let standbyCache = readSession(STANDBY_CACHE_KEY, []);
+  if (!Array.isArray(standbyCache)) standbyCache = [];
+  // Only observed candidate timestamps count as discovery freshness. The old
+  // refresh key could record pruning alone, so do not trust it on upgrade.
+  let lastStandbyRefreshAt = Math.max(0, ...standbyCache.map(item => Number(item?.seenAt) || 0));
+  let lastStandbyMaintenanceAt = Number(readSession(STANDBY_MAINTENANCE_KEY, 0)) || 0;
+  let lastStandbyMaintenance = null;
   let lastRoutingCandidateSnapshot = {
     at: 0,
     game: "",
@@ -4937,6 +4959,7 @@ const ExtraPotionsCore = (() => {
 
   const VIEWING_INTENT_KEY = 'dropper-viewing-intent-v1';
   const VIEWING_NAVIGATION_KEY = 'dropper-viewing-navigation-v1';
+  const VIEWING_SELECTION_KEY = 'dropper-viewing-selection-v1';
   const MANUAL_STREAM_LOCK_KEY = 'dropper-manual-stream-lock-v1';
   const CLAIM_HISTORY_KEY = 'dropper-claim-history-v1';
   const CAMPAIGN_PRIORITY_KEY = 'dropper-campaign-priority-v1';
@@ -5003,6 +5026,11 @@ const ExtraPotionsCore = (() => {
     campaignMemory = loadCampaignMemory();
     ignoredCampaignGames = loadIgnoredCampaignGames();
     activityLog = readSession(ACTIVITY_LOG_KEY, []);
+    standbyCache = readSession(STANDBY_CACHE_KEY, []);
+    if (!Array.isArray(standbyCache)) standbyCache = [];
+    lastStandbyRefreshAt = Math.max(0, ...standbyCache.map(item => Number(item?.seenAt) || 0));
+    lastStandbyMaintenanceAt = Number(readSession(STANDBY_MAINTENANCE_KEY, 0)) || 0;
+    lastStandbyMaintenance = null;
     lastStreamVerification = null;
     lastSessionPoll = null;
     clientIntegrity = { token: '', clientId: '', expiresAt: 0, transport: '', deviceId: '' };
@@ -5017,6 +5045,8 @@ const ExtraPotionsCore = (() => {
 
   function automaticViewingArrival(login = watchingLogin(), now = Date.now()) {
     const requested = readSession(VIEWING_NAVIGATION_KEY, null);
+    const selected = readSession(VIEWING_SELECTION_KEY, null);
+    if (selected?.channel === login && selected.until > now) return false;
     return Boolean(requested && requested.channel === login && requested.until > now);
   }
 
@@ -5025,9 +5055,12 @@ const ExtraPotionsCore = (() => {
     if (viewingAccount !== account) resetViewingAccount(account);
     const login = watchingLogin() || '';
     const automaticArrival = automaticViewingArrival(login);
-    const changed = viewingIntent.context(account, login, automaticArrival);
+    const selected = readSession(VIEWING_SELECTION_KEY, null);
+    const arrivalSource = selected?.channel === login && selected.until > Date.now() ? 'viewer-link' : automaticArrival ? 'dropper-navigation' : '';
+    const changed = viewingIntent.context(account, login, automaticArrival, arrivalSource);
     if (changed) {
       viewingVideo = null;
+      lastStreamVerification = null;
       lastViewingNavigationBlock = '';
       recentPlaybackControl = { action: '', at: 0 };
     }
@@ -5249,7 +5282,7 @@ const ExtraPotionsCore = (() => {
       return false;
     }
     if (viewingIntent.navigationAllowed(manualAction)) return true;
-    lastViewingNavigationBlock = state.paused ? 'Playback Paused' : 'Your Stream Is Selected';
+    lastViewingNavigationBlock = state.paused ? 'Playback Paused' : state.arrivalSource === 'unclassified-arrival' ? 'Automatic Switching Needs Approval' : 'Your Stream Is Selected';
     return false;
   }
 
@@ -5260,20 +5293,34 @@ const ExtraPotionsCore = (() => {
       ? { label: 'Playback Paused', detail: 'Dropper will not resume playback or switch streams while your pause is active.' }
       : { label: 'Playback Needs Attention', detail: 'Playback is paused. Resume it yourself or choose Resume Playback; Dropper will not guess why it stopped.' };
     if (lock) return { label: 'Staying On This Stream', detail: `Automatic routing is held on ${lock.login}. Dropper will still monitor Twitch credit and release the lock if the stream becomes unusable.` };
+    if (lastViewingNavigationBlock && state.manualStream && state.arrivalSource === 'unclassified-arrival') return { label: 'Automatic Switching Needs Approval', detail: 'Dropper could not verify how this channel was opened. Your saved campaign is retained; enable automatic switching to resume routing.' };
     if (lastViewingNavigationBlock && state.manualStream) return { label: 'Your Stream Is Selected', detail: 'Campaign recommendations will not change this stream. Use Skip Streamer or enable automatic switching when ready.' };
     return null;
   }
 
   function noteRequestedViewingNavigation(target) {
     const channel = streamLoginFromUrl(target) || '';
+    removeSession(VIEWING_SELECTION_KEY);
     if (channel) writeSession(VIEWING_NAVIGATION_KEY, { channel, until: Date.now() + 30000 });
     else removeSession(VIEWING_NAVIGATION_KEY);
+  }
+
+  function recordViewerChannelSelection(event) {
+    if (!event.isTrusted || event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (event.composedPath?.().some(node => node?.id === 'tdh-root')) return;
+    const anchor = event.target?.closest?.('a[href]');
+    if (!anchor || anchor.hasAttribute('download') || (anchor.target && anchor.target !== '_self')) return;
+    if (!isTrustedTwitchUrl(anchor.href)) return;
+    const channel = streamLoginFromUrl(anchor.href);
+    if (!channel) return;
+    writeSession(VIEWING_SELECTION_KEY, { channel, until: Date.now() + 30000 });
   }
 
   function installViewingIntent() {
     if (viewingListenersInstalled) return;
     viewingListenersInstalled = true;
     syncViewingContext();
+    document.addEventListener('click', recordViewerChannelSelection, true);
     const editable = node => Boolean(node?.closest?.('input,textarea,select,[contenteditable="true"],[role="textbox"]'));
     const control = event => {
       if (!event.isTrusted || !watchingLogin() || editable(event.target)) return;
@@ -6190,7 +6237,7 @@ const ExtraPotionsCore = (() => {
       syncAutoPictureInPicture.owns = false;
     }, true);
     window.addEventListener("resize", () => {
-      syncDropperWidthToChat();
+      syncMenuSizing();
       layoutChrome();
     }, { passive: true });
     window.addEventListener("storage", (event) => {
@@ -7043,6 +7090,7 @@ const ExtraPotionsCore = (() => {
       gqlSessionMatched: true,
       gqlSessionCampaignMatched: true,
       gqlSessionDropMatched: true,
+      gqlSessionIdentityLevel: "exact-drop",
       gqlEvidenceAt: now,
     };
     writeRoutingControllerSession({
@@ -8200,7 +8248,19 @@ const ExtraPotionsCore = (() => {
       return false;
     }
 
-    if (!viewingNavigationAllowed(reason)) { refreshViewingControls(); return false; }
+    if (!viewingNavigationAllowed(reason)) {
+      const session = readRoutingControllerSession();
+      const viewing = viewingIntent.snapshot();
+      const waitReason = viewing.paused ? 'viewer-paused' : viewing.manualStream ? 'manual-stream' : 'stream-locked';
+      if (session.state !== ROUTING_STATES.PAUSED || session.waitReason !== waitReason || session.candidateEvidence || session.targetStream) {
+        transitionRoutingController(ROUTING_STATES.PAUSED, {
+          waitReason, targetStream: '', candidateEvidence: null, deadlineAt: 0,
+          mismatchSince: 0, offlineSince: 0,
+        }, lastViewingNavigationBlock || 'Viewing intent holds automatic routing');
+      }
+      refreshViewingControls();
+      return false;
+    }
 
     clearSyntheticWaitingDrop("Cleared empty Active drop before 3.1 routing");
     expireEndedOpenCampaigns(now);
@@ -8272,7 +8332,7 @@ const ExtraPotionsCore = (() => {
 
     if (now - lastQueueRefreshAt >= UI_DOM_SCAN_INTERVAL_MS) refreshQueueList();
     if (now - lastPromoScanAt >= UI_DOM_SCAN_INTERVAL_MS) suppressTwitchSubscriptionPromos();
-    if (now - lastStandbyRefreshAt >= STANDBY_REFRESH_INTERVAL_MS) refreshStandbyCampaignCache(now);
+    if (now - lastStandbyMaintenanceAt >= STANDBY_REFRESH_INTERVAL_MS) refreshStandbyCampaignCache(now);
 
     routingControllerTick(Date.now(), "heartbeat");
 
@@ -8532,47 +8592,9 @@ const ExtraPotionsCore = (() => {
     return null;
   }
 
-  function syncDropperWidthToChat() {
+  function syncMenuSizing() {
     if (!ui?.cluster) return;
-    const chat = findTwitchChatColumn();
-    const measured = chat ? Math.round(chat.getBoundingClientRect().width) : 312;
-    const width = Math.max(280, Math.min(measured || 312, 340));
-    ui.cluster.style.setProperty("--exp-menu-width", `${width}px`);
-    ui.cluster.style.setProperty("--dropper-width", `${width}px`);
-  }
-
-  function watchChatWidth() {
-    if (!ui?.cluster) return;
-    const attach = () => {
-      const chat = findTwitchChatColumn();
-      if (!chat) {
-        if (observedChatElement && !observedChatElement.isConnected) {
-          chatWidthObserver?.disconnect();
-          chatWidthObserver = null;
-          observedChatElement = null;
-        }
-        syncDropperWidthToChat();
-        return;
-      }
-      if (chat === observedChatElement && chatWidthObserver) return;
-
-      chatWidthObserver?.disconnect();
-      observedChatElement = chat;
-      syncDropperWidthToChat();
-      if (typeof ResizeObserver !== "function") return;
-      chatWidthObserver = new ResizeObserver(() => {
-        syncDropperWidthToChat();
-        layoutChrome();
-      });
-      chatWidthObserver.observe(chat);
-    };
-
-    attach();
-    if (chatDomObserver || typeof MutationObserver !== "function") return;
-    chatDomObserver = new MutationObserver(() => {
-      attach();
-    });
-    chatDomObserver.observe(document.documentElement, { childList: true, subtree: true });
+    ui.cluster.style.setProperty("--exp-menu-width", `${ExtraPotionsCore.menuWidth()}px`);
   }
 
   function sanitizeDiagnosticMeta(value, depth = 0) {
@@ -15980,7 +16002,6 @@ const ExtraPotionsCore = (() => {
     }
   }
 
-
   function loadSettings() {
     try {
       const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
@@ -15993,6 +16014,8 @@ const ExtraPotionsCore = (() => {
       delete stored.authToken;
       delete stored.hideChatSubscriptionPromos;
       delete stored.autoHideCard;
+      delete stored.collapsedPanelWidth;
+      delete stored.menuWidth;
       try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored)); } catch (_) { /* ignore */ }
       return { ...DEFAULTS, ...stored };
     } catch (_) {
@@ -16496,7 +16519,6 @@ const ExtraPotionsCore = (() => {
     return Math.max(...values);
   }
 
-
   function normalizeDropsMarkerText(value) {
     const text = cleanText(value);
     if (!text) return "";
@@ -16910,7 +16932,6 @@ const ExtraPotionsCore = (() => {
     return document.querySelector("video");
   }
 
-
   function playerPresentationSnapshot() {
     const video = streamVideoElement();
     const root = video?.closest('[data-a-player-state="mini"]');
@@ -17062,7 +17083,6 @@ const ExtraPotionsCore = (() => {
       </div>`;
   }
 
-
   function css() {
     return `
       :host { all: initial; }
@@ -17071,7 +17091,7 @@ const ExtraPotionsCore = (() => {
         position: fixed; right: 12px; z-index: 2147483600;
         display: flex; flex-direction: column-reverse; align-items: flex-end;
         width: max-content; max-width: calc(100vw - 24px); gap: 8px;
-        --theme-bg:#111114; --theme-panel:#19191e; --theme-raised:#2a2a31; --theme-inset:#0e0e10; --theme-line:#34343b; --theme-text:#efeff1; --theme-muted:#adadb8; --theme-accent:#9147ff; --theme-accent2:#bf94ff; --theme-link:#c6a4ff; --theme-focus:#bf94ff; --theme-onAccent:#111114; --theme-skin:linear-gradient(135deg,#d9b5ff,#9b5af9,#7428e8); --theme-skin-vertical:linear-gradient(180deg,#d9b5ff,#9b5af9,#7428e8); --exp-ui-opacity:1; --exp-menu-width:312px; --dropper-ui-opacity:1;
+        --theme-bg:#111114; --theme-panel:#19191e; --theme-raised:#2a2a31; --theme-inset:#0e0e10; --theme-line:#34343b; --theme-text:#efeff1; --theme-muted:#adadb8; --theme-accent:#9147ff; --theme-accent2:#bf94ff; --theme-link:#c6a4ff; --theme-focus:#bf94ff; --theme-onAccent:#111114; --theme-skin:linear-gradient(135deg,#d9b5ff,#9b5af9,#7428e8); --theme-skin-vertical:linear-gradient(180deg,#d9b5ff,#9b5af9,#7428e8); --exp-ui-opacity:1; --exp-menu-width:260px; --dropper-ui-opacity:1;
         font: 13px/1.42 ui-sans-serif, system-ui, "Segoe UI", sans-serif; color: var(--theme-text);
       }
       .cluster.open-up { flex-direction: column; }
@@ -17082,26 +17102,17 @@ const ExtraPotionsCore = (() => {
         transition:opacity .15s ease;
       }
       .progress-stack {
-        width:min(var(--exp-menu-width,var(--dropper-width, 312px)), calc(100vw - 24px));
+        width:min(var(--exp-menu-width,260px), calc(100vw - 24px));
         display:flex; flex-direction:column; align-items:stretch;
         transition:.15s width;
         gap:6px;
       }
-      .progress-stack[data-collapsed-width="compact"] { width:min(260px, calc(100vw - 24px)); }
-      .progress-stack[data-collapsed-width="narrow"] { width:min(220px, calc(100vw - 24px)); }
-      .progress-stack[data-collapsed-width="full"] { width:min(var(--exp-menu-width,var(--dropper-width, 312px)), calc(100vw - 24px)); }
-      .cluster[data-panel-width="compact"] #tdh-tools-dock,
-      .cluster[data-panel-width="compact"] > .update-notice[data-placement="menu"] {
-        width:min(260px, calc(100vw - 24px));
+
+      .cluster #tdh-tools-dock,
+      .cluster > .update-notice[data-placement="menu"] {
+        width:min(var(--exp-menu-width,260px), calc(100vw - 24px));
       }
-      .cluster[data-panel-width="narrow"] #tdh-tools-dock,
-      .cluster[data-panel-width="narrow"] > .update-notice[data-placement="menu"] {
-        width:min(220px, calc(100vw - 24px));
-      }
-      .cluster[data-panel-width="full"] #tdh-tools-dock,
-      .cluster[data-panel-width="full"] > .update-notice[data-placement="menu"] {
-        width:min(var(--exp-menu-width,var(--dropper-width, 312px)), calc(100vw - 24px));
-      }
+
       .progress-stack.badge-only .badge-row { justify-content:flex-end; min-height:48px!important; }
       .progress-stack.badge-only #tdh-settings-launcher {
         border-radius:12px;
@@ -17191,37 +17202,24 @@ const ExtraPotionsCore = (() => {
       .skip-streamer-chip .skip-countdown[hidden]{display:none!important}
       .skip-streamer-chip.is-armed{min-width:78px!important;max-width:92px!important;border-color:color-mix(in srgb,#ef4444 62%,var(--theme-line))!important;background:color-mix(in srgb,var(--theme-panel) 90%,#ef4444 10%)!important;color:#efb0b0!important}
       .skip-streamer-chip.is-armed .skip-icon{display:none!important}
-      .progress-stack[data-collapsed-width="compact"] .stream-info{padding:9px 10px!important}
-      .progress-stack[data-collapsed-width="compact"] .progress-copy{row-gap:6px!important}
-      .progress-stack[data-collapsed-width="compact"] .stream-channel,.progress-stack[data-collapsed-width="compact"] .progress-head .drop-percent{font-size:11px!important}
-      .progress-stack[data-collapsed-width="compact"] .progress-category,.progress-stack[data-collapsed-width="compact"] .progress-reward-row,.progress-stack[data-collapsed-width="compact"] .progress-reward-row .drop-meta,.progress-stack[data-collapsed-width="compact"] .progress-reward-row .drop-name{font-size:8px!important}
-      .progress-stack[data-collapsed-width="compact"] .drop-status-row{grid-template-columns:minmax(0,1fr) auto!important;gap:5px!important}
-      .progress-stack[data-collapsed-width="compact"] .status-meta-chip{height:22px!important}
-      .progress-stack[data-collapsed-width="compact"] .drop-status-row .state-pill{height:20px!important;gap:4px!important;padding-inline:6px!important;font-size:7.25px!important}
-      .progress-stack[data-collapsed-width="compact"] .drop-status-row .state-pill::before{width:5px!important;height:5px!important}
-      .progress-stack[data-collapsed-width="compact"] .status-chip-divider{height:10px!important}
-      .progress-stack[data-collapsed-width="compact"] .status-clock-icon{width:8.5px!important;height:8.5px!important;margin-left:5px!important}
-      .progress-stack[data-collapsed-width="compact"] #tdh-updated-ago{padding:0 6px 0 3px!important;font-size:6.75px!important}
-      .progress-stack[data-collapsed-width="compact"] .skip-streamer-chip{height:22px!important;min-height:22px!important;min-width:49px!important;max-width:56px!important;padding-inline:7px!important;gap:4px!important;font-size:7px!important}
-      .progress-stack[data-collapsed-width="compact"] .skip-streamer-chip .skip-icon{width:9px!important;height:9px!important}
-      .progress-stack[data-collapsed-width="compact"] .skip-streamer-chip.is-armed{min-width:67px!important;max-width:76px!important;padding-inline:6px!important}
-      .progress-stack[data-collapsed-width="narrow"] .stream-info{padding:8px 9px!important}
-      .progress-stack[data-collapsed-width="narrow"] .progress-copy{row-gap:5px!important}
-      .progress-stack[data-collapsed-width="narrow"] .stream-channel,.progress-stack[data-collapsed-width="narrow"] .progress-head .drop-percent{font-size:10px!important}
-      .progress-stack[data-collapsed-width="narrow"] .progress-category,.progress-stack[data-collapsed-width="narrow"] .progress-reward-row,.progress-stack[data-collapsed-width="narrow"] .progress-reward-row .drop-meta,.progress-stack[data-collapsed-width="narrow"] .progress-reward-row .drop-name{font-size:7.25px!important}
-      .progress-stack[data-collapsed-width="narrow"] .drop-status-row{grid-template-columns:minmax(0,1fr) auto!important;gap:4px!important}
-      .progress-stack[data-collapsed-width="narrow"] .status-meta-chip{height:21px!important}
-      .progress-stack[data-collapsed-width="narrow"] .drop-status-row .state-pill{height:19px!important;gap:3px!important;padding-inline:5px!important;font-size:6.6px!important}
-      .progress-stack[data-collapsed-width="narrow"] .drop-status-row .state-pill::before{width:4.5px!important;height:4.5px!important;box-shadow:none!important}
-      .progress-stack[data-collapsed-width="narrow"] .status-chip-divider{height:9px!important}
-      .progress-stack[data-collapsed-width="narrow"] .status-clock-icon{width:8px!important;height:8px!important;margin-left:4px!important}
-      .progress-stack[data-collapsed-width="narrow"] #tdh-updated-ago{padding:0 5px 0 2px!important;font-size:6.25px!important}
-      .progress-stack[data-collapsed-width="narrow"] .skip-streamer-chip{width:26px!important;min-width:26px!important;max-width:26px!important;height:21px!important;min-height:21px!important;padding:0!important;gap:0!important}
-      .progress-stack[data-collapsed-width="narrow"] .skip-streamer-chip .skip-icon{width:10px!important;height:10px!important}
-      .progress-stack[data-collapsed-width="narrow"] .skip-streamer-chip:not(.is-armed) .skip-label{display:none!important}
-      .progress-stack[data-collapsed-width="narrow"] .skip-streamer-chip.is-armed{width:auto!important;min-width:64px!important;max-width:72px!important;padding-inline:5px!important;gap:3px!important}
-      .progress-stack[data-collapsed-width="narrow"] .skip-streamer-chip.is-armed .skip-label{display:inline!important}
-      .progress-stack[data-collapsed-width="narrow"] .skip-streamer-chip .skip-countdown{min-width:16px!important;height:14px!important;padding-inline:3px!important;font-size:5.5px!important}
+      .progress-stack .stream-info {padding:9px 10px!important}
+      .progress-stack .progress-copy {row-gap:6px!important}
+      .progress-stack .stream-channel,
+      .progress-stack .progress-head .drop-percent {font-size:11px!important}
+      .progress-stack .progress-category,
+      .progress-stack .progress-reward-row,
+      .progress-stack .progress-reward-row .drop-meta,
+      .progress-stack .progress-reward-row .drop-name {font-size:8px!important}
+      .progress-stack .drop-status-row {grid-template-columns:minmax(0,1fr) auto!important;gap:5px!important}
+      .progress-stack .status-meta-chip {height:22px!important}
+      .progress-stack .drop-status-row .state-pill {height:20px!important;gap:4px!important;padding-inline:6px!important;font-size:7.25px!important}
+      .progress-stack .drop-status-row .state-pill::before {width:5px!important;height:5px!important}
+      .progress-stack .status-chip-divider {height:10px!important}
+      .progress-stack .status-clock-icon {width:8.5px!important;height:8.5px!important;margin-left:5px!important}
+      .progress-stack #tdh-updated-ago {padding:0 6px 0 3px!important;font-size:6.75px!important}
+      .progress-stack .skip-streamer-chip {height:22px!important;min-height:22px!important;min-width:49px!important;max-width:56px!important;padding-inline:7px!important;gap:4px!important;font-size:7px!important}
+      .progress-stack .skip-streamer-chip .skip-icon {width:9px!important;height:9px!important}
+      .progress-stack .skip-streamer-chip.is-armed {min-width:67px!important;max-width:76px!important;padding-inline:6px!important}
 
       #tdh-settings-launcher {
         position:relative; width:48px; min-width:48px; height:48px; min-height:48px; align-self:flex-end; padding:0; margin:0;
@@ -17251,22 +17249,17 @@ const ExtraPotionsCore = (() => {
       #tdh-progress-body>.theme-row{min-height:22px;padding:3px 0;gap:6px}
       #tdh-progress-body .exp-theme-swatches{gap:3px;flex-wrap:nowrap;min-width:0}
       #tdh-progress-body .exp-theme-swatch{flex:0 0 18px!important;width:18px!important;height:18px!important;min-width:18px!important;min-height:18px!important;max-width:18px!important;max-height:18px!important;border-radius:4px!important}
-      .cluster[data-panel-width="compact"] #tdh-progress-body>.theme-row>span,
-      .cluster[data-panel-width="narrow"] #tdh-progress-body>.theme-row>span{display:none}
-      .cluster[data-panel-width="compact"] #tdh-progress-body>.theme-row,
-      .cluster[data-panel-width="narrow"] #tdh-progress-body>.theme-row{gap:0}
-      .cluster[data-panel-width="compact"] #tdh-progress-body .exp-theme-swatches,
-      .cluster[data-panel-width="narrow"] #tdh-progress-body .exp-theme-swatches{width:100%;justify-content:space-between}
-      .cluster[data-panel-width="narrow"] #tdh-progress-body>.theme-row{gap:4px}
-      .cluster[data-panel-width="narrow"] #tdh-progress-body .exp-theme-swatch{flex-basis:16px!important;width:16px!important;height:16px!important;min-width:16px!important;min-height:16px!important;max-width:16px!important;max-height:16px!important}
+      .cluster #tdh-progress-body>.theme-row>span {display:none}
+      .cluster #tdh-progress-body>.theme-row {gap:0}
+      .cluster #tdh-progress-body .exp-theme-swatches {width:100%;justify-content:space-between}
+
       .appearance-separator{grid-column:1/-1;width:100%;border:0;border-top:1px solid var(--theme-line,#34343b);margin:3px 0 1px}
       .opacity-row{grid-column:1/-1;display:grid;grid-template-columns:auto minmax(72px,1fr) auto;align-items:center;gap:6px;min-width:0;padding:4px 0;border-top:1px solid #26262b}
       .opacity-row[hidden]{display:none!important}
       .opacity-row>span{font-size:11px;line-height:1.25;white-space:nowrap}
       #tdh-opacity-range{width:100%;min-width:0;accent-color:var(--theme-accent)}
       #tdh-opacity-value{min-width:34px;text-align:right;font-size:10px;font-weight:800;color:var(--theme-muted)}
-      .cluster[data-panel-width="narrow"] .opacity-row{grid-template-columns:1fr auto}
-      .cluster[data-panel-width="narrow"] #tdh-opacity-range{grid-column:1/-1}
+
       #tdh-refresh-now,#tdh-reset-session{border-color:#cb6868!important;background:#402020!important;color:#ffd7d7!important}
       #tdh-settings-launcher:hover {
         border-color:color-mix(in srgb,var(--theme-accent) 58%,transparent);
@@ -17293,7 +17286,7 @@ const ExtraPotionsCore = (() => {
       #tdh-settings-launcher .icon { position:absolute; top:50%; left:50%; width:40px; height:40px; pointer-events:none; z-index:1; transform:translate(-50%,-50%); }
       #tdh-tools-dock {
         position:fixed; right:12px; top:auto; bottom:auto;
-        display:none; width:min(var(--exp-menu-width,var(--dropper-width, 312px)), calc(100vw - 24px)); max-width:calc(100vw - 24px);
+        display:none; width:min(var(--exp-menu-width,260px), calc(100vw - 24px)); max-width:calc(100vw - 24px);
         height:max-content; min-height:0; max-height:none; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; flex:0 0 auto;
         transition:.15s width;
         padding:9px 9px 4px; background:var(--theme-bg); border:1px solid var(--theme-line); border-radius:14px; box-shadow:0 18px 50px #0008; color-scheme:dark;
@@ -17436,10 +17429,8 @@ const ExtraPotionsCore = (() => {
       .fl-tool-chevron { background:none; border:0; color:#adadb8; cursor:pointer; }
       .fl-tool-body { padding:0 10px 8px; }
       .fl-tool-body:not(.fl-tool-hidden) { display:grid; height:auto; min-height:0; max-height:none; overflow:visible; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; column-gap:8px; }
-      .cluster[data-panel-width="compact"] .fl-tool-body:not(.fl-tool-hidden),
-      .cluster[data-panel-width="narrow"] .fl-tool-body:not(.fl-tool-hidden) { grid-template-columns:minmax(0,1fr); }
-      .cluster[data-panel-width="compact"] .fl-tool-body:not(.fl-tool-hidden) > *,
-      .cluster[data-panel-width="narrow"] .fl-tool-body:not(.fl-tool-hidden) > * { grid-column:1/-1; }
+      .cluster .fl-tool-body:not(.fl-tool-hidden) { grid-template-columns:minmax(0,1fr); }
+      .cluster .fl-tool-body:not(.fl-tool-hidden) > * { grid-column:1/-1; }
       .fl-tool-body > :is(.fl-switch,.mini-row,.life-btn) { min-width:0; }
       .fl-tool-body > :is(.compact-inventory,.campaign-manager,.diag) { grid-column:1/-1; }
       #tdh-diagnostics-body { padding-bottom:2px; }
@@ -17449,7 +17440,7 @@ const ExtraPotionsCore = (() => {
       #tdh-diagnostics-body>[data-dropper-tools]>details:not([open]){grid-column:auto!important}
       #tdh-diagnostics-body > [data-dropper-tools] > details { min-width:0; margin-top:0!important; padding:7px!important; border:1px solid var(--theme-line);border-radius:7px;overflow-wrap:anywhere; }
       #tdh-diagnostics-body > [data-dropper-tools] :is(button,select) { max-width:100%; min-width:0; white-space:normal; }
-      .cluster[data-panel-width="narrow"] #tdh-diagnostics-body > [data-dropper-tools] { grid-template-columns:minmax(0,1fr); }
+
       .fl-tool-hidden { display:none !important; }
       .fl-switch, .mini-row { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; height:auto; min-height:0; padding:6px 0; }
       .fl-switch + .fl-switch, .mini-row + .mini-row { border-top:1px solid #26262b; }
@@ -18321,8 +18312,7 @@ const ExtraPotionsCore = (() => {
     syncProgressSurfaces();
     refreshDropCard();
     refreshQueueList();
-    watchChatWidth();
-    syncDropperWidthToChat();
+    syncMenuSizing();
     layoutChrome();
     ui.launcher.addEventListener("click", () => setRailOpen(!railOpen));
     shadow.getElementById("tdh-header-version")?.addEventListener("click", (event) => {
@@ -18588,7 +18578,7 @@ const ExtraPotionsCore = (() => {
       .sort((a, b) => Number(a.seenAt || 0) - Number(b.seenAt || 0))
       .slice(-60);
     writeSession(STANDBY_CACHE_KEY, standbyCache);
-    lastStandbyRefreshAt = now;
+    lastStandbyRefreshAt = Math.max(0, ...standbyCache.map(item => Number(item?.seenAt) || 0));
     writeSession(STANDBY_REFRESH_KEY, lastStandbyRefreshAt);
   }
 
@@ -18630,13 +18620,18 @@ const ExtraPotionsCore = (() => {
       standbyCache = standbyCache.filter((item) => item.campaignKey === targetCampaignKey);
       writeSession(STANDBY_CACHE_KEY, standbyCache);
     }
-    lastStandbyRefreshAt = now;
-    writeSession(STANDBY_REFRESH_KEY, now);
-    queueGqlPollSoon("standby-refresh", 0);
-    logActivity("standby-refresh", "Refreshed standby streams for active campaign", {
-      campaignKey: targetCampaignKey || null,
-      game: targetGame || null,
-      candidates: cachedStandbyCandidates(targetGame, targetCampaignKey).length,
+    lastStandbyMaintenanceAt = now;
+    writeSession(STANDBY_MAINTENANCE_KEY, now);
+    const candidates = cachedStandbyCandidates(targetGame, targetCampaignKey);
+    const fresh = candidates.filter(item => Number(item.seenAt) > 0 && now >= Number(item.seenAt) && now - Number(item.seenAt) <= STANDBY_LIVE_FRESH_MS);
+    // Inventory polling is not stream discovery. Preserve observation age and
+    // let the existing routing controller revisit the category when needed.
+    lastStandbyMaintenance = {
+      at: now, source: 'cache-maintenance', candidates: candidates.length,
+      freshCandidates: fresh.length, rediscoveryNeeded: fresh.length === 0,
+    };
+    logActivity('standby-maintenance', fresh.length ? 'Checked cached standby evidence' : 'Standby discovery needed before switching', {
+      ...lastStandbyMaintenance, campaignKey: targetCampaignKey || null, game: targetGame || null,
       intervalMinutes: Math.round(STANDBY_REFRESH_INTERVAL_MS / 60000),
     });
   }
@@ -19453,33 +19448,8 @@ const ExtraPotionsCore = (() => {
         : `${authoritativeProgressPercent() ?? "—"}% · ${Math.max(0, currentDrop.remainingMinutes || 0)}m${watched ? ` · ${watched}` : ""}`
       : "";
 
-    const panelWidthMode = normalizedCollapsedPanelWidth();
-    const narrowStatusLabels = {
-      "Login Required": "Login",
-      "Details Pending": "Details",
-      "Claimed ✓": "Claimed",
-      "Verifying": "Verify",
-      "Opening": "Open",
-      "Finding": "Find",
-      "Waiting": "Wait",
-      "BG Earning": "BG Earn",
-      "BG Delayed": "BG Delay",
-      "Rechecking": "Recheck",
-      "Earning": "Earn",
-      "Stalled": "Stalled",
-      "Delayed": "Delayed",
-      "Earned": "Earned",
-      "Idle": "Idle",
-    };
-    const compactStatusLabels = {
-      "Login Required": "Login",
-      "Details Pending": "Details",
-    };
-    const detailLabel = panelWidthMode === "narrow"
-      ? (narrowStatusLabels[label] || label)
-      : panelWidthMode === "compact"
-        ? (compactStatusLabels[label] || label)
-        : label;
+    const statusLabels = { "Login Required": "Login", "Details Pending": "Details" };
+    const detailLabel = statusLabels[label] || label;
 
     if (state) {
       state.textContent = label;
@@ -19506,9 +19476,7 @@ const ExtraPotionsCore = (() => {
       const fullCheckedLabel = currentDrop && checkedAgeLabel
         ? `Checked ${checkedAgeLabel} ago`
         : "Checked —";
-      updated.textContent = panelWidthMode === "full"
-        ? fullCheckedLabel
-        : (currentDrop && checkedAgeLabel ? checkedAgeLabel : "—");
+      updated.textContent = currentDrop && checkedAgeLabel ? checkedAgeLabel : "—";
       updated.title = fullCheckedLabel;
       updated.setAttribute("aria-label", fullCheckedLabel);
       updated.className = "progress-age";
@@ -19528,19 +19496,6 @@ const ExtraPotionsCore = (() => {
 
   function applyMotionSetting() {
     ui?.cluster?.classList.toggle("reduce-motion", Boolean(settings.reduceMotion));
-  }
-
-  function normalizedCollapsedPanelWidth(value = settings.collapsedPanelWidth) {
-    const normalized = cleanText(value).toLowerCase();
-    return "compact";
-  }
-
-  function calculatedPanelWidth(mode = normalizedCollapsedPanelWidth()) {
-    if (mode === "narrow") return 220;
-    if (mode === "compact") return 260;
-    const style = getComputedStyle(ui.cluster);
-    const full = parseFloat(style.getPropertyValue("--exp-menu-width")) || parseFloat(style.getPropertyValue("--dropper-width")) || 312;
-    return Math.max(280, Math.min(full, 340));
   }
 
   function normalizedOpacityPercent(value = settings.opacityPercent) {
@@ -19604,11 +19559,8 @@ const ExtraPotionsCore = (() => {
     });
     const stack = ui.shadow.querySelector(".progress-stack");
     if (!stack) return;
-    const width = normalizedCollapsedPanelWidth();
-    stack.dataset.collapsedWidth = width;
     stack.classList.toggle("badge-only", Boolean(settings.badgeOnly));
     syncProgressPanelPlacement();
-    ui.cluster.dataset.panelWidth = width;
     ui.cluster.dataset.badgeOnly = settings.badgeOnly ? "true" : "false";
     requestAnimationFrame(layoutChrome);
   }
@@ -20238,7 +20190,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function noticePanelWidth() {
-    return calculatedPanelWidth();
+    return ExtraPotionsCore.menuWidth();
   }
 
   function positionMenuUpdateNotice() {
@@ -20470,6 +20422,8 @@ const ExtraPotionsCore = (() => {
       NAVIGATION_FLIGHT_KEY,
       STANDBY_CACHE_KEY,
       STANDBY_REFRESH_KEY,
+      STANDBY_MAINTENANCE_KEY,
+      VIEWING_SELECTION_KEY,
       MUTE_PENDING_KEY,
       CAMPAIGN_CATALOG_KEY,
       CAMPAIGN_PAGE_IMPORT_KEY,
@@ -20497,6 +20451,8 @@ const ExtraPotionsCore = (() => {
 
     standbyCache = [];
     lastStandbyRefreshAt = 0;
+    lastStandbyMaintenanceAt = 0;
+    lastStandbyMaintenance = null;
     lastRoutingCandidateSnapshot = {
       at: 0,
       game: "",
@@ -21043,7 +20999,9 @@ const ExtraPotionsCore = (() => {
       streamCandidates: routingCandidateDiagnosticsSnapshot(now),
       standbyCache: {
         refreshIntervalMinutes: Math.round(STANDBY_REFRESH_INTERVAL_MS / 60000),
-        lastRefreshAt: lastStandbyRefreshAt ? new Date(lastStandbyRefreshAt).toISOString() : null,
+        lastObservedAt: lastStandbyRefreshAt ? new Date(lastStandbyRefreshAt).toISOString() : null,
+        lastMaintenanceAt: lastStandbyMaintenanceAt ? new Date(lastStandbyMaintenanceAt).toISOString() : null,
+        maintenance: lastStandbyMaintenance,
         total: pruneStandbyCache().length,
         matchingActiveCampaign: cachedStandbyCandidates(
           readRoutingControllerSession().targetGame || currentDrop?.game || "",
@@ -21087,7 +21045,7 @@ const ExtraPotionsCore = (() => {
         renderedTitle: document.title || null,
         titleObserverActive: Boolean(progressTitleObserver),
       },
-      panelAndMenuWidth: normalizedCollapsedPanelWidth(),
+      menuSizing: 'viewport-clamped',
       skipStreamerConfirmation: (() => {
         const armed = skipStreamerArmSnapshot(now);
         return {
@@ -21138,14 +21096,13 @@ const ExtraPotionsCore = (() => {
 
   function layoutChrome() {
     if (!ui?.cluster) return;
-    syncDropperWidthToChat();
+    syncMenuSizing();
 
     const badgeRow = ui.shadow.querySelector(".badge-row");
     const progressStack = ui.shadow.querySelector(".progress-stack");
     const progressCard = ui.shadow.getElementById("tdh-drop-card");
     const rowHeight = settings.badgeOnly ? 48 : Math.max(112, progressCard?.offsetHeight || 112);
-    const panelMode = normalizedCollapsedPanelWidth();
-    const panelWidth = calculatedPanelWidth(panelMode);
+    const panelWidth = ExtraPotionsCore.menuWidth();
     const menuPanelWidth = Math.min(panelWidth, Math.max(0, window.innerWidth - 24));
     const launcherWidth = 48;
     const rowGap = settings.badgeOnly ? 0 : 8;
@@ -21194,7 +21151,7 @@ const ExtraPotionsCore = (() => {
       for (const property of ["left", "right", "top", "bottom"]) progressCard.style.removeProperty(property);
     } else if (progressCard?.dataset.presentation === "menu-card" && badgeOnlySlot) {
       // Inside the menu, match the same inner content width used by every
-      // .fl-tool-panel. The dock owns the outer Full/Compact/Narrow width.
+      // .fl-tool-panel. Core owns the viewport-clamped outer menu width.
       badgeOnlySlot.style.setProperty("width", "100%", "important");
       badgeOnlySlot.style.setProperty("margin-left", "0", "important");
       badgeOnlySlot.style.setProperty("margin-right", "0", "important");

@@ -267,8 +267,7 @@
     syncProgressSurfaces();
     refreshDropCard();
     refreshQueueList();
-    watchChatWidth();
-    syncDropperWidthToChat();
+    syncMenuSizing();
     layoutChrome();
     ui.launcher.addEventListener("click", () => setRailOpen(!railOpen));
     shadow.getElementById("tdh-header-version")?.addEventListener("click", (event) => {
@@ -534,7 +533,7 @@
       .sort((a, b) => Number(a.seenAt || 0) - Number(b.seenAt || 0))
       .slice(-60);
     writeSession(STANDBY_CACHE_KEY, standbyCache);
-    lastStandbyRefreshAt = now;
+    lastStandbyRefreshAt = Math.max(0, ...standbyCache.map(item => Number(item?.seenAt) || 0));
     writeSession(STANDBY_REFRESH_KEY, lastStandbyRefreshAt);
   }
 
@@ -576,13 +575,18 @@
       standbyCache = standbyCache.filter((item) => item.campaignKey === targetCampaignKey);
       writeSession(STANDBY_CACHE_KEY, standbyCache);
     }
-    lastStandbyRefreshAt = now;
-    writeSession(STANDBY_REFRESH_KEY, now);
-    queueGqlPollSoon("standby-refresh", 0);
-    logActivity("standby-refresh", "Refreshed standby streams for active campaign", {
-      campaignKey: targetCampaignKey || null,
-      game: targetGame || null,
-      candidates: cachedStandbyCandidates(targetGame, targetCampaignKey).length,
+    lastStandbyMaintenanceAt = now;
+    writeSession(STANDBY_MAINTENANCE_KEY, now);
+    const candidates = cachedStandbyCandidates(targetGame, targetCampaignKey);
+    const fresh = candidates.filter(item => Number(item.seenAt) > 0 && now >= Number(item.seenAt) && now - Number(item.seenAt) <= STANDBY_LIVE_FRESH_MS);
+    // Inventory polling is not stream discovery. Preserve observation age and
+    // let the existing routing controller revisit the category when needed.
+    lastStandbyMaintenance = {
+      at: now, source: 'cache-maintenance', candidates: candidates.length,
+      freshCandidates: fresh.length, rediscoveryNeeded: fresh.length === 0,
+    };
+    logActivity('standby-maintenance', fresh.length ? 'Checked cached standby evidence' : 'Standby discovery needed before switching', {
+      ...lastStandbyMaintenance, campaignKey: targetCampaignKey || null, game: targetGame || null,
       intervalMinutes: Math.round(STANDBY_REFRESH_INTERVAL_MS / 60000),
     });
   }
@@ -1399,33 +1403,8 @@
         : `${authoritativeProgressPercent() ?? "—"}% · ${Math.max(0, currentDrop.remainingMinutes || 0)}m${watched ? ` · ${watched}` : ""}`
       : "";
 
-    const panelWidthMode = normalizedCollapsedPanelWidth();
-    const narrowStatusLabels = {
-      "Login Required": "Login",
-      "Details Pending": "Details",
-      "Claimed ✓": "Claimed",
-      "Verifying": "Verify",
-      "Opening": "Open",
-      "Finding": "Find",
-      "Waiting": "Wait",
-      "BG Earning": "BG Earn",
-      "BG Delayed": "BG Delay",
-      "Rechecking": "Recheck",
-      "Earning": "Earn",
-      "Stalled": "Stalled",
-      "Delayed": "Delayed",
-      "Earned": "Earned",
-      "Idle": "Idle",
-    };
-    const compactStatusLabels = {
-      "Login Required": "Login",
-      "Details Pending": "Details",
-    };
-    const detailLabel = panelWidthMode === "narrow"
-      ? (narrowStatusLabels[label] || label)
-      : panelWidthMode === "compact"
-        ? (compactStatusLabels[label] || label)
-        : label;
+    const statusLabels = { "Login Required": "Login", "Details Pending": "Details" };
+    const detailLabel = statusLabels[label] || label;
 
     if (state) {
       state.textContent = label;
@@ -1452,9 +1431,7 @@
       const fullCheckedLabel = currentDrop && checkedAgeLabel
         ? `Checked ${checkedAgeLabel} ago`
         : "Checked —";
-      updated.textContent = panelWidthMode === "full"
-        ? fullCheckedLabel
-        : (currentDrop && checkedAgeLabel ? checkedAgeLabel : "—");
+      updated.textContent = currentDrop && checkedAgeLabel ? checkedAgeLabel : "—";
       updated.title = fullCheckedLabel;
       updated.setAttribute("aria-label", fullCheckedLabel);
       updated.className = "progress-age";
@@ -1474,19 +1451,6 @@
 
   function applyMotionSetting() {
     ui?.cluster?.classList.toggle("reduce-motion", Boolean(settings.reduceMotion));
-  }
-
-  function normalizedCollapsedPanelWidth(value = settings.collapsedPanelWidth) {
-    const normalized = cleanText(value).toLowerCase();
-    return "compact";
-  }
-
-  function calculatedPanelWidth(mode = normalizedCollapsedPanelWidth()) {
-    if (mode === "narrow") return 220;
-    if (mode === "compact") return 260;
-    const style = getComputedStyle(ui.cluster);
-    const full = parseFloat(style.getPropertyValue("--exp-menu-width")) || parseFloat(style.getPropertyValue("--dropper-width")) || 312;
-    return Math.max(280, Math.min(full, 340));
   }
 
   function normalizedOpacityPercent(value = settings.opacityPercent) {
@@ -1550,11 +1514,8 @@
     });
     const stack = ui.shadow.querySelector(".progress-stack");
     if (!stack) return;
-    const width = normalizedCollapsedPanelWidth();
-    stack.dataset.collapsedWidth = width;
     stack.classList.toggle("badge-only", Boolean(settings.badgeOnly));
     syncProgressPanelPlacement();
-    ui.cluster.dataset.panelWidth = width;
     ui.cluster.dataset.badgeOnly = settings.badgeOnly ? "true" : "false";
     requestAnimationFrame(layoutChrome);
   }

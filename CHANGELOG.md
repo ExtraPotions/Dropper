@@ -1,3 +1,10 @@
+## 3.3.48 — 2026-10-01
+
+- Removes retired width settings, preset CSS and chat-width observers; menu sizing now comes from Core and fits the viewport.
+- Clears stale earning state when routing is held, records trustworthy manual-arrival evidence, and refreshes reward identity without inventing watch credit.
+- Uses simultaneous reward timing rather than adding overlapping campaign progress bars; ambiguous dependencies and windows remain unknown.
+- Separates standby cache maintenance from real observations and rediscoveries, preserving manual playback and navigation protections.
+
 ## 3.3.47 — 2026-10-01
 
 - Updates the shared foundation to exp-core 3.4.12.
