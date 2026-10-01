@@ -66,7 +66,7 @@ jobs:
           cmp vendor/exp-core/manifest.json evidence/core-release/manifest.json
       - name: Prepare the product patch release
         env:
-          RELEASE_NOTES_JSON: '["Moves menu exclusivity, outside-click dismissal and inactivity timing into exp-core 3.4.10 while preserving Dropper layout and saved preferences.","Removes the remaining private menu listeners and obsolete support-popover styles; support controls continue to come from Core.","Preserves the released Inventory recovery and exact-reward progress fixes without changing Twitch routing or claim safety."]'
+          RELEASE_NOTES_JSON: '["Moves menu exclusivity, outside-click dismissal and inactivity timing into exp-core 3.4.10 while preserving Dropper layout and saved preferences.","Removes the remaining private menu listeners and obsolete support styles; support controls continue to come from Core.","Preserves the released Inventory recovery and exact-reward progress fixes without changing Twitch routing or claim safety."]'
         run: |
           node scripts/prepare-feature-release.cjs
           python3 <<'PY'
