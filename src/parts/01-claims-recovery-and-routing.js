@@ -1787,6 +1787,10 @@
     const previous = readRoutingControllerSession();
     const now = Date.now();
     const changed = previous.state !== state;
+    const holdsWaitReason = state === ROUTING_STATES.WAITING || state === ROUTING_STATES.PAUSED;
+    const waitReason = Object.prototype.hasOwnProperty.call(patch, "waitReason")
+      ? cleanText(patch.waitReason)
+      : (holdsWaitReason ? cleanText(previous.waitReason) : "");
     const next = {
       ...previous,
       ...patch,
@@ -1797,6 +1801,7 @@
       deadlineAt: Object.prototype.hasOwnProperty.call(patch, "deadlineAt")
         ? Number(patch.deadlineAt || 0)
         : (changed ? 0 : Number(previous.deadlineAt || 0)),
+      waitReason,
       lastReason: reason || previous.lastReason || "",
     };
     writeSession(ROUTING_SESSION_KEY, next);
