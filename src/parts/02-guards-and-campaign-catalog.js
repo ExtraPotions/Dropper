@@ -1776,9 +1776,14 @@
     return true;
   }
 
+  // Rows fetched with DropCampaignDetails for routing, by campaign key. The
+  // dashboard poll rebuilds the catalog from its own rows, so these are kept
+  // apart and merged under live Inventory progress.
+  const campaignDetailsCache = new Map();
+
   function routingCampaignPool(extra = [], now = Date.now()) {
     const merged = mergeCampaigns(
-      mergeCampaigns(lastCampaignCatalog, lastInventoryCampaigns),
+      mergeCampaigns(mergeCampaigns(lastCampaignCatalog, [...campaignDetailsCache.values()]), lastInventoryCampaigns),
       mergeCampaigns(openCampaignsFromMemory(now), mergeCampaigns(scrapeCampaignsFromPage(), extra)),
     );
     const preferred = suppressPageCampaignsWithAuthoritativeMatches(merged);
@@ -2043,11 +2048,18 @@
     if (routing.state !== ROUTING_STATES.WAITING || routing.waitReason !== "campaign-details") return false;
     const key = cleanText(routing.targetCampaignKey).toLowerCase();
     if (!key || campaignDetailsMissedRecently(key)) return false;
-    const target = lastCampaignCatalog.find((campaign) => campaignKey(campaign) === key);
-    if (!target?.id || (target.timeBasedDrops || []).length) return false;
+    // Routing also picks campaigns that only campaign memory knows about, and
+    // those rows never carry rewards, so look in the full routing pool.
+    const target = routingCampaignPool().find((campaign) => campaignKey(campaign) === key);
+    if (!target?.id) return false;
+    if ((target.timeBasedDrops || []).length) {
+      // Rewards are known but none earn by watching: nothing to wait for.
+      if (!campaignWatchDrops(target).length) campaignDetailsMisses.set(key, Date.now());
+      return false;
+    }
     const [detailed] = await enrichCampaignsWithDropDetails([target], source);
     const found = (detailed?.timeBasedDrops || detailed?.drops || []).length > 0;
-    if (found) overlayKnownCampaignProgress([detailed], source);
+    if (found) campaignDetailsCache.set(key, compactCampaignCatalog([detailed])[0]);
     if (!found || !campaignWatchDrops(detailed).length) campaignDetailsMisses.set(key, Date.now());
     logActivity("campaign-details", found
       ? `Loaded reward details for ${target.name || key}`
