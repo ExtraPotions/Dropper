@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.45
+// @version      3.3.46
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -59,6 +59,46 @@ const UI_THEMES = Object.freeze([
     { id:"dropper", name:"Dropper gem", swatch:"linear-gradient(135deg,#0b0713 0 38%,#7a46c8 38% 69%,#2a8c9b 69% 100%)", canvas:"#0b0713", surface:"#171025", primary:"#7a46c8", companion:"#b14589", counterpoint:"#2a8c9b", interactive:"#9864dc", bg:"#0b0713", panel:"#171025", line:"#3c2850", text:"#e8ddf2", muted:"#aa98bb", accent:"#7a46c8", accent2:"#9864dc", skin:"linear-gradient(135deg,#7a46c8 0%,#b14589 52%,#2a8c9b 100%)", skinVertical:"linear-gradient(180deg,#7a46c8 0%,#b14589 52%,#2a8c9b 100%)" }
   ]);
 const SHARED_UI_THEMES = Object.freeze(UI_THEMES.slice(0, 6));
+
+// A support control carries these styles into native and custom Shadow DOM shells.
+function supportControlCss() {
+    return `
+      .support-wrap { position:static; }
+      .support-button {
+        width:30px; height:30px; min-width:30px; padding:0;
+        border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0;
+        cursor:pointer;
+      }
+      .support-button { box-sizing:border-box; display:grid; place-items:center; }
+      .support-button svg { width:15px; height:15px; fill:currentColor; }
+      .support-button:hover,
+      .support-button:focus-visible {
+        border-color:var(--theme-accent); color:var(--theme-accent2); background:#211b2b; outline:none;
+      }
+      .support-popover {
+        position:absolute; z-index:14; top:35px; right:0;
+        width:min(190px,100%); max-width:100%;
+        box-sizing:border-box; padding:8px 9px;
+        border:1px solid color-mix(in srgb,var(--theme-accent) 46%,var(--theme-line));
+        border-radius:9px; background:var(--theme-panel); color:var(--theme-text);
+        box-shadow:0 10px 28px #0009;
+      }
+      .support-popover[hidden] { display:none; }
+      .support-popover strong { display:block; margin-bottom:3px; font-size:10px; }
+      .support-popover span { display:block; color:var(--theme-muted); font-size:8px; line-height:1.35; }
+      .support-popover a {
+        display:flex; align-items:center; justify-content:center; min-height:26px; margin-top:7px; padding:0 9px;
+        border:1px solid color-mix(in srgb,var(--theme-accent) 58%,var(--theme-line));
+        border-radius:7px; background:color-mix(in srgb,var(--theme-panel) 76%,var(--theme-accent) 24%);
+        color:var(--theme-text); text-decoration:none; font-size:9px; font-weight:800;
+      }
+      .support-popover a:hover,
+      .support-popover a:focus-visible {
+        border-color:var(--theme-accent2); outline:none;
+        background:color-mix(in srgb,var(--theme-panel) 66%,var(--theme-accent) 34%);
+      }
+    `;
+}
 
 function css() {
     return `
@@ -161,41 +201,12 @@ function css() {
         align-items:start; gap:8px; width:100%;
       }
       .header-actions { display:flex; align-items:flex-start; gap:5px; position:static; }
-      .support-wrap { position:static; }
-      .support-button,
       [data-exp-part="close"] {
         width:30px; height:30px; min-width:30px; padding:0;
         border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0;
         cursor:pointer;
       }
-      .support-button { display:grid; place-items:center; }
-      .support-button svg { width:15px; height:15px; fill:currentColor; }
-      .support-button:hover,
-      .support-button:focus-visible {
-        border-color:var(--theme-accent); color:var(--theme-accent2); background:#211b2b; outline:none;
-      }
-      .support-popover {
-        position:absolute; z-index:14; top:35px; right:0;
-        width:min(190px,100%); max-width:100%;
-        box-sizing:border-box; padding:8px 9px;
-        border:1px solid color-mix(in srgb,var(--theme-accent) 46%,var(--theme-line));
-        border-radius:9px; background:var(--theme-panel); color:var(--theme-text);
-        box-shadow:0 10px 28px #0009;
-      }
-      .support-popover[hidden] { display:none; }
-      .support-popover strong { display:block; margin-bottom:3px; font-size:10px; }
-      .support-popover span { display:block; color:var(--theme-muted); font-size:8px; line-height:1.35; }
-      .support-popover a {
-        display:flex; align-items:center; justify-content:center; min-height:26px; margin-top:7px; padding:0 9px;
-        border:1px solid color-mix(in srgb,var(--theme-accent) 58%,var(--theme-line));
-        border-radius:7px; background:color-mix(in srgb,var(--theme-panel) 76%,var(--theme-accent) 24%);
-        color:var(--theme-text); text-decoration:none; font-size:9px; font-weight:800;
-      }
-      .support-popover a:hover,
-      .support-popover a:focus-visible {
-        border-color:var(--theme-accent2); outline:none;
-        background:color-mix(in srgb,var(--theme-panel) 66%,var(--theme-accent) 34%);
-      }
+      ${supportControlCss()}
       .header-brand {
         display:grid; grid-template-columns:38px minmax(0,1fr);
         align-items:center; gap:8px; min-width:0; width:100%;
@@ -636,7 +647,7 @@ function compareVersions(a, b) {
     for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) { const diff = (pa[i] || 0) - (pb[i] || 0); if (diff) return diff; }
     return 0;
   }
-return Object.freeze({ PRIDE_RAINBOW, PRIDE_RAINBOW_VERTICAL, CRIMSON_THEME, UI_THEMES, SHARED_UI_THEMES, css, protectLauncherHost, compareVersions });
+return Object.freeze({ PRIDE_RAINBOW, PRIDE_RAINBOW_VERTICAL, CRIMSON_THEME, UI_THEMES, SHARED_UI_THEMES, css, supportControlCss, protectLauncherHost, compareVersions });
 })();
 
 /* Local diagnostic capture shared at build time by ExtraPotions products. */
@@ -1519,7 +1530,7 @@ const ExpMenuArrangement = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.4.10';
+  const version = '3.4.11';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -3423,6 +3434,10 @@ const ExtraPotionsCore = (() => {
     if (!url) return null;
     const wrapper = document.createElement('div');
     wrapper.className = 'support-wrap';
+    const style = document.createElement('style');
+    style.dataset.expSupportControl = '1';
+    style.dataset.expOwned = '1';
+    style.textContent = CoreFoundation.supportControlCss();
     const button = document.createElement('button');
     button.type = 'button';
     button.id = 'exp-support-button';
@@ -3448,7 +3463,7 @@ const ExtraPotionsCore = (() => {
     anchor.rel = 'noopener noreferrer';
     anchor.textContent = 'Open Ko-fi';
     popover.append(strong, copy, anchor, ExtraPotionsTools.createBitcoinDonation());
-    wrapper.append(button, popover);
+    wrapper.append(style, button, popover);
     const toggle = event => {
       event?.stopPropagation?.();
       ExtraPotionsTools.placeDonationPanel(popover,button);
@@ -3702,7 +3717,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.45";
+  const APP_VERSION = "3.3.46";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -3846,6 +3861,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.3.46": ["Updates the shared foundation to exp-core 3.4.11.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.45": ["Moves menu exclusivity, outside-click dismissal and inactivity timing into exp-core 3.4.10 while preserving Dropper layout and saved preferences.","Removes the remaining private menu listeners and obsolete support styles; support controls continue to come from Core.","Preserves the released Inventory recovery and exact-reward progress fixes without changing Twitch routing or claim safety."],
     "3.3.44": ["Updates the shared foundation to exp-core 3.4.10.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.43": ["Repairs the Inventory request and preserves the last valid reward snapshot when Twitch returns unavailable or partial data.","Keeps successful read-only session updates running through Inventory lookup failures without weakening claim, authorization, rate-limit or integrity checks.","Resolves active reward details and keeps watch minutes tied to the exact reward across claims and next-reward transitions.","Reports syncing and unknown deadline estimates honestly; retains Core 3.4.9 and existing manual viewing protections."],
