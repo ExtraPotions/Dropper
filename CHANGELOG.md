@@ -1,3 +1,9 @@
+## 3.3.41 — 2026-10-01
+
+- Fixes watch progress and claimed rewards not being seen, after Twitch changed its Inventory request.
+- Learns Twitch's current requests from its own pages and reports when one stops working, so future Twitch changes are caught.
+- Stops picking remembered campaigns that Twitch no longer lists.
+
 ## 3.3.40 — 2026-10-01
 
 - Streams in a Streaming Together session are no longer rejected as being in the wrong category.
