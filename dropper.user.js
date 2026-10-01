@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.41
+// @version      3.3.42
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -1519,7 +1519,7 @@ const ExpMenuArrangement = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.4.8';
+  const version = '3.4.9';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -3150,6 +3150,16 @@ const ExtraPotionsCore = (() => {
     on(window,'resize',queueLayout);on(document,'exp-core:coordination',queueLayout);
     on(document,'exp-core:coordination',syncThemeOwner);
     on(document,'exp-core:menu-open',()=>{if(open && document.documentElement.getAttribute('data-exp-open-menu')!==id)setOpen(false,false);});
+    // Every product menu closes on a press outside it. A focused select keeps it
+    // open because native option lists render outside the page; keepOpen lets a
+    // product hold the menu open for its own reasons, such as an unsaved import.
+    const keepOpen = typeof options.keepOpen === 'function' ? options.keepOpen : () => false;
+    if (options.closeOnOutsidePointer !== false) on(document,'pointerdown',event=>{
+      if (!open || !event.isTrusted || event.composedPath().includes(host)) return;
+      if (shadow.activeElement instanceof HTMLSelectElement) return;
+      try { if (keepOpen(event)) return; } catch {}
+      setOpen(false,false);
+    },true);
     const resize = new ResizeObserver(queueLayout); resize.observe(panel);
     const mutation = new MutationObserver(records=>{if(records.some(r=>r.type==='childList'||r.attributeName==='hidden'))queueLayout();}); mutation.observe(panel,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden']});
     const controller = {
@@ -3178,6 +3188,10 @@ const ExtraPotionsCore = (() => {
     }
 
     const ENDPOINT = String(options.endpoint || ('https://api.github.com/repos/' + repository + '/releases/latest'));
+    // Installs and updates come only from published releases, never from the
+    // branch: GitHub serves the newest release's asset at this address.
+    const RELEASE_URL = 'https://github.com/' + repository + '/releases';
+    const INSTALL_URL = RELEASE_URL + '/latest/download/' + String(options.scriptAsset || (productId + '.user.js'));
     const CACHE_KEY = 'exp:v3:' + productId + ':update-cache';
     const CHECK_INTERVAL = 15 * 60 * 1000;
     const CHECK_LEASE = 30 * 1000;
@@ -3237,6 +3251,8 @@ const ExtraPotionsCore = (() => {
         lastRemoteVersion: latest || null,
         lastHttpStatus: Number(next.lastHttpStatus || 0),
         lastError: String(next.lastError || ''),
+        installUrl: INSTALL_URL,
+        releaseUrl: RELEASE_URL,
       };
     }
     function request() {
@@ -3326,6 +3342,8 @@ const ExtraPotionsCore = (() => {
     return Object.freeze({
       get CURRENT_VERSION() { return getCurrentVersion(); },
       ENDPOINT,
+      INSTALL_URL,
+      RELEASE_URL,
       CHECK_INTERVAL,
       check,
       status,
@@ -3333,7 +3351,7 @@ const ExtraPotionsCore = (() => {
     });
   }
 
-  function createSupportControl({ url, label = 'Support' } = {}) {
+  function createSupportControl({ url = SUPPORT_URL, label = 'Support' } = {}) {
     if (!url) return null;
     const wrapper = document.createElement('div');
     wrapper.className = 'support-wrap';
@@ -3548,7 +3566,7 @@ const ExtraPotionsCore = (() => {
     const area=document.createElement('textarea');area.value=text;area.style.cssText='position:fixed;left:-9999px';document.documentElement.append(area);area.select();const success=document.execCommand('copy');area.remove();if(!success)throw new Error('Clipboard unavailable');
   }
   function createDiagnosticsControls(getReport, notify = () => {}) { return ExtraPotionsDiagnostics.createControls(getReport, notify); }
-  function createProduct({id,name,version:productVersion,subtitle='',artwork,theme,sections=[],getSettings,onSettings=()=>{},priority,supportUrl=SUPPORT_URL}) {
+  function createProduct({id,name,version:productVersion,subtitle='',artwork,theme,sections=[],getSettings,onSettings=()=>{},priority,supportUrl=SUPPORT_URL,keepOpen}) {
     const host=document.createElement('div');host.id='exp-'+id+'-root';host.dataset.expOwned='1';const shadow=host.attachShadow({mode:'open'});const panel=document.createElement('aside');panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label',name+' settings');
     const header=document.createElement('header');header.className='menu-head';const brand=document.createElement('div');brand.className='header-brand';const image=document.createElement('img');image.src=artwork;image.alt='';const copy=document.createElement('div');const titleRow=document.createElement('div');const title=document.createElement('strong');title.textContent=name;const v=document.createElement('button');v.type='button';v.className='version';v.textContent='v'+productVersion;titleRow.append(title,v);const sub=document.createElement('small');sub.textContent=subtitle;copy.append(titleRow,sub);brand.append(image,copy);const close=document.createElement('button');close.className='close';close.textContent='×';close.setAttribute('aria-label','Close '+name);const actions=document.createElement('div');actions.className='header-actions';const support=createSupportControl({url:supportUrl,label:'Support '+name});if(support)actions.append(support.element);actions.append(close);header.append(brand,actions);const divider=document.createElement('div');divider.className='header-divider';const nav=document.createElement('nav');
     let isOpen=false, activeId='';let chrome;
@@ -3557,7 +3575,7 @@ const ExtraPotionsCore = (() => {
     function renderActive(){if(!activeId)return false;const entry=sectionMap.get(activeId);if(!entry||entry.body.hidden)return false;renderSection(entry.section,entry.body);return true;}
     function setOpen(value,focus=true){isOpen=Boolean(value);panel.hidden=!isOpen;launcher.setAttribute('aria-expanded',String(isOpen));if(isOpen){activeId='';nav.querySelectorAll('.route-body').forEach(n=>n.hidden=true);nav.querySelectorAll('button[data-section]').forEach(n=>n.setAttribute('aria-expanded','false'));}chrome.state(isOpen);if(focus)(isOpen?focusMenuSurface(panel):launcher.focus());}
     for(const section of sections){const group=document.createElement('section');group.className='tool-panel';const button=document.createElement('button');button.type='button';button.textContent=section.label;button.dataset.section=section.id;const body=document.createElement('div');body.className='route-body';body.hidden=true;sectionMap.set(section.id,{section,body,button});button.addEventListener('click',()=>{const opening=body.hidden;nav.querySelectorAll('.route-body').forEach(n=>n.hidden=true);nav.querySelectorAll('button[data-section]').forEach(n=>{n.classList.toggle('last-opened',n===button);n.setAttribute('aria-expanded',String(opening&&n===button));});body.hidden=!opening;activeId=opening?section.id:'';if(opening)renderSection(section,body);chrome.update();});group.append(button,body);nav.append(group);}
-    const launcher=document.createElement('button');launcher.className='launcher';launcher.type='button';launcher.setAttribute('aria-label','Open '+name);const mark=image.cloneNode(true);launcher.append(mark);launcher.addEventListener('click',()=>setOpen(!isOpen));close.addEventListener('click',()=>setOpen(false));panel.append(header,divider,nav);shadow.append(panel,launcher);document.documentElement.append(host);chrome=create({id,host,shadow,panel,launcher,getSettings,setOpen,productTheme:theme,supportUrl});const unregister=registerLauncher(host,{productId:id,priority});
+    const launcher=document.createElement('button');launcher.className='launcher';launcher.type='button';launcher.setAttribute('aria-label','Open '+name);const mark=image.cloneNode(true);launcher.append(mark);launcher.addEventListener('click',()=>setOpen(!isOpen));close.addEventListener('click',()=>setOpen(false));panel.append(header,divider,nav);shadow.append(panel,launcher);document.documentElement.append(host);chrome=create({id,host,shadow,panel,launcher,getSettings,setOpen,productTheme:theme,supportUrl,keepOpen});const unregister=registerLauncher(host,{productId:id,priority});
     const key=e=>{if(e.key==='Escape'&&isOpen)setOpen(false);};document.addEventListener('keydown',key);
     return {host,shadow,panel,launcher,versionButton:v,open:()=>setOpen(true),close:()=>setOpen(false),toggle:()=>setOpen(!isOpen),refresh:()=>chrome.update(),renderActive,get isOpen(){return isOpen;},destroy(){document.removeEventListener('keydown',key);support?.destroy();chrome.destroy();unregister();host.remove();}};
   }
@@ -3588,6 +3606,7 @@ const ExtraPotionsCore = (() => {
       repository,
       currentVersion,
       endpoint: options.endpoint,
+      scriptAsset: options.scriptAsset,
       enabled: options.enabled,
       onError: options.onError,
     });
@@ -3615,7 +3634,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.41";
+  const APP_VERSION = "3.3.42";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -3752,7 +3771,6 @@ const ExtraPotionsCore = (() => {
     COMPLETE: "complete",
     FAILED: "failed",
   });
-  const INSTALL_URL = "https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js";
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const UPDATE_RELOAD_KEY = "dropper-update-reload-pending";
@@ -3761,6 +3779,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.42": ["Updates to exp-core 3.4.9.","The support button and popover now come from exp-core, shared with the rest of the suite.","The install link now comes from the exp-core update checker, which only points at published releases."],
     "3.3.41": ["Fixes watch progress and claimed rewards not being seen, after Twitch changed its Inventory request.","Learns Twitch's current requests from its own pages and reports when one stops working, so future Twitch changes are caught.","Stops picking remembered campaigns that Twitch no longer lists."],
     "3.3.40": ["Streams in a Streaming Together session are no longer rejected as being in the wrong category.","When a stream shows several categories, Dropper uses the one that matches the Drop it is earning.","Loads reward details for campaigns Dropper only remembers from earlier, so it no longer waits on them."],
     "3.3.39": ["Fixes Dropper getting stuck on \"Waiting for authoritative Drop details\" and never opening a stream.","Remembers a campaign's rewards between checks and asks Twitch for the missing ones directly.","Moves on to the next campaign when Twitch reports no watch-time rewards for one, and tries it again after 15 minutes."],
@@ -5213,6 +5232,7 @@ const ExtraPotionsCore = (() => {
       playerPresentationRecovery.viewerInteracted = true;
     };
     for (const type of ['pointerdown','wheel','touchmove','keydown']) document.addEventListener(type, preserveLayoutChoice, {capture:true,passive:true});
+    // exp-core-allow: records the viewer's own player controls (pause/play), not a menu.
     document.addEventListener('pointerdown', control, true);
     document.addEventListener('keydown', control, true);
     for (const type of ['pause', 'playing', 'waiting', 'stalled', 'ended', 'error']) document.addEventListener(type, media, true);
@@ -16992,14 +17012,14 @@ const ExtraPotionsCore = (() => {
       }
       .header-actions { display:flex; align-items:flex-start; gap:5px; position:static; }
       .support-wrap { position:static; }
-      #tdh-support-button, #tdh-rail-close {
+      .support-button, #tdh-rail-close {
         width:30px; height:30px; min-width:30px; padding:0;
         border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0;
         cursor:pointer;
       }
-      #tdh-support-button { display:grid; place-items:center; }
-      #tdh-support-button svg { width:15px; height:15px; fill:currentColor; }
-      #tdh-support-button:hover, #tdh-support-button:focus-visible {
+      .support-button { display:grid; place-items:center; }
+      .support-button svg { width:15px; height:15px; fill:currentColor; }
+      .support-button:hover, .support-button:focus-visible {
         border-color:var(--theme-accent); color:var(--theme-accent2); background:#211b2b; outline:none;
       }
       .support-popover {
@@ -17789,16 +17809,6 @@ const ExtraPotionsCore = (() => {
               </div>
             </div>
             <div class="header-actions">
-              <div class="support-wrap">
-                <button type="button" id="tdh-support-button" aria-label="Support Dropper" aria-expanded="false" aria-controls="tdh-support-popover" title="Support Dropper">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.2-4.35-9.55-8.45C.42 9.02 2.3 5 6.25 5c2.15 0 3.56 1.21 4.33 2.3C11.36 6.21 12.77 5 14.92 5c3.95 0 5.83 4.02 3.8 7.55C16.36 16.65 12 21 12 21Z"/></svg>
-                </button>
-                <div class="support-popover" id="tdh-support-popover" role="dialog" aria-label="Support Dropper" hidden>
-                  <strong>Support Dropper</strong>
-                  <span>Donations are optional. All features stay free.</span>
-                  <a id="tdh-support-link" href="https://ko-fi.com/expdare" target="_blank" rel="noopener noreferrer">Open Ko-fi</a>
-                </div>
-              </div>
               <button type="button" id="tdh-rail-close" aria-label="Close">×</button>
             </div>
           </div>
@@ -18048,22 +18058,11 @@ const ExtraPotionsCore = (() => {
       showCurrentChangelog();
       scheduleMenuDismiss();
     });
-    const supportButton = shadow.getElementById("tdh-support-button");
-    const supportPopover = shadow.getElementById("tdh-support-popover");
-    supportPopover?.append(ExtraPotionsCore.createBitcoinDonation());
-    if(supportPopover && supportButton) ExtraPotionsCore.placeDonationPanel(supportPopover,supportButton);
-    const closeSupportPopover = () => {
-      if (!supportPopover || !supportButton) return;
-      supportPopover.hidden = true;
-      supportButton.setAttribute("aria-expanded", "false");
-    };
-    supportButton?.addEventListener("click", (event) => {
-      event.stopPropagation();
-      const open = supportPopover?.hidden !== false;
-      if (!supportPopover) return;
-      supportPopover.hidden = !open;
-      supportButton.setAttribute("aria-expanded", open ? "true" : "false");
-    });
+    // Core owns the support control: its button, popover, donation options and outside-press closing.
+    const support = ExtraPotionsCore.createSupportControl({ label: "Support Dropper" });
+    if (support) shadow.querySelector(".header-actions")?.prepend(support.element);
+    const supportPopover = support?.popover || null;
+    const closeSupportPopover = () => support?.hide();
     shadow.getElementById("tdh-rail-close").addEventListener("click", () => {
       closeSupportPopover();
       setRailOpen(false);
@@ -18074,10 +18073,9 @@ const ExtraPotionsCore = (() => {
       if (event.key === "Escape" && railOpen) setRailOpen(false, true);
       if (!event.altKey && (event.key === "r" || event.key === "R") && railOpen) requestGqlPoll("keyboard-refresh", true);
     });
+    // exp-core-allow: Dropper's menu does not run on Core's create() controller yet; remove with that migration.
     document.addEventListener("pointerdown", (event) => {
-      const path = event.composedPath();
-      if (supportPopover?.hidden === false && !path.includes(supportButton) && !path.includes(supportPopover)) closeSupportPopover();
-      if (railOpen && !path.includes(host)) setRailOpen(false);
+      if (railOpen && !event.composedPath().includes(host)) setRailOpen(false);
     });
     return ui;
   }
@@ -19920,7 +19918,7 @@ const ExtraPotionsCore = (() => {
     });
 
     logActivity("update-reload", `Started install for Dropper v${version}`, {
-      installUrl: INSTALL_URL,
+      installUrl: updateChecker.INSTALL_URL,
       fallbackSeconds: Math.round(UPDATE_RELOAD_FALLBACK_MS / 1000),
       expiresSeconds: Math.round(UPDATE_RELOAD_PENDING_TTL_MS / 1000),
     });
@@ -20103,7 +20101,7 @@ const ExtraPotionsCore = (() => {
           "Install the latest userscript to get the newest fixes and improvements.",
           "After reinstalling, return to Twitch and Dropper will refresh this page automatically.",
         ],
-        actionUrl: INSTALL_URL,
+        actionUrl: updateChecker.INSTALL_URL,
         placement: "menu",
       },
     );

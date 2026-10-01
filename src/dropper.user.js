@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.41
+// @version      3.3.42
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -57,7 +57,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.41";
+  const APP_VERSION = "3.3.42";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -194,7 +194,6 @@
     COMPLETE: "complete",
     FAILED: "failed",
   });
-  const INSTALL_URL = "https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js";
   const RELEASES_URL = "https://github.com/ExtraPotions/Dropper/releases";
   const UPDATE_NOTICE_DURATION_MS = 30 * 1000;
   const UPDATE_RELOAD_KEY = "dropper-update-reload-pending";
@@ -203,6 +202,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.42": ["Updates to exp-core 3.4.9.","The support button and popover now come from exp-core, shared with the rest of the suite.","The install link now comes from the exp-core update checker, which only points at published releases."],
     "3.3.41": ["Fixes watch progress and claimed rewards not being seen, after Twitch changed its Inventory request.","Learns Twitch's current requests from its own pages and reports when one stops working, so future Twitch changes are caught.","Stops picking remembered campaigns that Twitch no longer lists."],
     "3.3.40": ["Streams in a Streaming Together session are no longer rejected as being in the wrong category.","When a stream shows several categories, Dropper uses the one that matches the Drop it is earning.","Loads reward details for campaigns Dropper only remembers from earlier, so it no longer waits on them."],
     "3.3.39": ["Fixes Dropper getting stuck on \"Waiting for authoritative Drop details\" and never opening a stream.","Remembers a campaign's rewards between checks and asks Twitch for the missing ones directly.","Moves on to the next campaign when Twitch reports no watch-time rewards for one, and tries it again after 15 minutes."],
@@ -1655,6 +1655,7 @@
       playerPresentationRecovery.viewerInteracted = true;
     };
     for (const type of ['pointerdown','wheel','touchmove','keydown']) document.addEventListener(type, preserveLayoutChoice, {capture:true,passive:true});
+    // exp-core-allow: records the viewer's own player controls (pause/play), not a menu.
     document.addEventListener('pointerdown', control, true);
     document.addEventListener('keydown', control, true);
     for (const type of ['pause', 'playing', 'waiting', 'stalled', 'ended', 'error']) document.addEventListener(type, media, true);
@@ -13434,14 +13435,14 @@
       }
       .header-actions { display:flex; align-items:flex-start; gap:5px; position:static; }
       .support-wrap { position:static; }
-      #tdh-support-button, #tdh-rail-close {
+      .support-button, #tdh-rail-close {
         width:30px; height:30px; min-width:30px; padding:0;
         border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0;
         cursor:pointer;
       }
-      #tdh-support-button { display:grid; place-items:center; }
-      #tdh-support-button svg { width:15px; height:15px; fill:currentColor; }
-      #tdh-support-button:hover, #tdh-support-button:focus-visible {
+      .support-button { display:grid; place-items:center; }
+      .support-button svg { width:15px; height:15px; fill:currentColor; }
+      .support-button:hover, .support-button:focus-visible {
         border-color:var(--theme-accent); color:var(--theme-accent2); background:#211b2b; outline:none;
       }
       .support-popover {
@@ -14231,16 +14232,6 @@
               </div>
             </div>
             <div class="header-actions">
-              <div class="support-wrap">
-                <button type="button" id="tdh-support-button" aria-label="Support Dropper" aria-expanded="false" aria-controls="tdh-support-popover" title="Support Dropper">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.2-4.35-9.55-8.45C.42 9.02 2.3 5 6.25 5c2.15 0 3.56 1.21 4.33 2.3C11.36 6.21 12.77 5 14.92 5c3.95 0 5.83 4.02 3.8 7.55C16.36 16.65 12 21 12 21Z"/></svg>
-                </button>
-                <div class="support-popover" id="tdh-support-popover" role="dialog" aria-label="Support Dropper" hidden>
-                  <strong>Support Dropper</strong>
-                  <span>Donations are optional. All features stay free.</span>
-                  <a id="tdh-support-link" href="https://ko-fi.com/expdare" target="_blank" rel="noopener noreferrer">Open Ko-fi</a>
-                </div>
-              </div>
               <button type="button" id="tdh-rail-close" aria-label="Close">×</button>
             </div>
           </div>
@@ -14490,22 +14481,11 @@
       showCurrentChangelog();
       scheduleMenuDismiss();
     });
-    const supportButton = shadow.getElementById("tdh-support-button");
-    const supportPopover = shadow.getElementById("tdh-support-popover");
-    supportPopover?.append(ExtraPotionsCore.createBitcoinDonation());
-    if(supportPopover && supportButton) ExtraPotionsCore.placeDonationPanel(supportPopover,supportButton);
-    const closeSupportPopover = () => {
-      if (!supportPopover || !supportButton) return;
-      supportPopover.hidden = true;
-      supportButton.setAttribute("aria-expanded", "false");
-    };
-    supportButton?.addEventListener("click", (event) => {
-      event.stopPropagation();
-      const open = supportPopover?.hidden !== false;
-      if (!supportPopover) return;
-      supportPopover.hidden = !open;
-      supportButton.setAttribute("aria-expanded", open ? "true" : "false");
-    });
+    // Core owns the support control: its button, popover, donation options and outside-press closing.
+    const support = ExtraPotionsCore.createSupportControl({ label: "Support Dropper" });
+    if (support) shadow.querySelector(".header-actions")?.prepend(support.element);
+    const supportPopover = support?.popover || null;
+    const closeSupportPopover = () => support?.hide();
     shadow.getElementById("tdh-rail-close").addEventListener("click", () => {
       closeSupportPopover();
       setRailOpen(false);
@@ -14516,10 +14496,9 @@
       if (event.key === "Escape" && railOpen) setRailOpen(false, true);
       if (!event.altKey && (event.key === "r" || event.key === "R") && railOpen) requestGqlPoll("keyboard-refresh", true);
     });
+    // exp-core-allow: Dropper's menu does not run on Core's create() controller yet; remove with that migration.
     document.addEventListener("pointerdown", (event) => {
-      const path = event.composedPath();
-      if (supportPopover?.hidden === false && !path.includes(supportButton) && !path.includes(supportPopover)) closeSupportPopover();
-      if (railOpen && !path.includes(host)) setRailOpen(false);
+      if (railOpen && !event.composedPath().includes(host)) setRailOpen(false);
     });
     return ui;
   }
@@ -16362,7 +16341,7 @@
     });
 
     logActivity("update-reload", `Started install for Dropper v${version}`, {
-      installUrl: INSTALL_URL,
+      installUrl: updateChecker.INSTALL_URL,
       fallbackSeconds: Math.round(UPDATE_RELOAD_FALLBACK_MS / 1000),
       expiresSeconds: Math.round(UPDATE_RELOAD_PENDING_TTL_MS / 1000),
     });
@@ -16545,7 +16524,7 @@
           "Install the latest userscript to get the newest fixes and improvements.",
           "After reinstalling, return to Twitch and Dropper will refresh this page automatically.",
         ],
-        actionUrl: INSTALL_URL,
+        actionUrl: updateChecker.INSTALL_URL,
         placement: "menu",
       },
     );

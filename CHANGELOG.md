@@ -1,3 +1,9 @@
+## 3.3.42 — 2026-10-01
+
+- Updates to exp-core 3.4.9.
+- The support button and popover now come from exp-core, shared with the rest of the suite.
+- The install link now comes from the exp-core update checker, which only points at published releases.
+
 ## 3.3.41 — 2026-10-01
 
 - Fixes watch progress and claimed rewards not being seen, after Twitch changed its Inventory request.
