@@ -1,3 +1,9 @@
+## 3.3.40 — 2026-10-01
+
+- Streams in a Streaming Together session are no longer rejected as being in the wrong category.
+- When a stream shows several categories, Dropper uses the one that matches the Drop it is earning.
+- Loads reward details for campaigns Dropper only remembers from earlier, so it no longer waits on them.
+
 ## 3.3.39 — 2026-10-01
 
 - Fixes Dropper getting stuck on "Waiting for authoritative Drop details" and never opening a stream.
