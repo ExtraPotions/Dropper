@@ -8,6 +8,11 @@ const vm = require("node:vm");
 const { loadDropperSource, loadActiveViewing } = require("./load-source.cjs");
 const source = loadDropperSource();
 
+// Campaign windows for fixtures that run against the real clock are relative to now, so they never expire.
+const FIXTURE_DAY_MS = 86400000;
+const FIXTURE_START_AT = new Date(Date.now() - 20 * FIXTURE_DAY_MS).toISOString();
+const FIXTURE_END_AT = new Date(Date.now() + 10 * FIXTURE_DAY_MS).toISOString();
+
 const extractStart = source.indexOf("  function extractCampaignCatalog");
 const extractEnd = source.indexOf("\n  function mergeCampaigns", extractStart);
 const extractContext = {};
@@ -20,8 +25,8 @@ const dashboardPayload = {
         id: "open-campaign",
         name: "Open Campaign",
         status: "ACTIVE",
-        startAt: "2026-09-01T00:00:00Z",
-        endAt: "2026-10-01T00:00:00Z",
+        startAt: FIXTURE_START_AT,
+        endAt: FIXTURE_END_AT,
         game: { id: "game-1", displayName: "Real Game", slug: "real-game" },
         timeBasedDrops: [{
           id: "open-drop",
@@ -191,8 +196,8 @@ catalogContext.apply([{
   id: "open-campaign",
   name: "Open Campaign",
   status: "ACTIVE",
-  startAt: "2026-09-01T00:00:00Z",
-  endAt: "2026-10-01T00:00:00Z",
+  startAt: FIXTURE_START_AT,
+  endAt: FIXTURE_END_AT,
   game: { displayName: "Real Game" },
   timeBasedDrops: [{ id: "open-drop", self: { currentMinutesWatched: 30 } }],
 }]);
