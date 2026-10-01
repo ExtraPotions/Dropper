@@ -599,8 +599,8 @@
   const GQL_OPS = {
     inventory: {
       name: "Inventory",
-      hash: "fbdc9d9857fa39ff458d3f6116b157a9481fd140266879a2508a662f5c8af6f8",
-      variables: { fetchRewardCampaigns: true },
+      hash: "2ccf98c1806c3aec3c44f49984d44397ff1df5644b561f887f4e159254db03be",
+      variables: {},
     },
     viewerDropsDashboard: {
       name: "ViewerDropsDashboard",
@@ -6818,11 +6818,95 @@
     return parts[0].toLowerCase();
   }
 
+  // Twitch replaces its persisted-query hashes every few weeks, and an old hash
+  // can keep answering with an outdated shape instead of failing. Twitch's own
+  // page always sends the current ones, so Dropper learns each operation's hash
+  // and variable names (never values) from the page's requests and prefers them
+  // over the built-in GQL_OPS hashes.
+  const GQL_LEARNED_OPERATIONS_KEY = "dropper-gql-operations-v1";
+  const GQL_HASH_PATTERN = /^[a-f0-9]{64}$/;
+  const gqlOperationHealth = {};
+  let gqlLearnedOperations = (() => {
+    try { return JSON.parse(localStorage.getItem(GQL_LEARNED_OPERATIONS_KEY) || "{}") || {}; } catch (_) { return {}; }
+  })();
+
+  function builtInGqlOperation(name) {
+    return Object.values(GQL_OPS).find((op) => op.name === name) || null;
+  }
+
+  function learnedGqlOperation(name) {
+    const learned = gqlLearnedOperations[name];
+    return learned && GQL_HASH_PATTERN.test(learned.hash || "") ? learned : null;
+  }
+
+  function saveLearnedGqlOperations() {
+    try { localStorage.setItem(GQL_LEARNED_OPERATIONS_KEY, JSON.stringify(gqlLearnedOperations)); } catch (_) { /* storage full or blocked */ }
+  }
+
+  // Dropper's own requests only ever carry the built-in or the learned hash, so
+  // a different hash that Twitch answered with data can only be Twitch's own.
+  function learnGqlOperationsFromPage(operations, rows) {
+    if (!Array.isArray(operations) || !Array.isArray(rows)) return;
+    let changed = false;
+    operations.forEach((operation, index) => {
+      const name = cleanText(operation?.name);
+      const hash = cleanText(operation?.hash).toLowerCase();
+      const builtIn = builtInGqlOperation(name);
+      if (!builtIn || !GQL_HASH_PATTERN.test(hash) || hash === builtIn.hash) return;
+      const row = rows[index];
+      if (!row?.data || (Array.isArray(row.errors) && row.errors.length)) return;
+      if (learnedGqlOperation(name)?.hash === hash) return;
+      gqlLearnedOperations[name] = {
+        hash,
+        variableKeys: (operation.variableKeys || []).map((key) => cleanText(key)).filter(Boolean).slice(0, 20),
+        learnedAt: Date.now(),
+      };
+      changed = true;
+      logActivity("gql-operation", `Learned Twitch's current ${name} request`, { operation: name, hash: hash.slice(0, 12) });
+    });
+    if (changed) saveLearnedGqlOperations();
+  }
+
+  function noteGqlOperationResult(name, result, detail = "") {
+    if (!name) return;
+    gqlOperationHealth[name] = { result, detail: cleanText(detail).slice(0, 160), at: Date.now() };
+  }
+
+  // A learned hash Twitch no longer recognises is dropped so the next request
+  // falls back to the built-in one until the page shows a newer hash.
+  function forgetLearnedGqlOperation(name, reason) {
+    if (!learnedGqlOperation(name)) return;
+    delete gqlLearnedOperations[name];
+    saveLearnedGqlOperations();
+    logActivity("gql-operation", `Dropped the learned ${name} request`, { operation: name, reason });
+  }
+
+  function gqlOperationsSnapshot() {
+    return Object.fromEntries(Object.values(GQL_OPS).map((op) => {
+      const learned = learnedGqlOperation(op.name);
+      const health = gqlOperationHealth[op.name] || null;
+      return [op.name, {
+        source: learned ? "learned-from-twitch" : "built-in",
+        hash: (learned?.hash || op.hash).slice(0, 12),
+        learnedAt: learned?.learnedAt ? new Date(learned.learnedAt).toISOString() : null,
+        lastResult: health?.result || null,
+        lastDetail: health?.detail || null,
+        lastAt: health?.at ? new Date(health.at).toISOString() : null,
+      }];
+    }));
+  }
+
   function gqlPayload(op, variables) {
+    const learned = learnedGqlOperation(op.name);
+    // Built-in default variables the current query no longer declares are left
+    // out; callers' explicit variables always go through.
+    const defaults = learned
+      ? Object.fromEntries(Object.entries(op.variables || {}).filter(([key]) => learned.variableKeys.includes(key)))
+      : op.variables;
     return {
       operationName: op.name,
-      variables: { ...op.variables, ...(variables || {}) },
-      extensions: { persistedQuery: { version: 1, sha256Hash: op.hash } },
+      variables: { ...defaults, ...(variables || {}) },
+      extensions: { persistedQuery: { version: 1, sha256Hash: learned?.hash || op.hash } },
     };
   }
 
@@ -7038,7 +7122,7 @@
     return true;
   }
 
-  function handleInterceptedTwitchPayload(url, headers, json, status = 200) {
+  function handleInterceptedTwitchPayload(url, headers, json, status = 200, operations = null) {
     captureTwitchNetworkHeaders(headers);
     if (!json) return;
     if (String(url || "").includes("/integrity")) {
@@ -7050,6 +7134,9 @@
         storeClientIntegrity(clientId, parsed.token, parsed.expiresAt, "page");
       }
       return;
+    }
+    if (status >= 200 && status < 300) {
+      try { learnGqlOperationsFromPage(operations, Array.isArray(json) ? json : [json]); } catch (_) { /* learning is best effort */ }
     }
     try {
       const rows = parseGqlRows(json, status);
@@ -7070,13 +7157,13 @@
       if (!detail || detail.secret !== secret) return;
       if (!detail.requestScope || detail.requestScope.account !== storageAccountLogin() || detail.requestScope.path !== location.pathname) return;
       syncViewingContext();
-      handleInterceptedTwitchPayload(detail.url, detail.headers || {}, detail.json, detail.status);
+      handleInterceptedTwitchPayload(detail.url, detail.headers || {}, detail.json, detail.status, detail.operations);
     };
     try { uw.addEventListener(channel, onPayload, true); } catch (_) { /* ignore */ }
     try { window.addEventListener(channel, onPayload, true); } catch (_) { /* ignore */ }
 
     // Page-world inject keeps ad-blocker failures off the Dropper.user.js stack.
-    const injector = `(()=>{if(window.__tdhTwitchNetHooked)return;window.__tdhTwitchNetHooked=1;const C=${JSON.stringify(channel)},S=${JSON.stringify(secret)};const gql=u=>{try{const p=new URL(String(u||""),location.href);return p.hostname==="gql.twitch.tv"&&(p.pathname==="/gql"||p.pathname==="/integrity")}catch(e){return!1}};const scope=()=>{const c=document.cookie.split(";").map(x=>x.trim());const get=k=>{const v=c.find(x=>x.startsWith(k+"="));try{return v?decodeURIComponent(v.slice(k.length+1)):""}catch(e){return""}};return{account:(get("login")||get("name")||"signed-out").toLowerCase(),path:location.pathname}};const emit=(u,h,j,s,q)=>{try{window.dispatchEvent(new CustomEvent(C,{detail:{secret:S,url:u,headers:h||{},json:j,status:s,requestScope:q}}))}catch(e){}};const hdrs=h=>{const o={};if(!h)return o;if(typeof Headers!=="undefined"&&h instanceof Headers){h.forEach((v,k)=>{o[String(k).toLowerCase()]=String(v)});return o}if(Array.isArray(h)){for(const e of h){if(e&&e.length>=2)o[String(e[0]).toLowerCase()]=String(e[1])}return o}if(typeof h==="object"){for(const[k,v]of Object.entries(h)){if(v!=null)o[String(k).toLowerCase()]=String(v)}}return o};const urlOf=i=>typeof i==="string"?i:(i&&typeof i.url==="string"?i.url:String(i||""));const nf=window.fetch;if(typeof nf==="function"){window.fetch=function(i,n){const u=urlOf(i);if(!gql(u))return nf.apply(this,arguments);const rh=hdrs((n&&n.headers)||(i&&i.headers)),q=scope();return nf.apply(this,arguments).then(r=>{try{r.clone().json().then(j=>emit(u,rh,j,r.status,q)).catch(()=>{})}catch(e){}return r})}}const X=window.XMLHttpRequest;if(typeof X==="function"){const o=X.prototype.open,sH=X.prototype.setRequestHeader,s=X.prototype.send;X.prototype.open=function(m,u){this.__tdhUrl=String(u||"");this.__tdhHeaders={};return o.apply(this,arguments)};X.prototype.setRequestHeader=function(n,v){if(!this.__tdhHeaders)this.__tdhHeaders={};this.__tdhHeaders[String(n).toLowerCase()]=String(v);return sH.apply(this,arguments)};X.prototype.send=function(b){if(gql(this.__tdhUrl)){const q=scope();this.addEventListener("load",()=>{try{const t=this.responseText||"";emit(this.__tdhUrl,this.__tdhHeaders,t?JSON.parse(t):null,this.status,q)}catch(e){}},{once:!0})}return s.apply(this,arguments)}}})();`;
+    const injector = `(()=>{if(window.__tdhTwitchNetHooked)return;window.__tdhTwitchNetHooked=1;const C=${JSON.stringify(channel)},S=${JSON.stringify(secret)};const gql=u=>{try{const p=new URL(String(u||""),location.href);return p.hostname==="gql.twitch.tv"&&(p.pathname==="/gql"||p.pathname==="/integrity")}catch(e){return!1}};const scope=()=>{const c=document.cookie.split(";").map(x=>x.trim());const get=k=>{const v=c.find(x=>x.startsWith(k+"="));try{return v?decodeURIComponent(v.slice(k.length+1)):""}catch(e){return""}};return{account:(get("login")||get("name")||"signed-out").toLowerCase(),path:location.pathname}};const emit=(u,h,j,s,q,o)=>{try{window.dispatchEvent(new CustomEvent(C,{detail:{secret:S,url:u,headers:h||{},json:j,status:s,requestScope:q,operations:o||null}}))}catch(e){}};const ops=b=>{try{if(typeof b!=="string")return null;return[].concat(JSON.parse(b)).map(x=>({name:String(x&&x.operationName||""),hash:String(x&&x.extensions&&x.extensions.persistedQuery&&x.extensions.persistedQuery.sha256Hash||""),variableKeys:Object.keys(x&&x.variables||{})}))}catch(e){return null}};const hdrs=h=>{const o={};if(!h)return o;if(typeof Headers!=="undefined"&&h instanceof Headers){h.forEach((v,k)=>{o[String(k).toLowerCase()]=String(v)});return o}if(Array.isArray(h)){for(const e of h){if(e&&e.length>=2)o[String(e[0]).toLowerCase()]=String(e[1])}return o}if(typeof h==="object"){for(const[k,v]of Object.entries(h)){if(v!=null)o[String(k).toLowerCase()]=String(v)}}return o};const urlOf=i=>typeof i==="string"?i:(i&&typeof i.url==="string"?i.url:String(i||""));const nf=window.fetch;if(typeof nf==="function"){window.fetch=function(i,n){const u=urlOf(i);if(!gql(u))return nf.apply(this,arguments);const rh=hdrs((n&&n.headers)||(i&&i.headers)),q=scope(),ob=ops(n&&n.body);return nf.apply(this,arguments).then(r=>{try{r.clone().json().then(j=>emit(u,rh,j,r.status,q,ob)).catch(()=>{})}catch(e){}return r})}}const X=window.XMLHttpRequest;if(typeof X==="function"){const o=X.prototype.open,sH=X.prototype.setRequestHeader,s=X.prototype.send;X.prototype.open=function(m,u){this.__tdhUrl=String(u||"");this.__tdhHeaders={};return o.apply(this,arguments)};X.prototype.setRequestHeader=function(n,v){if(!this.__tdhHeaders)this.__tdhHeaders={};this.__tdhHeaders[String(n).toLowerCase()]=String(v);return sH.apply(this,arguments)};X.prototype.send=function(b){if(gql(this.__tdhUrl)){const q=scope(),ob=ops(b);this.addEventListener("load",()=>{try{const t=this.responseText||"";emit(this.__tdhUrl,this.__tdhHeaders,t?JSON.parse(t):null,this.status,q,ob)}catch(e){}},{once:!0})}return s.apply(this,arguments)}}})();`;
 
     twitchNetworkHookMode = "unavailable";
     try {
@@ -7317,6 +7404,38 @@
     return rows;
   }
 
+  // Expected top-level keys per operation. A response missing them means Twitch
+  // changed the query under the hash, which is otherwise silent.
+  const GQL_EXPECTED_SHAPES = {
+    Inventory: (data) => Array.isArray(data?.currentUser?.inventory?.dropCampaignsInProgress) || data?.currentUser?.inventory === null,
+    ViewerDropsDashboard: (data) => Array.isArray(data?.currentUser?.dropCampaigns) || data?.currentUser === null,
+  };
+
+  function checkGqlOperationResults(requests, json, status) {
+    if (status < 200 || status >= 300) return;
+    const rows = Array.isArray(json) ? json : [json];
+    (requests || []).forEach((req, index) => {
+      const name = GQL_OPS[req?.op]?.name;
+      const row = rows[index];
+      if (!name || !row) return;
+      const errors = (Array.isArray(row.errors) ? row.errors : []).map((item) => cleanText(item?.message || ""));
+      if (errors.some((message) => /PersistedQueryNotFound/i.test(message))) {
+        noteGqlOperationResult(name, "hash-not-found", errors.join(" · "));
+        forgetLearnedGqlOperation(name, "PersistedQueryNotFound");
+        return;
+      }
+      const expected = GQL_EXPECTED_SHAPES[name];
+      if (row.data && expected && !expected(row.data)) {
+        if (gqlOperationHealth[name]?.result !== "shape-changed") {
+          logActivity("gql-operation", `Twitch's ${name} response no longer has the expected shape`, { operation: name });
+        }
+        noteGqlOperationResult(name, "shape-changed", "expected fields missing");
+        return;
+      }
+      noteGqlOperationResult(name, errors.length ? "error" : "ok", errors.join(" · "));
+    });
+  }
+
   async function gql(requests) {
     const token = getToken();
     if (!token) throw new Error("Not logged in");
@@ -7348,6 +7467,7 @@
         body,
         transport,
       });
+      checkGqlOperationResults(requests, result.json, result.status);
       return parseGqlRows(result.json, result.status);
     };
 
@@ -16902,6 +17022,7 @@
         lastCampaignDashboardAt: lastCampaignDashboardAt ? new Date(lastCampaignDashboardAt).toISOString() : null,
         lastError: lastGqlError || null,
         pageHook: twitchNetworkHookMode || null,
+        operations: gqlOperationsSnapshot(),
         sessionPoll: lastSessionPoll ? {
           ...lastSessionPoll,
           at: new Date(lastSessionPoll.at).toISOString(),

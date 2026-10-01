@@ -844,7 +844,7 @@ assert.match(source, /lastCampaignAuthImportError/, "failed campaign imports kee
 assert.match(source, /Campaign import failed/, "failed campaign imports surface an actionable status");
 assert.match(source, /Inventory fallback/, "integrity-blocked All Campaigns imports fall back to Inventory");
 assert.match(source, /69750554e0a81492f2d343558f84bdf3e324767650a2dbb6e79a3c629b4548cf/, "ViewerDropsDashboard hash matches live Twitch");
-assert.match(source, /fbdc9d9857fa39ff458d3f6116b157a9481fd140266879a2508a662f5c8af6f8/, "Inventory hash matches live Twitch");
+assert.match(source, /2ccf98c1806c3aec3c44f49984d44397ff1df5644b561f887f4e159254db03be/, "Inventory hash matches live Twitch");
 assert.match(source, /function listOpenCampaignQueue/, "open campaigns remain queued internally for selection");
 assert.match(source, /function campaignQueueTriplet/, "campaign triplet helper remains available internally");
 assert.doesNotMatch(source, /tdh-campaign-topmenu/, "progress UI no longer includes the open-campaign top menu");

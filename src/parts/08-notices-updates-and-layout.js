@@ -946,6 +946,7 @@
         lastCampaignDashboardAt: lastCampaignDashboardAt ? new Date(lastCampaignDashboardAt).toISOString() : null,
         lastError: lastGqlError || null,
         pageHook: twitchNetworkHookMode || null,
+        operations: gqlOperationsSnapshot(),
         sessionPoll: lastSessionPoll ? {
           ...lastSessionPoll,
           at: new Date(lastSessionPoll.at).toISOString(),

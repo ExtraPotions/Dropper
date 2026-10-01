@@ -599,8 +599,8 @@
   const GQL_OPS = {
     inventory: {
       name: "Inventory",
-      hash: "fbdc9d9857fa39ff458d3f6116b157a9481fd140266879a2508a662f5c8af6f8",
-      variables: { fetchRewardCampaigns: true },
+      hash: "2ccf98c1806c3aec3c44f49984d44397ff1df5644b561f887f4e159254db03be",
+      variables: {},
     },
     viewerDropsDashboard: {
       name: "ViewerDropsDashboard",
