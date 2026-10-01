@@ -1,3 +1,10 @@
+## 3.3.38 — 2026-10-01
+
+- Updates the shared foundation to exp-core 3.4.8.
+- Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.
+- Leaves Dropper Twitch routing, campaign, claim, and playback behavior unchanged.
+- Keeps the standalone userscript distribution while Core remains the single shared source.
+
 ## 3.3.37 — 2026-10-01
 
 - Fixes the progress card being cut off at the top of the window when the launchers are dragged to the top: it now hangs below its launcher instead.

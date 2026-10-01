@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.37
+// @version      3.3.38
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -57,7 +57,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.37";
+  const APP_VERSION = "3.3.38";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -203,6 +203,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.38": ["Updates the shared foundation to exp-core 3.4.8.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.37": ["Fixes the progress card being cut off at the top of the window when the launchers are dragged to the top: it now hangs below its launcher instead.","Nothing changes when the launchers are at the bottom of the window."],
     "3.3.36": ["Checks GitHub for new versions with one small request instead of downloading the whole script from the main branch every 15 minutes.","Install and update links now point to published releases, so only released versions are offered.","Update notices now show the highlights of the new release."],
     "3.3.35": ["Changing Campaign Order, or ranking a game with the up and down arrows, now takes effect right away: Dropper moves to the top-ranked game instead of waiting for the current reward to finish.","The campaign list shows the order Dropper will pick in, marks the game you are watching and the one that is next, and offers the ranking arrows only under My Priority.","A changed order never overrides a pause, a locked or chosen stream, or automatic switching being off, and never interrupts a claim."],

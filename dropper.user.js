@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.3.37
+// @version      3.3.38
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -1519,7 +1519,7 @@ const ExpMenuArrangement = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.4.7';
+  const version = '3.4.8';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -2700,7 +2700,8 @@ const ExtraPotionsCore = (() => {
     return finish('stacked', 12, up ? band.top - h - 8 : band.bottom + 8, h);
   }
   // The single placement for update and changelog notices. With a menu open, the notice stacks beyond it
-  // (above it, or below it when the launchers are anchored at the top) and shares its right edge. With no
+  // (above it, or below it when the launchers are anchored at the top) and shares its right edge; when the
+  // window is too short for that, it sits beside the menu, on its left, instead of overlapping it. With no
   // menu open it takes the menu's place: above a reserved surface, or beside the launcher grid.
   function placeNotice(host, notice, panel = null) {
     const geometry = surfaceGeometry(host);
@@ -2711,10 +2712,20 @@ const ExtraPotionsCore = (() => {
     const menu = panel && !panel.hidden && panel.getClientRects().length ? panel.getBoundingClientRect() : null;
     let right, top;
     if (menu?.width && menu?.height) {
-      right = menu.right;
       const beyond = anchorTop ? menu.bottom + 8 : menu.top - height - 8;
       const fits = anchorTop ? beyond + height <= innerHeight - 8 : beyond >= 8;
-      top = fits ? beyond : (anchorTop ? menu.top - height - 8 : menu.bottom + 8);
+      if (fits) {
+        right = menu.right;
+        top = beyond;
+      } else if (menu.left - 8 - width >= 8) {
+        // A short window leaves no room beyond the menu: sit beside it instead, on the side away from the
+        // launchers, lined up with the menu's edge nearest them, so nothing overlaps.
+        right = menu.left - 8;
+        top = anchorTop ? menu.top : menu.bottom - height;
+      } else {
+        right = menu.right;
+        top = anchorTop ? menu.top - height - 8 : menu.bottom + 8;
+      }
     } else if (reserved && reserved.right - 8 >= width) {
       right = reserved.right;
       top = anchorTop ? reserved.bottom + 8 : reserved.top - height - 8;
@@ -3604,7 +3615,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.3.37";
+  const APP_VERSION = "3.3.38";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -3750,6 +3761,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const MENU_INACTIVITY_DISMISS_MS = 15 * 1000;
   const RELEASE_NOTES = {
+    "3.3.38": ["Updates the shared foundation to exp-core 3.4.8.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.3.37": ["Fixes the progress card being cut off at the top of the window when the launchers are dragged to the top: it now hangs below its launcher instead.","Nothing changes when the launchers are at the bottom of the window."],
     "3.3.36": ["Checks GitHub for new versions with one small request instead of downloading the whole script from the main branch every 15 minutes.","Install and update links now point to published releases, so only released versions are offered.","Update notices now show the highlights of the new release."],
     "3.3.35": ["Changing Campaign Order, or ranking a game with the up and down arrows, now takes effect right away: Dropper moves to the top-ranked game instead of waiting for the current reward to finish.","The campaign list shows the order Dropper will pick in, marks the game you are watching and the one that is next, and offers the ranking arrows only under My Priority.","A changed order never overrides a pause, a locked or chosen stream, or automatic switching being off, and never interrupts a claim."],
