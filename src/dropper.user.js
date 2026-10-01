@@ -13037,6 +13037,7 @@
       .cluster :is(#tdh-tools-dock,.update-notice,#tdh-drop-card,#tdh-settings-launcher){pointer-events:auto!important}
       .cluster .progress-stack{height:auto;min-height:48px;pointer-events:none!important}
       .cluster .badge-row{position:fixed!important;min-height:112px!important;height:auto!important;justify-content:flex-end!important;align-items:center!important;pointer-events:none!important}
+      .cluster[data-launcher-anchor="top"] #tdh-settings-launcher{align-self:flex-start!important}
       .cluster #tdh-drop-card[data-presentation="page-card"]{position:relative!important;inset:auto!important;right:auto!important;left:auto!important;top:auto!important;bottom:auto!important;flex:0 0 auto!important;margin:0!important}
       .cluster .badge-only-progress-slot #tdh-drop-card[data-presentation="menu-card"]{position:relative!important;inset:auto!important;right:auto!important;left:auto!important;width:100%!important;min-width:0!important;max-width:none!important;margin:0!important}
 
@@ -17077,19 +17078,20 @@
       document.dispatchEvent(new CustomEvent("exp-core:coordination", { detail: { type: "launcher-reservation", productId: "dropper", rows: reservedRows } }));
     }
 
-    // exp-core owns launcher coordinates. The launcher sits at the bottom of Dropper's row,
-    // so the row starts that much above the position Core assigned.
+    // exp-core owns launcher coordinates. With the launchers anchored at the bottom the launcher sits at the
+    // bottom of Dropper's row and the card rises above it; anchored at the top the launcher sits at the top of
+    // the row and the card hangs below it, so the card is never pushed off the edge of the window.
     const placement = ExtraPotionsCore.launcherPlacement(ui.host);
     launcherGridDelta = placement.delta;
     const anchor = placement.anchor;
     ui.cluster.dataset.launcherAnchor = anchor;
-    clusterTop = placement.top - (rowHeight - 48);
+    clusterTop = anchor === "top" ? placement.top : placement.top - (rowHeight - 48);
 
     if (badgeRow) {
       badgeRow.style.setProperty("width", `${Math.min(rowWidth, window.innerWidth - 24)}px`, "important");
       badgeRow.style.setProperty("right", "12px", "important");
       badgeRow.style.setProperty("left", "auto", "important");
-      badgeRow.style.setProperty("top", `${Math.max(8 - (rowHeight - 48), Math.min(window.innerHeight - rowHeight - 8, clusterTop))}px`, "important");
+      badgeRow.style.setProperty("top", `${Math.max(8, Math.min(window.innerHeight - rowHeight - 8, clusterTop))}px`, "important");
       badgeRow.style.setProperty("bottom", "auto", "important");
       badgeRow.style.setProperty("gap", `${rowGap}px`, "important");
       badgeRow.style.setProperty("min-height", `${rowHeight}px`, "important");

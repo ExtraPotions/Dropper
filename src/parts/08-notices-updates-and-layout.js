@@ -1238,19 +1238,20 @@
       document.dispatchEvent(new CustomEvent("exp-core:coordination", { detail: { type: "launcher-reservation", productId: "dropper", rows: reservedRows } }));
     }
 
-    // exp-core owns launcher coordinates. The launcher sits at the bottom of Dropper's row,
-    // so the row starts that much above the position Core assigned.
+    // exp-core owns launcher coordinates. With the launchers anchored at the bottom the launcher sits at the
+    // bottom of Dropper's row and the card rises above it; anchored at the top the launcher sits at the top of
+    // the row and the card hangs below it, so the card is never pushed off the edge of the window.
     const placement = ExtraPotionsCore.launcherPlacement(ui.host);
     launcherGridDelta = placement.delta;
     const anchor = placement.anchor;
     ui.cluster.dataset.launcherAnchor = anchor;
-    clusterTop = placement.top - (rowHeight - 48);
+    clusterTop = anchor === "top" ? placement.top : placement.top - (rowHeight - 48);
 
     if (badgeRow) {
       badgeRow.style.setProperty("width", `${Math.min(rowWidth, window.innerWidth - 24)}px`, "important");
       badgeRow.style.setProperty("right", "12px", "important");
       badgeRow.style.setProperty("left", "auto", "important");
-      badgeRow.style.setProperty("top", `${Math.max(8 - (rowHeight - 48), Math.min(window.innerHeight - rowHeight - 8, clusterTop))}px`, "important");
+      badgeRow.style.setProperty("top", `${Math.max(8, Math.min(window.innerHeight - rowHeight - 8, clusterTop))}px`, "important");
       badgeRow.style.setProperty("bottom", "auto", "important");
       badgeRow.style.setProperty("gap", `${rowGap}px`, "important");
       badgeRow.style.setProperty("min-height", `${rowHeight}px`, "important");

@@ -1123,3 +1123,28 @@ test('a failed release lookup is recorded quietly and never claims an update', a
     assert.notEqual(state.lastError, '');
     assert.equal(await launcherHasUpdate(page), false);
   }));
+
+// The launcher sits at the bottom of Dropper's row when the launchers are anchored at the bottom and at the top of
+// the row when anchored at the top, so the progress card never ends up above the edge of the window.
+test('the progress card stays fully inside the window wherever the launchers are dragged', async () => fixture(async page => {
+  const d = data();
+  await page.evaluate(({ drop, campaigns }) => { window.__dropperTest.configure(drop, campaigns); window.__dropperTest.refresh(); window.dropperShow(); }, d);
+  for (const [delta, anchor] of [['0', 'bottom'], ['-300', 'bottom'], ['-600', 'top'], ['-5000', 'top']]) {
+    await page.evaluate(value => {
+      localStorage.setItem('exp:v3:launcher-grid-delta', value);
+      document.dispatchEvent(new CustomEvent('exp-core:coordination', { detail: { type: 'launcher-grid-moved' } }));
+    }, delta);
+    await page.waitForFunction(expected => document.documentElement.dataset.expLauncherAnchor === expected, anchor);
+    await page.waitForTimeout(250);
+    const geo = await page.evaluate(() => {
+      const root = document.getElementById('tdh-root').shadowRoot;
+      const box = node => { const r = node.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height }; };
+      return { row: box(root.querySelector('.badge-row')), launcher: box(root.getElementById('tdh-settings-launcher')), card: box(root.querySelector('#tdh-drop-card')), viewport: innerHeight };
+    });
+    const detail = `${anchor} anchor at delta ${delta}: ${JSON.stringify(geo)}`;
+    assert.ok(geo.row.top >= 7 && geo.row.bottom <= geo.viewport - 7, `the launcher row stays inside the window. ${detail}`);
+    if (geo.card.height > 0) assert.ok(geo.card.top >= 7 && geo.card.bottom <= geo.viewport - 7, `the progress card stays inside the window. ${detail}`);
+    if (anchor === 'top') assert.ok(Math.abs(geo.launcher.top - geo.row.top) <= 1, `anchored at the top, the launcher is at the top of the row. ${detail}`);
+    else assert.ok(Math.abs(geo.launcher.bottom - geo.row.bottom) <= 1, `anchored at the bottom, the launcher is at the bottom of the row. ${detail}`);
+  }
+}));
