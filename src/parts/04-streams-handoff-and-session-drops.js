@@ -1497,6 +1497,41 @@
     return true;
   }
 
+  function markRoutingCreditedProgressVerified(now = Date.now()) {
+    const routing = readRoutingControllerSession();
+    if (routing.state !== ROUTING_STATES.EARNING || !currentDrop) return false;
+
+    const login = cleanText(watchingLogin()).toLowerCase();
+    const targetLogin = cleanText(routing.targetStream).toLowerCase();
+    const currentDropId = cleanText(currentDrop.id);
+    const targetDropId = cleanText(routing.targetDropId);
+    const currentCampaignKey = cleanText(currentDrop.campaignKey || currentDrop.campaignId).toLowerCase();
+    const targetCampaignKey = cleanText(routing.targetCampaignKey).toLowerCase();
+    if (
+      !login ||
+      !targetLogin ||
+      login !== targetLogin ||
+      !currentDropId ||
+      !targetDropId ||
+      currentDropId !== targetDropId ||
+      (targetCampaignKey && currentCampaignKey !== targetCampaignKey)
+    ) {
+      return false;
+    }
+
+    writeRoutingControllerSession({
+      ...routing,
+      candidateEvidence: {
+        ...(routing.candidateEvidence || {}),
+        campaignVerified: true,
+        verifiedChannel: login,
+        creditedProgressVerified: true,
+        creditedProgressVerifiedAt: now,
+      },
+    });
+    return true;
+  }
+
   function verifyHandoffWithCreditedProgress(drop, previousDrop = null) {
     const pending = getHandoffState();
     if (!pending) return false;
@@ -3082,8 +3117,9 @@
           evidence.gqlSessionCampaignMatched ||
           evidence.gqlSessionDropMatched
         );
+        const verifiedAt = Date.now();
         lastStreamVerification = {
-          at: Date.now(),
+          at: verifiedAt,
           method: "credited-progress",
           dropId: currentDrop?.id || null,
           channel: login,
@@ -3099,6 +3135,7 @@
           requiredMinutes: Number(currentDrop?.requiredMinutes || 0),
           currentPercent: percent,
         };
+        markRoutingCreditedProgressVerified(verifiedAt);
       }
     }
 
