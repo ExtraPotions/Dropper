@@ -1,3 +1,9 @@
+## 3.3.51 — 2026-10-01
+
+- Refreshes routing candidate evidence when exact credited progress confirms the active earning stream.
+- Preserves the original stream-verification timestamp and records a separate credited-progress verification timestamp.
+- Prevents credited progress evidence from being attached to another reward ID and adds a regression for that boundary.
+
 ## 3.3.50 — 2026-10-01
 
 - Clears stale routing wait reasons when verification or earning resumes after a pause.
