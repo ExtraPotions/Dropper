@@ -197,3 +197,38 @@ test('routing wait reasons clear after pause verification resumes earning', () =
   session = c.transitionRoutingController(states.WAITING, {}, 'Still waiting');
   assert.equal(session.waitReason, 'no-category-stream', 'held states retain their active wait reason');
 });
+
+test('credited progress refreshes routing candidate evidence for the exact earning target', () => {
+  let routing = {
+    state: 'earning',
+    targetStream: 't0ru_wa',
+    targetDropId: 'four',
+    targetCampaignKey: 'campaign',
+    candidateEvidence: {
+      campaignVerified: true,
+      verifiedChannel: 't0ru_wa',
+      creditedProgressVerified: false,
+      verifiedAt: now - 5000,
+    },
+  };
+  const c = {
+    Date: { now: () => now },
+    ROUTING_STATES: { EARNING: 'earning' },
+    currentDrop: { id: 'four', campaignKey: 'campaign' },
+    watchingLogin: () => 't0ru_wa',
+    readRoutingControllerSession: () => routing,
+    writeRoutingControllerSession: value => { routing = value; },
+    cleanText: value => String(value || '').trim(),
+  };
+  vm.createContext(c);
+  vm.runInContext(extract('markRoutingCreditedProgressVerified'), c);
+  assert.equal(c.markRoutingCreditedProgressVerified(now), true);
+  assert.equal(routing.candidateEvidence.creditedProgressVerified, true);
+  assert.equal(routing.candidateEvidence.creditedProgressVerifiedAt, now);
+  assert.equal(routing.candidateEvidence.verifiedAt, now - 5000, 'original stream-verification timestamp is preserved');
+
+  routing.targetDropId = 'different';
+  routing.candidateEvidence.creditedProgressVerified = false;
+  assert.equal(c.markRoutingCreditedProgressVerified(now + 1), false);
+  assert.equal(routing.candidateEvidence.creditedProgressVerified, false, 'credit cannot be transferred to another reward');
+});
