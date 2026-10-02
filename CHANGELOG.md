@@ -1,3 +1,9 @@
+## 3.3.50 — 2026-10-01
+
+- Clears stale routing wait reasons when verification or earning resumes after a pause.
+- Keeps wait reasons attached only to Waiting and Paused states so diagnostics match the active routing state.
+- Adds a regression for earning → paused → verify-stream → earning while retaining exp-core 3.4.13.
+
 ## 3.3.49 — 2026-10-01
 
 - Updates the shared foundation to exp-core 3.4.13.

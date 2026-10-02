@@ -150,3 +150,50 @@ test('Dropper discards only retired width preferences and preserves saved behavi
     assert.deepEqual(persisted, loaded);
   }
 });
+
+test('routing wait reasons clear after pause verification resumes earning', () => {
+  class FixedDate extends Date { static now() { return now; } }
+  let session = {
+    version: 1,
+    state: 'earning',
+    enteredAt: now - 5000,
+    updatedAt: now - 5000,
+    deadlineAt: 0,
+    targetGame: 'Heroes of the Storm',
+    targetCampaignKey: 'campaign',
+    targetDropId: 'four',
+    targetStream: 'junhots_',
+    failedStreams: [],
+    waitReason: '',
+    lastReason: 'Verified junhots_',
+  };
+  const states = { WAITING: 'waiting', PAUSED: 'paused', VERIFY_STREAM: 'verify-stream', EARNING: 'earning' };
+  const c = {
+    Date: FixedDate,
+    ROUTING_SESSION_VERSION: 1,
+    ROUTING_SESSION_KEY: 'routing',
+    ROUTING_STATES: states,
+    readRoutingControllerSession: () => session,
+    writeSession: (_key, value) => { session = value; },
+    cleanText: value => String(value || '').trim(),
+    clearSkipStreamerArm() {},
+    logActivity() {},
+    saveRecoverySnapshot() {},
+  };
+  vm.createContext(c);
+  vm.runInContext(extract('transitionRoutingController'), c);
+
+  session = c.transitionRoutingController(states.PAUSED, { waitReason: 'viewer-paused', targetStream: '' }, 'Playback Paused');
+  assert.equal(session.waitReason, 'viewer-paused');
+
+  session = c.transitionRoutingController(states.VERIFY_STREAM, { targetStream: 'junhots_' }, 'heartbeat · verifying current same-game channel');
+  assert.equal(session.waitReason, '', 'verification cannot inherit a stale pause reason');
+
+  session = c.transitionRoutingController(states.EARNING, { targetStream: 'junhots_', deadlineAt: 0 }, 'Verified junhots_ for Xal\'atath Launch');
+  assert.equal(session.waitReason, '', 'earning cannot report viewer-paused after playback resumed');
+
+  session = c.transitionRoutingController(states.WAITING, { waitReason: 'no-category-stream' }, 'Waiting for live streams');
+  assert.equal(session.waitReason, 'no-category-stream');
+  session = c.transitionRoutingController(states.WAITING, {}, 'Still waiting');
+  assert.equal(session.waitReason, 'no-category-stream', 'held states retain their active wait reason');
+});
