@@ -1,0 +1,225 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const { loadDropperSource } = require('./load-source.cjs');
+const root = path.resolve(__dirname, '..');
+const source = loadDropperSource(root);
+const launcher = fs.readFileSync(path.join(root, 'assets', 'dropper-launcher.svg'), 'utf8');
+
+test('launcher mark is a dedicated borderless asset', () => {
+  assert.equal(crypto.createHash('sha256').update(launcher).digest('hex'), '730dd1b661c995ffdfed7e3883393affa24bcbbe88932e35c6835f3f474ca449');
+  assert.match(launcher, /Dropper Launcher Mark/u);
+  assert.doesNotMatch(launcher, /borderGrad|<rect x="32"|<rect x="42"/u);
+  assert.match(source, /function dropperGemSvg\(className\)/u);
+  assert.match(source, /<svg class="\$\{className\}" viewBox="0 0 1024 1024"/u);
+  assert.match(source, /dropperGemSvg\("icon"\)/u);
+});
+
+test('launcher, spacing, and menu artwork use exact suite measurements', () => {
+  assert.match(source, /#tdh-settings-launcher \{[\s\S]*?width:48px;[\s\S]*?height:48px;/u);
+  assert.match(source, /#tdh-settings-launcher \.icon \{[^}]*width:40px; height:40px;/u);
+  assert.match(source, /#tdh-settings-launcher \.ring \{[^}]*width:44px; height:44px;/u);
+  assert.match(source, /\.header-icon \.menu-icon \{ width:38px; height:38px;/u);
+  assert.match(source, /column \* 56/u);
+  for (const removed of ['dropper-icon.svg', 'dropper-icon-1024.png', 'dropper-icon-128.png']) {
+    assert.equal(fs.existsSync(path.join(root, 'assets', removed)), false, removed);
+  }
+});
+
+test('progress panel and launcher remain one stable row', () => {
+  assert.match(source, /\.badge-row \{display:flex!important;flex-wrap:nowrap!important;align-items:center!important;gap:8px!important;[\s\S]*?min-height:112px!important;/u);
+  assert.match(source, /#tdh-drop-card \{position:relative!important;[\s\S]*?min-height:112px!important;[\s\S]*?border-radius:12px!important;/u);
+  assert.match(source, /#tdh-settings-launcher \{[\s\S]*?width:48px;[\s\S]*?border-radius:10px;/u);
+  assert.doesNotMatch(source, /\.badge-row:has\(#tdh-drop-card/u);
+  assert.doesNotMatch(source, /#tdh-drop-card\.collapsed/u);
+  assert.doesNotMatch(source, /#tdh-drop-card:not\(\.collapsed\)/u);
+});
+
+test('campaign navigation strip is gone and does not change progress geometry', () => {
+  assert.doesNotMatch(source, /campaign-topmenu/u);
+  assert.doesNotMatch(source, /toggleCampaignNavigation/u);
+  assert.doesNotMatch(source, /campaign-nav-hidden/u);
+  assert.doesNotMatch(source, /classList\.toggle\("collapsed"/u);
+  assert.match(source, /ui\.cluster\.dataset\.launcherAnchor = anchor;/u);
+  assert.match(source, /#tdh-drop-card \{position:relative!important;[\s\S]*?cursor:default!important;/u);
+});
+
+test('menu focus suppresses the browser outline while retaining the themed outer border', () => {
+  assert.match(source, /#tdh-tools-dock:focus \{ outline:none; \}/u);
+  assert.match(source, /#tdh-tools-dock \{[^}]*border:1px solid var\(--theme-line\);/u);
+});
+
+test('Dropper progress starts at twelve o clock and advances clockwise', () => {
+  const pathData = 'M18 3H24A9 9 0 0 1 33 12V24A9 9 0 0 1 24 33H12A9 9 0 0 1 3 24V12A9 9 0 0 1 12 3H18Z';
+  assert.match(source, new RegExp(`<path class="fill" id="tdh-ring" d="${pathData.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
+  assert.doesNotMatch(source, /\.fill\s*\{[^}]*transform\s*:\s*rotate/u);
+});
+
+test('settings open collapsed and retain a themed last-category marker', () => {
+  assert.match(source, /collapseToolPanels\(\);\s+collapseNestedPanels\(\);/u);
+  assert.match(source, /lastPanelId = header\.dataset\.panel/u);
+  assert.match(source, /\.fl-tool-header\.last-opened \{ box-shadow:inset 3px 0 0 #b783ff; \}/u);
+  const titles = [...source.matchAll(/<span class="fl-tool-title">([^<]+)<\/span>/gu)].map((match) => match[1]);
+  assert.deepEqual(titles, ['Drops', 'Streams', 'Appearance', 'System']);
+});
+
+test('menu sections group related Dropper controls without token-only rows', () => {
+  const section = (id) => source.match(new RegExp(`id="${id}"[^>]*>([\\s\\S]*?)<\\/div></section>`, 'u'))?.[1] || '';
+  assert.match(section('tdh-drops-body'), /tdh-claim-drops/u);
+  assert.match(section('tdh-progress-body'), /tdh-keep-tab/u);
+  assert.match(section('tdh-drops-body'), /tdh-toggle-inventory/u);
+  assert.match(section('tdh-progress-body'), /tdh-hide-sub-promos/u);
+  assert.doesNotMatch(section('tdh-drops-body'), /Page behavior/u);
+  assert.doesNotMatch(section('tdh-drops-body'), /id="tdh-eligibility-checklist"/u);
+  assert.match(section('tdh-drops-body'), /id="tdh-reward-eligibility"[\s\S]*id="tdh-eligibility-checklist-list"/u);
+  assert.doesNotMatch(section('tdh-drops-body'), /tdh-find-next/u);
+  assert.doesNotMatch(section('tdh-streams-body'), /tdh-skip-stream/u);
+  assert.match(section('tdh-streams-body'), /tdh-queue-enabled/u);
+  assert.match(section('tdh-streams-body'), /tdh-background-earning/u);
+  assert.doesNotMatch(section('tdh-streams-body'), /tdh-toggle-inventory/u);
+  assert.match(section('tdh-progress-body'), /tdh-progress-title/u);
+  assert.match(section('tdh-progress-body'), /tdh-reduce-motion/u);
+  assert.match(section('tdh-diagnostics-body'), /tdh-diagnostics-toggle/u);
+  assert.match(section('tdh-diagnostics-body'), /tdh-reset-session/u);
+  assert.match(section('tdh-diagnostics-body'), /tdh-refresh-campaign-data/u);
+});
+
+test('nested panels reopen collapsed with a themed last-submenu marker', () => {
+  assert.match(source, /function collapseNestedPanels\(\)/u);
+  assert.match(source, /lastSubmenuId = "inventory"/u);
+  assert.match(source, /lastSubmenuId = "diagnostics"/u);
+  assert.match(source, /\.life-btn\.last-opened \{ box-shadow:inset 3px 0 0 #b783ff; \}/u);
+});
+
+test('recover panel and dock use compact trailing spacing', () => {
+  assert.match(source, /padding:9px 9px 4px;/u);
+  assert.match(source, /#tdh-diagnostics-body \{ padding-bottom:2px; \}/u);
+});
+
+test('appearance uses the locked eight-slot palette system', () => {
+  assert.match(source, /name:"Dropper gem"/u);
+  assert.match(source, /#0b0713 0 38%,#7a46c8 38% 69%,#2a8c9b 69% 100%/u);
+  assert.match(source, /\.exp-theme-swatch\{[^}]*width:22px!important;[^}]*height:22px!important;[^}]*border-radius:5px!important/u);
+  const themeBlock = source.match(/const UI_THEMES = Object\.freeze\(\[([\s\S]*?)\]\);/u)?.[1] || '';
+  assert.deepEqual([...themeBlock.matchAll(/id:"([^"]+)"/gu)].map((match) => match[1]), ['ember', 'midnight', 'glacier', 'contrast', 'verdant', 'pride', 'twitch', 'dropper']);
+  assert.match(themeBlock, /id:"glacier", name:"Glacier"/u);
+  assert.match(themeBlock, /id:"twitch", name:"Twitch"/u);
+  assert.match(source, /const CRIMSON_THEME = Object\.freeze\(\{ id:"crimson", name:"Crimson"/u);
+});
+
+
+test('Skip On conditions are a left label with vertically stacked toggles', () => {
+  assert.match(source, /<div class="queue-switches-label">Skip On<\/div>/u);
+  assert.doesNotMatch(source, /<fieldset class="queue-switches"><legend>Switch On<\/legend>/u);
+  assert.match(source, /\.queue-switches\{display:grid;grid-template-columns:minmax\(58px,\.7fr\) minmax\(0,1\.3fr\);/u);
+  assert.match(source, /\.queue-switches-label\{grid-column:1;grid-row:1\/span 3;/u);
+  assert.match(source, /\.queue-switches>\.fl-switch\{grid-column:2;display:flex!important;flex-direction:row!important;/u);
+});
+
+
+test('launcher host is protected from hostile site CSS', () => {
+  assert.match(source, /function protectLauncherHost\(host\)/u);
+  assert.match(source, /:host\{all:initial!important;position:fixed!important;/u);
+  assert.match(source, /z-index:2147483647!important/u);
+  assert.match(source, /content-visibility:visible!important/u);
+  assert.match(source, /host\.parentNode !== document\.documentElement/u);
+  assert.match(source, /host\.showPopover\(\)/u);
+  assert.match(source, /protectionStyle\.dataset\.expHostProtection/u);
+});
+
+test('progress visibility preserves the badge-only controls', () => {
+  assert.match(source, /const rowHeight = settings\.badgeOnly \? 48 : Math\.max\(112, progressCard\?\.offsetHeight \|\| 112\);/u);
+  assert.match(source, /const rowGap = settings\.badgeOnly \? 0 : 8;/u);
+  assert.match(source, /const rowWidth = settings\.badgeOnly \? launcherWidth : panelWidth \+ rowGap \+ launcherWidth;/u);
+  assert.match(source, /\.progress-stack\.badge-only \.badge-row \{ justify-content:flex-end; min-height:48px!important; \}/u);
+  assert.match(source, /id="tdh-badge-only-progress-slot"[^>]*hidden/u);
+  assert.match(source, /id="tdh-badge-only-progress-slot"[^>]*hidden><\/div>\s*<section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-drops-body"/u);
+  assert.doesNotMatch(source, /id="tdh-drops-body">\s*<div class="badge-only-progress-slot"/u);
+  assert.match(source, /function syncProgressPanelPlacement\(\)/u);
+  assert.match(source, /menuSlot\.append\(card\)/u);
+  assert.match(source, /badgeRow\.insertBefore\(card, ui\.launcher\)/u);
+  assert.match(source, /const menuPanelWidth = Math\.min\(panelWidth, Math\.max\(0, window\.innerWidth - 24\)\);/u);
+  assert.match(source, /badgeOnlySlot\.style\.setProperty\("width", "100%", "important"\);/u);
+  assert.match(source, /badgeOnlySlot\.style\.setProperty\("margin-left", "0", "important"\);/u);
+  assert.match(source, /badgeOnlySlot\.style\.setProperty\("margin-right", "0", "important"\);/u);
+  assert.match(source, /progressCard\.style\.setProperty\("width", "100%", "important"\);/u);
+  assert.match(source, /ExtraPotionsCore\.placeMenu\(ui\.host, ui\.dock, menuPanelWidth\)/u);
+  assert.doesNotMatch(source, /badgeOnlySlot\.style\.setProperty\("margin-left", "-9px"/u);
+  assert.doesNotMatch(source, /badgeOnlySlot\.style\.setProperty\("margin-right", "-9px"/u);
+  assert.doesNotMatch(source, /const firstProductSlot = dropper \? columns \* reservedRows : 0;/u);
+});
+
+test('the fixed Dropper row leaves neighboring product launchers clickable', () => {
+  assert.match(source, /\.cluster\{pointer-events:none!important\}/u);
+  assert.match(source, /\.cluster :is\(#tdh-tools-dock,\.update-notice,#tdh-drop-card,#tdh-settings-launcher\)\{pointer-events:auto!important\}/u);
+  assert.match(source, /\.cluster \.progress-stack\{[^}]*pointer-events:none!important\}/u);
+  assert.match(source, /\.cluster \.badge-row\{[^}]*pointer-events:none!important\}/u);
+});
+
+test('all Dropper update and changelog notices share one menu-width card space', () => {
+  assert.match(source, /function placeUpdateNotice\(\)/u);
+  assert.match(source, /notice\.dataset\.placement = "menu";/u);
+  assert.match(source, /delete notice\.dataset\.expFloatingNotice;/u);
+  assert.match(source, /function noticePanelWidth\(\)/u);
+  assert.match(source, /placement: "menu"/u);
+  // exp-core places the notice: beyond an open menu, above the progress card, or beside the launchers.
+  assert.match(source, /ExtraPotionsCore\.placeNotice\(ui\.host, notice, railOpen \? ui\.dock : null\);/u);
+  assert.doesNotMatch(source, /const anchorBox = menuBox\?\.width && menuBox\?\.height/u);
+  assert.match(source, /notice\.style\.setProperty\("width", `\$\{width\}px`, "important"\);/u);
+  assert.match(source, /positionMenuUpdateNotice\(\);/u);
+  assert.doesNotMatch(source, /placement: options\.placement === "menu" \? "menu" : "launcher-grid"/u);
+});
+
+test('progress panel remains in the launcher row instead of taking fixed viewport coordinates', () => {
+  assert.match(source, /#tdh-tools-dock \{\s+position:fixed;/u);
+  assert.match(source, /#tdh-drop-card\[data-presentation="page-card"\]\{position:relative!important;/u);
+  assert.match(source, /const rowWidth = settings\.badgeOnly \? launcherWidth : panelWidth \+ rowGap \+ launcherWidth;/u);
+  assert.match(source, /progressCard\.style\.setProperty\("width"/u);
+  assert.match(source, /for \(const property of \["left", "right", "top", "bottom"\]\) progressCard\.style\.removeProperty\(property\);/u);
+  // exp-core places the menu; Dropper only marks the progress card as a reserved surface.
+  assert.match(source, /progressCard\.dataset\.expReserved = "1"/u);
+  assert.doesNotMatch(source, /const desiredMenuTop = anchor === "top"/u);
+  assert.match(source, /ui\.cluster\.style\.gap = "0px";/u);
+  assert.doesNotMatch(source, /progressCard\.style\.setProperty\("top"/u);
+  assert.doesNotMatch(source, /progressCard\.style\.setProperty\("right"/u);
+});
+
+test('launcher helper tooltip is removed', () => {
+  assert.doesNotMatch(source, /#tdh-settings-launcher::before \{[^}]*bottom:calc\(100% \+ 7px\);/u);
+  assert.doesNotMatch(source, /#tdh-settings-launcher\.tip-below::before/u);
+  assert.doesNotMatch(source, /launcher\.classList\.toggle\("tip-below"/u);
+  assert.doesNotMatch(source, /#tdh-drop-card\.collapsed/u);
+  assert.doesNotMatch(source, /preview-below/u);
+  assert.doesNotMatch(source, /Hover To Preview/u);
+});
+
+test('menu section titles do not carry redundant helper tips', () => {
+  assert.doesNotMatch(source, /fl-tool-header has-tooltip/u);
+  assert.doesNotMatch(source, /fl-tool-header[^>]*data-tip="/u);
+  assert.doesNotMatch(source, /id="tdh-skip-stream"/u);
+  assert.match(source, /const labelClass = tip \? "fl-switch-text has-tooltip" : "fl-switch-text";/u);
+  assert.match(source, /switchHtml\("tdh-claim-drops", "Auto-Claim Drops", "",/u);
+  assert.match(source, /switchHtml\("tdh-reduce-motion", "Reduce motion", "",/u);
+  assert.match(source, /switchHtml\("tdh-keep-tab", "Keep Screen Awake", "[^"]+",/u);
+  assert.match(source, /switchHtml\("tdh-badge-only", "Badge Only", "[^"]+",/u);
+});
+
+
+test('unified progress panel follows the 3.2 layout without campaign navigation', () => {
+  assert.doesNotMatch(source, /id="tdh-drop-card"[^>]*data-help="Click To Show Campaign Navigation"/u);
+  assert.doesNotMatch(source, /id="tdh-compact-line"/u);
+  assert.match(source, /class="progress-head"/u);
+  assert.match(source, /class="progress-reward-row"/u);
+  assert.match(source, /id="tdh-skip-streamer"/u);
+  assert.match(source, /function skipCurrentStreamer\(\)/u);
+  assert.doesNotMatch(source, /campaign-topmenu/u);
+  assert.doesNotMatch(source, /toggleCampaignNavigation/u);
+  assert.match(source, /#tdh-settings-launcher \{[\s\S]*?width:48px;[\s\S]*?border-radius:10px;/u);
+});
+
+assert.match(source, /ExtraPotionsCore\.menuWidth\(\)/u);
+assert.doesNotMatch(source, /normalizedCollapsedPanelWidth|calculatedPanelWidth|data-collapsed-width|data-panel-width|watchChatWidth|syncDropperWidthToChat/u);

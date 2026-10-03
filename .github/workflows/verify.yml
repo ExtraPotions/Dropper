@@ -1,0 +1,46 @@
+name: Verify userscript
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check Core rollout preparer
+        run: node --check scripts/prepare-core-release.cjs
+      - run: npx playwright install --with-deps chromium
+      - name: Verify pinned exp-core
+        run: node scripts/verify-exp-core-pin.cjs
+      - name: Run regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test 2>&1 | tee test-results.txt
+      - name: Archive reviewed source
+        if: always()
+        run: |
+          git archive --format=zip --output=dropper-source.zip HEAD
+      - name: Retain verification artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dropper-verification-${{ github.sha }}
+          path: |
+            dropper-source.zip
+            test-results.txt
+            test-artifacts/
+            dropper.user.js
+          retention-days: 7
+          if-no-files-found: error

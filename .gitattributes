@@ -1,0 +1,5 @@
+* text=auto eol=lf
+/dropper.user.js binary
+*.svg binary
+src/*.js text eol=lf
+scripts/*.cjs text eol=lf

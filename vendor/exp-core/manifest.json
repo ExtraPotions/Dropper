@@ -1,0 +1,190 @@
+{
+  "coreVersion": "3.5.1",
+  "source": {
+    "source": "ExtraPotions/exp-core",
+    "sourceVersion": "3.5.1",
+    "architecture": "core-native"
+  },
+  "suiteContract": {
+    "dropper": {
+      "role": "flagship",
+      "priority": 4,
+      "launcherPriority": 110,
+      "themePriority": 4,
+      "capabilities": [
+        "twitch.drops",
+        "twitch.campaigns",
+        "twitch.progress",
+        "twitch.claims",
+        "twitch.stream-management"
+      ],
+      "presentationPhases": [],
+      "state": {
+        "type": "dropper.state-changed",
+        "fields": {
+          "activeReward": "boolean",
+          "progressPercent": "percent-nullable",
+          "routingState": "token"
+        }
+      },
+      "menuSections": {
+        "main": [
+          "drops",
+          "streams"
+        ],
+        "appearance": [
+          "appearance"
+        ],
+        "advanced": [
+          "advanced"
+        ],
+        "system": [
+          "system"
+        ]
+      },
+      "repository": "Dropper",
+      "rootId": "tdh-root"
+    },
+    "shift": {
+      "role": "product",
+      "priority": 3,
+      "launcherPriority": 100,
+      "themePriority": 3,
+      "capabilities": [
+        "appearance.theme",
+        "appearance.readability",
+        "appearance.site-profile"
+      ],
+      "presentationPhases": [
+        "theme"
+      ],
+      "state": {
+        "type": "shift.state-changed",
+        "fields": {
+          "active": "boolean",
+          "theme": "token",
+          "safeMode": "boolean",
+          "excluded": "boolean"
+        }
+      },
+      "menuSections": {
+        "appearance": [
+          "appearance",
+          "readability"
+        ],
+        "advanced": [
+          "effects",
+          "effects-integrations",
+          "profiles",
+          "profiles-sites"
+        ],
+        "system": [
+          "system"
+        ]
+      },
+      "repository": "SHIFT",
+      "rootId": "exp-shift-root"
+    },
+    "ward": {
+      "role": "product",
+      "priority": 2,
+      "launcherPriority": 60,
+      "themePriority": 1,
+      "capabilities": [
+        "retail.classification",
+        "retail.cleanup",
+        "retail.coupons"
+      ],
+      "presentationPhases": [
+        "classify",
+        "visibility"
+      ],
+      "state": {
+        "type": "ward.state-changed",
+        "fields": {
+          "active": "boolean",
+          "pageType": "token",
+          "interventions": "count",
+          "hide": "count",
+          "dim": "count",
+          "collapse": "count",
+          "annotate": "count"
+        }
+      },
+      "menuSections": {
+        "main": [
+          "protection",
+          "amazon",
+          "tools"
+        ],
+        "appearance": [
+          "appearance"
+        ],
+        "advanced": [
+          "advanced",
+          "patterns",
+          "advanced-amazon"
+        ],
+        "system": [
+          "system"
+        ]
+      },
+      "repository": "WARD",
+      "rootId": "exp-ward-root"
+    },
+    "prisma": {
+      "role": "product",
+      "priority": 1,
+      "launcherPriority": 40,
+      "themePriority": 2,
+      "capabilities": [
+        "text.identity-detection",
+        "text.identity-highlighting",
+        "identity.catalog"
+      ],
+      "presentationPhases": [
+        "annotate"
+      ],
+      "state": {
+        "type": "prisma.state-changed",
+        "fields": {
+          "status": "token",
+          "total": "count",
+          "temporarilyHidden": "boolean"
+        }
+      },
+      "menuSections": {
+        "main": [
+          "page",
+          "highlights"
+        ],
+        "appearance": [
+          "style",
+          "highlight-style",
+          "look",
+          "appearance"
+        ],
+        "advanced": [
+          "tools",
+          "language",
+          "sites"
+        ],
+        "system": [
+          "system"
+        ]
+      },
+      "repository": "PRISMA",
+      "rootId": "exp-prisma-root"
+    }
+  },
+  "bundleSha256": "678939e66db719121c50eadffc5704619971608ad029128fd8056c91b990a4d3",
+  "files": {
+    "foundation.js": "0db984edc78917edf5cadd4218d80b1ca426f8a10fac3eb7002489ba08fea8c3",
+    "diagnostic-report.js": "ab950471dbd73dac0c9d269f742aff438ea477159802b148c05ffd7e489ca439",
+    "lifecycle.js": "e1d1fd4dd5d08c500d52bf8d615d22bd504b0cfbee25b03328c4c9816395bf89",
+    "product-tools.js": "c803a2a91810ad112aff42a43a11833e9d84c3bca525e704c210f5440154739c",
+    "menu-arrangement.js": "b46291126d3573bea33fe23afdc4a7acbf39ac331e57cbcceca3321bbfa0faf0",
+    "runtime.js": "3cd2438a2c588db1a13612292cfc5b18aaa69f81802a91baff32540daa4d5949",
+    "suite-contract.json": "1b60485eeb48388692eadbc6a2de2c8916f7a67baadcb9ef277c44360b79b773"
+  }
+}

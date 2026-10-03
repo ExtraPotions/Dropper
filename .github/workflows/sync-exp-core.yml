@@ -1,0 +1,36 @@
+# rollout-trigger: exp-core v3.4.1
+name: Sync exp-core
+
+on:
+  repository_dispatch:
+    types: [exp-core-release]
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/sync-exp-core.yml"
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional exp-core tag. Blank uses the latest published Core release."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-exp-core
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    uses: ExtraPotions/exp-core/.github/workflows/consumer-rollout.yml@main
+    with:
+      tag: ${{ github.event.client_payload.tag || inputs.tag || '' }}
+      product: Dropper
+      node-version: "22"
+      script-asset: dropper.user.js
+      icon-asset: assets/dropper-launcher.svg
+      release-sections: 3
