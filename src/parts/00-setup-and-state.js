@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.3
+// @version      3.4.4
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -57,7 +57,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.3";
+  const APP_VERSION = "3.4.4";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -202,6 +202,7 @@
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.4": ["Recognize current Twitch campaign information before switching away from eligible streams.","Keep chat bonus checks running alongside automatic Drop claims."],
     "3.4.3": ["Collect later channel-point bonus chests after an earlier bonus has been claimed.","Keep duplicate bonus claims blocked while waiting for Twitch confirmation."],
     "3.4.2": ["Remove the empty duplicate Maintenance section from System.","Use compact full-width System submenus with softer colors and clear hover and keyboard focus states.","Separate diagnostic buttons from maintenance tools while keeping menu labels readable."],
     "3.4.1": ["Make small menu text easier to read, including captions, version badges, notices, and diagnostic details.","Use consistent sizes for labels and controls across the menu."],
@@ -638,8 +639,8 @@
       variables: { channel: "" },
     },
     availableDrops: {
-      name: "DropsHighlightService_AvailableDrops",
-      hash: "782dad0f032942260171d2d80a654f88bdd0c5a9dddc392e9bc92218a0f42d20",
+      name: "ChannelDropsCampaigns",
+      hash: "bc073ff0bb13797898f83e93dc8009838545dec95ff7fe92243c8fa3a740f7e7",
       variables: { channelID: "" },
     },
     claimDrop: {

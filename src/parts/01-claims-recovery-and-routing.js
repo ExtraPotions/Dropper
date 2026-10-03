@@ -543,9 +543,11 @@
     return true;
   }
   function scanClaimGroups(root = document, kind = '') {
-    if (claimScanTimer) { clearTimeout(claimScanTimer); claimScanTimer = null; }
-    lastClaimScanAt = Date.now();
-    claimScanQueuedAt = 0;
+    if (!kind) {
+      if (claimScanTimer) { clearTimeout(claimScanTimer); claimScanTimer = null; }
+      lastClaimScanAt = Date.now();
+      claimScanQueuedAt = 0;
+    }
     let queued = 0;
     for (const group of CLAIM_GROUPS) {
       if (kind && kind !== group.kind) continue;

@@ -27,8 +27,8 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 - **Interruption rules:** set quiet hours, protect channels from automatic switching, exclude channels, or stay on a stream while it is earning. Quiet hours also silence browser alerts.
 - **Site control:** pause page features across active ExtraPotions products from System, temporarily or until you resume.
 - **Progress at a glance:** see the current reward, credited watch time, and earning status.
-- **Claims:** optionally claim available Drops and collect channel-point bonus chests automatically throughout a stream, including later bonuses after an earlier claim.
-- **Stream management:** find eligible streams and recover when a stream goes offline, changes category, or stops progressing.
+- **Claims:** optionally claim available Drops and collect channel-point bonus chests automatically throughout a stream. Bonus checks continue alongside Drop checks, including later bonuses after an earlier claim.
+- **Stream management:** use Twitch’s current campaign information to verify eligible streams, and recover when a stream goes offline, changes category, or stops progressing.
 - **Campaign browsing:** explore open campaigns and ignore games you do not want to follow.
 - **Your preferred layout:** keep progress by the launcher or use Badge Only to place it at the top of the menu.
 - **Your controls:** move the launcher and tune how the menu behaves from Appearance and System.

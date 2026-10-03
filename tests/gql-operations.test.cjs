@@ -18,7 +18,10 @@ function loadOperations(stored = {}) {
   const storage = new Map(Object.entries(stored).map(([key, value]) => [key, JSON.stringify(value)]));
   const activity = [];
   const context = {
-    GQL_OPS: { inventory: { name: "Inventory", hash: BUILT_IN, variables: { fetchRewardCampaigns: true } } },
+    GQL_OPS: {
+      inventory: { name: "Inventory", hash: BUILT_IN, variables: { fetchRewardCampaigns: true } },
+      availableDrops: { name: "ChannelDropsCampaigns", hash: BUILT_IN, variables: { channelID: "" } },
+    },
     localStorage: {
       getItem: (key) => (storage.has(key) ? storage.get(key) : null),
       setItem: (key, value) => storage.set(key, String(value)),
@@ -35,6 +38,21 @@ function loadOperations(stored = {}) {
 }
 
 const okRow = { data: { currentUser: { inventory: { dropCampaignsInProgress: [] } } } };
+
+test('current channel campaign query validates native data and rejects the obsolete response', () => {
+  const ops = loadOperations();
+  ops.check([{ op: 'availableDrops' }], [{ data: { channel: { viewerDropCampaigns: null } } }], 200);
+  assert.equal(ops.snapshot().ChannelDropsCampaigns.lastResult, 'shape-changed');
+  ops.check([{ op: 'availableDrops' }], [{ data: { channelDropCampaigns: [] } }], 200);
+  assert.equal(ops.snapshot().ChannelDropsCampaigns.lastResult, 'ok');
+  ops.learn([{ name: 'ChannelDropsCampaigns', hash: TWITCH_NEW, variableKeys: ['channelID'] }], [{ data: { channelDropCampaigns: null } }]);
+  assert.equal(ops.snapshot().ChannelDropsCampaigns.source, 'built-in');
+  ops.learn([{ name: 'ChannelDropsCampaigns', hash: TWITCH_NEW, variableKeys: ['channelID'] }], [{ data: { channelDropCampaigns: [] } }]);
+  const payload = ops.payload(ops.GQL_OPS.availableDrops, { channelID: 'fixture-channel' });
+  assert.equal(payload.operationName, 'ChannelDropsCampaigns');
+  assert.equal(payload.extensions.persistedQuery.sha256Hash, TWITCH_NEW);
+  assert.equal(payload.variables.channelID, 'fixture-channel');
+});
 
 test("learns Twitch's current hash and variable names from the page's own request", () => {
   const ops = loadOperations();

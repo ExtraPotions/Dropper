@@ -221,7 +221,7 @@
         sessionRow = row;
         touched = true;
       }
-      const available = data.channel?.viewerDropCampaigns || data.user?.viewerDropCampaigns || data.channel?.dropCampaigns;
+      const available = data.channelDropCampaigns || data.channel?.viewerDropCampaigns || data.user?.viewerDropCampaigns || data.channel?.dropCampaigns;
       if (Array.isArray(available)) {
         availableCampaigns = available;
         touched = true;
@@ -263,6 +263,9 @@
     if (!routingController) noteDeferredAutoRouting("page-gql-deferred");
     const sessionDrop = sessionRow ? parseSessionDrop(sessionRow, mergeCampaigns(routingCampaignPool(), availableCampaigns || [])) : null;
     if (sessionRow) recordRewardSessionResolution(sessionDrop, routingCampaignPool());
+    if (routingController && Array.isArray(availableCampaigns)) {
+      updateRoutingCampaignSupportEvidence(watchingLogin(), availableCampaigns, sessionDrop);
+    }
     if (currentDrop) {
       const liveInventoryDrop = inventoryResponseHealth.valid ? findActiveDropInCampaigns(lastInventoryCampaigns, currentDrop) : null;
       const sessionIdentity = sessionDrop
@@ -617,6 +620,7 @@
   const GQL_EXPECTED_SHAPES = {
     Inventory: (data) => inventoryResponseState({ data }).valid,
     ViewerDropsDashboard: (data) => Array.isArray(data?.currentUser?.dropCampaigns) || data?.currentUser === null,
+    ChannelDropsCampaigns: (data) => Array.isArray(data?.channelDropCampaigns),
   };
 
   function gqlOperationFailureKind(row) {
@@ -2295,4 +2299,3 @@
     else if (freshCached && drops) { rank = 6; label = 'fresh-cache-drops'; }
     return { rank, label, live, acl, drops, hint, freshCached };
   }
-

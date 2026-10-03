@@ -2358,7 +2358,8 @@
 
   function parseAvailableCampaigns(result) {
     const channel = result?.data?.channel || result?.data?.user || {};
-    return channel.viewerDropCampaigns || channel.dropCampaigns || [];
+    const campaigns = result?.data?.channelDropCampaigns || channel.viewerDropCampaigns || channel.dropCampaigns;
+    return Array.isArray(campaigns) ? campaigns : [];
   }
 
   function findActiveDropInCampaigns(campaigns, active = currentDrop) {

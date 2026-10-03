@@ -1,3 +1,8 @@
+## 3.4.4 — 2026-10-03
+
+- Recognize current Twitch campaign information before switching away from eligible streams.
+- Keep chat bonus checks running alongside automatic Drop claims.
+
 ## 3.4.3 — 2026-10-02
 
 - Collect later channel-point bonus chests after an earlier bonus has been claimed.

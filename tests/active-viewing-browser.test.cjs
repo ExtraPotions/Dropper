@@ -16,6 +16,7 @@ const exposed = source.replace('  startDropper();\n})();', `
     history: () => claimLedger().snapshot(), reconcile: reconcileClaimHistory,
     navigation: viewingNavigationAllowed, refresh: refreshOpenCampaignList,
     setGql: fn => { gql = fn; },
+    parseAvailable: parseAvailableCampaigns, support: updateRoutingCampaignSupportEvidence, ingest: ingestTwitchGqlRows,
     configure: (drop, campaigns) => { currentDrop = drop; lastInventoryCampaigns = campaigns; lastCampaignCatalog = campaigns; },
     ignore: setCampaignGameIgnored, priority: campaignPriority, pickNext: pickNextOpenCampaignDrop,
     relayout: () => { applyAppearanceSettings(); layoutChrome(); },
@@ -491,6 +492,20 @@ test('a confirmed bonus button can be remounted for a later bonus', async () => 
   await page.waitForFunction(() => window.__dropperTest.history().filter(record => record.kind === 'bonus' && record.outcome === 'confirmed').length === 2);
 }));
 
+test('Drop-only heartbeat scans do not cancel a queued bonus scan', async () => fixture(async page => {
+  await page.evaluate(() => {
+    const t = window.__dropperTest; t.setActiveClaims(false);
+    document.body.insertAdjacentHTML('beforeend', '<div class="community-points-summary"><button id="queued-bonus" aria-label="Claim Bonus"><span class="claimable-bonus__icon"></span></button></div>');
+    window.__bonusClicks = 0;
+    document.getElementById('queued-bonus').addEventListener('click', () => window.__bonusClicks++);
+    t.setActiveClaims(true);
+    t.queueScan('heartbeat', true);
+    t.scan(document, 'drop');
+  });
+  await page.waitForTimeout(350);
+  assert.equal(await page.evaluate(() => window.__bonusClicks), 1);
+}));
+
 test('mutation storms coalesce into the minimum claim scan interval', async () => fixture(async page => {
   const before = await page.evaluate(() => {
     const t = window.__dropperTest;
@@ -520,6 +535,44 @@ test('campaign priority diagnostics distinguish saved preferences from the defau
   assert.deepEqual(result.normal, { value: 0, explicit: false });
 }));
 
+
+test('native Twitch campaign data proves the selected campaign on the current stream', async () => fixture(async page => {
+  const result = await page.evaluate(({ drop, campaigns }) => {
+    const t = window.__dropperTest;
+    t.configure({ ...drop, currentMinutes: 0, percent: 0, campaignStartAt: campaigns[0].startAt, campaignEndAt: campaigns[0].endAt }, campaigns);
+    t.setRouting({ state: 'verify-stream', targetStream: 'chosen_channel', targetGame: 'Fixture game',
+      targetCampaign: 'Fixture campaign', targetCampaignKey: 'campaign-a', targetDropId: 'reward-a', candidateEvidence: { dropsTagged: true } });
+    const rows = t.parseAvailable({ data: { channelDropCampaigns: campaigns } });
+    const accepted = t.support('chosen_channel', rows);
+    return { accepted, proof: t.routing().candidateEvidence?.gqlCampaignSupported };
+  }, data());
+  assert.equal(result.accepted, true);
+  assert.equal(result.proof, true);
+}));
+
+test('native Twitch campaign data never proves a different campaign', async () => fixture(async page => {
+  const result = await page.evaluate(({ drop, campaigns }) => {
+    const t = window.__dropperTest;
+    t.configure({ ...drop, currentMinutes: 0, percent: 0, campaignStartAt: campaigns[0].startAt, campaignEndAt: campaigns[0].endAt }, campaigns);
+    t.setRouting({ state: 'verify-stream', targetStream: 'chosen_channel', targetGame: 'Fixture game',
+      targetCampaign: 'Fixture campaign', targetCampaignKey: 'campaign-a', targetDropId: 'reward-a', candidateEvidence: { dropsTagged: true } });
+    const other = { ...campaigns[0], id: 'other-campaign', name: 'Other campaign', timeBasedDrops: [{ id: 'other-reward' }] };
+    return t.support('chosen_channel', t.parseAvailable({ data: { channelDropCampaigns: [other] } }));
+  }, data());
+  assert.equal(result, false);
+}));
+
+test('native Twitch page traffic supplies campaign proof without waiting for a Dropper poll', async () => fixture(async page => {
+  const proof = await page.evaluate(({ drop, campaigns }) => {
+    const t = window.__dropperTest;
+    t.configure({ ...drop, currentMinutes: 0, percent: 0, campaignStartAt: campaigns[0].startAt, campaignEndAt: campaigns[0].endAt }, campaigns);
+    t.setRouting({ state: 'verify-stream', targetStream: 'chosen_channel', targetGame: 'Fixture game',
+      targetCampaign: 'Fixture campaign', targetCampaignKey: 'campaign-a', targetDropId: 'reward-a' });
+    t.ingest([{ data: { channelDropCampaigns: campaigns } }], 'twitch-page-intercept');
+    return t.routing().candidateEvidence?.gqlCampaignSupported;
+  }, data());
+  assert.equal(proof, true);
+}));
 
 test('stream evidence ranking keeps live campaign ACL ahead of generic Drops candidates', async () => fixture(async page => {
   const ranked = await page.evaluate(() => window.__dropperTest.rankCandidates([
