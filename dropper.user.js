@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.2
+// @version      3.4.3
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -3755,7 +3755,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.2";
+  const APP_VERSION = "3.4.3";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -3900,6 +3900,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.3": ["Collect later channel-point bonus chests after an earlier bonus has been claimed.","Keep duplicate bonus claims blocked while waiting for Twitch confirmation."],
     "3.4.2": ["Remove the empty duplicate Maintenance section from System.","Use compact full-width System submenus with softer colors and clear hover and keyboard focus states.","Separate diagnostic buttons from maintenance tools while keeping menu labels readable."],
     "3.4.1": ["Make small menu text easier to read, including captions, version badges, notices, and diagnostic details.","Use consistent sizes for labels and controls across the menu."],
     "3.4.0": ["Set quiet hours, protect favorite channels, and exclude channels from automatic selection.","Choose to stay on a stream while it is earning and quiet browser alerts during quiet hours.","Pause Dropper with the other ExtraPotions products from System > Site control."],
@@ -5048,6 +5049,7 @@ const ExtraPotionsCore = (() => {
   let claimScanQueuedAt = 0;
   let claimAnonymousSequence = 0;
   const claimNodeIds = new WeakMap();
+  const confirmedBonusControls = new WeakMap();
   let lastAnonymousAttemptAt = { bonus: 0, drop: 0 };
   let claimHealth = {};
   let lastViewingNavigationBlock = '';
@@ -5712,6 +5714,16 @@ const ExtraPotionsCore = (() => {
     );
   }
   function claimTargetIdentity(button, group) {
+    if (group.kind === 'bonus') {
+      const previous = confirmedBonusControls.get(button);
+      const marker = button.querySelector('.claimable-bonus__icon');
+      // Twitch may reuse a button for later bonuses. Only a confirmed dismissal
+      // followed by a new bonus marker (or a remounted control) starts a new claim.
+      if (previous && (previous.detached || (marker && marker !== previous.marker))) {
+        claimNodeIds.delete(button);
+        confirmedBonusControls.delete(button);
+      }
+    }
     if (group.kind === 'drop') {
       const carrier = button.closest('[data-drop-id],[data-drop-instance-id]');
       const rewardId = carrier?.getAttribute('data-drop-id') || '';
@@ -5737,13 +5749,14 @@ const ExtraPotionsCore = (() => {
     if (!button.querySelector('.claimable-bonus__icon')) return false;
     return isSafeClaimTarget(button, CLAIM_GROUPS[0]);
   }
-  function confirmDismissedBonusControl(button, ledger, attempt, context) {
+  function confirmDismissedBonusControl(button, ledger, attempt, context, marker) {
     setTimeout(() => {
       if (!claimContextIsCurrent(context)) return;
       const current = ledger.snapshot().find(record => record.key === attempt.key && record.attemptId === attempt.attemptId);
       if (!current || current.outcome !== 'pending') return;
       if (bonusControlStillClaimable(button)) return;
-      recordClaimOutcome(ledger, attempt, 'confirmed', 'control-dismissed');
+      const settled = recordClaimOutcome(ledger, attempt, 'confirmed', 'control-dismissed');
+      if (settled?.outcome === 'confirmed') confirmedBonusControls.set(button, { marker, detached: !button.isConnected });
     }, BONUS_CONFIRM_SETTLE_MS);
   }
   function queuePageClaim(button, group) {
@@ -5766,8 +5779,9 @@ const ExtraPotionsCore = (() => {
       if (!attempt) return false;
       if (identity.anonymous) lastAnonymousAttemptAt[group.kind] = Date.now();
       try {
+        const bonusMarker = group.kind === 'bonus' ? button.querySelector('.claimable-bonus__icon') : null;
         button.click();
-        if (group.kind === 'bonus') confirmDismissedBonusControl(button, ledger, attempt, context);
+        if (group.kind === 'bonus') confirmDismissedBonusControl(button, ledger, attempt, context, bonusMarker);
         claimHealth[group.id] = { ...claimHealth[group.id], kind: group.kind, state: 'attempted', lastAttemptAt: Date.now() };
         logActivity('claim-attempt', 'Claim Sent', { kind: group.kind, rewardId: identity.id || null, evidence: 'page-control' });
         setStatus('Claim Sent · Waiting For Twitch');

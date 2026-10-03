@@ -428,6 +428,69 @@ test('bonus control dismissal confirms the page claim after Twitch removes the c
   assert.equal(bonus?.evidence, 'control-dismissed');
 }));
 
+test('a later bonus can reuse a button after its previous bonus was confirmed', async () => fixture(async page => {
+  await page.evaluate(() => {
+    const t = window.__dropperTest; t.setActiveClaims(false);
+    document.body.insertAdjacentHTML('beforeend', '<div class="community-points-summary"><button id="reused-bonus" aria-label="Claim Bonus"><span class="claimable-bonus__icon"></span></button></div>');
+    window.__bonusClicks = 0;
+    document.getElementById('reused-bonus').addEventListener('click', event => {
+      window.__bonusClicks++;
+      event.currentTarget.querySelector('.claimable-bonus__icon')?.remove();
+    });
+    t.setActiveClaims(true); t.scan();
+  });
+  await page.waitForFunction(() => window.__dropperTest.history().some(record => record.kind === 'bonus' && record.outcome === 'confirmed'));
+  assert.equal(await page.evaluate(() => window.__bonusClicks), 1);
+  await page.evaluate(() => {
+    const t = window.__dropperTest;
+    t.scan(); // The empty old control must not be clicked again.
+    document.getElementById('reused-bonus').insertAdjacentHTML('beforeend', '<span class="claimable-bonus__icon"></span>');
+    t.scan(); t.scan();
+  });
+  await page.waitForTimeout(350);
+  assert.equal(await page.evaluate(() => window.__bonusClicks), 2, 'the next bonus gets a new claim identity');
+  await page.waitForFunction(() => window.__dropperTest.history().filter(record => record.kind === 'bonus' && record.outcome === 'confirmed').length === 2);
+}));
+
+test('a bonus rerender while confirmation is pending does not trigger another claim', async () => fixture(async page => {
+  await page.evaluate(() => {
+    const t = window.__dropperTest; t.setActiveClaims(false);
+    document.body.insertAdjacentHTML('beforeend', '<div class="community-points-summary"><button id="pending-bonus" aria-label="Claim Bonus"><span class="claimable-bonus__icon"></span></button></div>');
+    window.__bonusClicks = 0;
+    document.getElementById('pending-bonus').addEventListener('click', () => window.__bonusClicks++);
+    t.setActiveClaims(true); t.scan();
+  });
+  await page.waitForFunction(() => window.__bonusClicks === 1);
+  await page.evaluate(() => {
+    document.querySelector('#pending-bonus .claimable-bonus__icon').outerHTML = '<span class="claimable-bonus__icon"></span>';
+  });
+  await page.waitForTimeout(1700);
+  await page.evaluate(() => window.__dropperTest.scan());
+  await page.waitForTimeout(200);
+  const value = await page.evaluate(() => ({ clicks: window.__bonusClicks, history: window.__dropperTest.history() }));
+  assert.equal(value.clicks, 1);
+  assert.equal(value.history.filter(record => record.kind === 'bonus').length, 1);
+  assert.equal(value.history.find(record => record.kind === 'bonus').outcome, 'pending');
+}));
+
+test('a confirmed bonus button can be remounted for a later bonus', async () => fixture(async page => {
+  await page.evaluate(() => {
+    const t = window.__dropperTest; t.setActiveClaims(false);
+    document.body.insertAdjacentHTML('beforeend', '<div class="community-points-summary" id="remount-bonus-container"><button id="remount-bonus" aria-label="Claim Bonus"><span class="claimable-bonus__icon"></span></button></div>');
+    window.__bonusButton = document.getElementById('remount-bonus');
+    window.__bonusClicks = 0;
+    window.__bonusButton.addEventListener('click', event => { window.__bonusClicks++; event.currentTarget.remove(); });
+    t.setActiveClaims(true); t.scan();
+  });
+  await page.waitForFunction(() => window.__dropperTest.history().some(record => record.kind === 'bonus' && record.outcome === 'confirmed'));
+  await page.evaluate(() => {
+    document.getElementById('remount-bonus-container').append(window.__bonusButton);
+    window.__dropperTest.scan(); window.__dropperTest.scan();
+  });
+  await page.waitForFunction(() => window.__bonusClicks === 2);
+  await page.waitForFunction(() => window.__dropperTest.history().filter(record => record.kind === 'bonus' && record.outcome === 'confirmed').length === 2);
+}));
+
 test('mutation storms coalesce into the minimum claim scan interval', async () => fixture(async page => {
   const before = await page.evaluate(() => {
     const t = window.__dropperTest;

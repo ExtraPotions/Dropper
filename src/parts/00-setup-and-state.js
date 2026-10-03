@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.2
+// @version      3.4.3
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -57,7 +57,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.2";
+  const APP_VERSION = "3.4.3";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -202,6 +202,7 @@
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.3": ["Collect later channel-point bonus chests after an earlier bonus has been claimed.","Keep duplicate bonus claims blocked while waiting for Twitch confirmation."],
     "3.4.2": ["Remove the empty duplicate Maintenance section from System.","Use compact full-width System submenus with softer colors and clear hover and keyboard focus states.","Separate diagnostic buttons from maintenance tools while keeping menu labels readable."],
     "3.4.1": ["Make small menu text easier to read, including captions, version badges, notices, and diagnostic details.","Use consistent sizes for labels and controls across the menu."],
     "3.4.0": ["Set quiet hours, protect favorite channels, and exclude channels from automatic selection.","Choose to stay on a stream while it is earning and quiet browser alerts during quiet hours.","Pause Dropper with the other ExtraPotions products from System > Site control."],
@@ -1350,6 +1351,7 @@
   let claimScanQueuedAt = 0;
   let claimAnonymousSequence = 0;
   const claimNodeIds = new WeakMap();
+  const confirmedBonusControls = new WeakMap();
   let lastAnonymousAttemptAt = { bonus: 0, drop: 0 };
   let claimHealth = {};
   let lastViewingNavigationBlock = '';

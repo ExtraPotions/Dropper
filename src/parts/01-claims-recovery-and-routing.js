@@ -461,6 +461,16 @@
     );
   }
   function claimTargetIdentity(button, group) {
+    if (group.kind === 'bonus') {
+      const previous = confirmedBonusControls.get(button);
+      const marker = button.querySelector('.claimable-bonus__icon');
+      // Twitch may reuse a button for later bonuses. Only a confirmed dismissal
+      // followed by a new bonus marker (or a remounted control) starts a new claim.
+      if (previous && (previous.detached || (marker && marker !== previous.marker))) {
+        claimNodeIds.delete(button);
+        confirmedBonusControls.delete(button);
+      }
+    }
     if (group.kind === 'drop') {
       const carrier = button.closest('[data-drop-id],[data-drop-instance-id]');
       const rewardId = carrier?.getAttribute('data-drop-id') || '';
@@ -486,13 +496,14 @@
     if (!button.querySelector('.claimable-bonus__icon')) return false;
     return isSafeClaimTarget(button, CLAIM_GROUPS[0]);
   }
-  function confirmDismissedBonusControl(button, ledger, attempt, context) {
+  function confirmDismissedBonusControl(button, ledger, attempt, context, marker) {
     setTimeout(() => {
       if (!claimContextIsCurrent(context)) return;
       const current = ledger.snapshot().find(record => record.key === attempt.key && record.attemptId === attempt.attemptId);
       if (!current || current.outcome !== 'pending') return;
       if (bonusControlStillClaimable(button)) return;
-      recordClaimOutcome(ledger, attempt, 'confirmed', 'control-dismissed');
+      const settled = recordClaimOutcome(ledger, attempt, 'confirmed', 'control-dismissed');
+      if (settled?.outcome === 'confirmed') confirmedBonusControls.set(button, { marker, detached: !button.isConnected });
     }, BONUS_CONFIRM_SETTLE_MS);
   }
   function queuePageClaim(button, group) {
@@ -515,8 +526,9 @@
       if (!attempt) return false;
       if (identity.anonymous) lastAnonymousAttemptAt[group.kind] = Date.now();
       try {
+        const bonusMarker = group.kind === 'bonus' ? button.querySelector('.claimable-bonus__icon') : null;
         button.click();
-        if (group.kind === 'bonus') confirmDismissedBonusControl(button, ledger, attempt, context);
+        if (group.kind === 'bonus') confirmDismissedBonusControl(button, ledger, attempt, context, bonusMarker);
         claimHealth[group.id] = { ...claimHealth[group.id], kind: group.kind, state: 'attempted', lastAttemptAt: Date.now() };
         logActivity('claim-attempt', 'Claim Sent', { kind: group.kind, rewardId: identity.id || null, evidence: 'page-control' });
         setStatus('Claim Sent · Waiting For Twitch');

@@ -1,3 +1,8 @@
+## 3.4.3 — 2026-10-02
+
+- Collect later channel-point bonus chests after an earlier bonus has been claimed.
+- Keep duplicate bonus claims blocked while waiting for Twitch confirmation.
+
 ## 3.4.2 — 2026-10-02
 
 - Remove the empty duplicate Maintenance section from System.
