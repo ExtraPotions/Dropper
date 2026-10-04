@@ -717,6 +717,8 @@
     const diagnosticQueueCandidates = discoverQueueCandidates(now);
     return {
       report: "Dropper Diagnostics",
+      progressTimeline:progressTimelineSnapshot(),
+      recoveryNavigation:recoveryNavigationState(),
       build: "reward-data-r2",
       version: APP_VERSION,
       accountScope: {
@@ -1346,6 +1348,7 @@
   }
 
   function setRailOpen(open, focus) {
+    if(open)ui.healthControl?.refresh();
     railOpen = open;
     if (open) {
       collapseToolPanels();

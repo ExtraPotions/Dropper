@@ -1,3 +1,9 @@
+## 3.4.5 — 2026-10-03
+
+- Show a clear System status and offer safe recovery when needed.
+- Choose Standard, Large, or Extra Large menus on each site.
+- Pause repeated recovery switches until Resume and show a recent progress timeline.
+
 ## 3.4.4 — 2026-10-03
 
 - Recognize current Twitch campaign information before switching away from eligible streams.

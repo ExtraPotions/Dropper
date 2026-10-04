@@ -267,7 +267,7 @@
     ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { ExtraPotionsCore.resetLauncherGrid("dropper"); requestAnimationFrame(layoutChrome); } });
     ui.menuController = ExtraPotionsCore.createMenuController({
       id: "dropper", host, shadow, panel: ui.dock,
-      getSettings: () => settings, setOpen: setRailOpen,
+      getSettings: () => settings, setOpen: setRailOpen, onLayout:layoutChrome,
     });
     bindDropperControls();
     renderSwitches();
@@ -1571,10 +1571,27 @@
     if (!health.domVideoPlaying) return 'The player is not reporting playback. Check the player for a pause, login prompt, or playback restriction.';
     return 'The stream appears eligible. Waiting for the next progress update from Twitch.';
   }
+  function systemHealthSnapshot() {
+    const checkedAt=lastGqlSuccessAt||null;
+    if(ExtraPotionsCore.suiteSitePaused()||viewingIntent.snapshot().paused)return {state:'paused',reason:'Automatic viewing changes are paused. Pending reward confirmation is preserved.',checkedAt};
+    if(recoveryNavigationState().suspended)return {state:'attention',reason:'Automatic recovery stopped after repeated stream changes or reloads.',checkedAt,action:{label:'Resume recovery',run:()=>resumeRecoveryNavigation()}};
+    const health=streamEarningHealthSnapshot(),session=readRoutingControllerSession();
+    if(health.creditedRecently)return {state:'working',reason:'Twitch has recently credited reward progress.',checkedAt};
+    if(!currentDrop||!isStream())return {state:'waiting',reason:'Waiting for a selected reward and an eligible Twitch stream.',checkedAt};
+    return {state:'waiting',reason:session.state==='verify-stream'?'Checking this stream against the selected campaign. Twitch has not confirmed credited progress yet.':'Waiting for Twitch to credit the next progress update. Campaign eligibility does not guarantee credited minutes.',checkedAt};
+  }
   function mountProductTools() {
     const target = ui.shadow.getElementById('tdh-diagnostics-body');
     if (!target || target.querySelector('[data-dropper-tools]')) return;
+    ui.healthControl=ExtraPotionsCore.createHealthControls(systemHealthSnapshot);
+    target.prepend(ui.healthControl.element);
+    const sizePreferences=ExtraPotionsCore.createDisclosure('Menu preferences',ExtraPotionsCore.createMenuSizeControls());
+    target.append(sizePreferences);
     const container = document.createElement('div');container.dataset.dropperTools = '1';
+    const timeline=ExtraPotionsCore.createDisclosure('Recent progress');
+    const timelineRows=document.createElement('div');
+    timeline.addEventListener('toggle',()=>{if(!timeline.open)return;timelineRows.replaceChildren();const rows=progressTimelineSnapshot();if(!rows.length)timelineRows.textContent='No recent progress or recovery events in this session.';for(const entry of rows.slice().reverse()){const line=document.createElement('p');line.textContent=`${new Date(entry.at).toLocaleTimeString()} · ${entry.reason}${entry.minutes!==null?` · ${entry.minutes} credited min`:''}`;timelineRows.append(line);}});
+    timeline.append(timelineRows);container.append(timeline);
     container.append(ExtraPotionsCore.createSuiteSiteControls(), ExtraPotionsCore.createCompatibilityControls());
     const details = document.createElement('details');details.style.cssText='border:1px solid var(--theme-line);border-radius:7px;padding:7px;margin-top:8px';
     const title = document.createElement('summary');title.textContent='Why am I waiting?';

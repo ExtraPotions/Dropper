@@ -35,6 +35,7 @@ function fixture() {
   document.addEventListener('exp-core:menu-open', () => events.push('exp-core:menu-open'));
   const noop = () => {};
   const c = {
+    ExpMenuPreferences:{bindMenuSize:()=>()=>{}},
     railOpen: false, document,
     ui: { dock: new Target(), launcher: new Target(), shadow: { getElementById: () => null } },
     Event: class { constructor(type) { this.type = type; } },

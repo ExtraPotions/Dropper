@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.4
+// @version      3.4.5
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -57,7 +57,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.4";
+  const APP_VERSION = "3.4.5";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -202,6 +202,7 @@
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.5": ["Show a clear System status and offer safe recovery when needed.","Choose Standard, Large, or Extra Large menus on each site.","Pause repeated recovery switches until Resume and show a recent progress timeline."],
     "3.4.4": ["Recognize current Twitch campaign information before switching away from eligible streams.","Keep chat bonus checks running alongside automatic Drop claims."],
     "3.4.3": ["Collect later channel-point bonus chests after an earlier bonus has been claimed.","Keep duplicate bonus claims blocked while waiting for Twitch confirmation."],
     "3.4.2": ["Remove the empty duplicate Maintenance section from System.","Use compact full-width System submenus with softer colors and clear hover and keyboard focus states.","Separate diagnostic buttons from maintenance tools while keeping menu labels readable."],
@@ -5035,6 +5036,7 @@
     };
     activityLog = [...(Array.isArray(activityLog) ? activityLog : []), entry].slice(-ACTIVITY_LOG_LIMIT);
     writeSession(ACTIVITY_LOG_KEY, activityLog);
+    if(/progress|verification|navigation|recovery-paused|recovery-resumed/.test(entry.type))recordProgressTimeline(entry.type,{...(entry.meta||{}),message:entry.message});
     renderRoutingHistory();
     return entry;
   }
@@ -5043,6 +5045,34 @@
     activityLog = [];
     writeSession(ACTIVITY_LOG_KEY, activityLog);
     renderRoutingHistory();
+  }
+  function recordProgressTimeline(type, details = {}) {
+    const minutes=Number(details.currentMinutes);
+    const row={at:Date.now(),type:cleanText(type).slice(0,40),reason:cleanText(details.reason||details.message).slice(0,180),minutes:Number.isFinite(minutes)&&minutes>=0?minutes:null};
+    const rows=progressTimelineSnapshot(),last=rows.at(-1);
+    if(last&&last.type===row.type&&last.reason===row.reason&&last.minutes===row.minutes)return;
+    writeSession('dropper-progress-timeline-v1',[...rows,row].slice(-30));
+  }
+  function progressTimelineSnapshot() {
+    const rows=readSession('dropper-progress-timeline-v1',[]);
+    return Array.isArray(rows)?rows.slice(-30).filter(row=>row&&Number.isFinite(row.at)).map(row=>({at:row.at,type:cleanText(row.type).slice(0,40),reason:cleanText(row.reason).slice(0,180),minutes:Number.isFinite(row.minutes)?row.minutes:null})):[];
+  }
+  function recoveryNavigationState() {
+    const value=readSession('dropper-recovery-loop-v1',{events:[],suspended:false}),now=Date.now();
+    return {events:(Array.isArray(value.events)?value.events:[]).filter(at=>Number.isFinite(at)&&at>now-300000).slice(-3),suspended:Boolean(value.suspended)};
+  }
+  function recoveryNavigationAllowed(reason) {
+    if(/manual|update-install/i.test(reason))return true;
+    const state=recoveryNavigationState();
+    if(state.suspended){setStatus('Recovery Paused · Resume from System');return false;}
+    const recovery=/recover|retry|fallback|restart|stall/i.test(reason)||(readRoutingControllerSession().failedStreams||[]).length>0;
+    if(!recovery)return true;
+    if(state.events.length>=3){writeSession('dropper-recovery-loop-v1',{...state,suspended:true});logActivity('recovery-paused','Recovery paused after three navigations within five minutes');setStatus('Recovery Paused · Resume from System');return false;}
+    writeSession('dropper-recovery-loop-v1',{events:[...state.events,Date.now()],suspended:false});return true;
+  }
+  function resumeRecoveryNavigation() {
+    if(ExtraPotionsCore.suiteSitePaused()||viewingIntent.snapshot().paused)return false;
+    writeSession('dropper-recovery-loop-v1',{events:[],suspended:false});logActivity('recovery-resumed','Recovery resumed from System');return true;
   }
 
   function cleanupNetworkWindow(now = Date.now()) {
@@ -5319,6 +5349,7 @@
     }
     noteRequestedViewingNavigation(target.href);
     explicitViewingNavigationUntil = 0;
+    if(!recoveryNavigationAllowed(reason))return false;
     location.assign(target.href);
     return true;
   }
@@ -12353,6 +12384,8 @@
     }
 
     if (creditedMinuteAdvanced) {
+      recordProgressTimeline('progress',{currentMinutes:currentDrop.currentMinutes,reason:'Twitch credited progress'});
+      const pressure=recoveryNavigationState();if(!pressure.suspended)writeSession('dropper-recovery-loop-v1',{events:[],suspended:false});
       const login = watchingLogin();
       const info = login ? readStreamInfo() : null;
       const streamGame = cleanText(info?.game || "");
@@ -14784,7 +14817,7 @@
     ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { ExtraPotionsCore.resetLauncherGrid("dropper"); requestAnimationFrame(layoutChrome); } });
     ui.menuController = ExtraPotionsCore.createMenuController({
       id: "dropper", host, shadow, panel: ui.dock,
-      getSettings: () => settings, setOpen: setRailOpen,
+      getSettings: () => settings, setOpen: setRailOpen, onLayout:layoutChrome,
     });
     bindDropperControls();
     renderSwitches();
@@ -16088,10 +16121,27 @@
     if (!health.domVideoPlaying) return 'The player is not reporting playback. Check the player for a pause, login prompt, or playback restriction.';
     return 'The stream appears eligible. Waiting for the next progress update from Twitch.';
   }
+  function systemHealthSnapshot() {
+    const checkedAt=lastGqlSuccessAt||null;
+    if(ExtraPotionsCore.suiteSitePaused()||viewingIntent.snapshot().paused)return {state:'paused',reason:'Automatic viewing changes are paused. Pending reward confirmation is preserved.',checkedAt};
+    if(recoveryNavigationState().suspended)return {state:'attention',reason:'Automatic recovery stopped after repeated stream changes or reloads.',checkedAt,action:{label:'Resume recovery',run:()=>resumeRecoveryNavigation()}};
+    const health=streamEarningHealthSnapshot(),session=readRoutingControllerSession();
+    if(health.creditedRecently)return {state:'working',reason:'Twitch has recently credited reward progress.',checkedAt};
+    if(!currentDrop||!isStream())return {state:'waiting',reason:'Waiting for a selected reward and an eligible Twitch stream.',checkedAt};
+    return {state:'waiting',reason:session.state==='verify-stream'?'Checking this stream against the selected campaign. Twitch has not confirmed credited progress yet.':'Waiting for Twitch to credit the next progress update. Campaign eligibility does not guarantee credited minutes.',checkedAt};
+  }
   function mountProductTools() {
     const target = ui.shadow.getElementById('tdh-diagnostics-body');
     if (!target || target.querySelector('[data-dropper-tools]')) return;
+    ui.healthControl=ExtraPotionsCore.createHealthControls(systemHealthSnapshot);
+    target.prepend(ui.healthControl.element);
+    const sizePreferences=ExtraPotionsCore.createDisclosure('Menu preferences',ExtraPotionsCore.createMenuSizeControls());
+    target.append(sizePreferences);
     const container = document.createElement('div');container.dataset.dropperTools = '1';
+    const timeline=ExtraPotionsCore.createDisclosure('Recent progress');
+    const timelineRows=document.createElement('div');
+    timeline.addEventListener('toggle',()=>{if(!timeline.open)return;timelineRows.replaceChildren();const rows=progressTimelineSnapshot();if(!rows.length)timelineRows.textContent='No recent progress or recovery events in this session.';for(const entry of rows.slice().reverse()){const line=document.createElement('p');line.textContent=`${new Date(entry.at).toLocaleTimeString()} · ${entry.reason}${entry.minutes!==null?` · ${entry.minutes} credited min`:''}`;timelineRows.append(line);}});
+    timeline.append(timelineRows);container.append(timeline);
     container.append(ExtraPotionsCore.createSuiteSiteControls(), ExtraPotionsCore.createCompatibilityControls());
     const details = document.createElement('details');details.style.cssText='border:1px solid var(--theme-line);border-radius:7px;padding:7px;margin-top:8px';
     const title = document.createElement('summary');title.textContent='Why am I waiting?';
@@ -17055,6 +17105,8 @@
     const diagnosticQueueCandidates = discoverQueueCandidates(now);
     return {
       report: "Dropper Diagnostics",
+      progressTimeline:progressTimelineSnapshot(),
+      recoveryNavigation:recoveryNavigationState(),
       build: "reward-data-r2",
       version: APP_VERSION,
       accountScope: {
@@ -17684,6 +17736,7 @@
   }
 
   function setRailOpen(open, focus) {
+    if(open)ui.healthControl?.refresh();
     railOpen = open;
     if (open) {
       collapseToolPanels();

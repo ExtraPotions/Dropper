@@ -20,9 +20,12 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 
 ## What you can do
 
+- **System status:** see Working, Waiting, Paused, or Needs attention, with a reason and a safe recovery action when available.
+- **Recent progress:** see the last 30 progress and recovery events in System. Repeated recovery switches pause until you choose Resume.
+
 - **Clear System tools:** compact submenus keep maintenance, site controls, compatibility, and activity history easy to find, with diagnostic actions grouped separately.
 
-- **Readable menus:** labels and controls use 13px text, with an 11px minimum for small captions, notices, and supporting details.
+- **Readable menus:** choose Standard, Large, or Extra Large from System > Menu preferences. The choice applies to ExtraPotions menus on this site.
 
 - **Interruption rules:** set quiet hours, protect channels from automatic switching, exclude channels, or stay on a stream while it is earning. Quiet hours also silence browser alerts.
 - **Site control:** pause page features across active ExtraPotions products from System, temporarily or until you resume.

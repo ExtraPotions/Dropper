@@ -3102,6 +3102,8 @@
     }
 
     if (creditedMinuteAdvanced) {
+      recordProgressTimeline('progress',{currentMinutes:currentDrop.currentMinutes,reason:'Twitch credited progress'});
+      const pressure=recoveryNavigationState();if(!pressure.suspended)writeSession('dropper-recovery-loop-v1',{events:[],suspended:false});
       const login = watchingLogin();
       const info = login ? readStreamInfo() : null;
       const streamGame = cleanText(info?.game || "");

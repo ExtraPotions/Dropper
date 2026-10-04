@@ -328,6 +328,7 @@
     };
     activityLog = [...(Array.isArray(activityLog) ? activityLog : []), entry].slice(-ACTIVITY_LOG_LIMIT);
     writeSession(ACTIVITY_LOG_KEY, activityLog);
+    if(/progress|verification|navigation|recovery-paused|recovery-resumed/.test(entry.type))recordProgressTimeline(entry.type,{...(entry.meta||{}),message:entry.message});
     renderRoutingHistory();
     return entry;
   }
@@ -336,6 +337,34 @@
     activityLog = [];
     writeSession(ACTIVITY_LOG_KEY, activityLog);
     renderRoutingHistory();
+  }
+  function recordProgressTimeline(type, details = {}) {
+    const minutes=Number(details.currentMinutes);
+    const row={at:Date.now(),type:cleanText(type).slice(0,40),reason:cleanText(details.reason||details.message).slice(0,180),minutes:Number.isFinite(minutes)&&minutes>=0?minutes:null};
+    const rows=progressTimelineSnapshot(),last=rows.at(-1);
+    if(last&&last.type===row.type&&last.reason===row.reason&&last.minutes===row.minutes)return;
+    writeSession('dropper-progress-timeline-v1',[...rows,row].slice(-30));
+  }
+  function progressTimelineSnapshot() {
+    const rows=readSession('dropper-progress-timeline-v1',[]);
+    return Array.isArray(rows)?rows.slice(-30).filter(row=>row&&Number.isFinite(row.at)).map(row=>({at:row.at,type:cleanText(row.type).slice(0,40),reason:cleanText(row.reason).slice(0,180),minutes:Number.isFinite(row.minutes)?row.minutes:null})):[];
+  }
+  function recoveryNavigationState() {
+    const value=readSession('dropper-recovery-loop-v1',{events:[],suspended:false}),now=Date.now();
+    return {events:(Array.isArray(value.events)?value.events:[]).filter(at=>Number.isFinite(at)&&at>now-300000).slice(-3),suspended:Boolean(value.suspended)};
+  }
+  function recoveryNavigationAllowed(reason) {
+    if(/manual|update-install/i.test(reason))return true;
+    const state=recoveryNavigationState();
+    if(state.suspended){setStatus('Recovery Paused · Resume from System');return false;}
+    const recovery=/recover|retry|fallback|restart|stall/i.test(reason)||(readRoutingControllerSession().failedStreams||[]).length>0;
+    if(!recovery)return true;
+    if(state.events.length>=3){writeSession('dropper-recovery-loop-v1',{...state,suspended:true});logActivity('recovery-paused','Recovery paused after three navigations within five minutes');setStatus('Recovery Paused · Resume from System');return false;}
+    writeSession('dropper-recovery-loop-v1',{events:[...state.events,Date.now()],suspended:false});return true;
+  }
+  function resumeRecoveryNavigation() {
+    if(ExtraPotionsCore.suiteSitePaused()||viewingIntent.snapshot().paused)return false;
+    writeSession('dropper-recovery-loop-v1',{events:[],suspended:false});logActivity('recovery-resumed','Recovery resumed from System');return true;
   }
 
   function cleanupNetworkWindow(now = Date.now()) {
@@ -612,6 +641,7 @@
     }
     noteRequestedViewingNavigation(target.href);
     explicitViewingNavigationUntil = 0;
+    if(!recoveryNavigationAllowed(reason))return false;
     location.assign(target.href);
     return true;
   }

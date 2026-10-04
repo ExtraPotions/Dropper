@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.4
+// @version      3.4.5
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -1549,11 +1549,98 @@ const ExpMenuArrangement = (() => {
   });
 })();
 
+/* Plain health facts and safe, product-owned actions. */
+const ExpHealthSummary = (() => {
+  const labels = Object.freeze({working:'Working',waiting:'Waiting',paused:'Paused',attention:'Needs attention'});
+  function normalizeHealth(value) {
+    const valid = value && Object.hasOwn(labels, value.state);
+    const state = valid ? value.state : 'waiting';
+    const checkedAt = Number(value?.checkedAt);
+    return {state,label:labels[state],reason:valid && typeof value.reason === 'string' ? value.reason.slice(0,500) : 'Status information is not available yet.',
+      checkedAt:Number.isFinite(checkedAt) && checkedAt > 0 ? checkedAt : null,
+      action:valid && typeof value.action?.label === 'string' && typeof value.action.run === 'function' ? {label:value.action.label.slice(0,80),run:value.action.run} : null};
+  }
+  function createHealthControls(getHealth, notify = () => {}) {
+    const element=document.createElement('section');element.className='exp-health';element.dataset.expHealth='1';
+    element.style.cssText='margin:0 0 10px;padding:8px;border:1px solid var(--theme-line);border-radius:7px;background:var(--theme-inset);min-width:0;overflow-wrap:anywhere';
+    const state=document.createElement('strong'),reason=document.createElement('p'),checked=document.createElement('small'),action=document.createElement('button');
+    state.dataset.expHealthState='1';reason.dataset.expHealthReason='1';reason.style.cssText='margin:5px 0;line-height:1.4';checked.style.cssText='display:block;margin-bottom:4px';
+    action.type='button';action.className='life-btn action';action.hidden=true;
+    element.append(state,reason,checked,action);
+    let generation=0,disposed=false,pending=false,current=null;
+    function render(value) {current=normalizeHealth(value);state.textContent=current.label;reason.textContent=current.reason;checked.textContent=current.checkedAt?`Checked ${new Date(current.checkedAt).toLocaleTimeString()}`:'Not checked yet';action.textContent=current.action?.label||'';action.hidden=!current.action;action.disabled=pending;}
+    async function refresh() {
+      if(disposed)return;const ticket=++generation;
+      try {const value=await getHealth();if(!disposed&&ticket===generation)render(value);}
+      catch {if(!disposed&&ticket===generation)render(null);}
+    }
+    const click=async()=>{
+      if(disposed||pending||!current?.action)return;
+      const run=current.action.run;pending=true;action.disabled=true;
+      try {await run();}catch {if(!disposed)notify('The recovery action did not complete. Open diagnostics for details.');}
+      finally {pending=false;if(!disposed){action.disabled=false;await refresh();}}
+    };
+    element.refreshHealth=refresh;state.setAttribute('role','status');
+    action.addEventListener('click',click);render(null);refresh();
+    return {element,refresh,dispose(){disposed=true;++generation;action.removeEventListener('click',click);}};
+  }
+  return Object.freeze({normalizeHealth,createHealthControls});
+})();
+
+/* Feature/context isolation and bounded single-flight recovery. */
+const ExpRecoveryControl = (() => {
+  function createRecoveryGuard({limit=3,windowMs=120000,now=Date.now}={}) {
+    const contexts=new Map();let disposed=false;
+    const record=(feature,context)=>{let features=contexts.get(context);if(!features){features=new Map();contexts.set(context,features);}let value=features.get(feature);if(!value){value={times:[],suspended:false,retryPending:false,lastFailureAt:null};features.set(feature,value);}return value;};
+    const view=value=>({suspended:value.suspended,consecutiveFailures:value.times.length,retryPending:value.retryPending,lastFailureAt:value.lastFailureAt});
+    function failed(feature,context){const value=record(feature,context),time=now();value.times=value.times.filter(at=>time-at<=windowMs);value.times.push(time);value.times=value.times.slice(-limit);value.lastFailureAt=time;if(value.times.length>=limit)value.suspended=true;return view(value);}
+    function succeeded(feature,context){const value=record(feature,context);value.times=[];value.suspended=false;return view(value);}
+    async function retry(feature,context,run){
+      if(disposed||typeof run!=='function')return false;const value=record(feature,context);if(value.retryPending)return false;value.retryPending=true;
+      const isCurrent=()=>!disposed&&contexts.get(context)?.get(feature)===value;
+      try {const result=await run();if(!isCurrent()||result===false)return false;succeeded(feature,context);return true;}
+      catch(error){if(isCurrent())failed(feature,context);throw error;}
+      finally {value.retryPending=false;}
+    }
+    return Object.freeze({failed,succeeded,snapshot:(feature,context)=>view(record(feature,context)),retry,clearContext:context=>contexts.delete(context),dispose(){disposed=true;contexts.clear();}});
+  }
+  return Object.freeze({createRecoveryGuard});
+})();
+
+/* Same-origin preferences for product-owned menu surfaces only. */
+const ExpMenuPreferences = (() => {
+  const key='exp:suite:menu-size',eventName='exp-core:menu-size';
+  const sizes=Object.freeze({standard:{body:13,small:11,width:260},large:{body:15,small:13,width:300},'extra-large':{body:17,small:15,width:340}});
+  let memory='standard';
+  const valid=value=>Object.hasOwn(sizes,value)?value:'standard';
+  function menuSizePreference(){try {const stored=localStorage.getItem(key);memory=valid(stored);}catch {}return memory;}
+  function setMenuSizePreference(size){memory=valid(size);try{localStorage.setItem(key,memory);}catch{}document.dispatchEvent(new CustomEvent(eventName,{detail:memory}));return memory;}
+  function bindMenuSize({host,shadow,panel,onLayout=()=>{}}){
+    function apply(size){
+      memory=valid(size);const value=sizes[memory];host.dataset.expMenuSize=memory;
+      host.style.setProperty('--exp-font-size-body',value.body+'px');host.style.setProperty('--exp-font-size-small',value.small+'px');host.style.setProperty('--exp-menu-width',value.width+'px');
+      for(const select of shadow.querySelectorAll('[data-exp-menu-size-select]'))select.value=memory;
+      onLayout();
+    }
+    const changed=event=>apply(event.detail),storage=event=>{if(event.key===key||event.key===null)apply(menuSizePreference());};
+    document.addEventListener(eventName,changed);addEventListener('storage',storage);apply(menuSizePreference());
+    return ()=>{document.removeEventListener(eventName,changed);removeEventListener('storage',storage);};
+  }
+  function createMenuSizeControls(){
+    const row=document.createElement('label');row.className='row exp-menu-size';const copy=document.createElement('span');copy.className='copy';
+    const title=document.createElement('strong');title.textContent='Menu size';const help=document.createElement('small');help.className='help';help.textContent='Text and controls for ExtraPotions menus on this site.';copy.append(title,help);
+    const select=document.createElement('select');select.setAttribute('aria-label','Menu size');select.dataset.expMenuSizeSelect='1';
+    for(const [value,label] of [['standard','Standard'],['large','Large'],['extra-large','Extra Large']]){const option=document.createElement('option');option.value=value;option.textContent=label;select.append(option);}
+    select.value=menuSizePreference();select.addEventListener('change',()=>setMenuSizePreference(select.value));row.append(copy,select);return row;
+  }
+  return Object.freeze({menuSizePreference,setMenuSizePreference,bindMenuSize,createMenuSizeControls,menuSizeTokens:()=>sizes[menuSizePreference()]});
+})();
+
 // Product-neutral shared runtime. Product engines own their settings, content, and actions.
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.5.1';
+  const version = '3.6.0';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -1678,7 +1765,7 @@ const ExtraPotionsCore = (() => {
     grid.append(...contents); return grid;
   }
   // One suite size. Placement clamps this preferred width to the viewport.
-  function menuWidth() { return 260; }
+  function menuWidth() { return ExpMenuPreferences.menuSizeTokens().width; }
   const canonicalCss = CoreFoundation.css();
   const compositionCss = `
     [data-exp-part="dock"]{box-sizing:border-box;overflow-x:hidden;overscroll-behavior:contain}
@@ -3200,6 +3287,7 @@ const ExtraPotionsCore = (() => {
         menuControllers.delete(host);
       },
     });
+    removers.push(ExpMenuPreferences.bindMenuSize({host,shadow,panel,onLayout:options.onLayout}));
     menuControllers.set(host, controller);
     return controller;
   }
@@ -3259,6 +3347,7 @@ const ExtraPotionsCore = (() => {
       if (destroyed || !launcher.isConnected) return;
       const state = getSettings();
       themeRoot.style.setProperty('--exp-menu-width', menuWidth() + 'px');
+      const fontTokens=ExpMenuPreferences.menuSizeTokens();themeRoot.style.setProperty('--exp-font-size-body',fontTokens.body+'px');themeRoot.style.setProperty('--exp-font-size-small',fontTokens.small+'px');
       themeRoot.classList.toggle('reduce-motion', state.reduceMotion === true || state.reduceMotion === 'on' || state.reducedMotion === 'reduce' || (state.reduceMotion === 'system' || state.reducedMotion === 'system') && matchMedia('(prefers-reduced-motion:reduce)').matches);
       const opacityValue = Number(state.opacityPercent);
       const opacity = state.customOpacity ? (Number.isFinite(opacityValue) ? Math.max(40, Math.min(100, Math.round(opacityValue / 5) * 5)) : 85)/100 : 1;
@@ -3273,7 +3362,7 @@ const ExtraPotionsCore = (() => {
     const arrangement = ExpMenuArrangement.mount({ panel, id, onChange: queueLayout, resetLaunchers() { resetLauncherGrid(id); queueLayout(); } });
     function queueLayout() { if (!frame && !destroyed) frame = requestAnimationFrame(() => { frame = 0; normalizeControls(panel); arrangement.update(); layout(); }); }
     removers.push(bindLauncherDrag(launcher, id, { layout }));
-    const menuController = createMenuController({ ...options, id, host, shadow, panel, getSettings, setOpen });
+    const menuController = createMenuController({ ...options, id, host, shadow, panel, getSettings, setOpen, onLayout:queueLayout });
     on(window,'keydown',e=>{if(shortcutKey&&e.altKey&&e.shiftKey&&e.key.toLowerCase()===shortcutKey.toLowerCase()&&!e.repeat){e.preventDefault();setOpen(!open,true);} });
     on(window,'resize',queueLayout);on(document,'exp-core:coordination',queueLayout);
     on(document,'exp-core:coordination',syncThemeOwner);
@@ -3281,8 +3370,8 @@ const ExtraPotionsCore = (() => {
     const mutation = new MutationObserver(records=>{if(records.some(r=>r.type==='childList'||r.attributeName==='hidden'))queueLayout();}); mutation.observe(panel,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden']});
     const controller = {
       layout, setTheme,
-      state(value) {open=Boolean(value);menuController.state(open);menuNotices.forEach(notice=>notice.setMenuOpen(open));queueLayout();},
-      update(){normalizeControls(panel);queueLayout();},
+      state(value) {open=Boolean(value);menuController.state(open);menuNotices.forEach(notice=>notice.setMenuOpen(open));if(open)panel.querySelectorAll('[data-exp-health]').forEach(node=>node.refreshHealth?.());queueLayout();},
+      update(){normalizeControls(panel);if(open)panel.querySelectorAll('[data-exp-health]').forEach(node=>node.refreshHealth?.());queueLayout();},
       get dismissAt(){return menuController.dismissAt;},
       destroy(){destroyed=true;arrangement.destroy();defaultSupport?.destroy();menuController.destroy();cancelAnimationFrame(frame);resize.disconnect();mutation.disconnect();menuNotices.forEach(notice=>notice.destroy());removers.forEach(f=>f());styles.dispose();controllers.delete(host);}
     };
@@ -3687,6 +3776,8 @@ const ExtraPotionsCore = (() => {
     const area=document.createElement('textarea');area.value=text;area.style.cssText='position:fixed;left:-9999px';document.documentElement.append(area);area.select();const success=document.execCommand('copy');area.remove();if(!success)throw new Error('Clipboard unavailable');
   }
   function createDiagnosticsControls(getReport, notify = () => {}) { return ExtraPotionsDiagnostics.createControls(getReport, notify); }
+  const { normalizeHealth, createHealthControls } = ExpHealthSummary;
+  const { createRecoveryGuard } = ExpRecoveryControl;
   function createProduct({id,name,version:productVersion,subtitle='',artwork,theme,sections=[],getSettings,onSettings=()=>{},priority,supportUrl=SUPPORT_URL,keepOpen}) {
     const host=document.createElement('div');host.id='exp-'+id+'-root';host.dataset.expOwned='1';const shadow=host.attachShadow({mode:'open'});const panel=document.createElement('aside');panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label',name+' settings');
     const header=document.createElement('header');header.className='menu-head';const brand=document.createElement('div');brand.className='header-brand';const image=document.createElement('img');image.src=artwork;image.alt='';const copy=document.createElement('div');const titleRow=document.createElement('div');const title=document.createElement('strong');title.textContent=name;const v=document.createElement('button');v.type='button';v.className='version';v.textContent='v'+productVersion;titleRow.append(title,v);const sub=document.createElement('small');sub.textContent=subtitle;copy.append(titleRow,sub);brand.append(image,copy);const close=document.createElement('button');close.className='close';close.textContent='×';close.setAttribute('aria-label','Close '+name);const actions=document.createElement('div');actions.className='header-actions';const support=createSupportControl({url:supportUrl,label:'Support '+name});if(support)actions.append(support.element);actions.append(close);header.append(brand,actions);const divider=document.createElement('div');divider.className='header-divider';const nav=document.createElement('nav');
@@ -3734,7 +3825,7 @@ const ExtraPotionsCore = (() => {
     return Object.freeze({ lifecycle, diagnostics, updates });
   }
 
-  const api = Object.freeze({...ExtraPotionsTools,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createMenuController,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,bindLauncherDrag,launcherPlacement,placeMenu,placeNotice,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidth,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,suiteSitePaused,setSuiteSitePaused,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
+  const api = Object.freeze({...ExtraPotionsTools,...ExpMenuPreferences,normalizeHealth,createHealthControls,createRecoveryGuard,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createMenuController,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,bindLauncherDrag,launcherPlacement,placeMenu,placeNotice,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidth,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,suiteSitePaused,setSuiteSitePaused,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
   return api;
 })();
   // END EXP CORE
@@ -3755,7 +3846,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.4";
+  const APP_VERSION = "3.4.5";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -3900,6 +3991,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.5": ["Show a clear System status and offer safe recovery when needed.","Choose Standard, Large, or Extra Large menus on each site.","Pause repeated recovery switches until Resume and show a recent progress timeline."],
     "3.4.4": ["Recognize current Twitch campaign information before switching away from eligible streams.","Keep chat bonus checks running alongside automatic Drop claims."],
     "3.4.3": ["Collect later channel-point bonus chests after an earlier bonus has been claimed.","Keep duplicate bonus claims blocked while waiting for Twitch confirmation."],
     "3.4.2": ["Remove the empty duplicate Maintenance section from System.","Use compact full-width System submenus with softer colors and clear hover and keyboard focus states.","Separate diagnostic buttons from maintenance tools while keeping menu labels readable."],
@@ -8733,6 +8825,7 @@ const ExtraPotionsCore = (() => {
     };
     activityLog = [...(Array.isArray(activityLog) ? activityLog : []), entry].slice(-ACTIVITY_LOG_LIMIT);
     writeSession(ACTIVITY_LOG_KEY, activityLog);
+    if(/progress|verification|navigation|recovery-paused|recovery-resumed/.test(entry.type))recordProgressTimeline(entry.type,{...(entry.meta||{}),message:entry.message});
     renderRoutingHistory();
     return entry;
   }
@@ -8741,6 +8834,34 @@ const ExtraPotionsCore = (() => {
     activityLog = [];
     writeSession(ACTIVITY_LOG_KEY, activityLog);
     renderRoutingHistory();
+  }
+  function recordProgressTimeline(type, details = {}) {
+    const minutes=Number(details.currentMinutes);
+    const row={at:Date.now(),type:cleanText(type).slice(0,40),reason:cleanText(details.reason||details.message).slice(0,180),minutes:Number.isFinite(minutes)&&minutes>=0?minutes:null};
+    const rows=progressTimelineSnapshot(),last=rows.at(-1);
+    if(last&&last.type===row.type&&last.reason===row.reason&&last.minutes===row.minutes)return;
+    writeSession('dropper-progress-timeline-v1',[...rows,row].slice(-30));
+  }
+  function progressTimelineSnapshot() {
+    const rows=readSession('dropper-progress-timeline-v1',[]);
+    return Array.isArray(rows)?rows.slice(-30).filter(row=>row&&Number.isFinite(row.at)).map(row=>({at:row.at,type:cleanText(row.type).slice(0,40),reason:cleanText(row.reason).slice(0,180),minutes:Number.isFinite(row.minutes)?row.minutes:null})):[];
+  }
+  function recoveryNavigationState() {
+    const value=readSession('dropper-recovery-loop-v1',{events:[],suspended:false}),now=Date.now();
+    return {events:(Array.isArray(value.events)?value.events:[]).filter(at=>Number.isFinite(at)&&at>now-300000).slice(-3),suspended:Boolean(value.suspended)};
+  }
+  function recoveryNavigationAllowed(reason) {
+    if(/manual|update-install/i.test(reason))return true;
+    const state=recoveryNavigationState();
+    if(state.suspended){setStatus('Recovery Paused · Resume from System');return false;}
+    const recovery=/recover|retry|fallback|restart|stall/i.test(reason)||(readRoutingControllerSession().failedStreams||[]).length>0;
+    if(!recovery)return true;
+    if(state.events.length>=3){writeSession('dropper-recovery-loop-v1',{...state,suspended:true});logActivity('recovery-paused','Recovery paused after three navigations within five minutes');setStatus('Recovery Paused · Resume from System');return false;}
+    writeSession('dropper-recovery-loop-v1',{events:[...state.events,Date.now()],suspended:false});return true;
+  }
+  function resumeRecoveryNavigation() {
+    if(ExtraPotionsCore.suiteSitePaused()||viewingIntent.snapshot().paused)return false;
+    writeSession('dropper-recovery-loop-v1',{events:[],suspended:false});logActivity('recovery-resumed','Recovery resumed from System');return true;
   }
 
   function cleanupNetworkWindow(now = Date.now()) {
@@ -9017,6 +9138,7 @@ const ExtraPotionsCore = (() => {
     }
     noteRequestedViewingNavigation(target.href);
     explicitViewingNavigationUntil = 0;
+    if(!recoveryNavigationAllowed(reason))return false;
     location.assign(target.href);
     return true;
   }
@@ -16051,6 +16173,8 @@ const ExtraPotionsCore = (() => {
     }
 
     if (creditedMinuteAdvanced) {
+      recordProgressTimeline('progress',{currentMinutes:currentDrop.currentMinutes,reason:'Twitch credited progress'});
+      const pressure=recoveryNavigationState();if(!pressure.suspended)writeSession('dropper-recovery-loop-v1',{events:[],suspended:false});
       const login = watchingLogin();
       const info = login ? readStreamInfo() : null;
       const streamGame = cleanText(info?.game || "");
@@ -18482,7 +18606,7 @@ const ExtraPotionsCore = (() => {
     ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { ExtraPotionsCore.resetLauncherGrid("dropper"); requestAnimationFrame(layoutChrome); } });
     ui.menuController = ExtraPotionsCore.createMenuController({
       id: "dropper", host, shadow, panel: ui.dock,
-      getSettings: () => settings, setOpen: setRailOpen,
+      getSettings: () => settings, setOpen: setRailOpen, onLayout:layoutChrome,
     });
     bindDropperControls();
     renderSwitches();
@@ -19786,10 +19910,27 @@ const ExtraPotionsCore = (() => {
     if (!health.domVideoPlaying) return 'The player is not reporting playback. Check the player for a pause, login prompt, or playback restriction.';
     return 'The stream appears eligible. Waiting for the next progress update from Twitch.';
   }
+  function systemHealthSnapshot() {
+    const checkedAt=lastGqlSuccessAt||null;
+    if(ExtraPotionsCore.suiteSitePaused()||viewingIntent.snapshot().paused)return {state:'paused',reason:'Automatic viewing changes are paused. Pending reward confirmation is preserved.',checkedAt};
+    if(recoveryNavigationState().suspended)return {state:'attention',reason:'Automatic recovery stopped after repeated stream changes or reloads.',checkedAt,action:{label:'Resume recovery',run:()=>resumeRecoveryNavigation()}};
+    const health=streamEarningHealthSnapshot(),session=readRoutingControllerSession();
+    if(health.creditedRecently)return {state:'working',reason:'Twitch has recently credited reward progress.',checkedAt};
+    if(!currentDrop||!isStream())return {state:'waiting',reason:'Waiting for a selected reward and an eligible Twitch stream.',checkedAt};
+    return {state:'waiting',reason:session.state==='verify-stream'?'Checking this stream against the selected campaign. Twitch has not confirmed credited progress yet.':'Waiting for Twitch to credit the next progress update. Campaign eligibility does not guarantee credited minutes.',checkedAt};
+  }
   function mountProductTools() {
     const target = ui.shadow.getElementById('tdh-diagnostics-body');
     if (!target || target.querySelector('[data-dropper-tools]')) return;
+    ui.healthControl=ExtraPotionsCore.createHealthControls(systemHealthSnapshot);
+    target.prepend(ui.healthControl.element);
+    const sizePreferences=ExtraPotionsCore.createDisclosure('Menu preferences',ExtraPotionsCore.createMenuSizeControls());
+    target.append(sizePreferences);
     const container = document.createElement('div');container.dataset.dropperTools = '1';
+    const timeline=ExtraPotionsCore.createDisclosure('Recent progress');
+    const timelineRows=document.createElement('div');
+    timeline.addEventListener('toggle',()=>{if(!timeline.open)return;timelineRows.replaceChildren();const rows=progressTimelineSnapshot();if(!rows.length)timelineRows.textContent='No recent progress or recovery events in this session.';for(const entry of rows.slice().reverse()){const line=document.createElement('p');line.textContent=`${new Date(entry.at).toLocaleTimeString()} · ${entry.reason}${entry.minutes!==null?` · ${entry.minutes} credited min`:''}`;timelineRows.append(line);}});
+    timeline.append(timelineRows);container.append(timeline);
     container.append(ExtraPotionsCore.createSuiteSiteControls(), ExtraPotionsCore.createCompatibilityControls());
     const details = document.createElement('details');details.style.cssText='border:1px solid var(--theme-line);border-radius:7px;padding:7px;margin-top:8px';
     const title = document.createElement('summary');title.textContent='Why am I waiting?';
@@ -20753,6 +20894,8 @@ const ExtraPotionsCore = (() => {
     const diagnosticQueueCandidates = discoverQueueCandidates(now);
     return {
       report: "Dropper Diagnostics",
+      progressTimeline:progressTimelineSnapshot(),
+      recoveryNavigation:recoveryNavigationState(),
       build: "reward-data-r2",
       version: APP_VERSION,
       accountScope: {
@@ -21382,6 +21525,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function setRailOpen(open, focus) {
+    if(open)ui.healthControl?.refresh();
     railOpen = open;
     if (open) {
       collapseToolPanels();
