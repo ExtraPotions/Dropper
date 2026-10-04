@@ -41,6 +41,7 @@ const exposed = source.replace('  startDropper();\n})();', `
     streamLock: () => manualStreamLockSnapshot(),
     refreshHealth: () => { refreshStreamHealthSummary(); refreshEligibilityChecklist(); refreshViewingControls(); },
     confidence: () => earningConfidencePresentation(),
+    systemHealth: systemHealthSnapshot,
     recoveryAction: () => recoveryActionState(),
     setStrategy: value => { settings.campaignStrategy = value; },
     strategy: () => normalizedCampaignStrategy(),
@@ -106,6 +107,23 @@ function data() {
     campaigns: [{ id: 'campaign-a', name: 'Fixture campaign', status: 'ACTIVE', startAt: start, endAt: end, game: { name: 'Fixture game', displayName: 'Fixture game' }, timeBasedDrops: [{ id: 'reward-a', name: 'Fixture reward', requiredMinutesWatched: 60, self: { dropInstanceID: 'instance-a', currentMinutesWatched: 60, isClaimed: false } }] }],
   };
 }
+
+test('System health shows product facts after the full userscript starts', async () => fixture(async page => {
+  const facts=await page.evaluate(() => ({snapshot:window.__dropperTest.systemHealth(), rendered:document.querySelector('#tdh-root').shadowRoot.querySelector('[data-exp-health-reason]').textContent}));
+  assert.equal(facts.snapshot.state,'waiting');
+  assert.match(facts.rendered,/reward|Twitch/i);
+}));
+
+test('opening System refreshes health after viewing is paused', async () => fixture(async page => {
+  await page.waitForFunction(()=>document.querySelector('#tdh-root').shadowRoot.querySelector('[data-exp-health-reason]').textContent.includes('reward'));
+  await page.evaluate(()=>{
+    window.__dropperTest.pauseIntent();
+    window.dropperShow();
+    document.querySelector('#tdh-root').shadowRoot.querySelector('[data-panel="tdh-diagnostics-body"]').click();
+  });
+  await page.waitForFunction(()=>document.querySelector('#tdh-root').shadowRoot.querySelector('[data-exp-health-state]').textContent==='Paused',null,{timeout:1500});
+  assert.match(await page.locator('#tdh-root').evaluate(n=>n.shadowRoot.querySelector('[data-exp-health-reason]').textContent),/paused/i);
+}));
 
 test('full userscript preserves deliberate pause, player replacement, and explicit resume without enabling routing', async () => fixture(async page => {
   await page.click('#fixture-control');
