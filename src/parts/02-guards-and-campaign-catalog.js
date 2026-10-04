@@ -743,6 +743,11 @@
       merged.set(key, {
         ...prior,
         ...campaign,
+        // Empty enabled summaries are incomplete; only explicit unrestricted
+        // data or a new channel list replaces known campaign restrictions.
+        allow: campaign?.allow?.isEnabled === false || campaign?.allow?.channels?.length
+          ? campaign.allow
+          : prior.allow || campaign.allow,
         status: campaign?.status || prior?.status || "",
         game: { ...(prior?.game || {}), ...(campaign?.game || {}) },
         timeBasedDrops: [...drops.values()],

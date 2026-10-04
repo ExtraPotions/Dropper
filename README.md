@@ -22,6 +22,7 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 
 - **System status:** see Working, Waiting, Paused, or Needs attention, with a reason and a safe recovery action when available.
 - **Recent progress:** see the last 30 progress and recovery events in System. Repeated recovery switches pause until you choose Resume.
+- **Campaign-aware stream choices:** restricted campaigns use their listed channels, with known restrictions retained across Twitch page changes. If recovery pauses, System explains why and offers Resume recovery.
 
 - **Clear System tools:** compact submenus keep maintenance, site controls, compatibility, and activity history easy to find, with diagnostic actions grouped separately.
 

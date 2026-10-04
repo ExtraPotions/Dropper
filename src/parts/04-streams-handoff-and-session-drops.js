@@ -992,14 +992,13 @@
       const dropsTagged = item.dropsTagged === true;
       const temporarilySkipped = Boolean(login && skipped.has(login));
       const excludedByUser = (settings.excludedChannels||[]).includes(login);
-      const campaignCompatible = !allowListPresent || allowListMatch || dropsTagged;
+      const campaignCompatible = !allowListPresent || allowListMatch;
       const routable = Boolean(!temporarilySkipped && !excludedByUser && campaignCompatible);
 
       let reason = "same-game-probationary";
       if (excludedByUser) reason = "excluded-channel";
       else if (temporarilySkipped) reason = "temporary-skip";
       else if (allowListMatch) reason = "campaign-allow-list-match";
-      else if (allowListPresent && dropsTagged) reason = "drops-tagged-verification-fallback";
       else if (allowListPresent) reason = "campaign-allow-list-mismatch";
       else if (dropsTagged) reason = "drops-tagged";
 
@@ -1093,7 +1092,7 @@
         if (!login || liveLogins.has(login)) return false;
         if (wantedGame && (!item.game || !gameNamesMatch(wantedGame, item.game))) return false;
         if (targetCampaignKey && item.campaignKey !== targetCampaignKey) return false;
-        if (allowListPresent && !activeAllowedLogins.has(login) && item.dropsTagged !== true) return false;
+        if (allowListPresent && !activeAllowedLogins.has(login)) return false;
         return true;
       })
       .map((item) => {
@@ -1141,7 +1140,7 @@
         const dropsTagged = item.dropsTagged === true;
         const routable = Boolean(
           !temporarilySkipped &&
-          (!allowListPresent || allowListMatch || dropsTagged)
+          (!allowListPresent || allowListMatch)
         );
         return {
           login: item.login,
@@ -1154,9 +1153,7 @@
             ? "temporary-skip"
             : allowListMatch
               ? "campaign-allow-list-match"
-              : allowListPresent && dropsTagged
-                ? "drops-tagged-verification-fallback"
-                : allowListPresent
+              : allowListPresent
                   ? "campaign-allow-list-mismatch"
                   : item.reason || null,
           evidenceRank: item.evidenceRank ?? streamCandidateEvidence({ ...item, allowListMatch, availability: 'live' }).rank,
@@ -1225,9 +1222,18 @@
 
   function activeCampaignAllowedChannels() {
     if (!currentDrop || !campaignIsRoutingOpen(currentDrop)) return [];
+    const campaignKey = cleanText(currentDrop.campaignKey || currentDrop.campaignId || '');
+    if (!campaignKey) return [];
     const campaign = findCampaignForDrop(routingCampaignPool(), currentDrop);
-    if (!campaign || !campaignIsRoutingOpen(campaign)) return [];
-    return campaignAllowedChannels(campaign);
+    // A fresh page can have summary rows before authoritative campaign details.
+    // Retain the last known restrictions for this account and campaign only.
+    if (campaign && campaignIsRoutingOpen(campaign) && campaign.allow && Array.isArray(campaign.allow.channels) && (campaign.allow.channels.length || campaign.allow.isEnabled === false)) {
+      const channels = campaignAllowedChannels(campaign);
+      writeSession('dropper-campaign-restrictions-v1', { campaignKey, channels });
+      return channels;
+    }
+    const known = readSession('dropper-campaign-restrictions-v1', null);
+    return known?.campaignKey === campaignKey && Array.isArray(known.channels) ? known.channels : [];
   }
 
   function channelSupportsTargetCampaign(availableCampaigns, pending, now = Date.now()) {

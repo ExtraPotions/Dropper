@@ -2064,7 +2064,12 @@
   function routingControllerNavigate(url, reason = "routing-controller") {
     if (!url || !isTrustedTwitchUrl(url)) return false;
     if (routingControllerNavigationInFlight()) return false;
-    return autoNavigateTwitch(url, reason);
+    const moved = autoNavigateTwitch(url, reason);
+    if (!moved && recoveryNavigationState().suspended) {
+      transitionRoutingController(ROUTING_STATES.PAUSED, { targetStream: '', navigationTarget: null, navigationReason: null, deadlineAt: 0, waitReason: 'recovery-paused' }, 'Recovery paused after repeated stream changes');
+      setStatus('Recovery Paused · Resume from System');
+    }
+    return moved;
   }
 
   function routingControllerBootstrap(reason = "bootstrap") {
@@ -2390,15 +2395,12 @@
 
   function activeCampaignAllowListEvidence(channelLogin = watchingLogin()) {
     if (!currentDrop || !campaignIsRoutingOpen(currentDrop)) return null;
-    const campaign = findCampaignForDrop(routingCampaignPool(), currentDrop);
-    if (!campaign || !campaignIsRoutingOpen(campaign) || !campaign.allow || typeof campaign.allow !== "object") return null;
-
-    const allowedChannels = campaignAllowedChannels(campaign);
+    const allowedChannels = activeCampaignAllowedChannels();
     const allowedLogins = new Set(
       allowedChannels.map((channel) => cleanText(channel.login).toLowerCase()).filter(Boolean),
     );
     const login = cleanText(channelLogin).toLowerCase();
-    const present = campaign.allow.isEnabled !== false && allowedChannels.length > 0;
+    const present = allowedChannels.length > 0;
     return {
       campaignAllowListPresent: present,
       campaignAllowListMatch: Boolean(present && login && allowedLogins.has(login)),
@@ -3093,6 +3095,10 @@
 
   function routingControllerTick(now = Date.now(), reason = "heartbeat") {
     routingControllerResetLegacyHandoff();
+    if (recoveryNavigationState().suspended) {
+      setStatus('Recovery Paused · Resume from System');
+      return false;
+    }
     if (!isAutoRoutingController()) {
       noteDeferredAutoRouting("routing-controller");
       return false;

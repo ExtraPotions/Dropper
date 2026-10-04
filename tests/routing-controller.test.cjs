@@ -283,7 +283,7 @@ test('skipped streamer rotation can be manually cleared and resumed', () => {
 });
 
 
-test('allow-list campaigns prefer permitted channels but can verify Drops-tagged fallbacks', () => {
+test('allow-list campaigns require permitted channels while unrestricted campaigns can verify Drops tags', () => {
   const start = source.indexOf('  function routingControllerFindStream');
   const end = source.indexOf('\n  function routingControllerOpenStream', start);
   const find = source.slice(start, end);
@@ -291,9 +291,8 @@ test('allow-list campaigns prefer permitted channels but can verify Drops-tagged
   const classifierEnd = source.indexOf('\n  function routingCandidateDiagnosticsSnapshot', classifierStart);
   const classifier = source.slice(classifierStart, classifierEnd);
 
-  assert.match(classifier, /const campaignCompatible = !allowListPresent \|\| allowListMatch \|\| dropsTagged;/u);
+  assert.match(classifier, /const campaignCompatible = !allowListPresent \|\| allowListMatch;/u);
   assert.match(classifier, /reason = "campaign-allow-list-match"/u);
-  assert.match(classifier, /reason = "drops-tagged-verification-fallback"/u);
   assert.match(classifier, /reason = "campaign-allow-list-mismatch"/u);
   assert.match(source, /live-campaign-allowed/u);
   assert.match(source, /live-drops-tagged/u);

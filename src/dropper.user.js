@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.5
+// @version      3.4.6
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -57,7 +57,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.5";
+  const APP_VERSION = "3.4.6";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -202,6 +202,7 @@
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.6": ["Keep campaign-listed channels available across Twitch page changes and avoid unlisted channels for restricted campaigns.","Show Recovery Paused when a move is blocked, and clear the pending stream-opening state."],
     "3.4.5": ["Show a clear System status and offer safe recovery when needed.","Choose Standard, Large, or Extra Large menus on each site.","Pause repeated recovery switches until Resume and show a recent progress timeline."],
     "3.4.4": ["Recognize current Twitch campaign information before switching away from eligible streams.","Keep chat bonus checks running alongside automatic Drop claims."],
     "3.4.3": ["Collect later channel-point bonus chests after an earlier bonus has been claimed.","Keep duplicate bonus claims blocked while waiting for Twitch confirmation."],
@@ -3621,7 +3622,12 @@
   function routingControllerNavigate(url, reason = "routing-controller") {
     if (!url || !isTrustedTwitchUrl(url)) return false;
     if (routingControllerNavigationInFlight()) return false;
-    return autoNavigateTwitch(url, reason);
+    const moved = autoNavigateTwitch(url, reason);
+    if (!moved && recoveryNavigationState().suspended) {
+      transitionRoutingController(ROUTING_STATES.PAUSED, { targetStream: '', navigationTarget: null, navigationReason: null, deadlineAt: 0, waitReason: 'recovery-paused' }, 'Recovery paused after repeated stream changes');
+      setStatus('Recovery Paused · Resume from System');
+    }
+    return moved;
   }
 
   function routingControllerBootstrap(reason = "bootstrap") {
@@ -3947,15 +3953,12 @@
 
   function activeCampaignAllowListEvidence(channelLogin = watchingLogin()) {
     if (!currentDrop || !campaignIsRoutingOpen(currentDrop)) return null;
-    const campaign = findCampaignForDrop(routingCampaignPool(), currentDrop);
-    if (!campaign || !campaignIsRoutingOpen(campaign) || !campaign.allow || typeof campaign.allow !== "object") return null;
-
-    const allowedChannels = campaignAllowedChannels(campaign);
+    const allowedChannels = activeCampaignAllowedChannels();
     const allowedLogins = new Set(
       allowedChannels.map((channel) => cleanText(channel.login).toLowerCase()).filter(Boolean),
     );
     const login = cleanText(channelLogin).toLowerCase();
-    const present = campaign.allow.isEnabled !== false && allowedChannels.length > 0;
+    const present = allowedChannels.length > 0;
     return {
       campaignAllowListPresent: present,
       campaignAllowListMatch: Boolean(present && login && allowedLogins.has(login)),
@@ -4650,6 +4653,10 @@
 
   function routingControllerTick(now = Date.now(), reason = "heartbeat") {
     routingControllerResetLegacyHandoff();
+    if (recoveryNavigationState().suspended) {
+      setStatus('Recovery Paused · Resume from System');
+      return false;
+    }
     if (!isAutoRoutingController()) {
       noteDeferredAutoRouting("routing-controller");
       return false;
@@ -5451,6 +5458,11 @@
       merged.set(key, {
         ...prior,
         ...campaign,
+        // Empty enabled summaries are incomplete; only explicit unrestricted
+        // data or a new channel list replaces known campaign restrictions.
+        allow: campaign?.allow?.isEnabled === false || campaign?.allow?.channels?.length
+          ? campaign.allow
+          : prior.allow || campaign.allow,
         status: campaign?.status || prior?.status || "",
         game: { ...(prior?.game || {}), ...(campaign?.game || {}) },
         timeBasedDrops: [...drops.values()],
@@ -10274,14 +10286,13 @@
       const dropsTagged = item.dropsTagged === true;
       const temporarilySkipped = Boolean(login && skipped.has(login));
       const excludedByUser = (settings.excludedChannels||[]).includes(login);
-      const campaignCompatible = !allowListPresent || allowListMatch || dropsTagged;
+      const campaignCompatible = !allowListPresent || allowListMatch;
       const routable = Boolean(!temporarilySkipped && !excludedByUser && campaignCompatible);
 
       let reason = "same-game-probationary";
       if (excludedByUser) reason = "excluded-channel";
       else if (temporarilySkipped) reason = "temporary-skip";
       else if (allowListMatch) reason = "campaign-allow-list-match";
-      else if (allowListPresent && dropsTagged) reason = "drops-tagged-verification-fallback";
       else if (allowListPresent) reason = "campaign-allow-list-mismatch";
       else if (dropsTagged) reason = "drops-tagged";
 
@@ -10375,7 +10386,7 @@
         if (!login || liveLogins.has(login)) return false;
         if (wantedGame && (!item.game || !gameNamesMatch(wantedGame, item.game))) return false;
         if (targetCampaignKey && item.campaignKey !== targetCampaignKey) return false;
-        if (allowListPresent && !activeAllowedLogins.has(login) && item.dropsTagged !== true) return false;
+        if (allowListPresent && !activeAllowedLogins.has(login)) return false;
         return true;
       })
       .map((item) => {
@@ -10423,7 +10434,7 @@
         const dropsTagged = item.dropsTagged === true;
         const routable = Boolean(
           !temporarilySkipped &&
-          (!allowListPresent || allowListMatch || dropsTagged)
+          (!allowListPresent || allowListMatch)
         );
         return {
           login: item.login,
@@ -10436,9 +10447,7 @@
             ? "temporary-skip"
             : allowListMatch
               ? "campaign-allow-list-match"
-              : allowListPresent && dropsTagged
-                ? "drops-tagged-verification-fallback"
-                : allowListPresent
+              : allowListPresent
                   ? "campaign-allow-list-mismatch"
                   : item.reason || null,
           evidenceRank: item.evidenceRank ?? streamCandidateEvidence({ ...item, allowListMatch, availability: 'live' }).rank,
@@ -10507,9 +10516,18 @@
 
   function activeCampaignAllowedChannels() {
     if (!currentDrop || !campaignIsRoutingOpen(currentDrop)) return [];
+    const campaignKey = cleanText(currentDrop.campaignKey || currentDrop.campaignId || '');
+    if (!campaignKey) return [];
     const campaign = findCampaignForDrop(routingCampaignPool(), currentDrop);
-    if (!campaign || !campaignIsRoutingOpen(campaign)) return [];
-    return campaignAllowedChannels(campaign);
+    // A fresh page can have summary rows before authoritative campaign details.
+    // Retain the last known restrictions for this account and campaign only.
+    if (campaign && campaignIsRoutingOpen(campaign) && campaign.allow && Array.isArray(campaign.allow.channels) && (campaign.allow.channels.length || campaign.allow.isEnabled === false)) {
+      const channels = campaignAllowedChannels(campaign);
+      writeSession('dropper-campaign-restrictions-v1', { campaignKey, channels });
+      return channels;
+    }
+    const known = readSession('dropper-campaign-restrictions-v1', null);
+    return known?.campaignKey === campaignKey && Array.isArray(known.channels) ? known.channels : [];
   }
 
   function channelSupportsTargetCampaign(availableCampaigns, pending, now = Date.now()) {

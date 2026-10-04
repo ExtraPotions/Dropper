@@ -1,3 +1,8 @@
+## 3.4.6 — 2026-10-04
+
+- Keep campaign-listed channels available across Twitch page changes and avoid unlisted channels for restricted campaigns.
+- Show Recovery Paused when a move is blocked, and clear the pending stream-opening state.
+
 ## 3.4.5 — 2026-10-03
 
 - Show a clear System status and offer safe recovery when needed.

@@ -1009,7 +1009,7 @@ assert.match(source, /ROUTING_SESSION_KEY = "dropper-routing-session-v310"/u, "3
 assert.match(source, /ROUTING_VERIFY_DEADLINE_MS = 90 \* 1000;/u, "stream verification uses one controller deadline");
 assert.match(source, /function routingControllerFindStream\(/u, "3.1 owns stream discovery in the routing controller");
 assert.match(source, /function classifyRoutingCandidates\(/u, "automatic discovery uses one shared stream classifier");
-assert.match(source, /const campaignCompatible = !allowListPresent \|\| allowListMatch \|\| dropsTagged;/u, "allow-list campaigns permit exact channels or Drops-tagged verification fallbacks");
+assert.match(source, /const campaignCompatible = !allowListPresent \|\| allowListMatch;/u, "restricted campaigns require a listed channel");
 assert.match(source, /const routable = Boolean\(!temporarilySkipped && !excludedByUser && campaignCompatible\)/u, "temporary streamer skips are enforced by the shared classifier");
 assert.match(source, /function routingControllerVerifyStream\(/u, "candidate verification is owned by the routing controller");
 assert.match(source, /requestGqlPoll\("routing-stream-arrival", true\)/u, "candidate streams trigger immediate data refresh");
