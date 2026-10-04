@@ -2816,12 +2816,14 @@ const ExtraPotionsCore = (() => {
       return { top, right:Math.round(right), width, side };
     };
     if (reserved) {
-      const room = anchorTop ? innerHeight - reserved.bottom - 16 : reserved.top - 16;
+      const blockers=geometry.launchers.filter(box=>box.left<reserved.right&&box.right>reserved.right-width);
+      const edge=anchorTop?Math.max(reserved.bottom,...blockers.map(box=>box.bottom)):Math.min(reserved.top,...blockers.map(box=>box.top));
+      const room = anchorTop ? innerHeight - edge - 16 : edge - 16;
       if (room >= 200 && reserved.right - 8 >= width) {
         panel.style.maxHeight = room + 'px';
         const h = panel.offsetHeight;
         host.dataset.openDirection = anchorTop ? 'down' : 'up';
-        return finish('reserved', innerWidth - reserved.right, anchorTop ? reserved.bottom + 8 : reserved.top - 8 - h, h);
+        return finish('reserved', innerWidth - reserved.right, anchorTop ? edge + 8 : edge - 8 - h, h);
       }
     }
     if (gridLeft - 16 >= width) {
@@ -2831,7 +2833,7 @@ const ExtraPotionsCore = (() => {
       return finish('beside', innerWidth - gridLeft + 8, anchorTop ? own.top : own.bottom - h, h);
     }
     // Stacked menus clear the launcher and any reserved surface in its row.
-    const band = [...geometry.launchers, ...(reserved ? [reserved] : [])].filter(box => box.bottom > own.top - 1 && box.top < own.bottom + 1)
+    const band = [...geometry.launchers, ...(reserved ? [reserved] : [])].filter(box => box.left < innerWidth - 12 && box.right > innerWidth - 12 - width)
       .reduce((all, box) => ({ top:Math.min(all.top, box.top), bottom:Math.max(all.bottom, box.bottom) }), { top:own.top, bottom:own.bottom });
     const below = innerHeight - band.bottom - 16, above = band.top - 16;
     const up = anchorTop ? below < 160 && above > below : !(above < 160 && below > above);
@@ -9103,6 +9105,7 @@ const ExtraPotionsCore = (() => {
       return false;
     }
 
+    if(!recoveryNavigationAllowed(reason))return false;
     writeNavigationGuard({
       events,
       blockedUntil: 0,
@@ -9138,7 +9141,6 @@ const ExtraPotionsCore = (() => {
     }
     noteRequestedViewingNavigation(target.href);
     explicitViewingNavigationUntil = 0;
-    if(!recoveryNavigationAllowed(reason))return false;
     location.assign(target.href);
     return true;
   }
@@ -16408,6 +16410,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function setStatus(text) {
+    ui?.healthControl?.refresh();
     text = viewingStatus()?.label || text;
     statusText = text;
     const node = ui?.shadow?.getElementById("tdh-status");
@@ -17046,6 +17049,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function refreshDropCard() {
+    ui?.healthControl?.refresh();
     if (!ui) return;
     syncProgressSurfaces();
     try { refreshStreamInfo(); } catch (error) {

@@ -606,6 +606,7 @@
       return false;
     }
 
+    if(!recoveryNavigationAllowed(reason))return false;
     writeNavigationGuard({
       events,
       blockedUntil: 0,
@@ -641,7 +642,6 @@
     }
     noteRequestedViewingNavigation(target.href);
     explicitViewingNavigationUntil = 0;
-    if(!recoveryNavigationAllowed(reason))return false;
     location.assign(target.href);
     return true;
   }

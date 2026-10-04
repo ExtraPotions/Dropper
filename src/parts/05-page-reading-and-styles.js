@@ -158,6 +158,7 @@
   }
 
   function setStatus(text) {
+    ui?.healthControl?.refresh();
     text = viewingStatus()?.label || text;
     statusText = text;
     const node = ui?.shadow?.getElementById("tdh-status");
@@ -796,6 +797,7 @@
   }
 
   function refreshDropCard() {
+    ui?.healthControl?.refresh();
     if (!ui) return;
     syncProgressSurfaces();
     try { refreshStreamInfo(); } catch (error) {

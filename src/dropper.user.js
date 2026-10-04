@@ -5314,6 +5314,7 @@
       return false;
     }
 
+    if(!recoveryNavigationAllowed(reason))return false;
     writeNavigationGuard({
       events,
       blockedUntil: 0,
@@ -5349,7 +5350,6 @@
     }
     noteRequestedViewingNavigation(target.href);
     explicitViewingNavigationUntil = 0;
-    if(!recoveryNavigationAllowed(reason))return false;
     location.assign(target.href);
     return true;
   }
@@ -12619,6 +12619,7 @@
   }
 
   function setStatus(text) {
+    ui?.healthControl?.refresh();
     text = viewingStatus()?.label || text;
     statusText = text;
     const node = ui?.shadow?.getElementById("tdh-status");
@@ -13257,6 +13258,7 @@
   }
 
   function refreshDropCard() {
+    ui?.healthControl?.refresh();
     if (!ui) return;
     syncProgressSurfaces();
     try { refreshStreamInfo(); } catch (error) {
