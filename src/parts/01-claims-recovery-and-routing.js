@@ -1781,6 +1781,8 @@
       targetStream: "",
       failedStreams: [],
       excludedCampaignKeys: [],
+      deferredCampaigns: {},
+      streamDiscoveryStartedAt: 0,
       navigationTarget: "",
       navigationReason: "",
       candidateEvidence: null,
@@ -2157,7 +2159,7 @@
       clearStoredCurrentDrop();
     }
 
-    const { next, excluded } = pickViableCampaign(session);
+    const { next, excluded } = pickViableCampaign(session, { now });
 
     if (!next) {
       queueGqlPollSoon("routing-no-campaign", 0);
@@ -2196,6 +2198,7 @@
       ROUTING_STATES.FIND_STREAM,
       {
         ...routingControllerTargetFromDrop(next),
+        streamDiscoveryStartedAt: now,
         failedStreams: [],
         excludedCampaignKeys: [...excluded],
         targetStream: "",
@@ -2211,6 +2214,9 @@
     let session = readRoutingControllerSession();
     if (!currentDrop || currentDrop.isClaimed || dropProgressComplete(currentDrop)) {
       return routingControllerBootstrap("Active Drop changed while finding a stream");
+    }
+    if (!session.streamDiscoveryStartedAt) {
+      session = writeRoutingControllerSession({ ...session, streamDiscoveryStartedAt: now });
     }
 
     const targetGame = cleanText(session.targetGame || currentDrop.game);
@@ -2873,6 +2879,31 @@
     return advanceAfterWatchComplete(currentDrop, "Legacy CLAIM state resumed");
   }
 
+  function routingControllerDeferUnavailableCampaign(session, now = Date.now()) {
+    if (!["no-category-stream", "no-live-allowed-channel"].includes(session.waitReason)) return false;
+    const startedAt = Number(session.streamDiscoveryStartedAt || 0);
+    const key = cleanText(session.targetCampaignKey).toLowerCase();
+    if (!key || !startedAt || now - startedAt < 2 * 60 * 1000) return false;
+
+    // A partial directory scan cannot prove channels offline. Temporarily
+    // revisit this campaign later while another campaign gets a chance.
+    const deferredCampaigns = Object.fromEntries(Object.entries(session.deferredCampaigns || {})
+      .filter(([, until]) => Number(until) > now));
+    deferredCampaigns[key] = now + 5 * 60 * 1000;
+    const { next, excluded } = pickViableCampaign({ ...session, deferredCampaigns }, { preferCurrent: false, now });
+    if (!next) return false;
+    setStatus("No Compatible Stream Found · Trying Another Campaign");
+    return transitionRoutingController(ROUTING_STATES.SELECT_CAMPAIGN, {
+      deferredCampaigns,
+      streamDiscoveryStartedAt: 0,
+      excludedCampaignKeys: [...excluded],
+      targetStream: "",
+      candidateEvidence: null,
+      waitReason: "",
+      deadlineAt: 0,
+    }, `Temporarily deferred ${session.targetCampaign || session.targetGame} after stream discovery; selecting another campaign`);
+  }
+
   function routingControllerWaiting(now = Date.now()) {
     const session = readRoutingControllerSession();
     if (session.waitReason === "claim-disabled") {
@@ -2922,6 +2953,8 @@
     }
 
     if (!session.deadlineAt || now < session.deadlineAt) return false;
+    const deferred = routingControllerDeferUnavailableCampaign(session, now);
+    if (deferred) return deferred;
 
     if (
       session.waitReason === "no-drops-qualified-stream" ||
@@ -2942,6 +2975,11 @@
     return {
       version: session.version,
       state: session.state,
+      streamDiscoveryAgeSeconds: session.streamDiscoveryStartedAt
+        ? Math.max(0, Math.floor((now - Number(session.streamDiscoveryStartedAt)) / 1000)) : null,
+      deferredCampaigns: Object.entries(session.deferredCampaigns || {})
+        .filter(([, until]) => Number(until) > now)
+        .map(([campaignKey, until]) => ({ campaignKey, retryAt: new Date(Number(until)).toISOString() })),
       stateAgeSeconds: Math.max(0, Math.floor((now - Number(session.enteredAt || now)) / 1000)),
       deadlineAt: session.deadlineAt ? new Date(session.deadlineAt).toISOString() : null,
       deadlineRemainingSeconds: session.deadlineAt ? Math.max(0, Math.ceil((session.deadlineAt - now) / 1000)) : null,
@@ -3040,11 +3078,13 @@
 
   // Picks the best campaign that can be earned now, skipping any that cannot. `excluded` carries the skipped
   // keys so callers can keep them out of later picks. preferCurrent: false ranks purely by Campaign Order.
-  function pickViableCampaign(session, { preferCurrent = true } = {}) {
+  function pickViableCampaign(session, { preferCurrent = true, now = Date.now() } = {}) {
     const excluded = new Set((session.excludedCampaignKeys || []).map((key) => cleanText(key).toLowerCase()).filter(Boolean));
     // Details-pending campaigns whose details already came back empty are
     // skipped only until the miss expires, so they stay out of `excluded`.
-    const missed = new Set();
+    const missed = new Set(Object.entries(session.deferredCampaigns || {})
+      .filter(([, until]) => Number(until) > now)
+      .map(([key]) => cleanText(key).toLowerCase()).filter(Boolean));
     let next = null;
     for (let attempts = 0; attempts < 12; attempts += 1) {
       next = pickNextOpenCampaignDrop(routingCampaignPool(), [...excluded, ...missed], [], { preferCurrent });

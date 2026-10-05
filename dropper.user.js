@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.6
+// @version      3.4.7
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -3845,7 +3845,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.6";
+  const APP_VERSION = "3.4.7";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -3991,6 +3991,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.7": ["Move to another eligible campaign after two minutes without a compatible visible stream.","Retry deferred campaigns after five minutes while keeping channel restrictions enforced.","Show stream discovery time and deferred campaigns in System diagnostics."],
     "3.4.6": ["Open the correct Rainbow Six Siege category, including when an older route was saved.","Keep Dropper's signature menu colors alongside other ExtraPotions products.","Keep campaign-listed channels available across Twitch page changes and avoid unlisted channels for restricted campaigns.","Show Recovery Paused when a move is blocked, and clear the pending stream-opening state."],
     "3.4.5": ["Show a clear System status and offer safe recovery when needed.","Choose Standard, Large, or Extra Large menus on each site.","Pause repeated recovery switches until Resume and show a recent progress timeline."],
     "3.4.4": ["Recognize current Twitch campaign information before switching away from eligible streams.","Keep chat bonus checks running alongside automatic Drop claims."],
@@ -7128,6 +7129,8 @@ const ExtraPotionsCore = (() => {
       targetStream: "",
       failedStreams: [],
       excludedCampaignKeys: [],
+      deferredCampaigns: {},
+      streamDiscoveryStartedAt: 0,
       navigationTarget: "",
       navigationReason: "",
       candidateEvidence: null,
@@ -7504,7 +7507,7 @@ const ExtraPotionsCore = (() => {
       clearStoredCurrentDrop();
     }
 
-    const { next, excluded } = pickViableCampaign(session);
+    const { next, excluded } = pickViableCampaign(session, { now });
 
     if (!next) {
       queueGqlPollSoon("routing-no-campaign", 0);
@@ -7543,6 +7546,7 @@ const ExtraPotionsCore = (() => {
       ROUTING_STATES.FIND_STREAM,
       {
         ...routingControllerTargetFromDrop(next),
+        streamDiscoveryStartedAt: now,
         failedStreams: [],
         excludedCampaignKeys: [...excluded],
         targetStream: "",
@@ -7558,6 +7562,9 @@ const ExtraPotionsCore = (() => {
     let session = readRoutingControllerSession();
     if (!currentDrop || currentDrop.isClaimed || dropProgressComplete(currentDrop)) {
       return routingControllerBootstrap("Active Drop changed while finding a stream");
+    }
+    if (!session.streamDiscoveryStartedAt) {
+      session = writeRoutingControllerSession({ ...session, streamDiscoveryStartedAt: now });
     }
 
     const targetGame = cleanText(session.targetGame || currentDrop.game);
@@ -8220,6 +8227,31 @@ const ExtraPotionsCore = (() => {
     return advanceAfterWatchComplete(currentDrop, "Legacy CLAIM state resumed");
   }
 
+  function routingControllerDeferUnavailableCampaign(session, now = Date.now()) {
+    if (!["no-category-stream", "no-live-allowed-channel"].includes(session.waitReason)) return false;
+    const startedAt = Number(session.streamDiscoveryStartedAt || 0);
+    const key = cleanText(session.targetCampaignKey).toLowerCase();
+    if (!key || !startedAt || now - startedAt < 2 * 60 * 1000) return false;
+
+    // A partial directory scan cannot prove channels offline. Temporarily
+    // revisit this campaign later while another campaign gets a chance.
+    const deferredCampaigns = Object.fromEntries(Object.entries(session.deferredCampaigns || {})
+      .filter(([, until]) => Number(until) > now));
+    deferredCampaigns[key] = now + 5 * 60 * 1000;
+    const { next, excluded } = pickViableCampaign({ ...session, deferredCampaigns }, { preferCurrent: false, now });
+    if (!next) return false;
+    setStatus("No Compatible Stream Found · Trying Another Campaign");
+    return transitionRoutingController(ROUTING_STATES.SELECT_CAMPAIGN, {
+      deferredCampaigns,
+      streamDiscoveryStartedAt: 0,
+      excludedCampaignKeys: [...excluded],
+      targetStream: "",
+      candidateEvidence: null,
+      waitReason: "",
+      deadlineAt: 0,
+    }, `Temporarily deferred ${session.targetCampaign || session.targetGame} after stream discovery; selecting another campaign`);
+  }
+
   function routingControllerWaiting(now = Date.now()) {
     const session = readRoutingControllerSession();
     if (session.waitReason === "claim-disabled") {
@@ -8269,6 +8301,8 @@ const ExtraPotionsCore = (() => {
     }
 
     if (!session.deadlineAt || now < session.deadlineAt) return false;
+    const deferred = routingControllerDeferUnavailableCampaign(session, now);
+    if (deferred) return deferred;
 
     if (
       session.waitReason === "no-drops-qualified-stream" ||
@@ -8289,6 +8323,11 @@ const ExtraPotionsCore = (() => {
     return {
       version: session.version,
       state: session.state,
+      streamDiscoveryAgeSeconds: session.streamDiscoveryStartedAt
+        ? Math.max(0, Math.floor((now - Number(session.streamDiscoveryStartedAt)) / 1000)) : null,
+      deferredCampaigns: Object.entries(session.deferredCampaigns || {})
+        .filter(([, until]) => Number(until) > now)
+        .map(([campaignKey, until]) => ({ campaignKey, retryAt: new Date(Number(until)).toISOString() })),
       stateAgeSeconds: Math.max(0, Math.floor((now - Number(session.enteredAt || now)) / 1000)),
       deadlineAt: session.deadlineAt ? new Date(session.deadlineAt).toISOString() : null,
       deadlineRemainingSeconds: session.deadlineAt ? Math.max(0, Math.ceil((session.deadlineAt - now) / 1000)) : null,
@@ -8387,11 +8426,13 @@ const ExtraPotionsCore = (() => {
 
   // Picks the best campaign that can be earned now, skipping any that cannot. `excluded` carries the skipped
   // keys so callers can keep them out of later picks. preferCurrent: false ranks purely by Campaign Order.
-  function pickViableCampaign(session, { preferCurrent = true } = {}) {
+  function pickViableCampaign(session, { preferCurrent = true, now = Date.now() } = {}) {
     const excluded = new Set((session.excludedCampaignKeys || []).map((key) => cleanText(key).toLowerCase()).filter(Boolean));
     // Details-pending campaigns whose details already came back empty are
     // skipped only until the miss expires, so they stay out of `excluded`.
-    const missed = new Set();
+    const missed = new Set(Object.entries(session.deferredCampaigns || {})
+      .filter(([, until]) => Number(until) > now)
+      .map(([key]) => cleanText(key).toLowerCase()).filter(Boolean));
     let next = null;
     for (let attempts = 0; attempts < 12; attempts += 1) {
       next = pickNextOpenCampaignDrop(routingCampaignPool(), [...excluded, ...missed], [], { preferCurrent });

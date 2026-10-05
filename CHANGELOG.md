@@ -1,3 +1,9 @@
+## 3.4.7 — 2026-10-04
+
+- Move to another eligible campaign after two minutes without a compatible visible stream.
+- Retry deferred campaigns after five minutes while keeping channel restrictions enforced.
+- Show stream discovery time and deferred campaigns in System diagnostics.
+
 ## 3.4.6 — 2026-10-04
 
 - Open the correct Rainbow Six Siege category, including when an older route was saved.
