@@ -20,6 +20,8 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 
 ## What you can do
 
+- **Distinct menu colors:** Dropper keeps its signature appearance alongside other ExtraPotions products.
+- **Accurate category routes:** Rainbow Six Siege opens its correct Twitch directory, including after an older route was saved.
 - **System status:** see Working, Waiting, Paused, or Needs attention, with a reason and a safe recovery action when available.
 - **Recent progress:** see the last 30 progress and recovery events in System. Repeated recovery switches pause until you choose Resume.
 - **Campaign-aware stream choices:** restricted campaigns use their listed channels, with known restrictions retained across Twitch page changes. If recovery pauses, System explains why and offers Resume recovery.

@@ -3991,7 +3991,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
-    "3.4.6": ["Keep campaign-listed channels available across Twitch page changes and avoid unlisted channels for restricted campaigns.","Show Recovery Paused when a move is blocked, and clear the pending stream-opening state."],
+    "3.4.6": ["Open the correct Rainbow Six Siege category, including when an older route was saved.","Keep Dropper's signature menu colors alongside other ExtraPotions products.","Keep campaign-listed channels available across Twitch page changes and avoid unlisted channels for restricted campaigns.","Show Recovery Paused when a move is blocked, and clear the pending stream-opening state."],
     "3.4.5": ["Show a clear System status and offer safe recovery when needed.","Choose Standard, Large, or Extra Large menus on each site.","Pause repeated recovery switches until Resume and show a recent progress timeline."],
     "3.4.4": ["Recognize current Twitch campaign information before switching away from eligible streams.","Keep chat bonus checks running alongside automatic Drop claims."],
     "3.4.3": ["Collect later channel-point bonus chests after an earlier bonus has been claimed.","Keep duplicate bonus claims blocked while waiting for Twitch confirmation."],

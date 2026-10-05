@@ -1,5 +1,7 @@
 ## 3.4.6 — 2026-10-04
 
+- Open the correct Rainbow Six Siege category, including when an older route was saved.
+- Keep Dropper's signature menu colors alongside other ExtraPotions products.
 - Keep campaign-listed channels available across Twitch page changes and avoid unlisted channels for restricted campaigns.
 - Show Recovery Paused when a move is blocked, and clear the pending stream-opening state.
 
