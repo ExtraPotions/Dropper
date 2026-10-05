@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.7
+// @version      3.4.8
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -57,7 +57,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.7";
+  const APP_VERSION = "3.4.8";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -203,6 +203,7 @@
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.8": ["Keep System focused on Dropper Status, diagnostics, issue reporting, menu preferences, and a confirmed product reset.","Keep missing Twitch progress pending and separate eligible streams from confirmed reward credit.","Use observed progress increases for earning checks and identify missing or changed Twitch session responses.","Clear stored Dropper data only after two reset confirmations."],
     "3.4.7": ["Move to another eligible campaign after two minutes without a compatible visible stream.","Retry deferred campaigns after five minutes while keeping channel restrictions enforced.","Show stream discovery time and deferred campaigns in System diagnostics."],
     "3.4.6": ["Open the correct Rainbow Six Siege category, including when an older route was saved.","Keep Dropper's signature menu colors alongside other ExtraPotions products.","Keep campaign-listed channels available across Twitch page changes and avoid unlisted channels for restricted campaigns.","Show Recovery Paused when a move is blocked, and clear the pending stream-opening state."],
     "3.4.5": ["Show a clear System status and offer safe recovery when needed.","Choose Standard, Large, or Extra Large menus on each site.","Pause repeated recovery switches until Resume and show a recent progress timeline."],
@@ -1128,6 +1129,7 @@
   })();
   // END DROPPER ACTIVE VIEWING
 
+  let productResetting = false;
   const settings = loadSettings();
   const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
   const PAGE_STARTED_AT = Date.now();
@@ -1168,7 +1170,7 @@
   let categoryMismatchSignature = "";
   let categorySlugCache = loadCategorySlugCache();
   let lastProgress = readSession("tdh-progress", 0);
-  let lastProgressAt = readSession("tdh-progress-at", Date.now());
+  let lastProgressAt = readSession("dropper-credited-progress-at-v1", 0);
   let currentDrop = readSession("tdh-drop", null);
   if (currentDrop && isDropCardMetadata(currentDrop.name) && !cleanText(currentDrop.id)) {
     currentDrop = { ...currentDrop, name: "Current drop" };
@@ -1367,6 +1369,7 @@
       catch (_) { return null; }
     },
     save: state => {
+      if(productResetting)return;
       try { sessionStorage.setItem(scopedSessionStorageKey(VIEWING_INTENT_KEY, state.account), JSON.stringify(state)); }
       catch (_) { /* The in-memory pause hold remains authoritative in this tab. */ }
     },
@@ -1389,7 +1392,7 @@
     resetClaimReadyTimer();
     currentDrop = readSession('tdh-drop', null);
     lastProgress = readSession('tdh-progress', 0);
-    lastProgressAt = readSession('tdh-progress-at', Date.now());
+    lastProgressAt = readSession('dropper-credited-progress-at-v1', 0);
     lastInventoryCampaigns = [];
     inventoryResponseHealth = { valid: false, status: 'not-seen', at: 0, lastValidAt: 0, source: '', shape: null };
     rewardSessionResolution = null;
@@ -1495,10 +1498,10 @@
       campaignEndAt: clean(drop.campaignEndAt),
       dropStartAt: clean(drop.dropStartAt),
       dropEndAt: clean(drop.dropEndAt),
-      percent: Number.isFinite(Number(drop.percent)) ? Math.max(0, Math.min(100, Number(drop.percent))) : null,
-      currentMinutes: Number.isFinite(Number(drop.currentMinutes)) ? Math.max(0, Number(drop.currentMinutes)) : null,
-      requiredMinutes: Number.isFinite(Number(drop.requiredMinutes)) ? Math.max(0, Number(drop.requiredMinutes)) : null,
-      remainingMinutes: Number.isFinite(Number(drop.remainingMinutes)) ? Math.max(0, Number(drop.remainingMinutes)) : null,
+      percent: drop.percent != null && Number.isFinite(Number(drop.percent)) ? Math.max(0, Math.min(100, Number(drop.percent))) : null,
+      currentMinutes: drop.currentMinutes != null && Number.isFinite(Number(drop.currentMinutes)) ? Math.max(0, Number(drop.currentMinutes)) : null,
+      requiredMinutes: drop.requiredMinutes != null && Number.isFinite(Number(drop.requiredMinutes)) ? Math.max(0, Number(drop.requiredMinutes)) : null,
+      remainingMinutes: drop.remainingMinutes != null && Number.isFinite(Number(drop.remainingMinutes)) ? Math.max(0, Number(drop.remainingMinutes)) : null,
       needsDropDetails: Boolean(drop.needsDropDetails),
       isClaimed: Boolean(drop.isClaimed),
     };
@@ -1527,6 +1530,7 @@
   }
 
   function saveRecoverySnapshot(reason = 'state-change') {
+    if(productResetting)return;
     if (!settings.resumeSessionOnRestart || !currentDrop || isSyntheticWaitingDrop(currentDrop)) return false;
     if (currentDrop.isClaimed) {
       clearRecoverySnapshot('drop-claimed');
@@ -1545,6 +1549,7 @@
       expiresAt,
       reason: cleanText(reason).slice(0, 60),
       preferredStream,
+      progressEvidenceVersion: 1,
       progressAt: Number(lastProgressAt || 0),
       drop,
     };

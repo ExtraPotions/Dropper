@@ -32,6 +32,7 @@
   }
 
   function saveNotificationQuietState(state) {
+    if (typeof productResetting !== 'undefined' && productResetting) return;
     try { localStorage.setItem(scopedLocalStorageKey(NOTIFICATION_STATE_KEY), JSON.stringify(state)); } catch (_) {}
   }
 
@@ -133,6 +134,7 @@
   }
 
   function saveUpdateReloadState(state) {
+    if (typeof productResetting !== 'undefined' && productResetting) return;
     try {
       localStorage.setItem(UPDATE_RELOAD_KEY, JSON.stringify(state || {}));
     } catch (_) {
@@ -571,6 +573,7 @@
       "tdh-drop",
       "tdh-progress",
       "tdh-progress-at",
+      "dropper-credited-progress-at-v1",
     ].forEach((key) => {
       removeSession(key);
     });
@@ -604,7 +607,7 @@
     };
 
     lastProgress = 0;
-    lastProgressAt = Date.now();
+    lastProgressAt = 0;
     progressLabel = "";
     lastProgressReconcile = null;
 
@@ -1025,10 +1028,11 @@
       activeCampaignRouting: {
         lifecycle: currentDrop ? campaignRoutingState(currentDrop, now) : null,
         hasStreamLoaded: Boolean(watchingLogin()),
-        hasVerifiedEarningStream: Boolean(
+        hasEligibleStream: Boolean(
           readRoutingControllerSession().state === ROUTING_STATES.EARNING &&
           matchingLiveDropStream()
         ),
+        hasVerifiedEarningStream: streamEarningHealthSnapshot().earningVerified,
         needsEarningStream: activeDropNeedsStream(),
         allowedChannels: activeCampaignAllowedChannels().slice(0, 50),
         watchingLogin: watchingLogin() || null,
@@ -1065,6 +1069,7 @@
           domVideoPlaying: health.domVideoPlaying,
           domVideoPlayingAuthoritative: health.domVideoPlayingAuthoritative,
           creditedRecently: health.creditedRecently,
+          streamEligible: health.streamEligible,
           earningVerified: health.earningVerified,
           expectedGame: health.expectedGame,
           streamGame: health.streamGame,

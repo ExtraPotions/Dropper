@@ -1,3 +1,10 @@
+## 3.4.8 — 2026-10-04
+
+- Keep System focused on Dropper Status, diagnostics, issue reporting, menu preferences, and a confirmed product reset.
+- Keep missing Twitch progress pending and separate eligible streams from confirmed reward credit.
+- Use observed progress increases for earning checks and identify missing or changed Twitch session responses.
+- Clear stored Dropper data only after two reset confirmations.
+
 ## 3.4.7 — 2026-10-04
 
 - Move to another eligible campaign after two minutes without a compatible visible stream.

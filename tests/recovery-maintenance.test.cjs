@@ -142,7 +142,7 @@ test('a matching later session replaces stale campaign-only identity without inv
 test('Dropper discards only retired width preferences and preserves saved behavior', () => {
   for (const value of ['full', 'compact', 'narrow']) {
     let stored = JSON.stringify({ collapsedPanelWidth: value, menuWidth: value, muteRestarted: false, findNextStream: false, opacityPercent: 73, gamePriorities: ['Game'] });
-    const c = { SETTINGS_KEY: 'settings', DEFAULTS: { muteRestarted: true, findNextStream: true }, localStorage: { getItem: () => stored, setItem: (key, text) => { stored = text; } } };
+    const c = { productResetting: false, SETTINGS_KEY: 'settings', DEFAULTS: { muteRestarted: true, findNextStream: true }, localStorage: { getItem: () => stored, setItem: (key, text) => { stored = text; } } };
     vm.createContext(c); vm.runInContext(extract('loadSettings'), c);
     const loaded = plain(c.loadSettings()), persisted = JSON.parse(stored);
     assert.equal(Object.hasOwn(loaded, 'collapsedPanelWidth'), false);

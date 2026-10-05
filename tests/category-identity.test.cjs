@@ -17,6 +17,7 @@ function context({links = [], stored = {}} = {}) {
   const cacheKey = source.match(/const CATEGORY_SLUG_CACHE_KEY = "([^"]+)"/)[1];
   const aliases = JSON.parse(source.match(/const CATEGORY_SLUG_ALIASES = Object\.freeze\((\{[\s\S]*?\})\);/)[1].replace(/,\s*}/, '}'));
   const c = {
+    productResetting: false,
     URL, Set, Date,
     CATEGORY_SLUG_CACHE_KEY: cacheKey, CATEGORY_SLUG_ALIASES: aliases,
     EXCLUDED_CATEGORY_SLUGS: new Set(['first-partners-collection']),

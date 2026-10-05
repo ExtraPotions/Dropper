@@ -4,13 +4,14 @@
     if (!snapshot) return false;
     currentDrop = { ...snapshot.drop, isClaimed: false };
     writeSession('tdh-drop', currentDrop);
-    if (Number.isFinite(Number(currentDrop.percent))) {
+    if (currentDrop.percent != null && Number.isFinite(Number(currentDrop.percent))) {
       lastProgress = Number(currentDrop.percent);
       progressLabel = `${lastProgress}%`;
       writeSession('tdh-progress', lastProgress);
     }
-    lastProgressAt = Number(snapshot.progressAt || 0);
-    if (lastProgressAt) writeSession('tdh-progress-at', lastProgressAt);
+    lastProgressAt = snapshot.progressEvidenceVersion === 1 ? Number(snapshot.progressAt || 0) : 0;
+    if (lastProgressAt) writeSession('dropper-credited-progress-at-v1', lastProgressAt);
+    else removeSession('dropper-credited-progress-at-v1');
     const login = cleanText(watchingLogin()).toLowerCase();
     const preferred = cleanText(snapshot.preferredStream).toLowerCase();
     if (login && preferred && login === preferred) {
@@ -19,8 +20,8 @@
         ...routingControllerTargetFromDrop(currentDrop),
         targetStream: login,
         candidateEvidence: { source: 'restart-recovery', verificationRequired: true, recoveredSession: true },
-        verifyBaselineMinutes: Number(currentDrop.currentMinutes || 0),
-        verifyBaselinePercent: Number(currentDrop.percent || 0),
+        verifyBaselineMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+        verifyBaselinePercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
         deadlineAt: now + ROUTING_VERIFY_DEADLINE_MS,
       });
     } else if (settings.findNextStream) {
@@ -270,6 +271,7 @@
       id: () => globalThis.crypto?.randomUUID?.() || `${TAB_ID}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       read: () => storedClaimRecords(account).slice(0, 100).map(item => item.record),
       put: record => {
+        if (productResetting) return;
         const prefix = claimHistoryPrefix(account);
         localStorage.setItem(prefix + encodeURIComponent(record.key), JSON.stringify(record));
         for (const stale of storedClaimRecords(account).slice(100)) localStorage.removeItem(stale.key);
@@ -290,7 +292,7 @@
     read: key => {
       try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) { return null; }
     },
-    write: (key, value) => localStorage.setItem(key, JSON.stringify(value)),
+    write: (key, value) => { if (!productResetting) localStorage.setItem(key, JSON.stringify(value)); },
     remove: key => localStorage.removeItem(key),
     // A short settle lets simultaneous tabs observe which write actually won.
     settle: () => new Promise(resolve => setTimeout(resolve, 25)),
@@ -338,7 +340,7 @@
       currentDrop &&
       currentCampaign &&
       currentCampaign !== campaignId &&
-      Number(currentDrop.currentMinutes || 0) > 0
+      currentDrop.currentMinutes != null && Number(currentDrop.currentMinutes) > 0
     );
     if (alreadyProgressingElsewhere) return false;
 
@@ -355,8 +357,8 @@
           targetStream: login,
           failedStreams: [],
           candidateEvidence: routing.candidateEvidence || null,
-          verifyBaselineMinutes: Number(next.currentMinutes || 0),
-          verifyBaselinePercent: Number(next.percent || 0),
+          verifyBaselineMinutes: next.currentMinutes == null ? null : Number(next.currentMinutes),
+          verifyBaselinePercent: next.percent == null ? null : Number(next.percent),
           deadlineAt: Date.now() + ROUTING_VERIFY_DEADLINE_MS,
         },
         `Claim unlocked ${next.name || 'next Drop'} · verifying current stream`,
@@ -727,6 +729,7 @@
     } catch (_) { return []; }
   }
   function writeCampaignPriorityOrder(order) {
+    if (productResetting) return;
     const clean = [...new Set((order || []).map(value => normalizeGameName(value)).filter(Boolean))].slice(0, 250);
     try { localStorage.setItem(scopedLocalStorageKey(CAMPAIGN_PRIORITY_ORDER_KEY), JSON.stringify(clean)); } catch (_) {}
     return clean;
@@ -756,6 +759,7 @@
     return campaignPriorityRank(game).score;
   }
   function setCampaignPriority(game, priority) {
+    if (productResetting) return;
     if (![-1, 0, 1].includes(priority)) return;
     const entry = campaignPriorityEntry(game);
     try {
@@ -883,9 +887,9 @@
         sessionRestored: true,
         sessionMatched: true,
       },
-      currentMinutes: Number(currentDrop.currentMinutes || 0),
+      currentMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
       requiredMinutes: Number(currentDrop.requiredMinutes || 0),
-      currentPercent: Number(currentDrop.percent || 0),
+      currentPercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
     };
   }
 
@@ -1203,16 +1207,16 @@
     return true;
   }
 
-  function dropProgressPercent(currentMinutes, requiredMinutes, fallback = 0) {
+  function dropProgressPercent(currentMinutes, requiredMinutes, fallback = null) {
     const current = Number(currentMinutes);
     const required = Number(requiredMinutes);
-    if (Number.isFinite(current) && Number.isFinite(required) && required > 0) {
+    if (currentMinutes != null && currentMinutes !== "" && Number.isFinite(current) && Number.isFinite(required) && required > 0) {
       if (current >= required) return 100;
       return Math.max(0, Math.min(99, Math.round((current / required) * 100)));
     }
 
     const percent = Number(fallback);
-    return Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+    return fallback != null && fallback !== "" && Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : null;
   }
 
   function dropProgressComplete(drop) {
@@ -1394,6 +1398,7 @@
   }
 
   function writeTabPresenceMap(map) {
+    if (productResetting) return;
     try { localStorage.setItem(scopedLocalStorageKey(TAB_PRESENCE_KEY), JSON.stringify(map || {})); } catch (_) { /* ignore quota */ }
   }
 
@@ -1898,8 +1903,8 @@
       ...routing,
       ...routingControllerTargetFromDrop(currentDrop),
       targetStream: routing.targetStream || watchingLogin() || "",
-      verifyBaselineMinutes: Number(currentDrop.currentMinutes || 0),
-      verifyBaselinePercent: Number(currentDrop.percent || 0),
+      verifyBaselineMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+      verifyBaselinePercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
     });
     logActivity("routing-target-repaired", "Repaired stale routing Drop identity", {
       reason,
@@ -1957,8 +1962,8 @@
       ...routingControllerTargetFromDrop(currentDrop),
       candidateEvidence,
       targetStream: login,
-      verifyBaselineMinutes: Number(currentDrop.currentMinutes || 0),
-      verifyBaselinePercent: Number(currentDrop.percent || 0),
+      verifyBaselineMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+      verifyBaselinePercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
     });
 
     const priorVerificationMatches = Boolean(
@@ -1983,9 +1988,9 @@
           sessionRestored: true,
           sessionMatched: true,
         },
-        currentMinutes: Number(currentDrop.currentMinutes || 0),
+        currentMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
         requiredMinutes: Number(currentDrop.requiredMinutes || 0),
-        currentPercent: Number(currentDrop.percent || 0),
+        currentPercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
       };
     }
     return true;
@@ -2105,8 +2110,8 @@
             game: info.game,
             seenAt: Date.now(),
           },
-          verifyBaselineMinutes: Number(currentDrop.currentMinutes || 0),
-          verifyBaselinePercent: Number(currentDrop.percent || 0),
+          verifyBaselineMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+          verifyBaselinePercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
           deadlineAt: Date.now() + ROUTING_VERIFY_DEADLINE_MS,
           mismatchSince: 0,
           offlineSince: 0,
@@ -2335,8 +2340,8 @@
         },
         navigationTarget: candidate.href,
         navigationReason: campaignAclProof ? "campaign-acl-stream" : visibleDropsProof ? "drops-tagged-verification-stream" : "probationary-stream",
-        verifyBaselineMinutes: Number(currentDrop.currentMinutes || 0),
-        verifyBaselinePercent: Number(currentDrop.percent || 0),
+        verifyBaselineMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+        verifyBaselinePercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
         deadlineAt: now + ROUTING_NAVIGATION_DEADLINE_MS,
       },
       campaignAclProof
@@ -2527,9 +2532,6 @@
     const targetGame = cleanText(session.targetGame || currentDrop?.game);
     session = syncRoutingCampaignAllowListEvidence(session, login || target, now);
     const gameMatches = Boolean(streamGame && targetGame && gameNamesMatch(targetGame, streamGame));
-    const minutesAdvanced = Number(currentDrop?.currentMinutes || 0) > Number(session.verifyBaselineMinutes || 0);
-    const percentAdvanced = Number(currentDrop?.percent || 0) > Number(session.verifyBaselinePercent || 0);
-    const progressProof = minutesAdvanced || percentAdvanced;
     const verificationLogin = login || target;
 
     if (login && target && login !== target) {
@@ -2568,6 +2570,32 @@
       setStatus(`Verifying ${targetGame} · Twitch Still Shows ${streamGame}`);
       return false;
     }
+
+    const currentMinutes = currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes);
+    const currentPercent = currentDrop?.percent == null ? null : Number(currentDrop.percent);
+    const baselineMinutes = session.verifyBaselineMinutes == null ? null : Number(session.verifyBaselineMinutes);
+    const baselinePercent = session.verifyBaselinePercent == null ? null : Number(session.verifyBaselinePercent);
+    const targetIdentityMatches = Boolean(
+      login && target && login === target &&
+      cleanText(currentDrop?.id) === cleanText(session.targetDropId) &&
+      cleanText(currentDrop?.campaignKey || currentDrop?.campaignId).toLowerCase() === cleanText(session.targetCampaignKey).toLowerCase()
+    );
+    // The first known observation can be historical progress. Establish its
+    // baseline before a later observation is allowed to prove fresh credit.
+    if (targetIdentityMatches && (
+      (!Number.isFinite(baselineMinutes) && Number.isFinite(currentMinutes)) ||
+      (!Number.isFinite(baselinePercent) && Number.isFinite(currentPercent))
+    )) {
+      session = writeRoutingControllerSession({ ...session,
+        verifyBaselineMinutes: Number.isFinite(baselineMinutes) ? baselineMinutes : currentMinutes,
+        verifyBaselinePercent: Number.isFinite(baselinePercent) ? baselinePercent : currentPercent,
+      });
+    }
+    const minutesAdvanced = targetIdentityMatches && Number.isFinite(baselineMinutes) &&
+      Number.isFinite(currentMinutes) && currentMinutes > baselineMinutes;
+    const percentAdvanced = targetIdentityMatches && Number.isFinite(baselinePercent) &&
+      Number.isFinite(currentPercent) && currentPercent > baselinePercent;
+    const progressProof = minutesAdvanced || percentAdvanced;
 
     const liveDropsVisible = Boolean(info.dropsEnabled);
     const directoryDropsVisible = Boolean(session.candidateEvidence?.dropsTagged);
@@ -2616,8 +2644,8 @@
           deadlineAt: 0,
           mismatchSince: 0,
           offlineSince: 0,
-          verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
-          verifyBaselinePercent: Number(currentDrop?.percent || 0),
+          verifyBaselineMinutes: currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+          verifyBaselinePercent: currentDrop?.percent == null ? null : Number(currentDrop.percent),
           recoveryStage: 0,
           recoveryStartedAt: 0,
           recoveryLastCheckAt: 0,

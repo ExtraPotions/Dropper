@@ -160,7 +160,7 @@
           changed = true;
         }
       }
-      if (changed) localStorage.setItem(CATEGORY_SLUG_CACHE_KEY, JSON.stringify(parsed));
+      if (changed && !productResetting) localStorage.setItem(CATEGORY_SLUG_CACHE_KEY, JSON.stringify(parsed));
       return parsed;
     } catch (_) {
       return {};
@@ -168,6 +168,7 @@
   }
 
   function saveCategorySlugCache() {
+    if (productResetting) return;
     try {
       localStorage.setItem(CATEGORY_SLUG_CACHE_KEY, JSON.stringify(categorySlugCache));
     } catch (_) {
@@ -631,8 +632,8 @@
           {
             targetStream: homeChosen.login,
             switchStartedAt: Date.now(),
-            verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
-            verifyBaselinePercent: Number(currentDrop?.percent || 0),
+            verifyBaselineMinutes: currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+            verifyBaselinePercent: currentDrop?.percent == null ? null : Number(currentDrop.percent),
             failedStreams: pending.failedStreams || [],
           },
           `Selected active homepage search stream ${homeChosen.login}`,
@@ -730,8 +731,8 @@
         {
           targetStream: chosen.login,
           switchStartedAt: Date.now(),
-          verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
-          verifyBaselinePercent: Number(currentDrop?.percent || 0),
+          verifyBaselineMinutes: currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+          verifyBaselinePercent: currentDrop?.percent == null ? null : Number(currentDrop.percent),
           failedStreams: pending.failedStreams || [],
         },
         `Found active stream ${chosen.login} for ${pending.targetCampaign || pending.targetGame}`,
@@ -1273,8 +1274,8 @@
           targetStream: cachedNext.login,
           failedStreams,
           switchStartedAt: Date.now(),
-          verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
-          verifyBaselinePercent: Number(currentDrop?.percent || 0),
+          verifyBaselineMinutes: currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+          verifyBaselinePercent: currentDrop?.percent == null ? null : Number(currentDrop.percent),
         },
         reason || `Trying cached ${pending.targetGame} Drops stream ${cachedNext.login}`,
       );
@@ -1382,8 +1383,8 @@
       {
         targetStream,
         switchStartedAt: Date.now(),
-        verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
-        verifyBaselinePercent: Number(currentDrop?.percent || 0),
+        verifyBaselineMinutes: currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+        verifyBaselinePercent: currentDrop?.percent == null ? null : Number(currentDrop.percent),
         failedStreams: pending.failedStreams || [],
       },
       `Trying stream ${targetStream || "channel"} for ${pending.targetGame || "next game"}`,
@@ -1426,17 +1427,18 @@
   function creditedProgressProvesStream(drop, pending, previousDrop = null) {
     if (!dropMatchesHandoffTarget(drop, pending)) return false;
 
-    const currentMinutes = Number(drop.currentMinutes);
-    const currentPercent = Number(drop.percent);
-    const baselineMinutes = Number(pending.verifyBaselineMinutes);
-    const baselinePercent = Number(pending.verifyBaselinePercent);
+    const currentMinutes = drop.currentMinutes == null ? null : Number(drop.currentMinutes);
+    const currentPercent = drop.percent == null ? null : Number(drop.percent);
+    const baselineMinutes = pending.verifyBaselineMinutes == null ? null : Number(pending.verifyBaselineMinutes);
+    const baselinePercent = pending.verifyBaselinePercent == null ? null : Number(pending.verifyBaselinePercent);
 
     const minutesAdvanced = Number.isFinite(currentMinutes) && (
       (Number.isFinite(baselineMinutes) && currentMinutes > baselineMinutes) ||
       (
         previousDrop &&
         dropMatchesHandoffTarget(previousDrop, pending) &&
-        currentMinutes > Number(previousDrop.currentMinutes || 0)
+        previousDrop.currentMinutes != null && Number.isFinite(Number(previousDrop.currentMinutes)) &&
+        currentMinutes > Number(previousDrop.currentMinutes)
       )
     );
 
@@ -1445,7 +1447,8 @@
       (
         previousDrop &&
         dropMatchesHandoffTarget(previousDrop, pending) &&
-        currentPercent > Number(previousDrop.percent || 0)
+        previousDrop.percent != null && Number.isFinite(Number(previousDrop.percent)) &&
+        currentPercent > Number(previousDrop.percent)
       )
     );
 
@@ -1684,9 +1687,20 @@
     if (!next) return false;
 
     const previous = currentDrop;
+    const sameReward = Boolean(previous && (
+      previous.id && next.id ? cleanText(previous.id) === cleanText(next.id)
+        : cleanText(previous.campaignKey || previous.campaignId) &&
+          cleanText(previous.campaignKey || previous.campaignId) === cleanText(next.campaignKey || next.campaignId) &&
+          cleanText(previous.name).toLowerCase() === cleanText(next.name).toLowerCase()
+    ));
+    if (!sameReward) {
+      lastProgressAt = 0;
+      lastStreamVerification = null;
+      removeSession("dropper-credited-progress-at-v1");
+    }
     const detailsPending = Boolean(next.needsDropDetails);
     const requiredValue = Number(next.requiredMinutes);
-    const currentValue = Number(next.currentMinutes);
+    const currentValue = next.currentMinutes == null || next.currentMinutes === "" ? null : Number(next.currentMinutes);
     const detailsKnown = !detailsPending && Number.isFinite(requiredValue) && requiredValue > 0;
     const required = detailsKnown ? requiredValue : null;
     const current = detailsKnown && Number.isFinite(currentValue) ? Math.max(0, currentValue) : null;
@@ -1698,7 +1712,7 @@
       percent,
       currentMinutes: current,
       requiredMinutes: required,
-      remainingMinutes: detailsKnown ? Math.max(0, required - current) : null,
+      remainingMinutes: detailsKnown && current != null ? Math.max(0, required - current) : null,
       needsDropDetails: detailsPending || !detailsKnown,
     };
 
@@ -1707,12 +1721,10 @@
 
     writeSession("tdh-drop", currentDrop);
     saveRecoverySnapshot('target-selected');
-    if (detailsKnown) {
+    if (detailsKnown && percent != null) {
       progressLabel = `${percent}%`;
       lastProgress = percent;
-      lastProgressAt = Date.now();
       writeSession("tdh-progress", percent);
-      writeSession("tdh-progress-at", lastProgressAt);
     } else {
       progressLabel = "";
       removeSession("tdh-progress");
@@ -1757,12 +1769,12 @@
           HANDOFF_STATES.VERIFYING,
           {
             verifyStartedAt: Date.now(),
-            verifyBaselineMinutes: Number.isFinite(Number(pending.verifyBaselineMinutes))
+            verifyBaselineMinutes: pending.verifyBaselineMinutes != null && Number.isFinite(Number(pending.verifyBaselineMinutes))
               ? Number(pending.verifyBaselineMinutes)
-              : Number(currentDrop?.currentMinutes || 0),
-            verifyBaselinePercent: Number.isFinite(Number(pending.verifyBaselinePercent))
+              : currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+            verifyBaselinePercent: pending.verifyBaselinePercent != null && Number.isFinite(Number(pending.verifyBaselinePercent))
               ? Number(pending.verifyBaselinePercent)
-              : Number(currentDrop?.percent || 0),
+              : currentDrop?.percent == null ? null : Number(currentDrop.percent),
           },
           `Arrived at ${login} · verifying Drop eligibility`,
         );
@@ -1831,8 +1843,8 @@
             {
               targetStream: currentLogin,
               verifyStartedAt: Date.now(),
-              verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
-              verifyBaselinePercent: Number(currentDrop?.percent || 0),
+              verifyBaselineMinutes: currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+              verifyBaselinePercent: currentDrop?.percent == null ? null : Number(currentDrop.percent),
             },
             `Found target game on ${currentLogin} · verifying current channel in place`,
           );
@@ -2259,6 +2271,8 @@
       campaignMatchedTarget: false,
       identityLevel: "none",
       error: null,
+      responseStatus: null,
+      responseShape: null,
     };
     let sessionDrop = null;
     let sessionRow = null;
@@ -2274,6 +2288,9 @@
       if (!pollContextIsCurrent(requestContext)) return { sessionDrop: null, available: [] };
       available = id ? parseAvailableCampaigns(extra[1]) : [];
       sessionRow = extra[0];
+      const response = sessionResponseState(sessionRow);
+      note.responseStatus = response.status;
+      note.responseShape = response.shape;
       sessionDrop = parseSessionDrop(sessionRow, mergeCampaigns(campaigns, available));
       note.session = Boolean(sessionDrop);
       note.minutes = sessionDrop?.currentMinutes != null && Number.isFinite(Number(sessionDrop.currentMinutes))
@@ -2306,15 +2323,17 @@
 
   function parseSessionDrop(result, campaigns) {
     const session = result?.data?.currentUser?.dropCurrentSession || result?.data?.currentUser?.dropCurrentSessionContext || {};
+    if (Object.hasOwn(session, "currentSession") && session.currentSession === null) return null;
     const node = session.currentSession || session.drop || session;
-    const dropNode = node.drop || node.currentDrop || {};
+    const dropNode = node.drop || node.currentDrop || (node.id || node.name ? node : {});
     const dropId = dropNode.id || node.dropID || session.dropID || "";
-    const current = Number(
+    const observed = (
       dropNode.self?.currentMinutesWatched ??
       dropNode.currentMinutesWatched ??
       node.currentMinutesWatched ??
-      session.currentMinutesWatched,
+      session.currentMinutesWatched
     );
+    const current = observed == null || observed === "" ? null : Number(observed);
     if (!dropId && !Number.isFinite(current) && !dropNode.name) return null;
     let matched = null;
     for (const campaign of campaigns || []) {
@@ -2334,7 +2353,9 @@
       node.requiredMinutesWatched ??
       session.requiredMinutesWatched,
     ) || 0;
-    const minutes = Number.isFinite(current) ? current : Number(drop.self?.currentMinutesWatched) || 0;
+    const fallback = drop.self?.currentMinutesWatched;
+    const minutes = Number.isFinite(current) && current >= 0 ? current
+      : fallback != null && fallback !== "" && Number.isFinite(Number(fallback)) && Number(fallback) >= 0 ? Number(fallback) : null;
     if (!drop.name && !required && !dropId) return null;
     return {
       id: drop.id || dropId || "",
@@ -2353,7 +2374,7 @@
       percent: dropProgressPercent(minutes, required),
       currentMinutes: minutes,
       requiredMinutes: required,
-      remainingMinutes: Math.max(0, required - minutes),
+      remainingMinutes: minutes == null ? null : Math.max(0, required - minutes),
       dropInstanceID:
         drop.self?.dropInstanceID ||
         drop.dropInstanceID ||
@@ -2590,8 +2611,8 @@
 
   function reconcileDropProgress(sessionDrop, inventoryDrop, options = {}) {
     const required = Number(inventoryDrop?.requiredMinutes || sessionDrop?.requiredMinutes || 0);
-    const inventoryMinutes = Number(inventoryDrop?.currentMinutes);
-    const observedSessionMinutes = Number(sessionDrop?.currentMinutes);
+    const inventoryMinutes = inventoryDrop?.currentMinutes == null || inventoryDrop.currentMinutes === "" ? null : Number(inventoryDrop.currentMinutes);
+    const observedSessionMinutes = sessionDrop?.currentMinutes == null || sessionDrop.currentMinutes === "" ? null : Number(sessionDrop.currentMinutes);
     const inventoryValid = Number.isFinite(inventoryMinutes) && inventoryMinutes >= 0;
     const sessionObserved = Number.isFinite(observedSessionMinutes) && observedSessionMinutes >= 0;
     const sessionEligible = options.sessionEligible !== false;
@@ -2602,7 +2623,7 @@
       inventorySnapshotContainsDrop(inventoryDrop)
     );
 
-    let chosen = 0;
+    let chosen = null;
     let source = "none";
 
     // Catalog shells often carry 0 minutes for campaigns that are selected but
@@ -2626,7 +2647,7 @@
       }
     } else if (sessionValid) {
       if (required && observedSessionMinutes > required) {
-        chosen = 0;
+        chosen = null;
         source = "session-rejected-implausible";
       } else {
         chosen = observedSessionMinutes;
@@ -2638,11 +2659,11 @@
         ? "catalog-shell-session-rejected"
         : (inventoryLive ? "inventory-authoritative" : "catalog-shell");
     } else if (sessionObserved && !sessionEligible) {
-      chosen = 0;
+      chosen = null;
       source = "session-rejected-cross-campaign";
     }
 
-    if (required > 0) chosen = Math.min(required, Math.max(0, chosen));
+    if (required > 0 && chosen != null) chosen = Math.min(required, Math.max(0, chosen));
 
     lastProgressReconcile = {
       at: Date.now(),
@@ -2899,7 +2920,7 @@
           dropStartAt: currentDrop?.dropStartAt || matchingSessionDrop.dropStartAt || "",
           dropEndAt: currentDrop?.dropEndAt || matchingSessionDrop.dropEndAt || "",
           requiredMinutes: currentDrop?.requiredMinutes || matchingSessionDrop.requiredMinutes || 0,
-          currentMinutes: Number(currentDrop?.currentMinutes || 0),
+          currentMinutes: currentDrop?.currentMinutes ?? null,
           dropInstanceID: currentDrop?.dropInstanceID || "",
           isClaimed: Boolean(currentDrop?.isClaimed),
         };
@@ -2928,7 +2949,7 @@
           isClaimed: Boolean(matchingSessionDrop.isClaimed || inventorySide.isClaimed),
         };
         drop.percent = dropProgressPercent(minutes, requiredMinutes, drop.percent);
-        drop.remainingMinutes = Math.max(0, requiredMinutes - minutes);
+        drop.remainingMinutes = minutes == null ? null : Math.max(0, requiredMinutes - minutes);
       } else if (liveInventoryDrop || fromInventory) {
         const inventorySide = liveInventoryDrop || fromInventory;
         const sessionEligible = Boolean(!activeUnclaimed || sessionIdentity.matchesTarget);
@@ -2953,7 +2974,7 @@
           requiredMinutes,
           currentMinutes: minutes,
           percent: dropProgressPercent(minutes, requiredMinutes, inventorySide.percent ?? drop?.percent),
-          remainingMinutes: Math.max(0, requiredMinutes - minutes),
+          remainingMinutes: minutes == null ? null : Math.max(0, requiredMinutes - minutes),
           isClaimed: Boolean(inventorySide.isClaimed || drop?.isClaimed),
         };
       } else if (sessionDrop) {
@@ -3035,8 +3056,13 @@
           : sameCampaignAndName
       )
     );
-    const previousMinutes = Number(previousDrop?.currentMinutes);
-    const incomingMinutes = Number(drop.currentMinutes);
+    if (!sameDrop) {
+      lastProgressAt = 0;
+      lastStreamVerification = null;
+      removeSession("dropper-credited-progress-at-v1");
+    }
+    const previousMinutes = previousDrop?.currentMinutes == null ? null : Number(previousDrop.currentMinutes);
+    const incomingMinutes = drop.currentMinutes == null ? null : Number(drop.currentMinutes);
     if (
       sameDrop &&
       !drop.isClaimed &&
@@ -3077,12 +3103,11 @@
       cleanText(previousDrop.campaignKey || previousDrop.campaignId) === cleanText(currentDrop.campaignKey || currentDrop.campaignId)
     );
     const changedPercent = Number(previousDrop?.percent ?? -1) !== Number(percent);
-    const currentMinutes = Number(currentDrop.currentMinutes);
+    const currentMinutes = currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes);
     const creditedMinuteAdvanced = Boolean(
       sameDrop &&
       Number.isFinite(currentMinutes) &&
-      Number.isFinite(previousMinutes) &&
-      currentMinutes > previousMinutes
+      Number.isFinite(previousMinutes) && currentMinutes > previousMinutes
     );
 
     if (changedDropId && sameCampaign) {
@@ -3095,8 +3120,8 @@
           ...routing,
           ...routingControllerTargetFromDrop(currentDrop),
           targetStream: routing.targetStream || watchingLogin() || "",
-          verifyBaselineMinutes: Number(currentDrop.currentMinutes || 0),
-          verifyBaselinePercent: Number(currentDrop.percent || 0),
+          verifyBaselineMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+          verifyBaselinePercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
         });
         logActivity("drop-stage-advanced", "Twitch advanced to the next Drop stage in the active campaign", {
           campaign: currentDrop.campaign || null,
@@ -3153,9 +3178,9 @@
     }
 
     if (changedDrop || changedPercent) {
-      logActivity("progress", `${currentDrop.name || "Drop"} · ${percent}%`, {
+      logActivity("progress", `${currentDrop.name || "Drop"} · ${percent == null ? "progress pending" : `${percent}%`}`, {
         game: currentDrop.game || null,
-        currentMinutes: currentDrop.currentMinutes || 0,
+        currentMinutes: currentDrop.currentMinutes ?? null,
         requiredMinutes: currentDrop.requiredMinutes || 0,
       });
     } else if (creditedMinuteAdvanced) {
@@ -3170,13 +3195,13 @@
     writeSession("tdh-drop", currentDrop);
     saveRecoverySnapshot('progress');
     reconcileRoutingTargetWithCurrentDrop("apply-drop");
-    progressLabel = `${percent}%`;
+    progressLabel = percent == null ? "" : `${percent}%`;
 
-    if (changedDrop || percent !== lastProgress || creditedMinuteAdvanced) {
+    if (creditedMinuteAdvanced) {
       lastProgress = percent;
       lastProgressAt = Date.now();
       writeSession("tdh-progress", percent);
-      writeSession("tdh-progress-at", lastProgressAt);
+      writeSession("dropper-credited-progress-at-v1", lastProgressAt);
       if (watchingLogin()) lastCheckedAt = lastProgressAt;
     }
 

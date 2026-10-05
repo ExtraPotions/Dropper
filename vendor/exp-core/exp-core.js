@@ -1367,7 +1367,70 @@ const ExtraPotionsTools = (() => {
     const duration=document.createElement('select');duration.setAttribute('aria-label','Temporary suite pause duration');for(const [value,label] of [['15','15 minutes'],['60','1 hour'],['240','4 hours']]){const option=document.createElement('option');option.value=value;option.textContent=label;duration.append(option);}const temporary=button('Pause temporarily',()=>{ExtraPotionsCore.setSuiteSitePaused(true,location.hostname,Number(duration.value));refresh();});
     d.addEventListener('toggle',()=>{if(d.open)refresh();});d.append(row,duration,temporary,out);refresh();return d;
   }
-  return Object.freeze({placeDonationPanel,createBitcoinDonation,compatibilitySnapshot,createCompatibilityControls,createSuiteSiteControls});
+  const productRepositories = Object.freeze({dropper:'Dropper',shift:'SHIFT',prisma:'PRISMA',ward:'WARD'});
+  function productIssueUrl(id, version) {
+    if (!Object.hasOwn(productRepositories,id)) throw new Error('Unknown product');
+    const product=productRepositories[id];
+    const safeVersion=/^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(String(version))?String(version):'unknown';
+    // Exclude diagnostics, page URLs, account names, and free-form data.
+    const body=`Product: ${product} v${safeVersion}\n\nWhat happened?\n\nSteps to reproduce\n1. \n\nExpected behavior\n\nActual behavior\n\nBrowser and userscript manager\n\nDiagnostics (optional)\nReview Show Diagnostics and remove private information before attaching.\n`;
+    return 'https://github.com/ExtraPotions/'+product+'/issues/new?title='+encodeURIComponent('['+product+' '+safeVersion+'] Issue')+'&body='+encodeURIComponent(body);
+  }
+  const productTimelines=new Map(),resettingProducts=new Set();
+  const productDataResetting=id=>resettingProducts.has(id);
+  function clearProductData(id, {legacyKeys=[]} = {}) {
+    if (!Object.hasOwn(productRepositories,id)) throw new Error('Unknown product');
+    resettingProducts.add(id);
+    try {
+    const owns=key=>key.startsWith(`exp:v3:${id}:`)||legacyKeys.some(base=>key===base||key.startsWith(base+':account:'));
+    const known=new Set([`exp:v3:${id}:settings`,`exp:v3:${id}:update-cache`,`exp:v3:${id}:installed-version`,`exp:v3:${id}:last-version-v2`,...legacyKeys]);
+    for(const storageName of ['localStorage','sessionStorage']) {
+      let storage;try{storage=globalThis[storageName];}catch{throw new Error('Could not access product storage.');}if(!storage)continue;
+      for(let i=0;i<storage.length;i++){const key=storage.key(i);if(key&&owns(key))known.add(key);}
+      for(const key of known) { try{storage.removeItem(key);}catch{throw new Error('Could not clear '+id+' data. Check browser storage permissions.');} }
+    }
+    try{if(typeof GM_listValues==='function')for(const key of GM_listValues())if(owns(key))known.add(key);}catch{throw new Error('Could not list product storage.');}
+    for(const key of known){if(typeof GM_deleteValue==='function')GM_deleteValue(key);else if(typeof GM_setValue==='function')GM_setValue(key,undefined);}
+    productTimelines.delete(id);
+    return [...known];
+    } catch(error){resettingProducts.delete(id);throw error;}
+  }
+  function createProductTimeline(id,getHealth,notify=()=>{}) {
+    if(!Object.hasOwn(productRepositories,id))throw new Error('Unknown product');
+    const rows=document.createElement('div');rows.dataset.expProductTimeline='1';
+    let disposed=false;
+    function render(){rows.replaceChildren();for(const entry of (productTimelines.get(id)||[]).slice().reverse()){
+      const line=document.createElement('p');line.textContent=new Date(entry.at).toLocaleTimeString()+' · '+entry.state+' · '+entry.reason;
+      line.style.cssText='margin:6px 0;overflow-wrap:anywhere';rows.append(line);
+    }}
+    async function observedHealth(){const value=await getHealth();if(!disposed){
+      const history=productTimelines.get(id)||[];
+      const state=String(value?.state||'waiting').slice(0,30),reason=String(value?.reason||'Status unavailable.').replace(/https?:\/\/\S+/gi,'[page]').slice(0,500),last=history.at(-1);
+      if(!last||last.state!==state||last.reason!==reason){history.push({at:Date.now(),state,reason});if(history.length>30)history.shift();productTimelines.set(id,history);}
+      render();
+    }return value;}
+    const health=ExtraPotionsCore.createHealthControls(observedHealth,notify);
+    const timeline=ExtraPotionsCore.createDisclosure(id==='dropper'?'Dropper Status':'Product Timeline',health.element,rows);
+    timeline.addEventListener('toggle',()=>{if(timeline.open)health.refresh();});
+    return {element:timeline,dispose(){disposed=true;health.dispose();},refresh:health.refresh};
+  }
+  function createProductSystem({id,version,timeline,diagnostics,preferences,onReset,notify=()=>{}}) {
+    if(!Object.hasOwn(productRepositories,id))throw new Error('Unknown product');
+    const system=document.createElement('div');system.dataset.expProductSystem=id;
+    system.style.cssText='display:grid;grid-template-columns:minmax(0,1fr);gap:8px;min-width:0;max-width:100%;overflow-wrap:anywhere';
+    const issue=button('Create GitHub Issue',()=>{const link=document.createElement('a');link.href=productIssueUrl(id,version);link.target='_blank';link.rel='noopener noreferrer';link.click();});
+    issue.style.cssText='width:100%;min-width:0;white-space:normal;border-radius:7px';
+    const reset=button('Reset All Settings',async()=>{
+      if(!confirm(`Reset all ${productRepositories[id]} settings and stored product data?`))return;
+      if(!confirm(`Confirm permanent reset of ${productRepositories[id]} data. This cannot be undone.`))return;
+      reset.disabled=true;
+      try{await onReset();notify(productRepositories[id]+' reset complete.');}catch{notify('Reset did not complete. Check storage permissions and try again.');}finally{reset.disabled=false;}
+    });
+    reset.style.cssText='width:100%;min-width:0;white-space:normal;border:1px solid #ff2438;border-radius:7px;background:#e11428;color:#fff;font-weight:700';
+    for(const [key,node] of [['timeline',timeline],['diagnostics',diagnostics],['issue',issue],['preferences',preferences],['reset',reset]]){node.dataset.expSystemItem=key;node.style.minWidth='0';node.style.maxWidth='100%';const summary=node.tagName==='DETAILS'?node.querySelector(':scope > summary'):null;if(summary)summary.style.cssText+=';min-height:28px;padding:4px 0;box-sizing:border-box;cursor:pointer';system.append(node);}
+    return system;
+  }
+  return Object.freeze({productIssueUrl,productDataResetting,clearProductData,createProductTimeline,createProductSystem,placeDonationPanel,createBitcoinDonation,compatibilitySnapshot,createCompatibilityControls,createSuiteSiteControls});
 })();
 
 // Shared ExtraPotions menu categories, submenu behavior, reordering, and visibility.
@@ -1600,7 +1663,7 @@ const ExpMenuPreferences = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.6.0';
+  const version = '3.6.1';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -3376,6 +3439,7 @@ const ExtraPotionsCore = (() => {
       return { ...memory };
     }
     function writeState(value) {
+      if(ExtraPotionsTools.productDataResetting(productId))return;
       memory = { ...(value || {}) };
       try { if (typeof GM_setValue === 'function') GM_setValue(CACHE_KEY, memory); } catch {}
       try { localStorage.setItem(CACHE_KEY, JSON.stringify(memory)); } catch {}

@@ -662,6 +662,13 @@ test('confirmed claim unlocks the next claim-gated reward in the same campaign',
   assert.equal(result.id, 'second-reward');
   assert.equal(result.campaignKey, 'claim-gated-campaign');
   assert.equal(result.minutes, 0);
+  const protectedOtherCampaign = await page.evaluate(campaign => {
+    const t = window.__dropperTest;
+    t.configure({id:'other-reward',campaignKey:'other-campaign',name:'Other reward',game:'Other game',currentMinutes:5,requiredMinutes:60},[campaign]);
+    return {continued:t.continueClaim({kind:'drop',rewardId:'first-reward',campaignId:campaign.id}),id:t.current()?.id};
+  },campaign);
+  assert.equal(protectedOtherCampaign.continued,false,'a claim elsewhere must preserve an already progressing campaign');
+  assert.equal(protectedOtherCampaign.id,'other-reward');
 }));
 
 

@@ -16,6 +16,7 @@ const options = { allowInventoryFailure: true };
 function load(rows, { status = 200, stored = {}, transportError } = {}) {
   const calls = [], events = [], storage = new Map(Object.entries(stored).map(([k,v]) => [k, JSON.stringify(v)]));
   const c = vm.createContext({
+    productResetting: false,
     Date, cleanText, CLIENT_IDS: ['fixture-client', 'fallback-client'], GQL_URL: 'https://gql.twitch.tv/gql',
     localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k,v) => storage.set(k,v) },
     logActivity: (...event) => events.push(event), getToken: () => 'fixture-not-a-real-token',

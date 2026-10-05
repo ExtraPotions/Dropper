@@ -828,6 +828,7 @@
   }
 
   function loadCampaignMemory() {
+    if (typeof productResetting !== 'undefined' && productResetting) return { updatedAt: 0, campaigns: {} };
     try {
       const scopedKey = scopedLocalStorageKey(CAMPAIGN_MEMORY_KEY);
       const resetKey = scopedLocalStorageKey(CAMPAIGN_MEMORY_RESET_KEY);
@@ -890,6 +891,7 @@
   }
 
   function saveCampaignMemory() {
+    if (typeof productResetting !== 'undefined' && productResetting) return;
     campaignMemory.updatedAt = Date.now();
     try { localStorage.setItem(scopedLocalStorageKey(CAMPAIGN_MEMORY_KEY), JSON.stringify(campaignMemory)); } catch (_) { /* ignore storage quota failures */ }
   }
@@ -927,6 +929,7 @@
   }
 
   function saveIgnoredCampaignGames() {
+    if (typeof productResetting !== 'undefined' && productResetting) return;
     ignoredCampaignGames.updatedAt = Date.now();
     try {
       localStorage.setItem(
@@ -1835,6 +1838,7 @@
   }
 
   function persistCampaignCatalog(campaigns, source = "unknown") {
+    if (typeof productResetting !== 'undefined' && productResetting) return lastCampaignCatalog;
     const previousCount = lastCampaignCatalog.length;
     const firstCaptureThisPage = lastCampaignCatalogAt < PAGE_STARTED_AT;
     lastCampaignCatalog = compactCampaignCatalog(campaigns || []);

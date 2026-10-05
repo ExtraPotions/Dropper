@@ -179,16 +179,6 @@
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-diagnostics-body"><span class="fl-tool-title">System</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-diagnostics-body">
             <div class="action-pair"><button type="button" class="life-btn" id="tdh-diagnostics-toggle">Show Diagnostics</button>
             <button type="button" class="life-btn" id="tdh-copy-diagnostics">Copy Diagnostics</button></div>
-            <details data-dropper-maintenance>
-              <summary>Maintenance</summary>
-              <div class="action-pair">
-                <button type="button" class="life-btn" id="tdh-check-updates">Check for Updates</button>
-                <button type="button" class="life-btn" id="tdh-refresh-campaign-data">Refresh Campaign Data</button>
-                <button type="button" class="life-btn" id="tdh-clear-activity">Clear Activity Log</button>
-                <button type="button" class="life-btn" id="tdh-refresh-now">Refresh Drop State</button>
-                <button type="button" class="life-btn" id="tdh-reset-session">Reset Session State</button>
-              </div>
-            </details>
             <div class="diag" id="tdh-diagnostics" role="region" aria-label="Site and plugin diagnostics" tabindex="0"></div>
           </div></section>
         </aside>
@@ -475,7 +465,6 @@
     );
 
     lastStreamVerification = null;
-    streamVerificationState = null;
     logActivity("stream-skip", "Skipped current streamer", {
       from: active,
       game: currentDrop.game || null,
@@ -1151,11 +1140,13 @@
       viewing.manualStream && !viewing.paused && domVideoPlaying &&
       creditedRecently && verificationProof.progressConfirmed
     );
-    const earningVerified = Boolean(
+    const streamEligible = Boolean(
       (routingStreamMatches || manualEarningVerified) &&
       campaignVerified &&
       gameMatches
     );
+    const earningVerified = Boolean(streamEligible && creditedRecently &&
+      (verificationProof.progressConfirmed || routingEvidence.creditedProgressVerified));
     const healthy = Boolean(
       login &&
       currentDrop &&
@@ -1177,6 +1168,7 @@
       domVideoPlayingAuthoritative: false,
       creditedRecently,
       earningVerified,
+      streamEligible,
       expectedGame: currentDrop?.game || null,
       streamGame: info.game || null,
       gameMatches,
@@ -1229,7 +1221,7 @@
     if (health?.recovery?.code === 'credit-stalled') {
       return { label: 'Progress stalled', detail: health.creditedProgressAgeMs ? `Last Twitch credit ${briefAge(health.creditedProgressAgeMs)} ago.` : 'Twitch has not credited new progress.', tone: 'bad' };
     }
-    if (health?.earningVerified && !hasConfirmedRewardProgress()) {
+    if (health?.streamEligible && (!health.earningVerified || !hasConfirmedRewardProgress())) {
       return { label: 'Eligible stream', detail: rewardCreditStatus(), tone: 'warn' };
     }
     if (health?.earningVerified) {
@@ -1559,7 +1551,7 @@
 
 
   function waitingExplanation(health, hasDrop, switching) {
-    if (health.creditedRecently) return 'Twitch recently credited progress. A delayed page or video signal does not mean earning stopped.';
+    if (health.earningVerified) return 'Twitch recently credited progress. A delayed page or video signal does not mean earning stopped.';
     if (!hasDrop) return 'No active reward is selected. Open the campaign list and choose an eligible campaign.';
     if (health.paused) return 'Playback is paused or needs your attention. Use Resume playback when you are ready.';
     if (!health.login) return switching ? 'Waiting for an eligible stream to open.' : 'Open an eligible stream, or enable automatic switching.';
@@ -1574,40 +1566,39 @@
     if(ExtraPotionsCore.suiteSitePaused()||viewingIntent.snapshot().paused)return {state:'paused',reason:'Automatic viewing changes are paused. Pending reward confirmation is preserved.',checkedAt};
     if(recoveryNavigationState().suspended)return {state:'attention',reason:'Automatic recovery stopped after repeated stream changes or reloads.',checkedAt,action:{label:'Resume recovery',run:()=>resumeRecoveryNavigation()}};
     const health=streamEarningHealthSnapshot(),session=readRoutingControllerSession();
-    if(health.creditedRecently)return {state:'working',reason:'Twitch has recently credited reward progress.',checkedAt};
-    if(!currentDrop||!isStream())return {state:'waiting',reason:'Waiting for a selected reward and an eligible Twitch stream.',checkedAt};
+    if(health.earningVerified)return {state:'working',reason:'Twitch has recently credited reward progress.',checkedAt};
+    if(!currentDrop||!health.login)return {state:'waiting',reason:'Waiting for a selected reward and an eligible Twitch stream.',checkedAt};
     return {state:'waiting',reason:session.state==='verify-stream'?'Checking this stream against the selected campaign. Twitch has not confirmed credited progress yet.':'Waiting for Twitch to credit the next progress update. Campaign eligibility does not guarantee credited minutes.',checkedAt};
   }
+  function resetAllDropperData() {
+    productResetting=true;
+    settings.findNextStream=false;settings.claimDrops=false;settings.claimBonus=false;settings.keepTabActive=false;
+    settings.backgroundEarning=false;settings.autoPictureInPicture=false;settings.restoreChannelPlayer=false;
+    clearInterval(heartbeatTimer);clearInterval(tabPresenceTimer);
+    for(const timer of [claimScanTimer,updateReloadTimer,updateFallbackTimer,updateNoticeTimer])clearTimeout(timer);
+    clearSkipStreamerArm('product-reset');resetClaimReadyTimer();
+    try{screenWakeLock?.release();}catch{}screenWakeLock=null;
+    try {
+      ExtraPotionsCore.clearProductData('dropper',{legacyKeys:["tdh-settings-v3", "dropper-account-scope-owner-v1", "tdh-launcher-top", "tdh-launcher-grid-delta-v3", "dropper-last-version-v2", "dropper-next-game-after-claim", "dropper-routing-session-v310", "dropper-auto-navigation-guard", "dropper-navigation-in-flight", "dropper-activity-log", "dropper-recovery-snapshot-v1", "dropper-notification-quiet-v1", "dropper-network-state", "dropper-standby-streams", "dropper-campaign-catalog", "dropper-campaign-page-import-v1", "dropper-campaign-memory-v1", "dropper-campaign-memory-reset-v1", "dropper-ignored-campaign-games-v1", "dropper-standby-refresh-at", "dropper-standby-maintenance-at", "dropper-mute-pending-v1", "dropper-tab-presence-v1", "dropper-tab-id-v1", "dropper-tab-started-v1", "dropper-category-slugs-v3", "dropper-update-reload-pending", "dropper-client-integrity-v1", "dropper-viewing-intent-v1", "dropper-viewing-navigation-v1", "dropper-viewing-selection-v1", "dropper-manual-stream-lock-v1", "dropper-claim-history-v1", "dropper-campaign-priority-v1", "dropper-campaign-priority-order-v1", "tdh-settings-v1", "tdh-settings-v2", "tdh-drop", "tdh-progress", "tdh-progress-at", "dropper-credited-progress-at-v1", "dropper-progress-timeline-v1", "dropper-recovery-loop-v1", "dropper-campaign-restrictions-v1", "dropper-temp-campaign-skips-v1", "dropper-update-state-v2", "dropper-gql-operations-v1"]});
+      location.reload();
+    } catch(error) {productResetting=false;throw error;}
+  }
   function mountProductTools() {
-    const target = ui.shadow.getElementById('tdh-diagnostics-body');
-    if (!target || target.querySelector('[data-dropper-tools]')) return;
-    ui.healthControl=ExtraPotionsCore.createHealthControls(systemHealthSnapshot);
-    target.prepend(ui.healthControl.element);
-    const sizePreferences=ExtraPotionsCore.createDisclosure('Menu preferences',ExtraPotionsCore.createMenuSizeControls());
-    target.append(sizePreferences);
-    const container = document.createElement('div');container.dataset.dropperTools = '1';
-    const timeline=ExtraPotionsCore.createDisclosure('Recent progress');
-    const timelineRows=document.createElement('div');
-    timeline.addEventListener('toggle',()=>{if(!timeline.open)return;timelineRows.replaceChildren();const rows=progressTimelineSnapshot();if(!rows.length)timelineRows.textContent='No recent progress or recovery events in this session.';for(const entry of rows.slice().reverse()){const line=document.createElement('p');line.textContent=`${new Date(entry.at).toLocaleTimeString()} · ${entry.reason}${entry.minutes!==null?` · ${entry.minutes} credited min`:''}`;timelineRows.append(line);}});
-    timeline.append(timelineRows);container.append(timeline);
-    container.append(ExtraPotionsCore.createSuiteSiteControls(), ExtraPotionsCore.createCompatibilityControls());
-    const details = document.createElement('details');details.style.cssText='border:1px solid var(--theme-line);border-radius:7px;padding:7px;margin-top:8px';
-    const title = document.createElement('summary');title.textContent='Why am I waiting?';
-    const text = document.createElement('p');text.setAttribute('role','status');
-    const refresh = document.createElement('button');refresh.type='button';refresh.className='life-btn';refresh.textContent='Refresh explanation';
-    const explain = () => { text.textContent=waitingExplanation(streamEarningHealthSnapshot(),Boolean(currentDrop),settings.findNextStream); };
-    details.addEventListener('toggle',()=>{if(details.open)explain();});refresh.addEventListener('click',explain);details.append(title,text,refresh);
-    const history = document.createElement('details');history.style.cssText=details.style.cssText;
-    const heading = document.createElement('summary');heading.textContent='Activity history';const entries=document.createElement('div');
-    const showHistory=()=>{entries.replaceChildren();const records=(Array.isArray(activityLog)?activityLog:[]).filter(e=>e.type==='playback'||e.type==='navigation').slice(-20).reverse();
-      for(const entry of records){const p=document.createElement('p');p.textContent=new Date(entry.at).toLocaleTimeString()+' · '+entry.message+(entry.meta?.reason?' · '+entry.meta.reason:'');entries.append(p);}
-      if(!records.length)entries.textContent='No Dropper playback or navigation actions recorded in this session.';};
-    history.addEventListener('toggle',()=>{if(history.open)showHistory();});const update=document.createElement('button');update.type='button';update.className='life-btn';update.textContent='Refresh history';update.addEventListener('click',showHistory);history.append(heading,entries,update);
-    const maintenance = target.querySelector('[data-dropper-maintenance]');
-    for (const empty of target.querySelectorAll(':scope>.action-pair:empty,:scope>.action-separator')) empty.remove();
-    container.prepend(maintenance);
-    container.append(details,history);target.append(container);
-    container.dataset.expSystemTools='1';
+    const target=ui.shadow.getElementById('tdh-diagnostics-body');
+    if(!target||target.querySelector('[data-exp-product-system]'))return;
+    ui.healthControl=ExtraPotionsCore.createProductTimeline('dropper',systemHealthSnapshot,setStatus);
+    const timeline=ui.healthControl.element,rows=document.createElement('div');
+    timeline.append(rows);
+    timeline.addEventListener('toggle',()=>{if(!timeline.open)return;rows.replaceChildren();
+      const explanation=document.createElement('p');explanation.textContent=waitingExplanation(streamEarningHealthSnapshot(),Boolean(currentDrop),settings.findNextStream);rows.append(explanation);
+      for(const entry of progressTimelineSnapshot().slice().reverse()){const line=document.createElement('p');line.textContent=`${new Date(entry.at).toLocaleTimeString()} · ${entry.reason}${entry.minutes!==null?` · ${entry.minutes} credited min`:''}`;rows.append(line);}
+      for(const entry of (Array.isArray(activityLog)?activityLog:[]).filter(e=>e.type==='playback'||e.type==='navigation').slice(-20).reverse()){const line=document.createElement('p');line.textContent=new Date(entry.at).toLocaleTimeString()+' · '+entry.message;rows.append(line);}
+    });
+    const diagnostics=document.createElement('div');diagnostics.className='diagnostics-controls';
+    diagnostics.append(target.querySelector('.action-pair'),target.querySelector('#tdh-diagnostics'));
+    const preferences=ExtraPotionsCore.createDisclosure('Menu Preferences',ExtraPotionsCore.createMenuSizeControls());
+    const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,preferences,onReset:resetAllDropperData,notify:setStatus});
+    target.replaceChildren(system);
   }
 
   function bindDropperControls() {

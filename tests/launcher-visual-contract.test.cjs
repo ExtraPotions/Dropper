@@ -84,8 +84,8 @@ test('menu sections group related Dropper controls without token-only rows', () 
   assert.match(section('tdh-progress-body'), /tdh-progress-title/u);
   assert.match(section('tdh-progress-body'), /tdh-reduce-motion/u);
   assert.match(section('tdh-diagnostics-body'), /tdh-diagnostics-toggle/u);
-  assert.match(section('tdh-diagnostics-body'), /tdh-reset-session/u);
-  assert.match(section('tdh-diagnostics-body'), /tdh-refresh-campaign-data/u);
+  assert.doesNotMatch(section('tdh-diagnostics-body'), /tdh-reset-session|tdh-refresh-campaign-data/u);
+  assert.match(source, /ExtraPotionsCore\.createProductSystem\(/u);
 });
 
 test('nested panels reopen collapsed with a themed last-submenu marker', () => {

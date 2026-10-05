@@ -18,9 +18,11 @@ function loadOperations(stored = {}) {
   const storage = new Map(Object.entries(stored).map(([key, value]) => [key, JSON.stringify(value)]));
   const activity = [];
   const context = {
+    productResetting: false,
     GQL_OPS: {
       inventory: { name: "Inventory", hash: BUILT_IN, variables: { fetchRewardCampaigns: true } },
       availableDrops: { name: "ChannelDropsCampaigns", hash: BUILT_IN, variables: { channelID: "" } },
+      currentDrop: { name: "DropCurrentSessionContext", hash: BUILT_IN, variables: {} },
     },
     localStorage: {
       getItem: (key) => (storage.has(key) ? storage.get(key) : null),
@@ -38,6 +40,17 @@ function loadOperations(stored = {}) {
 }
 
 const okRow = { data: { currentUser: { inventory: { dropCampaignsInProgress: [] } } } };
+
+test('session operation reports absence separately and cannot learn a hash from an unrecognized envelope', () => {
+  const ops = loadOperations();
+  const changed = { data: { currentUser: {} } };
+  ops.check([{op:'currentDrop'}], [changed], 200);
+  assert.equal(ops.snapshot().DropCurrentSessionContext.lastResult, 'shape-changed');
+  ops.learn([{name:'DropCurrentSessionContext',hash:TWITCH_NEW,variableKeys:['channelLogin']}], [changed]);
+  assert.equal(ops.snapshot().DropCurrentSessionContext.source, 'built-in');
+  ops.check([{op:'currentDrop'}], [{data:{currentUser:{dropCurrentSession:null}}}], 200);
+  assert.equal(ops.snapshot().DropCurrentSessionContext.lastResult, 'absent');
+});
 
 test('current channel campaign query validates native data and rejects the obsolete response', () => {
   const ops = loadOperations();

@@ -44,7 +44,7 @@ test('Dropper uses the public Core API for shared tool services', () => {
   // Core's support control brings its own donation options and placement.
   assert.match(template, /ExtraPotionsCore\.createSupportControl\(/u);
   assert.doesNotMatch(template, /ExtraPotionsCore\.(?:createBitcoinDonation|placeDonationPanel)\(/u);
-  assert.match(template, /ExtraPotionsCore\.createCompatibilityControls\(\)/u);
+  assert.match(template, /ExtraPotionsCore\.createProductSystem\(/u);
   assert.match(template, /ExtraPotionsCore\.createDiagnosticsReport\(/u);
   assert.doesNotMatch(template, /ExtraPotionsDiagnostics\.createReport/u);
   assert.match(template, /ExtraPotionsCore\.publishMenuPalette\?\.\(ui\.host/u);

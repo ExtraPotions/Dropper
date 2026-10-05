@@ -15,6 +15,7 @@
   }
 
   function legacyStateBelongsToCurrentAccount() {
+    if (productResetting) return false;
     const login = twitchSessionLogin();
     if (!login) return false;
     try {
@@ -30,6 +31,7 @@
   }
 
   function loadSettings() {
+    if (productResetting) return { ...DEFAULTS };
     try {
       const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
       if (
@@ -55,6 +57,7 @@
   }
 
   function persistSettingsSnapshot() {
+    if (productResetting) return;
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   }
 
@@ -66,6 +69,7 @@
   }
 
   function readSession(key, fallback) {
+    if (productResetting) return fallback;
     try {
       const scopedKey = scopedSessionStorageKey(key);
       let value = sessionStorage.getItem(scopedKey);
@@ -84,6 +88,7 @@
   }
 
   function writeSession(key, value) {
+    if (productResetting) return;
     sessionStorage.setItem(scopedSessionStorageKey(key), JSON.stringify(value));
   }
 
@@ -137,11 +142,11 @@
       return `Working toward ${reward} on ${login}`;
     }
 
-    const current = Number(drop.currentMinutes);
+    const current = drop.currentMinutes == null ? null : Number(drop.currentMinutes);
     const required = Number(drop.requiredMinutes);
     const progress = Number.isFinite(current) && Number.isFinite(required) && required > 0
       ? `${Math.max(0, current)} / ${required} min`
-      : Number.isFinite(Number(drop.percent))
+      : drop.percent != null && Number.isFinite(Number(drop.percent))
         ? `${Math.max(0, Math.min(100, Number(drop.percent)))}%`
         : "progress pending";
     const subject = cleanText(drop.game || reward || "Drop");
@@ -670,15 +675,14 @@
 
   function authoritativeProgressPercent() {
     if (!currentDrop || currentDrop.needsDropDetails) return null;
-    const percent = Number(currentDrop.percent);
+    const percent = currentDrop.percent == null ? null : Number(currentDrop.percent);
     if (Number.isFinite(percent)) return Math.max(0, Math.min(100, percent));
-    const current = Number(currentDrop.currentMinutes);
+    const current = currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes);
     const required = Number(currentDrop.requiredMinutes);
     if (Number.isFinite(current) && Number.isFinite(required) && required > 0) {
       return dropProgressPercent(current, required);
     }
-    const stored = Number(readSession("tdh-progress", NaN));
-    return Number.isFinite(stored) ? Math.max(0, Math.min(100, stored)) : null;
+    return null;
   }
 
   function rememberResolvedRewardImage(drop, image) {
@@ -770,13 +774,15 @@
     if (!progressUnknown && percent != null) {
       const wantedLabel = `${percent}%`;
       if (progressLabel !== wantedLabel) progressLabel = wantedLabel;
+    } else {
+      progressLabel = "";
     }
 
     name.textContent = currentDrop.name || "Current Drop";
     const minutes = progressUnknown
       ? "Loading Drop Details"
       : currentDrop.requiredMinutes
-        ? `${currentDrop.currentMinutes || 0} / ${currentDrop.requiredMinutes} min`
+        ? `${currentDrop.currentMinutes == null ? "Pending" : currentDrop.currentMinutes} / ${currentDrop.requiredMinutes} min`
         : "Waiting For First Credited Minute";
     meta.textContent = minutes;
 
@@ -915,8 +921,9 @@
       });
     if (!href) return;
     lastStreamSwitch = Date.now();
-    lastProgressAt = Date.now();
-    writeSession("tdh-progress-at", lastProgressAt);
+    lastProgressAt = 0;
+    removeSession("tdh-progress-at");
+    removeSession("dropper-credited-progress-at-v1");
     logActivity("stream-switch", "Opening next Drops channel", { target: streamLoginFromUrl(href) || null });
     setStatus("Opening Next Drops Channel");
     if (settings.queueEnabled) {
@@ -1894,4 +1901,3 @@
       }
     `;
   }
-

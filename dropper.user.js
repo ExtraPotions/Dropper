@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.7
+// @version      3.4.8
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -1407,7 +1407,70 @@ const ExtraPotionsTools = (() => {
     const duration=document.createElement('select');duration.setAttribute('aria-label','Temporary suite pause duration');for(const [value,label] of [['15','15 minutes'],['60','1 hour'],['240','4 hours']]){const option=document.createElement('option');option.value=value;option.textContent=label;duration.append(option);}const temporary=button('Pause temporarily',()=>{ExtraPotionsCore.setSuiteSitePaused(true,location.hostname,Number(duration.value));refresh();});
     d.addEventListener('toggle',()=>{if(d.open)refresh();});d.append(row,duration,temporary,out);refresh();return d;
   }
-  return Object.freeze({placeDonationPanel,createBitcoinDonation,compatibilitySnapshot,createCompatibilityControls,createSuiteSiteControls});
+  const productRepositories = Object.freeze({dropper:'Dropper',shift:'SHIFT',prisma:'PRISMA',ward:'WARD'});
+  function productIssueUrl(id, version) {
+    if (!Object.hasOwn(productRepositories,id)) throw new Error('Unknown product');
+    const product=productRepositories[id];
+    const safeVersion=/^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(String(version))?String(version):'unknown';
+    // Exclude diagnostics, page URLs, account names, and free-form data.
+    const body=`Product: ${product} v${safeVersion}\n\nWhat happened?\n\nSteps to reproduce\n1. \n\nExpected behavior\n\nActual behavior\n\nBrowser and userscript manager\n\nDiagnostics (optional)\nReview Show Diagnostics and remove private information before attaching.\n`;
+    return 'https://github.com/ExtraPotions/'+product+'/issues/new?title='+encodeURIComponent('['+product+' '+safeVersion+'] Issue')+'&body='+encodeURIComponent(body);
+  }
+  const productTimelines=new Map(),resettingProducts=new Set();
+  const productDataResetting=id=>resettingProducts.has(id);
+  function clearProductData(id, {legacyKeys=[]} = {}) {
+    if (!Object.hasOwn(productRepositories,id)) throw new Error('Unknown product');
+    resettingProducts.add(id);
+    try {
+    const owns=key=>key.startsWith(`exp:v3:${id}:`)||legacyKeys.some(base=>key===base||key.startsWith(base+':account:'));
+    const known=new Set([`exp:v3:${id}:settings`,`exp:v3:${id}:update-cache`,`exp:v3:${id}:installed-version`,`exp:v3:${id}:last-version-v2`,...legacyKeys]);
+    for(const storageName of ['localStorage','sessionStorage']) {
+      let storage;try{storage=globalThis[storageName];}catch{throw new Error('Could not access product storage.');}if(!storage)continue;
+      for(let i=0;i<storage.length;i++){const key=storage.key(i);if(key&&owns(key))known.add(key);}
+      for(const key of known) { try{storage.removeItem(key);}catch{throw new Error('Could not clear '+id+' data. Check browser storage permissions.');} }
+    }
+    try{if(typeof GM_listValues==='function')for(const key of GM_listValues())if(owns(key))known.add(key);}catch{throw new Error('Could not list product storage.');}
+    for(const key of known){if(typeof GM_deleteValue==='function')GM_deleteValue(key);else if(typeof GM_setValue==='function')GM_setValue(key,undefined);}
+    productTimelines.delete(id);
+    return [...known];
+    } catch(error){resettingProducts.delete(id);throw error;}
+  }
+  function createProductTimeline(id,getHealth,notify=()=>{}) {
+    if(!Object.hasOwn(productRepositories,id))throw new Error('Unknown product');
+    const rows=document.createElement('div');rows.dataset.expProductTimeline='1';
+    let disposed=false;
+    function render(){rows.replaceChildren();for(const entry of (productTimelines.get(id)||[]).slice().reverse()){
+      const line=document.createElement('p');line.textContent=new Date(entry.at).toLocaleTimeString()+' · '+entry.state+' · '+entry.reason;
+      line.style.cssText='margin:6px 0;overflow-wrap:anywhere';rows.append(line);
+    }}
+    async function observedHealth(){const value=await getHealth();if(!disposed){
+      const history=productTimelines.get(id)||[];
+      const state=String(value?.state||'waiting').slice(0,30),reason=String(value?.reason||'Status unavailable.').replace(/https?:\/\/\S+/gi,'[page]').slice(0,500),last=history.at(-1);
+      if(!last||last.state!==state||last.reason!==reason){history.push({at:Date.now(),state,reason});if(history.length>30)history.shift();productTimelines.set(id,history);}
+      render();
+    }return value;}
+    const health=ExtraPotionsCore.createHealthControls(observedHealth,notify);
+    const timeline=ExtraPotionsCore.createDisclosure(id==='dropper'?'Dropper Status':'Product Timeline',health.element,rows);
+    timeline.addEventListener('toggle',()=>{if(timeline.open)health.refresh();});
+    return {element:timeline,dispose(){disposed=true;health.dispose();},refresh:health.refresh};
+  }
+  function createProductSystem({id,version,timeline,diagnostics,preferences,onReset,notify=()=>{}}) {
+    if(!Object.hasOwn(productRepositories,id))throw new Error('Unknown product');
+    const system=document.createElement('div');system.dataset.expProductSystem=id;
+    system.style.cssText='display:grid;grid-template-columns:minmax(0,1fr);gap:8px;min-width:0;max-width:100%;overflow-wrap:anywhere';
+    const issue=button('Create GitHub Issue',()=>{const link=document.createElement('a');link.href=productIssueUrl(id,version);link.target='_blank';link.rel='noopener noreferrer';link.click();});
+    issue.style.cssText='width:100%;min-width:0;white-space:normal;border-radius:7px';
+    const reset=button('Reset All Settings',async()=>{
+      if(!confirm(`Reset all ${productRepositories[id]} settings and stored product data?`))return;
+      if(!confirm(`Confirm permanent reset of ${productRepositories[id]} data. This cannot be undone.`))return;
+      reset.disabled=true;
+      try{await onReset();notify(productRepositories[id]+' reset complete.');}catch{notify('Reset did not complete. Check storage permissions and try again.');}finally{reset.disabled=false;}
+    });
+    reset.style.cssText='width:100%;min-width:0;white-space:normal;border:1px solid #ff2438;border-radius:7px;background:#e11428;color:#fff;font-weight:700';
+    for(const [key,node] of [['timeline',timeline],['diagnostics',diagnostics],['issue',issue],['preferences',preferences],['reset',reset]]){node.dataset.expSystemItem=key;node.style.minWidth='0';node.style.maxWidth='100%';const summary=node.tagName==='DETAILS'?node.querySelector(':scope > summary'):null;if(summary)summary.style.cssText+=';min-height:28px;padding:4px 0;box-sizing:border-box;cursor:pointer';system.append(node);}
+    return system;
+  }
+  return Object.freeze({productIssueUrl,productDataResetting,clearProductData,createProductTimeline,createProductSystem,placeDonationPanel,createBitcoinDonation,compatibilitySnapshot,createCompatibilityControls,createSuiteSiteControls});
 })();
 
 // Shared ExtraPotions menu categories, submenu behavior, reordering, and visibility.
@@ -1640,7 +1703,7 @@ const ExpMenuPreferences = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.6.0';
+  const version = '3.6.1';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -3416,6 +3479,7 @@ const ExtraPotionsCore = (() => {
       return { ...memory };
     }
     function writeState(value) {
+      if(ExtraPotionsTools.productDataResetting(productId))return;
       memory = { ...(value || {}) };
       try { if (typeof GM_setValue === 'function') GM_setValue(CACHE_KEY, memory); } catch {}
       try { localStorage.setItem(CACHE_KEY, JSON.stringify(memory)); } catch {}
@@ -3845,7 +3909,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.7";
+  const APP_VERSION = "3.4.8";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -3991,6 +4055,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.8": ["Keep System focused on Dropper Status, diagnostics, issue reporting, menu preferences, and a confirmed product reset.","Keep missing Twitch progress pending and separate eligible streams from confirmed reward credit.","Use observed progress increases for earning checks and identify missing or changed Twitch session responses.","Clear stored Dropper data only after two reset confirmations."],
     "3.4.7": ["Move to another eligible campaign after two minutes without a compatible visible stream.","Retry deferred campaigns after five minutes while keeping channel restrictions enforced.","Show stream discovery time and deferred campaigns in System diagnostics."],
     "3.4.6": ["Open the correct Rainbow Six Siege category, including when an older route was saved.","Keep Dropper's signature menu colors alongside other ExtraPotions products.","Keep campaign-listed channels available across Twitch page changes and avoid unlisted channels for restricted campaigns.","Show Recovery Paused when a move is blocked, and clear the pending stream-opening state."],
     "3.4.5": ["Show a clear System status and offer safe recovery when needed.","Choose Standard, Large, or Extra Large menus on each site.","Pause repeated recovery switches until Resume and show a recent progress timeline."],
@@ -4916,6 +4981,7 @@ const ExtraPotionsCore = (() => {
   })();
   // END DROPPER ACTIVE VIEWING
 
+  let productResetting = false;
   const settings = loadSettings();
   const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
   const PAGE_STARTED_AT = Date.now();
@@ -4956,7 +5022,7 @@ const ExtraPotionsCore = (() => {
   let categoryMismatchSignature = "";
   let categorySlugCache = loadCategorySlugCache();
   let lastProgress = readSession("tdh-progress", 0);
-  let lastProgressAt = readSession("tdh-progress-at", Date.now());
+  let lastProgressAt = readSession("dropper-credited-progress-at-v1", 0);
   let currentDrop = readSession("tdh-drop", null);
   if (currentDrop && isDropCardMetadata(currentDrop.name) && !cleanText(currentDrop.id)) {
     currentDrop = { ...currentDrop, name: "Current drop" };
@@ -5155,6 +5221,7 @@ const ExtraPotionsCore = (() => {
       catch (_) { return null; }
     },
     save: state => {
+      if(productResetting)return;
       try { sessionStorage.setItem(scopedSessionStorageKey(VIEWING_INTENT_KEY, state.account), JSON.stringify(state)); }
       catch (_) { /* The in-memory pause hold remains authoritative in this tab. */ }
     },
@@ -5177,7 +5244,7 @@ const ExtraPotionsCore = (() => {
     resetClaimReadyTimer();
     currentDrop = readSession('tdh-drop', null);
     lastProgress = readSession('tdh-progress', 0);
-    lastProgressAt = readSession('tdh-progress-at', Date.now());
+    lastProgressAt = readSession('dropper-credited-progress-at-v1', 0);
     lastInventoryCampaigns = [];
     inventoryResponseHealth = { valid: false, status: 'not-seen', at: 0, lastValidAt: 0, source: '', shape: null };
     rewardSessionResolution = null;
@@ -5283,10 +5350,10 @@ const ExtraPotionsCore = (() => {
       campaignEndAt: clean(drop.campaignEndAt),
       dropStartAt: clean(drop.dropStartAt),
       dropEndAt: clean(drop.dropEndAt),
-      percent: Number.isFinite(Number(drop.percent)) ? Math.max(0, Math.min(100, Number(drop.percent))) : null,
-      currentMinutes: Number.isFinite(Number(drop.currentMinutes)) ? Math.max(0, Number(drop.currentMinutes)) : null,
-      requiredMinutes: Number.isFinite(Number(drop.requiredMinutes)) ? Math.max(0, Number(drop.requiredMinutes)) : null,
-      remainingMinutes: Number.isFinite(Number(drop.remainingMinutes)) ? Math.max(0, Number(drop.remainingMinutes)) : null,
+      percent: drop.percent != null && Number.isFinite(Number(drop.percent)) ? Math.max(0, Math.min(100, Number(drop.percent))) : null,
+      currentMinutes: drop.currentMinutes != null && Number.isFinite(Number(drop.currentMinutes)) ? Math.max(0, Number(drop.currentMinutes)) : null,
+      requiredMinutes: drop.requiredMinutes != null && Number.isFinite(Number(drop.requiredMinutes)) ? Math.max(0, Number(drop.requiredMinutes)) : null,
+      remainingMinutes: drop.remainingMinutes != null && Number.isFinite(Number(drop.remainingMinutes)) ? Math.max(0, Number(drop.remainingMinutes)) : null,
       needsDropDetails: Boolean(drop.needsDropDetails),
       isClaimed: Boolean(drop.isClaimed),
     };
@@ -5315,6 +5382,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function saveRecoverySnapshot(reason = 'state-change') {
+    if(productResetting)return;
     if (!settings.resumeSessionOnRestart || !currentDrop || isSyntheticWaitingDrop(currentDrop)) return false;
     if (currentDrop.isClaimed) {
       clearRecoverySnapshot('drop-claimed');
@@ -5333,6 +5401,7 @@ const ExtraPotionsCore = (() => {
       expiresAt,
       reason: cleanText(reason).slice(0, 60),
       preferredStream,
+      progressEvidenceVersion: 1,
       progressAt: Number(lastProgressAt || 0),
       drop,
     };
@@ -5352,13 +5421,14 @@ const ExtraPotionsCore = (() => {
     if (!snapshot) return false;
     currentDrop = { ...snapshot.drop, isClaimed: false };
     writeSession('tdh-drop', currentDrop);
-    if (Number.isFinite(Number(currentDrop.percent))) {
+    if (currentDrop.percent != null && Number.isFinite(Number(currentDrop.percent))) {
       lastProgress = Number(currentDrop.percent);
       progressLabel = `${lastProgress}%`;
       writeSession('tdh-progress', lastProgress);
     }
-    lastProgressAt = Number(snapshot.progressAt || 0);
-    if (lastProgressAt) writeSession('tdh-progress-at', lastProgressAt);
+    lastProgressAt = snapshot.progressEvidenceVersion === 1 ? Number(snapshot.progressAt || 0) : 0;
+    if (lastProgressAt) writeSession('dropper-credited-progress-at-v1', lastProgressAt);
+    else removeSession('dropper-credited-progress-at-v1');
     const login = cleanText(watchingLogin()).toLowerCase();
     const preferred = cleanText(snapshot.preferredStream).toLowerCase();
     if (login && preferred && login === preferred) {
@@ -5367,8 +5437,8 @@ const ExtraPotionsCore = (() => {
         ...routingControllerTargetFromDrop(currentDrop),
         targetStream: login,
         candidateEvidence: { source: 'restart-recovery', verificationRequired: true, recoveredSession: true },
-        verifyBaselineMinutes: Number(currentDrop.currentMinutes || 0),
-        verifyBaselinePercent: Number(currentDrop.percent || 0),
+        verifyBaselineMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+        verifyBaselinePercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
         deadlineAt: now + ROUTING_VERIFY_DEADLINE_MS,
       });
     } else if (settings.findNextStream) {
@@ -5618,6 +5688,7 @@ const ExtraPotionsCore = (() => {
       id: () => globalThis.crypto?.randomUUID?.() || `${TAB_ID}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       read: () => storedClaimRecords(account).slice(0, 100).map(item => item.record),
       put: record => {
+        if (productResetting) return;
         const prefix = claimHistoryPrefix(account);
         localStorage.setItem(prefix + encodeURIComponent(record.key), JSON.stringify(record));
         for (const stale of storedClaimRecords(account).slice(100)) localStorage.removeItem(stale.key);
@@ -5638,7 +5709,7 @@ const ExtraPotionsCore = (() => {
     read: key => {
       try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) { return null; }
     },
-    write: (key, value) => localStorage.setItem(key, JSON.stringify(value)),
+    write: (key, value) => { if (!productResetting) localStorage.setItem(key, JSON.stringify(value)); },
     remove: key => localStorage.removeItem(key),
     // A short settle lets simultaneous tabs observe which write actually won.
     settle: () => new Promise(resolve => setTimeout(resolve, 25)),
@@ -5686,7 +5757,7 @@ const ExtraPotionsCore = (() => {
       currentDrop &&
       currentCampaign &&
       currentCampaign !== campaignId &&
-      Number(currentDrop.currentMinutes || 0) > 0
+      currentDrop.currentMinutes != null && Number(currentDrop.currentMinutes) > 0
     );
     if (alreadyProgressingElsewhere) return false;
 
@@ -5703,8 +5774,8 @@ const ExtraPotionsCore = (() => {
           targetStream: login,
           failedStreams: [],
           candidateEvidence: routing.candidateEvidence || null,
-          verifyBaselineMinutes: Number(next.currentMinutes || 0),
-          verifyBaselinePercent: Number(next.percent || 0),
+          verifyBaselineMinutes: next.currentMinutes == null ? null : Number(next.currentMinutes),
+          verifyBaselinePercent: next.percent == null ? null : Number(next.percent),
           deadlineAt: Date.now() + ROUTING_VERIFY_DEADLINE_MS,
         },
         `Claim unlocked ${next.name || 'next Drop'} · verifying current stream`,
@@ -6075,6 +6146,7 @@ const ExtraPotionsCore = (() => {
     } catch (_) { return []; }
   }
   function writeCampaignPriorityOrder(order) {
+    if (productResetting) return;
     const clean = [...new Set((order || []).map(value => normalizeGameName(value)).filter(Boolean))].slice(0, 250);
     try { localStorage.setItem(scopedLocalStorageKey(CAMPAIGN_PRIORITY_ORDER_KEY), JSON.stringify(clean)); } catch (_) {}
     return clean;
@@ -6104,6 +6176,7 @@ const ExtraPotionsCore = (() => {
     return campaignPriorityRank(game).score;
   }
   function setCampaignPriority(game, priority) {
+    if (productResetting) return;
     if (![-1, 0, 1].includes(priority)) return;
     const entry = campaignPriorityEntry(game);
     try {
@@ -6231,9 +6304,9 @@ const ExtraPotionsCore = (() => {
         sessionRestored: true,
         sessionMatched: true,
       },
-      currentMinutes: Number(currentDrop.currentMinutes || 0),
+      currentMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
       requiredMinutes: Number(currentDrop.requiredMinutes || 0),
-      currentPercent: Number(currentDrop.percent || 0),
+      currentPercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
     };
   }
 
@@ -6551,16 +6624,16 @@ const ExtraPotionsCore = (() => {
     return true;
   }
 
-  function dropProgressPercent(currentMinutes, requiredMinutes, fallback = 0) {
+  function dropProgressPercent(currentMinutes, requiredMinutes, fallback = null) {
     const current = Number(currentMinutes);
     const required = Number(requiredMinutes);
-    if (Number.isFinite(current) && Number.isFinite(required) && required > 0) {
+    if (currentMinutes != null && currentMinutes !== "" && Number.isFinite(current) && Number.isFinite(required) && required > 0) {
       if (current >= required) return 100;
       return Math.max(0, Math.min(99, Math.round((current / required) * 100)));
     }
 
     const percent = Number(fallback);
-    return Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+    return fallback != null && fallback !== "" && Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : null;
   }
 
   function dropProgressComplete(drop) {
@@ -6742,6 +6815,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function writeTabPresenceMap(map) {
+    if (productResetting) return;
     try { localStorage.setItem(scopedLocalStorageKey(TAB_PRESENCE_KEY), JSON.stringify(map || {})); } catch (_) { /* ignore quota */ }
   }
 
@@ -7246,8 +7320,8 @@ const ExtraPotionsCore = (() => {
       ...routing,
       ...routingControllerTargetFromDrop(currentDrop),
       targetStream: routing.targetStream || watchingLogin() || "",
-      verifyBaselineMinutes: Number(currentDrop.currentMinutes || 0),
-      verifyBaselinePercent: Number(currentDrop.percent || 0),
+      verifyBaselineMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+      verifyBaselinePercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
     });
     logActivity("routing-target-repaired", "Repaired stale routing Drop identity", {
       reason,
@@ -7305,8 +7379,8 @@ const ExtraPotionsCore = (() => {
       ...routingControllerTargetFromDrop(currentDrop),
       candidateEvidence,
       targetStream: login,
-      verifyBaselineMinutes: Number(currentDrop.currentMinutes || 0),
-      verifyBaselinePercent: Number(currentDrop.percent || 0),
+      verifyBaselineMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+      verifyBaselinePercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
     });
 
     const priorVerificationMatches = Boolean(
@@ -7331,9 +7405,9 @@ const ExtraPotionsCore = (() => {
           sessionRestored: true,
           sessionMatched: true,
         },
-        currentMinutes: Number(currentDrop.currentMinutes || 0),
+        currentMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
         requiredMinutes: Number(currentDrop.requiredMinutes || 0),
-        currentPercent: Number(currentDrop.percent || 0),
+        currentPercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
       };
     }
     return true;
@@ -7453,8 +7527,8 @@ const ExtraPotionsCore = (() => {
             game: info.game,
             seenAt: Date.now(),
           },
-          verifyBaselineMinutes: Number(currentDrop.currentMinutes || 0),
-          verifyBaselinePercent: Number(currentDrop.percent || 0),
+          verifyBaselineMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+          verifyBaselinePercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
           deadlineAt: Date.now() + ROUTING_VERIFY_DEADLINE_MS,
           mismatchSince: 0,
           offlineSince: 0,
@@ -7683,8 +7757,8 @@ const ExtraPotionsCore = (() => {
         },
         navigationTarget: candidate.href,
         navigationReason: campaignAclProof ? "campaign-acl-stream" : visibleDropsProof ? "drops-tagged-verification-stream" : "probationary-stream",
-        verifyBaselineMinutes: Number(currentDrop.currentMinutes || 0),
-        verifyBaselinePercent: Number(currentDrop.percent || 0),
+        verifyBaselineMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+        verifyBaselinePercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
         deadlineAt: now + ROUTING_NAVIGATION_DEADLINE_MS,
       },
       campaignAclProof
@@ -7875,9 +7949,6 @@ const ExtraPotionsCore = (() => {
     const targetGame = cleanText(session.targetGame || currentDrop?.game);
     session = syncRoutingCampaignAllowListEvidence(session, login || target, now);
     const gameMatches = Boolean(streamGame && targetGame && gameNamesMatch(targetGame, streamGame));
-    const minutesAdvanced = Number(currentDrop?.currentMinutes || 0) > Number(session.verifyBaselineMinutes || 0);
-    const percentAdvanced = Number(currentDrop?.percent || 0) > Number(session.verifyBaselinePercent || 0);
-    const progressProof = minutesAdvanced || percentAdvanced;
     const verificationLogin = login || target;
 
     if (login && target && login !== target) {
@@ -7916,6 +7987,32 @@ const ExtraPotionsCore = (() => {
       setStatus(`Verifying ${targetGame} · Twitch Still Shows ${streamGame}`);
       return false;
     }
+
+    const currentMinutes = currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes);
+    const currentPercent = currentDrop?.percent == null ? null : Number(currentDrop.percent);
+    const baselineMinutes = session.verifyBaselineMinutes == null ? null : Number(session.verifyBaselineMinutes);
+    const baselinePercent = session.verifyBaselinePercent == null ? null : Number(session.verifyBaselinePercent);
+    const targetIdentityMatches = Boolean(
+      login && target && login === target &&
+      cleanText(currentDrop?.id) === cleanText(session.targetDropId) &&
+      cleanText(currentDrop?.campaignKey || currentDrop?.campaignId).toLowerCase() === cleanText(session.targetCampaignKey).toLowerCase()
+    );
+    // The first known observation can be historical progress. Establish its
+    // baseline before a later observation is allowed to prove fresh credit.
+    if (targetIdentityMatches && (
+      (!Number.isFinite(baselineMinutes) && Number.isFinite(currentMinutes)) ||
+      (!Number.isFinite(baselinePercent) && Number.isFinite(currentPercent))
+    )) {
+      session = writeRoutingControllerSession({ ...session,
+        verifyBaselineMinutes: Number.isFinite(baselineMinutes) ? baselineMinutes : currentMinutes,
+        verifyBaselinePercent: Number.isFinite(baselinePercent) ? baselinePercent : currentPercent,
+      });
+    }
+    const minutesAdvanced = targetIdentityMatches && Number.isFinite(baselineMinutes) &&
+      Number.isFinite(currentMinutes) && currentMinutes > baselineMinutes;
+    const percentAdvanced = targetIdentityMatches && Number.isFinite(baselinePercent) &&
+      Number.isFinite(currentPercent) && currentPercent > baselinePercent;
+    const progressProof = minutesAdvanced || percentAdvanced;
 
     const liveDropsVisible = Boolean(info.dropsEnabled);
     const directoryDropsVisible = Boolean(session.candidateEvidence?.dropsTagged);
@@ -7964,8 +8061,8 @@ const ExtraPotionsCore = (() => {
           deadlineAt: 0,
           mismatchSince: 0,
           offlineSince: 0,
-          verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
-          verifyBaselinePercent: Number(currentDrop?.percent || 0),
+          verifyBaselineMinutes: currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+          verifyBaselinePercent: currentDrop?.percent == null ? null : Number(currentDrop.percent),
           recoveryStage: 0,
           recoveryStartedAt: 0,
           recoveryLastCheckAt: 0,
@@ -9373,6 +9470,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function loadCampaignMemory() {
+    if (typeof productResetting !== 'undefined' && productResetting) return { updatedAt: 0, campaigns: {} };
     try {
       const scopedKey = scopedLocalStorageKey(CAMPAIGN_MEMORY_KEY);
       const resetKey = scopedLocalStorageKey(CAMPAIGN_MEMORY_RESET_KEY);
@@ -9435,6 +9533,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function saveCampaignMemory() {
+    if (typeof productResetting !== 'undefined' && productResetting) return;
     campaignMemory.updatedAt = Date.now();
     try { localStorage.setItem(scopedLocalStorageKey(CAMPAIGN_MEMORY_KEY), JSON.stringify(campaignMemory)); } catch (_) { /* ignore storage quota failures */ }
   }
@@ -9472,6 +9571,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function saveIgnoredCampaignGames() {
+    if (typeof productResetting !== 'undefined' && productResetting) return;
     ignoredCampaignGames.updatedAt = Date.now();
     try {
       localStorage.setItem(
@@ -10380,6 +10480,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function persistCampaignCatalog(campaigns, source = "unknown") {
+    if (typeof productResetting !== 'undefined' && productResetting) return lastCampaignCatalog;
     const previousCount = lastCampaignCatalog.length;
     const firstCaptureThisPage = lastCampaignCatalogAt < PAGE_STARTED_AT;
     lastCampaignCatalog = compactCampaignCatalog(campaigns || []);
@@ -10849,6 +10950,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function saveLearnedGqlOperations() {
+    if (productResetting) return;
     try { localStorage.setItem(GQL_LEARNED_OPERATIONS_KEY, JSON.stringify(gqlLearnedOperations)); } catch (_) { /* storage full or blocked */ }
   }
 
@@ -11444,7 +11546,31 @@ const ExtraPotionsCore = (() => {
     Inventory: (data) => inventoryResponseState({ data }).valid,
     ViewerDropsDashboard: (data) => Array.isArray(data?.currentUser?.dropCampaigns) || data?.currentUser === null,
     ChannelDropsCampaigns: (data) => Array.isArray(data?.channelDropCampaigns),
+    DropCurrentSessionContext: (data) => sessionResponseState({ data }).valid,
   };
+
+  function sessionResponseState(row) {
+    const data = row?.data;
+    const user = data?.currentUser;
+    const errors = Array.isArray(row?.errors) ? row.errors : [];
+    const fields = value => value && typeof value === "object" && !Array.isArray(value)
+      ? Object.keys(value).filter(key => /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(key)).slice(0, 12) : [];
+    const type = value => value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
+    const hasSession = Boolean(user && (Object.hasOwn(user, "dropCurrentSession") || Object.hasOwn(user, "dropCurrentSessionContext")));
+    const session = user && Object.hasOwn(user, "dropCurrentSession") ? user.dropCurrentSession : user?.dropCurrentSessionContext;
+    const node = session?.currentSession ?? session?.drop ?? session;
+    const drop = node?.drop ?? node?.currentDrop ?? node;
+    const recognized = Boolean(node && typeof node === "object" && !Array.isArray(node) &&
+      (drop?.id || drop?.name || node.dropID || session?.dropID));
+    let status = data == null || user == null ? "unavailable"
+      : !hasSession ? "shape-changed"
+        : session === null || (session && Object.hasOwn(session, "currentSession") && session.currentSession === null) ? "absent"
+          : recognized ? "ok" : "shape-changed";
+    if (errors.length) status = recognized ? "partial-response" : "error";
+    return { valid: status === "ok" || status === "absent", status,
+      shape: { data: type(data), currentUser: type(user), session: type(session), node: type(node),
+        errorCount: errors.length, dataFields: fields(data), userFields: fields(user), sessionFields: fields(session), nodeFields: fields(node) } };
+  }
 
   function gqlOperationFailureKind(row) {
     // A missing operation is distinct from both authorization and a response
@@ -11528,6 +11654,11 @@ const ExtraPotionsCore = (() => {
           logActivity("gql-operation", `Inventory data unavailable (${inventory.status})`, { operation: name, shape: inventory.shape });
         }
         noteGqlOperationResult(name, inventory.valid ? "ok" : inventory.status, inventory.detail);
+        return;
+      }
+      if (name === "DropCurrentSessionContext") {
+        const session = sessionResponseState(row);
+        noteGqlOperationResult(name, session.status, JSON.stringify(session.shape));
         return;
       }
       const expected = GQL_EXPECTED_SHAPES[name];
@@ -11682,7 +11813,7 @@ const ExtraPotionsCore = (() => {
   function dropPreconditionSatisfied(drop) {
     const self = drop?.self || {};
     const required = Number(drop?.requiredMinutesWatched || 0);
-    const current = Number(self.currentMinutesWatched || 0);
+    const current = self.currentMinutesWatched == null || self.currentMinutesWatched === "" ? null : Number(self.currentMinutesWatched);
     return Boolean(self.isClaimed || (required > 0 && current >= required));
   }
 
@@ -12192,7 +12323,7 @@ const ExtraPotionsCore = (() => {
         const self = drop?.self || {};
         if (self.isClaimed || requiresSubscription(drop)) continue;
         const required = Number(drop?.requiredMinutesWatched || 0);
-        const current = Number(self.currentMinutesWatched || 0);
+        const current = self.currentMinutesWatched == null || self.currentMinutesWatched === "" ? null : Number(self.currentMinutesWatched);
         if (required <= 0 || !campaignIsOpen(campaign, drop, now)) continue;
         if (current >= required) continue;
 
@@ -12219,7 +12350,7 @@ const ExtraPotionsCore = (() => {
           percent: dropProgressPercent(current, required),
           currentMinutes: current,
           requiredMinutes: required,
-          remainingMinutes: Math.max(0, required - current),
+          remainingMinutes: current == null || !Number.isFinite(current) ? null : Math.max(0, required - current),
           needsDropDetails: false,
         });
         addedWatchDrop = true;
@@ -12486,7 +12617,7 @@ const ExtraPotionsCore = (() => {
         const self = drop.self || {};
         if (self.isClaimed || requiresSubscription(drop)) continue;
         const required = Number(drop.requiredMinutesWatched) || 0;
-        const current = Number(self.currentMinutesWatched) || 0;
+        const current = self.currentMinutesWatched == null || self.currentMinutesWatched === "" ? null : Number(self.currentMinutesWatched);
         if (required <= 0 || current >= required || !campaignIsOpen(campaign, drop, now)) continue;
         const pre = dropperPreconditionsMet(drop, drops);
         if (!pre) continue;
@@ -12510,7 +12641,7 @@ const ExtraPotionsCore = (() => {
           percent: dropProgressPercent(current, required),
           currentMinutes: current,
           requiredMinutes: required,
-          remainingMinutes: Math.max(0, required - current),
+          remainingMinutes: current == null || !Number.isFinite(current) ? null : Math.max(0, required - current),
         });
       }
     }
@@ -12583,7 +12714,7 @@ const ExtraPotionsCore = (() => {
         const self = drop.self || {};
         if (self.isClaimed || requiresSubscription(drop)) continue;
         const required = Number(drop.requiredMinutesWatched) || 0;
-        const current = Number(self.currentMinutesWatched) || 0;
+        const current = self.currentMinutesWatched == null || self.currentMinutesWatched === "" ? null : Number(self.currentMinutesWatched);
         if (required <= 0 || !campaignIsOpen(campaign, drop, now)) continue;
 
         const preconditionsMet = dropperPreconditionsMet(drop, drops);
@@ -12607,7 +12738,7 @@ const ExtraPotionsCore = (() => {
           percent: dropProgressPercent(current, required),
           currentMinutes: current,
           requiredMinutes: required,
-          remainingMinutes: Math.max(0, required - current),
+          remainingMinutes: current == null || !Number.isFinite(current) ? null : Math.max(0, required - current),
         });
       }
     }
@@ -13284,7 +13415,7 @@ const ExtraPotionsCore = (() => {
           changed = true;
         }
       }
-      if (changed) localStorage.setItem(CATEGORY_SLUG_CACHE_KEY, JSON.stringify(parsed));
+      if (changed && !productResetting) localStorage.setItem(CATEGORY_SLUG_CACHE_KEY, JSON.stringify(parsed));
       return parsed;
     } catch (_) {
       return {};
@@ -13292,6 +13423,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function saveCategorySlugCache() {
+    if (productResetting) return;
     try {
       localStorage.setItem(CATEGORY_SLUG_CACHE_KEY, JSON.stringify(categorySlugCache));
     } catch (_) {
@@ -13755,8 +13887,8 @@ const ExtraPotionsCore = (() => {
           {
             targetStream: homeChosen.login,
             switchStartedAt: Date.now(),
-            verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
-            verifyBaselinePercent: Number(currentDrop?.percent || 0),
+            verifyBaselineMinutes: currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+            verifyBaselinePercent: currentDrop?.percent == null ? null : Number(currentDrop.percent),
             failedStreams: pending.failedStreams || [],
           },
           `Selected active homepage search stream ${homeChosen.login}`,
@@ -13854,8 +13986,8 @@ const ExtraPotionsCore = (() => {
         {
           targetStream: chosen.login,
           switchStartedAt: Date.now(),
-          verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
-          verifyBaselinePercent: Number(currentDrop?.percent || 0),
+          verifyBaselineMinutes: currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+          verifyBaselinePercent: currentDrop?.percent == null ? null : Number(currentDrop.percent),
           failedStreams: pending.failedStreams || [],
         },
         `Found active stream ${chosen.login} for ${pending.targetCampaign || pending.targetGame}`,
@@ -14397,8 +14529,8 @@ const ExtraPotionsCore = (() => {
           targetStream: cachedNext.login,
           failedStreams,
           switchStartedAt: Date.now(),
-          verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
-          verifyBaselinePercent: Number(currentDrop?.percent || 0),
+          verifyBaselineMinutes: currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+          verifyBaselinePercent: currentDrop?.percent == null ? null : Number(currentDrop.percent),
         },
         reason || `Trying cached ${pending.targetGame} Drops stream ${cachedNext.login}`,
       );
@@ -14506,8 +14638,8 @@ const ExtraPotionsCore = (() => {
       {
         targetStream,
         switchStartedAt: Date.now(),
-        verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
-        verifyBaselinePercent: Number(currentDrop?.percent || 0),
+        verifyBaselineMinutes: currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+        verifyBaselinePercent: currentDrop?.percent == null ? null : Number(currentDrop.percent),
         failedStreams: pending.failedStreams || [],
       },
       `Trying stream ${targetStream || "channel"} for ${pending.targetGame || "next game"}`,
@@ -14550,17 +14682,18 @@ const ExtraPotionsCore = (() => {
   function creditedProgressProvesStream(drop, pending, previousDrop = null) {
     if (!dropMatchesHandoffTarget(drop, pending)) return false;
 
-    const currentMinutes = Number(drop.currentMinutes);
-    const currentPercent = Number(drop.percent);
-    const baselineMinutes = Number(pending.verifyBaselineMinutes);
-    const baselinePercent = Number(pending.verifyBaselinePercent);
+    const currentMinutes = drop.currentMinutes == null ? null : Number(drop.currentMinutes);
+    const currentPercent = drop.percent == null ? null : Number(drop.percent);
+    const baselineMinutes = pending.verifyBaselineMinutes == null ? null : Number(pending.verifyBaselineMinutes);
+    const baselinePercent = pending.verifyBaselinePercent == null ? null : Number(pending.verifyBaselinePercent);
 
     const minutesAdvanced = Number.isFinite(currentMinutes) && (
       (Number.isFinite(baselineMinutes) && currentMinutes > baselineMinutes) ||
       (
         previousDrop &&
         dropMatchesHandoffTarget(previousDrop, pending) &&
-        currentMinutes > Number(previousDrop.currentMinutes || 0)
+        previousDrop.currentMinutes != null && Number.isFinite(Number(previousDrop.currentMinutes)) &&
+        currentMinutes > Number(previousDrop.currentMinutes)
       )
     );
 
@@ -14569,7 +14702,8 @@ const ExtraPotionsCore = (() => {
       (
         previousDrop &&
         dropMatchesHandoffTarget(previousDrop, pending) &&
-        currentPercent > Number(previousDrop.percent || 0)
+        previousDrop.percent != null && Number.isFinite(Number(previousDrop.percent)) &&
+        currentPercent > Number(previousDrop.percent)
       )
     );
 
@@ -14808,9 +14942,20 @@ const ExtraPotionsCore = (() => {
     if (!next) return false;
 
     const previous = currentDrop;
+    const sameReward = Boolean(previous && (
+      previous.id && next.id ? cleanText(previous.id) === cleanText(next.id)
+        : cleanText(previous.campaignKey || previous.campaignId) &&
+          cleanText(previous.campaignKey || previous.campaignId) === cleanText(next.campaignKey || next.campaignId) &&
+          cleanText(previous.name).toLowerCase() === cleanText(next.name).toLowerCase()
+    ));
+    if (!sameReward) {
+      lastProgressAt = 0;
+      lastStreamVerification = null;
+      removeSession("dropper-credited-progress-at-v1");
+    }
     const detailsPending = Boolean(next.needsDropDetails);
     const requiredValue = Number(next.requiredMinutes);
-    const currentValue = Number(next.currentMinutes);
+    const currentValue = next.currentMinutes == null || next.currentMinutes === "" ? null : Number(next.currentMinutes);
     const detailsKnown = !detailsPending && Number.isFinite(requiredValue) && requiredValue > 0;
     const required = detailsKnown ? requiredValue : null;
     const current = detailsKnown && Number.isFinite(currentValue) ? Math.max(0, currentValue) : null;
@@ -14822,7 +14967,7 @@ const ExtraPotionsCore = (() => {
       percent,
       currentMinutes: current,
       requiredMinutes: required,
-      remainingMinutes: detailsKnown ? Math.max(0, required - current) : null,
+      remainingMinutes: detailsKnown && current != null ? Math.max(0, required - current) : null,
       needsDropDetails: detailsPending || !detailsKnown,
     };
 
@@ -14831,12 +14976,10 @@ const ExtraPotionsCore = (() => {
 
     writeSession("tdh-drop", currentDrop);
     saveRecoverySnapshot('target-selected');
-    if (detailsKnown) {
+    if (detailsKnown && percent != null) {
       progressLabel = `${percent}%`;
       lastProgress = percent;
-      lastProgressAt = Date.now();
       writeSession("tdh-progress", percent);
-      writeSession("tdh-progress-at", lastProgressAt);
     } else {
       progressLabel = "";
       removeSession("tdh-progress");
@@ -14881,12 +15024,12 @@ const ExtraPotionsCore = (() => {
           HANDOFF_STATES.VERIFYING,
           {
             verifyStartedAt: Date.now(),
-            verifyBaselineMinutes: Number.isFinite(Number(pending.verifyBaselineMinutes))
+            verifyBaselineMinutes: pending.verifyBaselineMinutes != null && Number.isFinite(Number(pending.verifyBaselineMinutes))
               ? Number(pending.verifyBaselineMinutes)
-              : Number(currentDrop?.currentMinutes || 0),
-            verifyBaselinePercent: Number.isFinite(Number(pending.verifyBaselinePercent))
+              : currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+            verifyBaselinePercent: pending.verifyBaselinePercent != null && Number.isFinite(Number(pending.verifyBaselinePercent))
               ? Number(pending.verifyBaselinePercent)
-              : Number(currentDrop?.percent || 0),
+              : currentDrop?.percent == null ? null : Number(currentDrop.percent),
           },
           `Arrived at ${login} · verifying Drop eligibility`,
         );
@@ -14955,8 +15098,8 @@ const ExtraPotionsCore = (() => {
             {
               targetStream: currentLogin,
               verifyStartedAt: Date.now(),
-              verifyBaselineMinutes: Number(currentDrop?.currentMinutes || 0),
-              verifyBaselinePercent: Number(currentDrop?.percent || 0),
+              verifyBaselineMinutes: currentDrop?.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+              verifyBaselinePercent: currentDrop?.percent == null ? null : Number(currentDrop.percent),
             },
             `Found target game on ${currentLogin} · verifying current channel in place`,
           );
@@ -15383,6 +15526,8 @@ const ExtraPotionsCore = (() => {
       campaignMatchedTarget: false,
       identityLevel: "none",
       error: null,
+      responseStatus: null,
+      responseShape: null,
     };
     let sessionDrop = null;
     let sessionRow = null;
@@ -15398,6 +15543,9 @@ const ExtraPotionsCore = (() => {
       if (!pollContextIsCurrent(requestContext)) return { sessionDrop: null, available: [] };
       available = id ? parseAvailableCampaigns(extra[1]) : [];
       sessionRow = extra[0];
+      const response = sessionResponseState(sessionRow);
+      note.responseStatus = response.status;
+      note.responseShape = response.shape;
       sessionDrop = parseSessionDrop(sessionRow, mergeCampaigns(campaigns, available));
       note.session = Boolean(sessionDrop);
       note.minutes = sessionDrop?.currentMinutes != null && Number.isFinite(Number(sessionDrop.currentMinutes))
@@ -15430,15 +15578,17 @@ const ExtraPotionsCore = (() => {
 
   function parseSessionDrop(result, campaigns) {
     const session = result?.data?.currentUser?.dropCurrentSession || result?.data?.currentUser?.dropCurrentSessionContext || {};
+    if (Object.hasOwn(session, "currentSession") && session.currentSession === null) return null;
     const node = session.currentSession || session.drop || session;
-    const dropNode = node.drop || node.currentDrop || {};
+    const dropNode = node.drop || node.currentDrop || (node.id || node.name ? node : {});
     const dropId = dropNode.id || node.dropID || session.dropID || "";
-    const current = Number(
+    const observed = (
       dropNode.self?.currentMinutesWatched ??
       dropNode.currentMinutesWatched ??
       node.currentMinutesWatched ??
-      session.currentMinutesWatched,
+      session.currentMinutesWatched
     );
+    const current = observed == null || observed === "" ? null : Number(observed);
     if (!dropId && !Number.isFinite(current) && !dropNode.name) return null;
     let matched = null;
     for (const campaign of campaigns || []) {
@@ -15458,7 +15608,9 @@ const ExtraPotionsCore = (() => {
       node.requiredMinutesWatched ??
       session.requiredMinutesWatched,
     ) || 0;
-    const minutes = Number.isFinite(current) ? current : Number(drop.self?.currentMinutesWatched) || 0;
+    const fallback = drop.self?.currentMinutesWatched;
+    const minutes = Number.isFinite(current) && current >= 0 ? current
+      : fallback != null && fallback !== "" && Number.isFinite(Number(fallback)) && Number(fallback) >= 0 ? Number(fallback) : null;
     if (!drop.name && !required && !dropId) return null;
     return {
       id: drop.id || dropId || "",
@@ -15477,7 +15629,7 @@ const ExtraPotionsCore = (() => {
       percent: dropProgressPercent(minutes, required),
       currentMinutes: minutes,
       requiredMinutes: required,
-      remainingMinutes: Math.max(0, required - minutes),
+      remainingMinutes: minutes == null ? null : Math.max(0, required - minutes),
       dropInstanceID:
         drop.self?.dropInstanceID ||
         drop.dropInstanceID ||
@@ -15714,8 +15866,8 @@ const ExtraPotionsCore = (() => {
 
   function reconcileDropProgress(sessionDrop, inventoryDrop, options = {}) {
     const required = Number(inventoryDrop?.requiredMinutes || sessionDrop?.requiredMinutes || 0);
-    const inventoryMinutes = Number(inventoryDrop?.currentMinutes);
-    const observedSessionMinutes = Number(sessionDrop?.currentMinutes);
+    const inventoryMinutes = inventoryDrop?.currentMinutes == null || inventoryDrop.currentMinutes === "" ? null : Number(inventoryDrop.currentMinutes);
+    const observedSessionMinutes = sessionDrop?.currentMinutes == null || sessionDrop.currentMinutes === "" ? null : Number(sessionDrop.currentMinutes);
     const inventoryValid = Number.isFinite(inventoryMinutes) && inventoryMinutes >= 0;
     const sessionObserved = Number.isFinite(observedSessionMinutes) && observedSessionMinutes >= 0;
     const sessionEligible = options.sessionEligible !== false;
@@ -15726,7 +15878,7 @@ const ExtraPotionsCore = (() => {
       inventorySnapshotContainsDrop(inventoryDrop)
     );
 
-    let chosen = 0;
+    let chosen = null;
     let source = "none";
 
     // Catalog shells often carry 0 minutes for campaigns that are selected but
@@ -15750,7 +15902,7 @@ const ExtraPotionsCore = (() => {
       }
     } else if (sessionValid) {
       if (required && observedSessionMinutes > required) {
-        chosen = 0;
+        chosen = null;
         source = "session-rejected-implausible";
       } else {
         chosen = observedSessionMinutes;
@@ -15762,11 +15914,11 @@ const ExtraPotionsCore = (() => {
         ? "catalog-shell-session-rejected"
         : (inventoryLive ? "inventory-authoritative" : "catalog-shell");
     } else if (sessionObserved && !sessionEligible) {
-      chosen = 0;
+      chosen = null;
       source = "session-rejected-cross-campaign";
     }
 
-    if (required > 0) chosen = Math.min(required, Math.max(0, chosen));
+    if (required > 0 && chosen != null) chosen = Math.min(required, Math.max(0, chosen));
 
     lastProgressReconcile = {
       at: Date.now(),
@@ -16023,7 +16175,7 @@ const ExtraPotionsCore = (() => {
           dropStartAt: currentDrop?.dropStartAt || matchingSessionDrop.dropStartAt || "",
           dropEndAt: currentDrop?.dropEndAt || matchingSessionDrop.dropEndAt || "",
           requiredMinutes: currentDrop?.requiredMinutes || matchingSessionDrop.requiredMinutes || 0,
-          currentMinutes: Number(currentDrop?.currentMinutes || 0),
+          currentMinutes: currentDrop?.currentMinutes ?? null,
           dropInstanceID: currentDrop?.dropInstanceID || "",
           isClaimed: Boolean(currentDrop?.isClaimed),
         };
@@ -16052,7 +16204,7 @@ const ExtraPotionsCore = (() => {
           isClaimed: Boolean(matchingSessionDrop.isClaimed || inventorySide.isClaimed),
         };
         drop.percent = dropProgressPercent(minutes, requiredMinutes, drop.percent);
-        drop.remainingMinutes = Math.max(0, requiredMinutes - minutes);
+        drop.remainingMinutes = minutes == null ? null : Math.max(0, requiredMinutes - minutes);
       } else if (liveInventoryDrop || fromInventory) {
         const inventorySide = liveInventoryDrop || fromInventory;
         const sessionEligible = Boolean(!activeUnclaimed || sessionIdentity.matchesTarget);
@@ -16077,7 +16229,7 @@ const ExtraPotionsCore = (() => {
           requiredMinutes,
           currentMinutes: minutes,
           percent: dropProgressPercent(minutes, requiredMinutes, inventorySide.percent ?? drop?.percent),
-          remainingMinutes: Math.max(0, requiredMinutes - minutes),
+          remainingMinutes: minutes == null ? null : Math.max(0, requiredMinutes - minutes),
           isClaimed: Boolean(inventorySide.isClaimed || drop?.isClaimed),
         };
       } else if (sessionDrop) {
@@ -16159,8 +16311,13 @@ const ExtraPotionsCore = (() => {
           : sameCampaignAndName
       )
     );
-    const previousMinutes = Number(previousDrop?.currentMinutes);
-    const incomingMinutes = Number(drop.currentMinutes);
+    if (!sameDrop) {
+      lastProgressAt = 0;
+      lastStreamVerification = null;
+      removeSession("dropper-credited-progress-at-v1");
+    }
+    const previousMinutes = previousDrop?.currentMinutes == null ? null : Number(previousDrop.currentMinutes);
+    const incomingMinutes = drop.currentMinutes == null ? null : Number(drop.currentMinutes);
     if (
       sameDrop &&
       !drop.isClaimed &&
@@ -16201,12 +16358,11 @@ const ExtraPotionsCore = (() => {
       cleanText(previousDrop.campaignKey || previousDrop.campaignId) === cleanText(currentDrop.campaignKey || currentDrop.campaignId)
     );
     const changedPercent = Number(previousDrop?.percent ?? -1) !== Number(percent);
-    const currentMinutes = Number(currentDrop.currentMinutes);
+    const currentMinutes = currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes);
     const creditedMinuteAdvanced = Boolean(
       sameDrop &&
       Number.isFinite(currentMinutes) &&
-      Number.isFinite(previousMinutes) &&
-      currentMinutes > previousMinutes
+      Number.isFinite(previousMinutes) && currentMinutes > previousMinutes
     );
 
     if (changedDropId && sameCampaign) {
@@ -16219,8 +16375,8 @@ const ExtraPotionsCore = (() => {
           ...routing,
           ...routingControllerTargetFromDrop(currentDrop),
           targetStream: routing.targetStream || watchingLogin() || "",
-          verifyBaselineMinutes: Number(currentDrop.currentMinutes || 0),
-          verifyBaselinePercent: Number(currentDrop.percent || 0),
+          verifyBaselineMinutes: currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes),
+          verifyBaselinePercent: currentDrop.percent == null ? null : Number(currentDrop.percent),
         });
         logActivity("drop-stage-advanced", "Twitch advanced to the next Drop stage in the active campaign", {
           campaign: currentDrop.campaign || null,
@@ -16277,9 +16433,9 @@ const ExtraPotionsCore = (() => {
     }
 
     if (changedDrop || changedPercent) {
-      logActivity("progress", `${currentDrop.name || "Drop"} · ${percent}%`, {
+      logActivity("progress", `${currentDrop.name || "Drop"} · ${percent == null ? "progress pending" : `${percent}%`}`, {
         game: currentDrop.game || null,
-        currentMinutes: currentDrop.currentMinutes || 0,
+        currentMinutes: currentDrop.currentMinutes ?? null,
         requiredMinutes: currentDrop.requiredMinutes || 0,
       });
     } else if (creditedMinuteAdvanced) {
@@ -16294,13 +16450,13 @@ const ExtraPotionsCore = (() => {
     writeSession("tdh-drop", currentDrop);
     saveRecoverySnapshot('progress');
     reconcileRoutingTargetWithCurrentDrop("apply-drop");
-    progressLabel = `${percent}%`;
+    progressLabel = percent == null ? "" : `${percent}%`;
 
-    if (changedDrop || percent !== lastProgress || creditedMinuteAdvanced) {
+    if (creditedMinuteAdvanced) {
       lastProgress = percent;
       lastProgressAt = Date.now();
       writeSession("tdh-progress", percent);
-      writeSession("tdh-progress-at", lastProgressAt);
+      writeSession("dropper-credited-progress-at-v1", lastProgressAt);
       if (watchingLogin()) lastCheckedAt = lastProgressAt;
     }
 
@@ -16326,6 +16482,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function legacyStateBelongsToCurrentAccount() {
+    if (productResetting) return false;
     const login = twitchSessionLogin();
     if (!login) return false;
     try {
@@ -16341,6 +16498,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function loadSettings() {
+    if (productResetting) return { ...DEFAULTS };
     try {
       const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
       if (
@@ -16366,6 +16524,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function persistSettingsSnapshot() {
+    if (productResetting) return;
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   }
 
@@ -16377,6 +16536,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function readSession(key, fallback) {
+    if (productResetting) return fallback;
     try {
       const scopedKey = scopedSessionStorageKey(key);
       let value = sessionStorage.getItem(scopedKey);
@@ -16395,6 +16555,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function writeSession(key, value) {
+    if (productResetting) return;
     sessionStorage.setItem(scopedSessionStorageKey(key), JSON.stringify(value));
   }
 
@@ -16448,11 +16609,11 @@ const ExtraPotionsCore = (() => {
       return `Working toward ${reward} on ${login}`;
     }
 
-    const current = Number(drop.currentMinutes);
+    const current = drop.currentMinutes == null ? null : Number(drop.currentMinutes);
     const required = Number(drop.requiredMinutes);
     const progress = Number.isFinite(current) && Number.isFinite(required) && required > 0
       ? `${Math.max(0, current)} / ${required} min`
-      : Number.isFinite(Number(drop.percent))
+      : drop.percent != null && Number.isFinite(Number(drop.percent))
         ? `${Math.max(0, Math.min(100, Number(drop.percent)))}%`
         : "progress pending";
     const subject = cleanText(drop.game || reward || "Drop");
@@ -16981,15 +17142,14 @@ const ExtraPotionsCore = (() => {
 
   function authoritativeProgressPercent() {
     if (!currentDrop || currentDrop.needsDropDetails) return null;
-    const percent = Number(currentDrop.percent);
+    const percent = currentDrop.percent == null ? null : Number(currentDrop.percent);
     if (Number.isFinite(percent)) return Math.max(0, Math.min(100, percent));
-    const current = Number(currentDrop.currentMinutes);
+    const current = currentDrop.currentMinutes == null ? null : Number(currentDrop.currentMinutes);
     const required = Number(currentDrop.requiredMinutes);
     if (Number.isFinite(current) && Number.isFinite(required) && required > 0) {
       return dropProgressPercent(current, required);
     }
-    const stored = Number(readSession("tdh-progress", NaN));
-    return Number.isFinite(stored) ? Math.max(0, Math.min(100, stored)) : null;
+    return null;
   }
 
   function rememberResolvedRewardImage(drop, image) {
@@ -17081,13 +17241,15 @@ const ExtraPotionsCore = (() => {
     if (!progressUnknown && percent != null) {
       const wantedLabel = `${percent}%`;
       if (progressLabel !== wantedLabel) progressLabel = wantedLabel;
+    } else {
+      progressLabel = "";
     }
 
     name.textContent = currentDrop.name || "Current Drop";
     const minutes = progressUnknown
       ? "Loading Drop Details"
       : currentDrop.requiredMinutes
-        ? `${currentDrop.currentMinutes || 0} / ${currentDrop.requiredMinutes} min`
+        ? `${currentDrop.currentMinutes == null ? "Pending" : currentDrop.currentMinutes} / ${currentDrop.requiredMinutes} min`
         : "Waiting For First Credited Minute";
     meta.textContent = minutes;
 
@@ -17226,8 +17388,9 @@ const ExtraPotionsCore = (() => {
       });
     if (!href) return;
     lastStreamSwitch = Date.now();
-    lastProgressAt = Date.now();
-    writeSession("tdh-progress-at", lastProgressAt);
+    lastProgressAt = 0;
+    removeSession("tdh-progress-at");
+    removeSession("dropper-credited-progress-at-v1");
     logActivity("stream-switch", "Opening next Drops channel", { target: streamLoginFromUrl(href) || null });
     setStatus("Opening Next Drops Channel");
     if (settings.queueEnabled) {
@@ -18205,7 +18368,6 @@ const ExtraPotionsCore = (() => {
       }
     `;
   }
-
   // ---------------------------------------------------------------------------
   // Campaign insights: read-only summaries built from campaign and inventory data
   // Dropper already holds. Nothing here changes routing, claiming, or settings, and
@@ -18581,16 +18743,6 @@ const ExtraPotionsCore = (() => {
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-diagnostics-body"><span class="fl-tool-title">System</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-diagnostics-body">
             <div class="action-pair"><button type="button" class="life-btn" id="tdh-diagnostics-toggle">Show Diagnostics</button>
             <button type="button" class="life-btn" id="tdh-copy-diagnostics">Copy Diagnostics</button></div>
-            <details data-dropper-maintenance>
-              <summary>Maintenance</summary>
-              <div class="action-pair">
-                <button type="button" class="life-btn" id="tdh-check-updates">Check for Updates</button>
-                <button type="button" class="life-btn" id="tdh-refresh-campaign-data">Refresh Campaign Data</button>
-                <button type="button" class="life-btn" id="tdh-clear-activity">Clear Activity Log</button>
-                <button type="button" class="life-btn" id="tdh-refresh-now">Refresh Drop State</button>
-                <button type="button" class="life-btn" id="tdh-reset-session">Reset Session State</button>
-              </div>
-            </details>
             <div class="diag" id="tdh-diagnostics" role="region" aria-label="Site and plugin diagnostics" tabindex="0"></div>
           </div></section>
         </aside>
@@ -18877,7 +19029,6 @@ const ExtraPotionsCore = (() => {
     );
 
     lastStreamVerification = null;
-    streamVerificationState = null;
     logActivity("stream-skip", "Skipped current streamer", {
       from: active,
       game: currentDrop.game || null,
@@ -19553,11 +19704,13 @@ const ExtraPotionsCore = (() => {
       viewing.manualStream && !viewing.paused && domVideoPlaying &&
       creditedRecently && verificationProof.progressConfirmed
     );
-    const earningVerified = Boolean(
+    const streamEligible = Boolean(
       (routingStreamMatches || manualEarningVerified) &&
       campaignVerified &&
       gameMatches
     );
+    const earningVerified = Boolean(streamEligible && creditedRecently &&
+      (verificationProof.progressConfirmed || routingEvidence.creditedProgressVerified));
     const healthy = Boolean(
       login &&
       currentDrop &&
@@ -19579,6 +19732,7 @@ const ExtraPotionsCore = (() => {
       domVideoPlayingAuthoritative: false,
       creditedRecently,
       earningVerified,
+      streamEligible,
       expectedGame: currentDrop?.game || null,
       streamGame: info.game || null,
       gameMatches,
@@ -19631,7 +19785,7 @@ const ExtraPotionsCore = (() => {
     if (health?.recovery?.code === 'credit-stalled') {
       return { label: 'Progress stalled', detail: health.creditedProgressAgeMs ? `Last Twitch credit ${briefAge(health.creditedProgressAgeMs)} ago.` : 'Twitch has not credited new progress.', tone: 'bad' };
     }
-    if (health?.earningVerified && !hasConfirmedRewardProgress()) {
+    if (health?.streamEligible && (!health.earningVerified || !hasConfirmedRewardProgress())) {
       return { label: 'Eligible stream', detail: rewardCreditStatus(), tone: 'warn' };
     }
     if (health?.earningVerified) {
@@ -19961,7 +20115,7 @@ const ExtraPotionsCore = (() => {
 
 
   function waitingExplanation(health, hasDrop, switching) {
-    if (health.creditedRecently) return 'Twitch recently credited progress. A delayed page or video signal does not mean earning stopped.';
+    if (health.earningVerified) return 'Twitch recently credited progress. A delayed page or video signal does not mean earning stopped.';
     if (!hasDrop) return 'No active reward is selected. Open the campaign list and choose an eligible campaign.';
     if (health.paused) return 'Playback is paused or needs your attention. Use Resume playback when you are ready.';
     if (!health.login) return switching ? 'Waiting for an eligible stream to open.' : 'Open an eligible stream, or enable automatic switching.';
@@ -19976,40 +20130,39 @@ const ExtraPotionsCore = (() => {
     if(ExtraPotionsCore.suiteSitePaused()||viewingIntent.snapshot().paused)return {state:'paused',reason:'Automatic viewing changes are paused. Pending reward confirmation is preserved.',checkedAt};
     if(recoveryNavigationState().suspended)return {state:'attention',reason:'Automatic recovery stopped after repeated stream changes or reloads.',checkedAt,action:{label:'Resume recovery',run:()=>resumeRecoveryNavigation()}};
     const health=streamEarningHealthSnapshot(),session=readRoutingControllerSession();
-    if(health.creditedRecently)return {state:'working',reason:'Twitch has recently credited reward progress.',checkedAt};
-    if(!currentDrop||!isStream())return {state:'waiting',reason:'Waiting for a selected reward and an eligible Twitch stream.',checkedAt};
+    if(health.earningVerified)return {state:'working',reason:'Twitch has recently credited reward progress.',checkedAt};
+    if(!currentDrop||!health.login)return {state:'waiting',reason:'Waiting for a selected reward and an eligible Twitch stream.',checkedAt};
     return {state:'waiting',reason:session.state==='verify-stream'?'Checking this stream against the selected campaign. Twitch has not confirmed credited progress yet.':'Waiting for Twitch to credit the next progress update. Campaign eligibility does not guarantee credited minutes.',checkedAt};
   }
+  function resetAllDropperData() {
+    productResetting=true;
+    settings.findNextStream=false;settings.claimDrops=false;settings.claimBonus=false;settings.keepTabActive=false;
+    settings.backgroundEarning=false;settings.autoPictureInPicture=false;settings.restoreChannelPlayer=false;
+    clearInterval(heartbeatTimer);clearInterval(tabPresenceTimer);
+    for(const timer of [claimScanTimer,updateReloadTimer,updateFallbackTimer,updateNoticeTimer])clearTimeout(timer);
+    clearSkipStreamerArm('product-reset');resetClaimReadyTimer();
+    try{screenWakeLock?.release();}catch{}screenWakeLock=null;
+    try {
+      ExtraPotionsCore.clearProductData('dropper',{legacyKeys:["tdh-settings-v3", "dropper-account-scope-owner-v1", "tdh-launcher-top", "tdh-launcher-grid-delta-v3", "dropper-last-version-v2", "dropper-next-game-after-claim", "dropper-routing-session-v310", "dropper-auto-navigation-guard", "dropper-navigation-in-flight", "dropper-activity-log", "dropper-recovery-snapshot-v1", "dropper-notification-quiet-v1", "dropper-network-state", "dropper-standby-streams", "dropper-campaign-catalog", "dropper-campaign-page-import-v1", "dropper-campaign-memory-v1", "dropper-campaign-memory-reset-v1", "dropper-ignored-campaign-games-v1", "dropper-standby-refresh-at", "dropper-standby-maintenance-at", "dropper-mute-pending-v1", "dropper-tab-presence-v1", "dropper-tab-id-v1", "dropper-tab-started-v1", "dropper-category-slugs-v3", "dropper-update-reload-pending", "dropper-client-integrity-v1", "dropper-viewing-intent-v1", "dropper-viewing-navigation-v1", "dropper-viewing-selection-v1", "dropper-manual-stream-lock-v1", "dropper-claim-history-v1", "dropper-campaign-priority-v1", "dropper-campaign-priority-order-v1", "tdh-settings-v1", "tdh-settings-v2", "tdh-drop", "tdh-progress", "tdh-progress-at", "dropper-credited-progress-at-v1", "dropper-progress-timeline-v1", "dropper-recovery-loop-v1", "dropper-campaign-restrictions-v1", "dropper-temp-campaign-skips-v1", "dropper-update-state-v2", "dropper-gql-operations-v1"]});
+      location.reload();
+    } catch(error) {productResetting=false;throw error;}
+  }
   function mountProductTools() {
-    const target = ui.shadow.getElementById('tdh-diagnostics-body');
-    if (!target || target.querySelector('[data-dropper-tools]')) return;
-    ui.healthControl=ExtraPotionsCore.createHealthControls(systemHealthSnapshot);
-    target.prepend(ui.healthControl.element);
-    const sizePreferences=ExtraPotionsCore.createDisclosure('Menu preferences',ExtraPotionsCore.createMenuSizeControls());
-    target.append(sizePreferences);
-    const container = document.createElement('div');container.dataset.dropperTools = '1';
-    const timeline=ExtraPotionsCore.createDisclosure('Recent progress');
-    const timelineRows=document.createElement('div');
-    timeline.addEventListener('toggle',()=>{if(!timeline.open)return;timelineRows.replaceChildren();const rows=progressTimelineSnapshot();if(!rows.length)timelineRows.textContent='No recent progress or recovery events in this session.';for(const entry of rows.slice().reverse()){const line=document.createElement('p');line.textContent=`${new Date(entry.at).toLocaleTimeString()} · ${entry.reason}${entry.minutes!==null?` · ${entry.minutes} credited min`:''}`;timelineRows.append(line);}});
-    timeline.append(timelineRows);container.append(timeline);
-    container.append(ExtraPotionsCore.createSuiteSiteControls(), ExtraPotionsCore.createCompatibilityControls());
-    const details = document.createElement('details');details.style.cssText='border:1px solid var(--theme-line);border-radius:7px;padding:7px;margin-top:8px';
-    const title = document.createElement('summary');title.textContent='Why am I waiting?';
-    const text = document.createElement('p');text.setAttribute('role','status');
-    const refresh = document.createElement('button');refresh.type='button';refresh.className='life-btn';refresh.textContent='Refresh explanation';
-    const explain = () => { text.textContent=waitingExplanation(streamEarningHealthSnapshot(),Boolean(currentDrop),settings.findNextStream); };
-    details.addEventListener('toggle',()=>{if(details.open)explain();});refresh.addEventListener('click',explain);details.append(title,text,refresh);
-    const history = document.createElement('details');history.style.cssText=details.style.cssText;
-    const heading = document.createElement('summary');heading.textContent='Activity history';const entries=document.createElement('div');
-    const showHistory=()=>{entries.replaceChildren();const records=(Array.isArray(activityLog)?activityLog:[]).filter(e=>e.type==='playback'||e.type==='navigation').slice(-20).reverse();
-      for(const entry of records){const p=document.createElement('p');p.textContent=new Date(entry.at).toLocaleTimeString()+' · '+entry.message+(entry.meta?.reason?' · '+entry.meta.reason:'');entries.append(p);}
-      if(!records.length)entries.textContent='No Dropper playback or navigation actions recorded in this session.';};
-    history.addEventListener('toggle',()=>{if(history.open)showHistory();});const update=document.createElement('button');update.type='button';update.className='life-btn';update.textContent='Refresh history';update.addEventListener('click',showHistory);history.append(heading,entries,update);
-    const maintenance = target.querySelector('[data-dropper-maintenance]');
-    for (const empty of target.querySelectorAll(':scope>.action-pair:empty,:scope>.action-separator')) empty.remove();
-    container.prepend(maintenance);
-    container.append(details,history);target.append(container);
-    container.dataset.expSystemTools='1';
+    const target=ui.shadow.getElementById('tdh-diagnostics-body');
+    if(!target||target.querySelector('[data-exp-product-system]'))return;
+    ui.healthControl=ExtraPotionsCore.createProductTimeline('dropper',systemHealthSnapshot,setStatus);
+    const timeline=ui.healthControl.element,rows=document.createElement('div');
+    timeline.append(rows);
+    timeline.addEventListener('toggle',()=>{if(!timeline.open)return;rows.replaceChildren();
+      const explanation=document.createElement('p');explanation.textContent=waitingExplanation(streamEarningHealthSnapshot(),Boolean(currentDrop),settings.findNextStream);rows.append(explanation);
+      for(const entry of progressTimelineSnapshot().slice().reverse()){const line=document.createElement('p');line.textContent=`${new Date(entry.at).toLocaleTimeString()} · ${entry.reason}${entry.minutes!==null?` · ${entry.minutes} credited min`:''}`;rows.append(line);}
+      for(const entry of (Array.isArray(activityLog)?activityLog:[]).filter(e=>e.type==='playback'||e.type==='navigation').slice(-20).reverse()){const line=document.createElement('p');line.textContent=new Date(entry.at).toLocaleTimeString()+' · '+entry.message;rows.append(line);}
+    });
+    const diagnostics=document.createElement('div');diagnostics.className='diagnostics-controls';
+    diagnostics.append(target.querySelector('.action-pair'),target.querySelector('#tdh-diagnostics'));
+    const preferences=ExtraPotionsCore.createDisclosure('Menu Preferences',ExtraPotionsCore.createMenuSizeControls());
+    const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,preferences,onReset:resetAllDropperData,notify:setStatus});
+    target.replaceChildren(system);
   }
 
   function bindDropperControls() {
@@ -20270,6 +20423,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function saveNotificationQuietState(state) {
+    if (typeof productResetting !== 'undefined' && productResetting) return;
     try { localStorage.setItem(scopedLocalStorageKey(NOTIFICATION_STATE_KEY), JSON.stringify(state)); } catch (_) {}
   }
 
@@ -20371,6 +20525,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function saveUpdateReloadState(state) {
+    if (typeof productResetting !== 'undefined' && productResetting) return;
     try {
       localStorage.setItem(UPDATE_RELOAD_KEY, JSON.stringify(state || {}));
     } catch (_) {
@@ -20809,6 +20964,7 @@ const ExtraPotionsCore = (() => {
       "tdh-drop",
       "tdh-progress",
       "tdh-progress-at",
+      "dropper-credited-progress-at-v1",
     ].forEach((key) => {
       removeSession(key);
     });
@@ -20842,7 +20998,7 @@ const ExtraPotionsCore = (() => {
     };
 
     lastProgress = 0;
-    lastProgressAt = Date.now();
+    lastProgressAt = 0;
     progressLabel = "";
     lastProgressReconcile = null;
 
@@ -21263,10 +21419,11 @@ const ExtraPotionsCore = (() => {
       activeCampaignRouting: {
         lifecycle: currentDrop ? campaignRoutingState(currentDrop, now) : null,
         hasStreamLoaded: Boolean(watchingLogin()),
-        hasVerifiedEarningStream: Boolean(
+        hasEligibleStream: Boolean(
           readRoutingControllerSession().state === ROUTING_STATES.EARNING &&
           matchingLiveDropStream()
         ),
+        hasVerifiedEarningStream: streamEarningHealthSnapshot().earningVerified,
         needsEarningStream: activeDropNeedsStream(),
         allowedChannels: activeCampaignAllowedChannels().slice(0, 50),
         watchingLogin: watchingLogin() || null,
@@ -21303,6 +21460,7 @@ const ExtraPotionsCore = (() => {
           domVideoPlaying: health.domVideoPlaying,
           domVideoPlayingAuthoritative: health.domVideoPlayingAuthoritative,
           creditedRecently: health.creditedRecently,
+          streamEligible: health.streamEligible,
           earningVerified: health.earningVerified,
           expectedGame: health.expectedGame,
           streamGame: health.streamGame,

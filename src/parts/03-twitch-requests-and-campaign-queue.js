@@ -26,6 +26,7 @@
   }
 
   function saveLearnedGqlOperations() {
+    if (productResetting) return;
     try { localStorage.setItem(GQL_LEARNED_OPERATIONS_KEY, JSON.stringify(gqlLearnedOperations)); } catch (_) { /* storage full or blocked */ }
   }
 
@@ -621,7 +622,31 @@
     Inventory: (data) => inventoryResponseState({ data }).valid,
     ViewerDropsDashboard: (data) => Array.isArray(data?.currentUser?.dropCampaigns) || data?.currentUser === null,
     ChannelDropsCampaigns: (data) => Array.isArray(data?.channelDropCampaigns),
+    DropCurrentSessionContext: (data) => sessionResponseState({ data }).valid,
   };
+
+  function sessionResponseState(row) {
+    const data = row?.data;
+    const user = data?.currentUser;
+    const errors = Array.isArray(row?.errors) ? row.errors : [];
+    const fields = value => value && typeof value === "object" && !Array.isArray(value)
+      ? Object.keys(value).filter(key => /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(key)).slice(0, 12) : [];
+    const type = value => value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
+    const hasSession = Boolean(user && (Object.hasOwn(user, "dropCurrentSession") || Object.hasOwn(user, "dropCurrentSessionContext")));
+    const session = user && Object.hasOwn(user, "dropCurrentSession") ? user.dropCurrentSession : user?.dropCurrentSessionContext;
+    const node = session?.currentSession ?? session?.drop ?? session;
+    const drop = node?.drop ?? node?.currentDrop ?? node;
+    const recognized = Boolean(node && typeof node === "object" && !Array.isArray(node) &&
+      (drop?.id || drop?.name || node.dropID || session?.dropID));
+    let status = data == null || user == null ? "unavailable"
+      : !hasSession ? "shape-changed"
+        : session === null || (session && Object.hasOwn(session, "currentSession") && session.currentSession === null) ? "absent"
+          : recognized ? "ok" : "shape-changed";
+    if (errors.length) status = recognized ? "partial-response" : "error";
+    return { valid: status === "ok" || status === "absent", status,
+      shape: { data: type(data), currentUser: type(user), session: type(session), node: type(node),
+        errorCount: errors.length, dataFields: fields(data), userFields: fields(user), sessionFields: fields(session), nodeFields: fields(node) } };
+  }
 
   function gqlOperationFailureKind(row) {
     // A missing operation is distinct from both authorization and a response
@@ -705,6 +730,11 @@
           logActivity("gql-operation", `Inventory data unavailable (${inventory.status})`, { operation: name, shape: inventory.shape });
         }
         noteGqlOperationResult(name, inventory.valid ? "ok" : inventory.status, inventory.detail);
+        return;
+      }
+      if (name === "DropCurrentSessionContext") {
+        const session = sessionResponseState(row);
+        noteGqlOperationResult(name, session.status, JSON.stringify(session.shape));
         return;
       }
       const expected = GQL_EXPECTED_SHAPES[name];
@@ -859,7 +889,7 @@
   function dropPreconditionSatisfied(drop) {
     const self = drop?.self || {};
     const required = Number(drop?.requiredMinutesWatched || 0);
-    const current = Number(self.currentMinutesWatched || 0);
+    const current = self.currentMinutesWatched == null || self.currentMinutesWatched === "" ? null : Number(self.currentMinutesWatched);
     return Boolean(self.isClaimed || (required > 0 && current >= required));
   }
 
@@ -1369,7 +1399,7 @@
         const self = drop?.self || {};
         if (self.isClaimed || requiresSubscription(drop)) continue;
         const required = Number(drop?.requiredMinutesWatched || 0);
-        const current = Number(self.currentMinutesWatched || 0);
+        const current = self.currentMinutesWatched == null || self.currentMinutesWatched === "" ? null : Number(self.currentMinutesWatched);
         if (required <= 0 || !campaignIsOpen(campaign, drop, now)) continue;
         if (current >= required) continue;
 
@@ -1396,7 +1426,7 @@
           percent: dropProgressPercent(current, required),
           currentMinutes: current,
           requiredMinutes: required,
-          remainingMinutes: Math.max(0, required - current),
+          remainingMinutes: current == null || !Number.isFinite(current) ? null : Math.max(0, required - current),
           needsDropDetails: false,
         });
         addedWatchDrop = true;
@@ -1663,7 +1693,7 @@
         const self = drop.self || {};
         if (self.isClaimed || requiresSubscription(drop)) continue;
         const required = Number(drop.requiredMinutesWatched) || 0;
-        const current = Number(self.currentMinutesWatched) || 0;
+        const current = self.currentMinutesWatched == null || self.currentMinutesWatched === "" ? null : Number(self.currentMinutesWatched);
         if (required <= 0 || current >= required || !campaignIsOpen(campaign, drop, now)) continue;
         const pre = dropperPreconditionsMet(drop, drops);
         if (!pre) continue;
@@ -1687,7 +1717,7 @@
           percent: dropProgressPercent(current, required),
           currentMinutes: current,
           requiredMinutes: required,
-          remainingMinutes: Math.max(0, required - current),
+          remainingMinutes: current == null || !Number.isFinite(current) ? null : Math.max(0, required - current),
         });
       }
     }
@@ -1760,7 +1790,7 @@
         const self = drop.self || {};
         if (self.isClaimed || requiresSubscription(drop)) continue;
         const required = Number(drop.requiredMinutesWatched) || 0;
-        const current = Number(self.currentMinutesWatched) || 0;
+        const current = self.currentMinutesWatched == null || self.currentMinutesWatched === "" ? null : Number(self.currentMinutesWatched);
         if (required <= 0 || !campaignIsOpen(campaign, drop, now)) continue;
 
         const preconditionsMet = dropperPreconditionsMet(drop, drops);
@@ -1784,7 +1814,7 @@
           percent: dropProgressPercent(current, required),
           currentMinutes: current,
           requiredMinutes: required,
-          remainingMinutes: Math.max(0, required - current),
+          remainingMinutes: current == null || !Number.isFinite(current) ? null : Math.max(0, required - current),
         });
       }
     }

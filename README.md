@@ -27,13 +27,12 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 - **Recent progress:** see the last 30 progress and recovery events in System. Repeated recovery switches pause until you choose Resume.
 - **Campaign-aware stream choices:** restricted campaigns use their listed channels, with known restrictions retained across Twitch page changes. If recovery pauses, System explains why and offers Resume recovery.
 
-- **Clear System tools:** compact submenus keep maintenance, site controls, compatibility, and activity history easy to find, with diagnostic actions grouped separately.
+- **Simple System menu:** open Dropper Status, show or copy diagnostics, create a GitHub issue, adjust menu preferences, or reset this product after two confirmations.
 
 - **Readable menus:** choose Standard, Large, or Extra Large from System > Menu preferences. The choice applies to ExtraPotions menus on this site.
 
 - **Interruption rules:** set quiet hours, protect channels from automatic switching, exclude channels, or stay on a stream while it is earning. Quiet hours also silence browser alerts.
-- **Site control:** pause page features across active ExtraPotions products from System, temporarily or until you resume.
-- **Progress at a glance:** see the current reward, credited watch time, and earning status.
+- **Honest progress:** show progress as pending when Twitch has not supplied it. Eligible streams and confirmed reward credit have separate status indicators.
 - **Claims:** optionally claim available Drops and collect channel-point bonus chests automatically throughout a stream. Bonus checks continue alongside Drop checks, including later bonuses after an earlier claim.
 - **Stream management:** use Twitch’s current campaign information to verify eligible streams, and recover when a stream goes offline, changes category, or stops progressing.
 - **Campaign browsing:** explore open campaigns and ignore games you do not want to follow.
