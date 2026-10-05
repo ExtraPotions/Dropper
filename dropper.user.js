@@ -3009,16 +3009,15 @@ const ExtraPotionsCore = (() => {
     return dispose;
   }
   function themes(productTheme) {
-    const common = CoreFoundation.SHARED_UI_THEMES;
-    return Object.freeze([...common, CoreFoundation.CRIMSON_THEME, ...(productTheme ? [productTheme] : [CoreFoundation.UI_THEMES.at(-1)])].map(t => { const theme = semanticTheme(t); return Object.freeze({ ...theme, vars: Object.fromEntries(tokenNames.map(k => [k, theme[k]])) }); }));
+    return Object.freeze([productTheme || CoreFoundation.UI_THEMES.at(-1)].map(t => { const theme = semanticTheme(t); return Object.freeze({ ...theme, vars: Object.fromEntries(tokenNames.map(k => [k, theme[k]])) }); }));
   }
-  function createThemeSwatches({ container, themes: choices, value, onChange = () => {} }) {
+  function createThemeSwatches({ container, themes: choices, value, label = 'Menu Theme', onChange = () => {} }) {
     const root = resolveShadowRoot(container);
     if (root && !root.querySelector('style[data-exp-theme-swatches]')) {
       injectStyle(root, '.exp-theme-swatches{display:flex;align-items:center;gap:6px;min-height:28px;flex-wrap:wrap}.exp-theme-swatch{appearance:none;box-sizing:border-box!important;flex:0 0 22px!important;width:22px!important;height:22px!important;min-width:22px!important;min-height:22px!important;max-width:22px!important;max-height:22px!important;padding:0!important;border:2px solid var(--theme-line,var(--line,#41434d));border-radius:5px!important;cursor:pointer}.exp-theme-swatch:hover,.exp-theme-swatch:focus-visible{outline:2px solid var(--theme-accent,var(--accent,#8b5cf6));outline-offset:2px}.exp-theme-swatch.is-on{border-color:var(--theme-text,var(--text,#fff));box-shadow:0 0 0 2px var(--theme-accent,var(--accent,#8b5cf6))}', { expThemeSwatches: '1' });
       applyMatteToggleChrome(root);
     }
-    container.classList.add('exp-theme-swatches'); container.setAttribute('role', 'radiogroup'); container.setAttribute('aria-label', 'Menu Theme');
+    container.classList.add('exp-theme-swatches'); container.setAttribute('role', 'radiogroup'); container.setAttribute('aria-label', label);
     const buttons = choices.map(theme => {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'exp-theme-swatch';
       for (const property of ['width','height','min-width','min-height','max-width','max-height']) button.style.setProperty(property, '22px', 'important');
@@ -3332,11 +3331,9 @@ const ExtraPotionsCore = (() => {
       host.dataset.uiTheme = selected.id;
     }
     function syncThemeOwner() {
-      const owner = menuThemeOwner();
-      const deprioritized = Boolean(owner && owner !== host);
-      host.dataset.expThemeDeprioritized = deprioritized ? '1' : '0';
-      host.dataset.expThemeOwner = owner?.dataset.productId || id;
-      paintTheme(deprioritized && menuPalette(owner) || localTheme);
+      host.dataset.expThemeDeprioritized = '0';
+      host.dataset.expThemeOwner = id;
+      paintTheme(localTheme);
     }
     function setTheme(value, supplied) {
       if (supplied) choices = supplied.map(t => semanticTheme({ ...t, ...t.vars, skin:t.skin || t.swatch, skinVertical:t.skinVertical || t.skin || t.swatch }));
@@ -3974,6 +3971,7 @@ const ExtraPotionsCore = (() => {
   const EXCLUDED_CATEGORY_SLUGS = new Set(["first-partners-collection"]);
   const EXCLUDED_CAMPAIGN_NAMES = new Set(["first partners collection"]);
   const CATEGORY_SLUG_ALIASES = Object.freeze({
+    "rainbow six siege": "tom-clancys-rainbow-six-siege",
     "the blood of dawnwalker": "dawnwalker",
     "delta force": "delta-force-hawk-ops",
   });
@@ -13389,6 +13387,14 @@ const ExtraPotionsCore = (() => {
     const gameKey = normalizeGameName(gameName);
     if (EXCLUDED_CAMPAIGN_NAMES.has(gameKey)) return "";
 
+    // Known Twitch routes must win over shortened campaign slugs and cached
+    // name-derived routes, otherwise the same invalid directory repeats.
+    const alias = cleanText(CATEGORY_SLUG_ALIASES[gameKey] || "");
+    if (alias) {
+      rememberCategorySlug(gameName, alias, "canonical-alias");
+      return normalizedGameSlug(alias);
+    }
+
     // A campaign-supplied category takes precedence over links on the current
     // stream, which may belong to a different edition of the same game.
     const supplied = typeof dropOrGame === "object"
@@ -13405,12 +13411,6 @@ const ExtraPotionsCore = (() => {
 
     const observed = findObservedCategorySlug(gameName);
     if (observed) return observed;
-
-    const alias = cleanText(CATEGORY_SLUG_ALIASES[gameKey] || "");
-    if (alias) {
-      rememberCategorySlug(gameName, alias, "canonical-alias");
-      return normalizedGameSlug(alias);
-    }
 
     if (supplied) {
       logActivity("category-route-rejected", "Ignored stale supplied category slug", {
@@ -19848,9 +19848,7 @@ const ExtraPotionsCore = (() => {
 
   function applyAppearanceSettings() {
     if (!ui) return;
-    const legacyThemeAliases = { warm:"ember", discord:"glacier", pine:"verdant", obsidian:"contrast" };
-    settings.uiTheme = legacyThemeAliases[settings.uiTheme] || settings.uiTheme;
-    const theme = UI_THEMES.find((item) => item.id === settings.uiTheme) || UI_THEMES.at(-1);
+    const theme = UI_THEMES.find((item) => item.id === 'dropper');
     settings.uiTheme = theme.id;
     for (const key of ["bg", "panel", "line", "text", "muted", "accent", "accent2"]) ui.cluster.style.setProperty(`--theme-${key}`, theme[key]);
     const semantic = semanticTheme(theme);

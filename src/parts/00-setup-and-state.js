@@ -183,6 +183,7 @@
   const EXCLUDED_CATEGORY_SLUGS = new Set(["first-partners-collection"]);
   const EXCLUDED_CAMPAIGN_NAMES = new Set(["first partners collection"]);
   const CATEGORY_SLUG_ALIASES = Object.freeze({
+    "rainbow six siege": "tom-clancys-rainbow-six-siege",
     "the blood of dawnwalker": "dawnwalker",
     "delta force": "delta-force-hawk-ops",
   });

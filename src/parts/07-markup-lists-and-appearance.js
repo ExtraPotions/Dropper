@@ -1487,9 +1487,7 @@
 
   function applyAppearanceSettings() {
     if (!ui) return;
-    const legacyThemeAliases = { warm:"ember", discord:"glacier", pine:"verdant", obsidian:"contrast" };
-    settings.uiTheme = legacyThemeAliases[settings.uiTheme] || settings.uiTheme;
-    const theme = UI_THEMES.find((item) => item.id === settings.uiTheme) || UI_THEMES.at(-1);
+    const theme = UI_THEMES.find((item) => item.id === 'dropper');
     settings.uiTheme = theme.id;
     for (const key of ["bg", "panel", "line", "text", "muted", "accent", "accent2"]) ui.cluster.style.setProperty(`--theme-${key}`, theme[key]);
     const semantic = semanticTheme(theme);

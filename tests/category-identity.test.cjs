@@ -39,6 +39,25 @@ function context({links = [], stored = {}} = {}) {
 }
 const pcLink = {textContent: 'World of Tanks', href: 'https://www.twitch.tv/directory/category/world-of-tanks'};
 const consoleDrop = {game: 'World of Tanks Console', gameSlug: 'world-of-tanks-console', gameId: '499551'};
+test('Rainbow Six Siege diagnostics recover a shortened supplied and cached route', () => {
+  const c = context();
+  c.categorySlugCache['rainbow six siege'] = 'rainbow-six-siege';
+  c.saveCategorySlugCache();
+  const drop = {game: 'Rainbow Six Siege', gameSlug: 'rainbow-six-siege', gameId: '460630'};
+  assert.equal(c.resolveCategorySlug(drop), 'tom-clancys-rainbow-six-siege');
+  const next = context({stored: Object.fromEntries(c.storage)});
+  assert.equal(next.resolveCategorySlug(drop), 'tom-clancys-rainbow-six-siege');
+  assert.equal(next.resolveCategorySlug('Rainbow Six Siege'), 'tom-clancys-rainbow-six-siege');
+  assert.equal(next.categorySlugCache['rainbow six siege'], 'tom-clancys-rainbow-six-siege');
+});
+
+test('canonical category aliases override shortened campaign routes without merging different games', () => {
+  const c = context();
+  assert.equal(c.resolveCategorySlug({game: 'Rainbow Six Siege', gameSlug: 'tom-clancys-rainbow-six-siege'}), 'tom-clancys-rainbow-six-siege');
+  assert.equal(c.resolveCategorySlug({game: 'Delta Force', gameSlug: 'delta-force'}), 'delta-force-hawk-ops');
+  assert.equal(c.gameNamesMatch('Rainbow Six Siege', 'Rainbow Six Extraction'), false);
+  assert.equal(c.suppliedCategorySlugMatchesGame('Rainbow Six Siege', 'rainbow-six-extraction'), false);
+});
 test('distinct categories never match through shared title prefixes', () => {
   const c = context();
   for (const [a, b] of [['World of Tanks', 'World of Tanks Console'], ['World of Tanks', 'World of Tanks Blitz'], ['Minecraft', 'Minecraft Dungeons'], ['Overwatch', 'Overwatch 2']]) {

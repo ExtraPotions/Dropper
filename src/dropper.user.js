@@ -183,6 +183,7 @@
   const EXCLUDED_CATEGORY_SLUGS = new Set(["first-partners-collection"]);
   const EXCLUDED_CAMPAIGN_NAMES = new Set(["first partners collection"]);
   const CATEGORY_SLUG_ALIASES = Object.freeze({
+    "rainbow six siege": "tom-clancys-rainbow-six-siege",
     "the blood of dawnwalker": "dawnwalker",
     "delta force": "delta-force-hawk-ops",
   });
@@ -9598,6 +9599,14 @@
     const gameKey = normalizeGameName(gameName);
     if (EXCLUDED_CAMPAIGN_NAMES.has(gameKey)) return "";
 
+    // Known Twitch routes must win over shortened campaign slugs and cached
+    // name-derived routes, otherwise the same invalid directory repeats.
+    const alias = cleanText(CATEGORY_SLUG_ALIASES[gameKey] || "");
+    if (alias) {
+      rememberCategorySlug(gameName, alias, "canonical-alias");
+      return normalizedGameSlug(alias);
+    }
+
     // A campaign-supplied category takes precedence over links on the current
     // stream, which may belong to a different edition of the same game.
     const supplied = typeof dropOrGame === "object"
@@ -9614,12 +9623,6 @@
 
     const observed = findObservedCategorySlug(gameName);
     if (observed) return observed;
-
-    const alias = cleanText(CATEGORY_SLUG_ALIASES[gameKey] || "");
-    if (alias) {
-      rememberCategorySlug(gameName, alias, "canonical-alias");
-      return normalizedGameSlug(alias);
-    }
 
     if (supplied) {
       logActivity("category-route-rejected", "Ignored stale supplied category slug", {
@@ -16057,9 +16060,7 @@
 
   function applyAppearanceSettings() {
     if (!ui) return;
-    const legacyThemeAliases = { warm:"ember", discord:"glacier", pine:"verdant", obsidian:"contrast" };
-    settings.uiTheme = legacyThemeAliases[settings.uiTheme] || settings.uiTheme;
-    const theme = UI_THEMES.find((item) => item.id === settings.uiTheme) || UI_THEMES.at(-1);
+    const theme = UI_THEMES.find((item) => item.id === 'dropper');
     settings.uiTheme = theme.id;
     for (const key of ["bg", "panel", "line", "text", "muted", "accent", "accent2"]) ui.cluster.style.setProperty(`--theme-${key}`, theme[key]);
     const semantic = semanticTheme(theme);

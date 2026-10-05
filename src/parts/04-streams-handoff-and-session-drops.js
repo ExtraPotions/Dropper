@@ -304,6 +304,14 @@
     const gameKey = normalizeGameName(gameName);
     if (EXCLUDED_CAMPAIGN_NAMES.has(gameKey)) return "";
 
+    // Known Twitch routes must win over shortened campaign slugs and cached
+    // name-derived routes, otherwise the same invalid directory repeats.
+    const alias = cleanText(CATEGORY_SLUG_ALIASES[gameKey] || "");
+    if (alias) {
+      rememberCategorySlug(gameName, alias, "canonical-alias");
+      return normalizedGameSlug(alias);
+    }
+
     // A campaign-supplied category takes precedence over links on the current
     // stream, which may belong to a different edition of the same game.
     const supplied = typeof dropOrGame === "object"
@@ -320,12 +328,6 @@
 
     const observed = findObservedCategorySlug(gameName);
     if (observed) return observed;
-
-    const alias = cleanText(CATEGORY_SLUG_ALIASES[gameKey] || "");
-    if (alias) {
-      rememberCategorySlug(gameName, alias, "canonical-alias");
-      return normalizedGameSlug(alias);
-    }
 
     if (supplied) {
       logActivity("category-route-rejected", "Ignored stale supplied category slug", {
