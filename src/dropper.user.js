@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.9
+// @version      3.4.10
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -57,7 +57,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.9";
+  const APP_VERSION = "3.4.10";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -86,6 +86,9 @@
   });
   const ROUTING_NAVIGATION_DEADLINE_MS = 30 * 1000;
   const ROUTING_VERIFY_DEADLINE_MS = 90 * 1000;
+  // Twitch credits the first watched minute of a new reward a few minutes after
+  // playback starts. A stream it confirms for the campaign waits this long.
+  const ROUTING_FIRST_CREDIT_DEADLINE_MS = 6 * 60 * 1000;
   const ROUTING_WAIT_RETRY_MS = 30 * 1000;
   const ROUTING_NO_CAMPAIGN_RETRY_MS = 60 * 1000;
   const ROUTING_OFFLINE_GRACE_MS = 60 * 1000;
@@ -203,6 +206,7 @@
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.10": ["Keep a stream that Twitch confirms for your campaign open for up to six minutes while Twitch credits the first watched minute, instead of switching streams after 90 seconds.","Stop the repeated stream switching that paused recovery and left new campaigns at progress pending."],
     "3.4.9": ["Require exact selected-reward session evidence or credited Twitch progress before reporting a stream as earning.","Keep campaign-only matches in stream verification so non-crediting channels rotate after the verification window.","Recognize valid Twitch session envelopes without reward identity and report missing progress timestamps without Unix-epoch artifacts."],
     "3.4.8": ["Keep System focused on Dropper Status, diagnostics, issue reporting, menu preferences, and a confirmed product reset.","Keep missing Twitch progress pending and separate eligible streams from confirmed reward credit.","Use observed progress increases for earning checks and identify missing or changed Twitch session responses.","Clear stored Dropper data only after two reset confirmations."],
     "3.4.7": ["Move to another eligible campaign after two minutes without a compatible visible stream.","Retry deferred campaigns after five minutes while keeping channel restrictions enforced.","Show stream discovery time and deferred campaigns in System diagnostics."],
@@ -3359,6 +3363,7 @@
       candidateEvidence: null,
       verifyBaselineMinutes: null,
       verifyBaselinePercent: null,
+      firstCreditWindow: false,
       earningStartedAt: 0,
       mismatchSince: 0,
       offlineSince: 0,
@@ -3408,6 +3413,14 @@
       deadlineAt: Object.prototype.hasOwnProperty.call(patch, "deadlineAt")
         ? Number(patch.deadlineAt || 0)
         : (changed ? 0 : Number(previous.deadlineAt || 0)),
+      // The first-credit extension belongs to one verification of one stream.
+      firstCreditWindow: Object.prototype.hasOwnProperty.call(patch, "firstCreditWindow")
+        ? Boolean(patch.firstCreditWindow)
+        : Boolean(
+          !changed &&
+          previous.firstCreditWindow &&
+          cleanText(previous.targetStream).toLowerCase() === cleanText(patch.targetStream ?? previous.targetStream).toLowerCase()
+        ),
       waitReason,
       lastReason: reason || previous.lastReason || "",
     };
@@ -4231,6 +4244,19 @@
         },
         `Verified earning on ${login || target} for ${session.targetCampaign || targetGame}`,
       );
+    }
+
+    // Campaign support proves eligibility, not earning. Keep an eligible live
+    // stream open for Twitch's first credit instead of rotating at 90 seconds.
+    if (campaignProof && info.live && gameMatches && session.deadlineAt && !session.firstCreditWindow) {
+      session = writeRoutingControllerSession({
+        ...session,
+        firstCreditWindow: true,
+        deadlineAt: Math.max(
+          Number(session.deadlineAt),
+          Number(session.enteredAt || now) + ROUTING_FIRST_CREDIT_DEADLINE_MS,
+        ),
+      });
     }
 
     const verificationRemainingMs = session.deadlineAt
@@ -17642,6 +17668,8 @@
       },
       streamVerification: {
         timeoutSeconds: Math.round(ROUTING_VERIFY_DEADLINE_MS / 1000),
+        firstCreditTimeoutSeconds: Math.round(ROUTING_FIRST_CREDIT_DEADLINE_MS / 1000),
+        firstCreditWindow: Boolean(routingSession.firstCreditWindow),
         finalPollWindowSeconds: Math.round(GQL_MIN_GAP_MS / 1000),
         finalPollTarget: finalVerificationPollTarget || null,
         finalPollAt: finalVerificationPollAt ? new Date(finalVerificationPollAt).toISOString() : null,
