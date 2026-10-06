@@ -338,11 +338,31 @@
     writeSession(ACTIVITY_LOG_KEY, activityLog);
     renderRoutingHistory();
   }
+  // Plain-language names for automatic navigation reasons shown in System.
+  const NAVIGATION_REASON_TEXT = Object.freeze({
+    'routing-find-category': 'Looking for a stream in the game category',
+    'routing-open-drops-verification-stream': 'Opening a Drops stream to check eligibility',
+    'routing-open-campaign-acl-stream': 'Opening a stream listed by the campaign',
+    'routing-open-probationary-stream': 'Trying a same-game stream',
+    'routing-final-verification': 'Final eligibility check',
+    'routing-campaign-details': 'Loading campaign details',
+    'routing-wait-retry': 'Retrying after a wait',
+  });
+  function navigationReasonText(code) {
+    const value=cleanText(code);
+    if(NAVIGATION_REASON_TEXT[value])return NAVIGATION_REASON_TEXT[value];
+    const words=value.replace(/^routing-/,'').replace(/-/g,' ').trim();
+    return words?words.charAt(0).toUpperCase()+words.slice(1):'Automatic navigation';
+  }
   function recordProgressTimeline(type, details = {}) {
     const minutes=Number(details.currentMinutes);
-    const row={at:Date.now(),type:cleanText(type).slice(0,40),reason:cleanText(details.reason||details.message).slice(0,180),minutes:Number.isFinite(minutes)&&minutes>=0?minutes:null};
-    const rows=progressTimelineSnapshot(),last=rows.at(-1);
-    if(last&&last.type===row.type&&last.reason===row.reason&&last.minutes===row.minutes)return;
+    const kind=cleanText(type).slice(0,40);
+    const reason=kind==='navigation'&&details.reason?navigationReasonText(details.reason):cleanText(details.reason||details.message);
+    const row={at:Date.now(),type:kind,reason:reason.slice(0,180),minutes:Number.isFinite(minutes)&&minutes>=0?minutes:null};
+    const rows=progressTimelineSnapshot();
+    // Status checks alternate with other events, so a repeat among the last few rows
+    // within ten minutes adds nothing new.
+    if(rows.slice(-4).some(last=>last.type===row.type&&last.reason===row.reason&&last.minutes===row.minutes&&row.at-last.at<10*60*1000))return;
     writeSession('dropper-progress-timeline-v1',[...rows,row].slice(-30));
   }
   function progressTimelineSnapshot() {

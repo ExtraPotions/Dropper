@@ -1605,8 +1605,9 @@
     timeline.append(rows);
     timeline.addEventListener('toggle',()=>{if(!timeline.open)return;rows.replaceChildren();
       const explanation=document.createElement('p');explanation.textContent=waitingExplanation(streamEarningHealthSnapshot(),Boolean(currentDrop),settings.findNextStream);rows.append(explanation);
-      for(const entry of progressTimelineSnapshot().slice().reverse()){const line=document.createElement('p');line.textContent=`${new Date(entry.at).toLocaleTimeString()} · ${entry.reason}${entry.minutes!==null?` · ${entry.minutes} credited min`:''}`;rows.append(line);}
-      for(const entry of (Array.isArray(activityLog)?activityLog:[]).filter(e=>e.type==='playback'||e.type==='navigation').slice(-20).reverse()){const line=document.createElement('p');line.textContent=new Date(entry.at).toLocaleTimeString()+' · '+entry.message;rows.append(line);}
+      // Navigation already appears in the progress timeline; stream switch reasons stay in Streams.
+      for(const entry of progressTimelineSnapshot().slice().reverse()){const reason=entry.type==='navigation'&&/^routing-/.test(entry.reason)?navigationReasonText(entry.reason):entry.reason;const line=document.createElement('p');line.textContent=`${new Date(entry.at).toLocaleTimeString()} · ${reason}${entry.minutes!==null?` · ${entry.minutes} credited min`:''}`;rows.append(line);}
+      for(const entry of (Array.isArray(activityLog)?activityLog:[]).filter(e=>e.type==='playback').slice(-10).reverse()){const line=document.createElement('p');line.textContent=new Date(entry.at).toLocaleTimeString()+' · '+entry.message;rows.append(line);}
     });
     const diagnostics=document.createElement('div');diagnostics.className='diagnostics-controls';
     diagnostics.append(target.querySelector('.action-pair'),target.querySelector('#tdh-diagnostics'));

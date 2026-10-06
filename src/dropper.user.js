@@ -5144,11 +5144,31 @@
     writeSession(ACTIVITY_LOG_KEY, activityLog);
     renderRoutingHistory();
   }
+  // Plain-language names for automatic navigation reasons shown in System.
+  const NAVIGATION_REASON_TEXT = Object.freeze({
+    'routing-find-category': 'Looking for a stream in the game category',
+    'routing-open-drops-verification-stream': 'Opening a Drops stream to check eligibility',
+    'routing-open-campaign-acl-stream': 'Opening a stream listed by the campaign',
+    'routing-open-probationary-stream': 'Trying a same-game stream',
+    'routing-final-verification': 'Final eligibility check',
+    'routing-campaign-details': 'Loading campaign details',
+    'routing-wait-retry': 'Retrying after a wait',
+  });
+  function navigationReasonText(code) {
+    const value=cleanText(code);
+    if(NAVIGATION_REASON_TEXT[value])return NAVIGATION_REASON_TEXT[value];
+    const words=value.replace(/^routing-/,'').replace(/-/g,' ').trim();
+    return words?words.charAt(0).toUpperCase()+words.slice(1):'Automatic navigation';
+  }
   function recordProgressTimeline(type, details = {}) {
     const minutes=Number(details.currentMinutes);
-    const row={at:Date.now(),type:cleanText(type).slice(0,40),reason:cleanText(details.reason||details.message).slice(0,180),minutes:Number.isFinite(minutes)&&minutes>=0?minutes:null};
-    const rows=progressTimelineSnapshot(),last=rows.at(-1);
-    if(last&&last.type===row.type&&last.reason===row.reason&&last.minutes===row.minutes)return;
+    const kind=cleanText(type).slice(0,40);
+    const reason=kind==='navigation'&&details.reason?navigationReasonText(details.reason):cleanText(details.reason||details.message);
+    const row={at:Date.now(),type:kind,reason:reason.slice(0,180),minutes:Number.isFinite(minutes)&&minutes>=0?minutes:null};
+    const rows=progressTimelineSnapshot();
+    // Status checks alternate with other events, so a repeat among the last few rows
+    // within ten minutes adds nothing new.
+    if(rows.slice(-4).some(last=>last.type===row.type&&last.reason===row.reason&&last.minutes===row.minutes&&row.at-last.at<10*60*1000))return;
     writeSession('dropper-progress-timeline-v1',[...rows,row].slice(-30));
   }
   function progressTimelineSnapshot() {
@@ -16361,8 +16381,9 @@
     timeline.append(rows);
     timeline.addEventListener('toggle',()=>{if(!timeline.open)return;rows.replaceChildren();
       const explanation=document.createElement('p');explanation.textContent=waitingExplanation(streamEarningHealthSnapshot(),Boolean(currentDrop),settings.findNextStream);rows.append(explanation);
-      for(const entry of progressTimelineSnapshot().slice().reverse()){const line=document.createElement('p');line.textContent=`${new Date(entry.at).toLocaleTimeString()} · ${entry.reason}${entry.minutes!==null?` · ${entry.minutes} credited min`:''}`;rows.append(line);}
-      for(const entry of (Array.isArray(activityLog)?activityLog:[]).filter(e=>e.type==='playback'||e.type==='navigation').slice(-20).reverse()){const line=document.createElement('p');line.textContent=new Date(entry.at).toLocaleTimeString()+' · '+entry.message;rows.append(line);}
+      // Navigation already appears in the progress timeline; stream switch reasons stay in Streams.
+      for(const entry of progressTimelineSnapshot().slice().reverse()){const reason=entry.type==='navigation'&&/^routing-/.test(entry.reason)?navigationReasonText(entry.reason):entry.reason;const line=document.createElement('p');line.textContent=`${new Date(entry.at).toLocaleTimeString()} · ${reason}${entry.minutes!==null?` · ${entry.minutes} credited min`:''}`;rows.append(line);}
+      for(const entry of (Array.isArray(activityLog)?activityLog:[]).filter(e=>e.type==='playback').slice(-10).reverse()){const line=document.createElement('p');line.textContent=new Date(entry.at).toLocaleTimeString()+' · '+entry.message;rows.append(line);}
     });
     const diagnostics=document.createElement('div');diagnostics.className='diagnostics-controls';
     diagnostics.append(target.querySelector('.action-pair'),target.querySelector('#tdh-diagnostics'));
@@ -17315,6 +17336,12 @@
     const activityEntries = Array.isArray(activityLog) ? activityLog : [];
     const diagnosticActivity = activityEntries.slice(-12);
     const diagnosticQueueCandidates = discoverQueueCandidates(now);
+    const diagnosticStreamCandidates = routingCandidateDiagnosticsSnapshot(now);
+    const diagnosticVisibleLogins = new Set((diagnosticStreamCandidates?.visible || []).map((item) => cleanText(item.login).toLowerCase()));
+    const diagnosticStandbyMatches = cachedStandbyCandidates(
+      readRoutingControllerSession().targetGame || currentDrop?.game || "",
+      readRoutingControllerSession().targetCampaignKey || currentDrop?.campaignKey || "",
+    );
     return {
       report: "Dropper Diagnostics",
       progressTimeline:progressTimelineSnapshot(),
@@ -17414,6 +17441,8 @@
           const summarize = (item) => item ? {
             game: item.game,
             name: item.name,
+            // Twitch reuses campaign names, so a short key tells same-named campaigns apart.
+            campaignKey: cleanText(item.campaignKey || item.campaignId).slice(0, 8) || null,
             endAt: item.endAt || null,
             endMs: item.endMs || null,
             priority: item.sequencePriority ?? campaignPriority(item.game),
@@ -17744,17 +17773,16 @@
       },
       queueEnabled: settings.queueEnabled,
       queueOnCategoryChange: settings.queueOnCategoryChange,
-      streamCandidates: routingCandidateDiagnosticsSnapshot(now),
+      streamCandidates: diagnosticStreamCandidates,
       standbyCache: {
         refreshIntervalMinutes: Math.round(STANDBY_REFRESH_INTERVAL_MS / 60000),
         lastObservedAt: lastStandbyRefreshAt ? new Date(lastStandbyRefreshAt).toISOString() : null,
         lastMaintenanceAt: lastStandbyMaintenanceAt ? new Date(lastStandbyMaintenanceAt).toISOString() : null,
         maintenance: lastStandbyMaintenance,
         total: pruneStandbyCache().length,
-        matchingActiveCampaign: cachedStandbyCandidates(
-          readRoutingControllerSession().targetGame || currentDrop?.game || "",
-          readRoutingControllerSession().targetCampaignKey || currentDrop?.campaignKey || "",
-        ).map((item) => ({
+        // Streams already listed under streamCandidates.visible are omitted here.
+        matchingActiveCampaignCount: diagnosticStandbyMatches.length,
+        matchingActiveCampaign: diagnosticStandbyMatches.filter((item) => !diagnosticVisibleLogins.has(cleanText(item.login).toLowerCase())).map((item) => ({
           login: item.login,
           viewers: streamViewerCount(item.viewers),
           dropsTagged: Boolean(item.dropsTagged),
