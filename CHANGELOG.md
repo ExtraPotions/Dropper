@@ -1,3 +1,9 @@
+## 3.4.9 — 2026-10-06
+
+- Require exact selected-reward session evidence or credited Twitch progress before reporting a stream as earning.
+- Keep campaign-only matches in stream verification so non-crediting channels rotate after the verification window.
+- Recognize valid Twitch session envelopes without reward identity and report missing progress timestamps without Unix-epoch artifacts.
+
 ## 3.4.8 — 2026-10-04
 
 - Keep System focused on Dropper Status, diagnostics, issue reporting, menu preferences, and a confirmed product reset.
