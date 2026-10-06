@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.8
+// @version      3.4.9
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -57,7 +57,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.8";
+  const APP_VERSION = "3.4.9";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -203,6 +203,7 @@
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.9": ["Require exact selected-reward session evidence or credited Twitch progress before reporting a stream as earning.","Keep campaign-only matches in stream verification so non-crediting channels rotate after the verification window.","Recognize valid Twitch session envelopes without reward identity and report missing progress timestamps without Unix-epoch artifacts."],
     "3.4.8": ["Keep System focused on Dropper Status, diagnostics, issue reporting, menu preferences, and a confirmed product reset.","Keep missing Twitch progress pending and separate eligible streams from confirmed reward credit.","Use observed progress increases for earning checks and identify missing or changed Twitch session responses.","Clear stored Dropper data only after two reset confirmations."],
     "3.4.7": ["Move to another eligible campaign after two minutes without a compatible visible stream.","Retry deferred campaigns after five minutes while keeping channel restrictions enforced.","Show stream discovery time and deferred campaigns in System diagnostics."],
     "3.4.6": ["Open the correct Rainbow Six Siege category, including when an older route was saved.","Keep Dropper's signature menu colors alongside other ExtraPotions products.","Keep campaign-listed channels available across Twitch page changes and avoid unlisted channels for restricted campaigns.","Show Recovery Paused when a move is blocked, and clear the pending stream-opening state."],
