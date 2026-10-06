@@ -59,9 +59,21 @@ test('canonical category aliases override shortened campaign routes without merg
   assert.equal(c.gameNamesMatch('Rainbow Six Siege', 'Rainbow Six Extraction'), false);
   assert.equal(c.suppliedCategorySlugMatchesGame('Rainbow Six Siege', 'rainbow-six-extraction'), false);
 });
+test('Overwatch campaigns route to the live Overwatch 2 category', () => {
+  const c = context();
+  c.categorySlugCache.overwatch = 'overwatch';
+  c.saveCategorySlugCache();
+  const drop = {game: 'Overwatch', gameSlug: 'overwatch', gameId: '488552'};
+  assert.equal(c.resolveCategorySlug(drop), 'overwatch-2');
+  assert.equal(c.resolveCategorySlug('Overwatch'), 'overwatch-2');
+  assert.equal(c.categorySlugCache.overwatch, 'overwatch-2');
+  assert.equal(c.gameNamesMatch('Overwatch', 'Overwatch 2'), true);
+  assert.equal(c.gameNamesMatch('Overwatch 2', 'Overwatch'), true);
+  assert.equal(c.resolveCategorySlug({game: 'Overwatch 2', gameSlug: 'overwatch-2'}), 'overwatch-2');
+});
 test('distinct categories never match through shared title prefixes', () => {
   const c = context();
-  for (const [a, b] of [['World of Tanks', 'World of Tanks Console'], ['World of Tanks', 'World of Tanks Blitz'], ['Minecraft', 'Minecraft Dungeons'], ['Overwatch', 'Overwatch 2']]) {
+  for (const [a, b] of [['World of Tanks', 'World of Tanks Console'], ['World of Tanks', 'World of Tanks Blitz'], ['Minecraft', 'Minecraft Dungeons']]) {
     assert.equal(c.gameNamesMatch(a, b), false, `${a} != ${b}`);
     assert.equal(c.gameNamesMatch(b, a), false, `${b} != ${a}`);
   }

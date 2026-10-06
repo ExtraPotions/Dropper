@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.12
+// @version      3.4.13
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -3968,7 +3968,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.12";
+  const APP_VERSION = "3.4.13";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -4098,6 +4098,7 @@ const ExtraPotionsCore = (() => {
   const EXCLUDED_CAMPAIGN_NAMES = new Set(["first partners collection"]);
   const CATEGORY_SLUG_ALIASES = Object.freeze({
     "rainbow six siege": "tom-clancys-rainbow-six-siege",
+    "overwatch": "overwatch-2",
     "the blood of dawnwalker": "dawnwalker",
     "delta force": "delta-force-hawk-ops",
   });
@@ -4117,6 +4118,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.13": ["Overwatch drop campaigns now open the live Overwatch 2 Twitch directory instead of waiting on the retired Overwatch category.","Overwatch 2 streams are accepted for Overwatch campaigns, including after an older route was saved."],
     "3.4.12": ["Keep Status open in System with its reason, recovery action, and recent activity.","Group Copy Diagnostics, Show Diagnostics, and Report a Problem under Support; reports include the current status.","Confirm Reset with a second tap inside the menu instead of browser dialogs.","Move Menu Preferences to the end of Appearance."],
     "3.4.11": ["Updates the shared foundation to exp-core 3.7.0.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.4.10": ["Keep a stream that Twitch confirms for your campaign open for up to six minutes while Twitch credits the first watched minute, instead of switching streams after 90 seconds.","Stop the repeated stream switching that paused recovery and left new campaigns at progress pending."],

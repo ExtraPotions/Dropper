@@ -21,7 +21,7 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 ## What you can do
 
 - **Distinct menu colors:** Dropper keeps its signature appearance alongside other ExtraPotions products.
-- **Accurate category routes:** Rainbow Six Siege opens its correct Twitch directory, including after an older route was saved.
+- **Accurate category routes:** Rainbow Six Siege and Overwatch (now the Overwatch 2 directory) open their correct Twitch directories, including after an older route was saved.
 - **Bounded stream discovery:** after two minutes without a compatible visible stream, try another eligible campaign and revisit the deferred campaign after five minutes. If no alternative exists, keep waiting for a compatible stream.
 - **System status:** see Working, Waiting, Paused, or Needs attention, with a reason and a safe recovery action when available.
 - **Recent progress:** see the last 30 progress and recovery events in System. Repeated recovery switches pause until you choose Resume.
