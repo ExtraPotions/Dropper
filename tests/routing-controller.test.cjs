@@ -352,7 +352,8 @@ test('candidate diagnostics explain live and cached routability', () => {
   assert.match(body, /"temporary-skip"/u);
   assert.match(body, /"recent-cache-not-live-proof"/u);
   assert.match(body, /"cached-not-currently-visible"/u);
-  assert.match(source, /streamCandidates: routingCandidateDiagnosticsSnapshot\(now\)/u);
+  assert.match(source, /const diagnosticStreamCandidates = routingCandidateDiagnosticsSnapshot\(now\);/u);
+  assert.match(source, /streamCandidates: diagnosticStreamCandidates,/u);
   assert.match(source, /queueCandidateDetails:/u);
 });
 

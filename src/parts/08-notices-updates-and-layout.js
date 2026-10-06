@@ -718,6 +718,12 @@
     const activityEntries = Array.isArray(activityLog) ? activityLog : [];
     const diagnosticActivity = activityEntries.slice(-12);
     const diagnosticQueueCandidates = discoverQueueCandidates(now);
+    const diagnosticStreamCandidates = routingCandidateDiagnosticsSnapshot(now);
+    const diagnosticVisibleLogins = new Set((diagnosticStreamCandidates?.visible || []).map((item) => cleanText(item.login).toLowerCase()));
+    const diagnosticStandbyMatches = cachedStandbyCandidates(
+      readRoutingControllerSession().targetGame || currentDrop?.game || "",
+      readRoutingControllerSession().targetCampaignKey || currentDrop?.campaignKey || "",
+    );
     return {
       report: "Dropper Diagnostics",
       progressTimeline:progressTimelineSnapshot(),
@@ -817,6 +823,8 @@
           const summarize = (item) => item ? {
             game: item.game,
             name: item.name,
+            // Twitch reuses campaign names, so a short key tells same-named campaigns apart.
+            campaignKey: cleanText(item.campaignKey || item.campaignId).slice(0, 8) || null,
             endAt: item.endAt || null,
             endMs: item.endMs || null,
             priority: item.sequencePriority ?? campaignPriority(item.game),
@@ -1149,17 +1157,16 @@
       },
       queueEnabled: settings.queueEnabled,
       queueOnCategoryChange: settings.queueOnCategoryChange,
-      streamCandidates: routingCandidateDiagnosticsSnapshot(now),
+      streamCandidates: diagnosticStreamCandidates,
       standbyCache: {
         refreshIntervalMinutes: Math.round(STANDBY_REFRESH_INTERVAL_MS / 60000),
         lastObservedAt: lastStandbyRefreshAt ? new Date(lastStandbyRefreshAt).toISOString() : null,
         lastMaintenanceAt: lastStandbyMaintenanceAt ? new Date(lastStandbyMaintenanceAt).toISOString() : null,
         maintenance: lastStandbyMaintenance,
         total: pruneStandbyCache().length,
-        matchingActiveCampaign: cachedStandbyCandidates(
-          readRoutingControllerSession().targetGame || currentDrop?.game || "",
-          readRoutingControllerSession().targetCampaignKey || currentDrop?.campaignKey || "",
-        ).map((item) => ({
+        // Streams already listed under streamCandidates.visible are omitted here.
+        matchingActiveCampaignCount: diagnosticStandbyMatches.length,
+        matchingActiveCampaign: diagnosticStandbyMatches.filter((item) => !diagnosticVisibleLogins.has(cleanText(item.login).toLowerCase())).map((item) => ({
           login: item.login,
           viewers: streamViewerCount(item.viewers),
           dropsTagged: Boolean(item.dropsTagged),
