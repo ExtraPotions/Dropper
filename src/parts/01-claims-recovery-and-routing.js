@@ -2480,9 +2480,13 @@
 
     if (campaignSupport !== true && !sessionMatches) return false;
 
+    const gqlCampaignSupported = Boolean(
+      session.candidateEvidence?.gqlCampaignSupported ||
+      campaignSupport === true
+    );
     const evidence = {
       ...(session.candidateEvidence || {}),
-      gqlCampaignSupported: true,
+      gqlCampaignSupported,
       gqlSessionMatched: sessionMatches,
       gqlSessionCampaignMatched: sessionCampaignMatches,
       gqlSessionDropMatched: sessionDropMatches,
@@ -2490,7 +2494,12 @@
       gqlEvidenceAt: Date.now(),
     };
     writeRoutingControllerSession({ ...session, candidateEvidence: evidence });
-    logActivity("stream-verification-evidence", "Twitch GQL confirmed target campaign support", {
+    const evidenceMessage = sessionDropMatches
+      ? "Twitch GQL matched the selected Drop session"
+      : sessionCampaignMatches
+        ? "Twitch GQL matched the target campaign session"
+        : "Twitch GQL confirmed target campaign support";
+    logActivity("stream-verification-evidence", evidenceMessage, {
       channel: login,
       campaign: session.targetCampaign || null,
       campaignKey: session.targetCampaignKey || null,
@@ -2602,19 +2611,21 @@
     const aclCampaignProof = Boolean(session.candidateEvidence?.campaignAclMatched);
     const gqlCampaignProof = Boolean(session.candidateEvidence?.gqlCampaignSupported);
     const campaignProof = aclCampaignProof || gqlCampaignProof;
+    const exactSessionProof = Boolean(
+      session.candidateEvidence?.gqlSessionDropMatched === true &&
+      session.candidateEvidence?.gqlSessionIdentityLevel === "exact-drop"
+    );
+    const earningProof = exactSessionProof || progressProof;
     if (
       info.live &&
       gameMatches &&
-      (
-        campaignProof ||
-        progressProof
-      )
+      earningProof
     ) {
       lastStreamVerification = {
         at: now,
         method: progressProof
           ? "credited-progress"
-          : "gql-campaign+game",
+          : "session-drop-match",
         channel: login || target || null,
         dropId: currentDrop?.id || null,
         game: targetGame || null,
@@ -2622,9 +2633,11 @@
         campaignKey: session.targetCampaignKey || currentDrop?.campaignKey || currentDrop?.campaignId || null,
         proof: {
           gameMatched: true,
-          campaignSupported: campaignProof,
+          campaignSupported: campaignProof || exactSessionProof,
           campaignAclMatched: aclCampaignProof,
           gqlCampaignSupported: gqlCampaignProof,
+          sessionMatched: exactSessionProof,
+          sessionDropMatched: exactSessionProof,
           progressConfirmed: progressProof,
           directoryDropsVisible,
           liveDropsVisible,
@@ -2636,7 +2649,7 @@
           earningStartedAt: now,
           candidateEvidence: {
             ...(session.candidateEvidence || {}),
-            campaignVerified: true,
+            campaignVerified: campaignProof || exactSessionProof,
             verifiedChannel: verificationLogin,
             creditedProgressVerified: progressProof,
             verifiedAt: now,
@@ -2650,7 +2663,7 @@
           recoveryStartedAt: 0,
           recoveryLastCheckAt: 0,
         },
-        `Verified ${login || target} for ${session.targetCampaign || targetGame}`,
+        `Verified earning on ${login || target} for ${session.targetCampaign || targetGame}`,
       );
     }
 
@@ -2686,9 +2699,11 @@
       info.dropsEnabled
     );
     setStatus(
-      genericDropsVisible
-        ? `Verifying ${target || login || "Drops Stream"} · Waiting For Campaign Proof`
-        : `Verifying ${target || login || "Drops Stream"} For ${targetGame}`,
+      campaignProof && info.live && gameMatches
+        ? `Eligible ${target || login || "Drops Stream"} · Waiting For Reward Session Or Twitch Credit`
+        : genericDropsVisible
+          ? `Verifying ${target || login || "Drops Stream"} · Waiting For Campaign Proof`
+          : `Verifying ${target || login || "Drops Stream"} For ${targetGame}`,
     );
     return false;
   }
