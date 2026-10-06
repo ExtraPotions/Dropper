@@ -117,6 +117,23 @@
       now >= Number(proof.at) && now - Number(proof.at) < HEALTHY_STREAM_DELAYED_MS);
   }
 
+  function hasVerifiedRewardSession(drop = currentDrop, login = watchingLogin()) {
+    const routing = readRoutingControllerSession();
+    const evidence = routing.candidateEvidence || {};
+    const currentCampaignKey = cleanText(drop?.campaignKey || drop?.campaignId);
+    const targetCampaignKey = cleanText(routing.targetCampaignKey);
+    return Boolean(
+      drop?.id &&
+      login &&
+      routing.state === ROUTING_STATES.EARNING &&
+      cleanText(routing.targetStream).toLowerCase() === cleanText(login).toLowerCase() &&
+      cleanText(routing.targetDropId) === cleanText(drop.id) &&
+      (!currentCampaignKey || !targetCampaignKey || campaignKeysMatch(targetCampaignKey, currentCampaignKey)) &&
+      evidence.gqlSessionDropMatched === true &&
+      evidence.gqlSessionIdentityLevel === "exact-drop"
+    );
+  }
+
   function rewardCreditStatus(drop = currentDrop, login = watchingLogin()) {
     const resolution = rewardSessionResolution;
     const sameTarget = resolution && resolution.channel === login &&
@@ -129,6 +146,7 @@
       return `Twitch reports ${subject}: ${resolution.sessionName}${minutes} · Selected: ${drop.name || "Drop"}`;
     }
     if (hasConfirmedRewardProgress(drop, login)) return `Earning ${drop.name || "Drop"} On ${login}`;
+    if (hasVerifiedRewardSession(drop, login)) return `Earning ${drop.name || "Drop"} On ${login} · First Twitch Credit Pending`;
     return inventoryResponseHealth.valid
       ? "Eligible stream · syncing reward progress"
       : "Eligible stream · inventory unavailable, syncing reward progress";
