@@ -1,3 +1,8 @@
+## 3.4.13 — 2026-10-06
+
+- Overwatch drop campaigns now open the live Overwatch 2 Twitch directory instead of waiting on the retired Overwatch category.
+- Overwatch 2 streams are accepted for Overwatch campaigns, including after an older route was saved.
+
 ## 3.4.12 — 2026-10-06
 
 - Keep Status open in System with its reason, recovery action, and recent activity.
