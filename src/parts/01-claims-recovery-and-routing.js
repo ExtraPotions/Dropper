@@ -1793,6 +1793,7 @@
       candidateEvidence: null,
       verifyBaselineMinutes: null,
       verifyBaselinePercent: null,
+      firstCreditWindow: false,
       earningStartedAt: 0,
       mismatchSince: 0,
       offlineSince: 0,
@@ -1842,6 +1843,14 @@
       deadlineAt: Object.prototype.hasOwnProperty.call(patch, "deadlineAt")
         ? Number(patch.deadlineAt || 0)
         : (changed ? 0 : Number(previous.deadlineAt || 0)),
+      // The first-credit extension belongs to one verification of one stream.
+      firstCreditWindow: Object.prototype.hasOwnProperty.call(patch, "firstCreditWindow")
+        ? Boolean(patch.firstCreditWindow)
+        : Boolean(
+          !changed &&
+          previous.firstCreditWindow &&
+          cleanText(previous.targetStream).toLowerCase() === cleanText(patch.targetStream ?? previous.targetStream).toLowerCase()
+        ),
       waitReason,
       lastReason: reason || previous.lastReason || "",
     };
@@ -2665,6 +2674,19 @@
         },
         `Verified earning on ${login || target} for ${session.targetCampaign || targetGame}`,
       );
+    }
+
+    // Campaign support proves eligibility, not earning. Keep an eligible live
+    // stream open for Twitch's first credit instead of rotating at 90 seconds.
+    if (campaignProof && info.live && gameMatches && session.deadlineAt && !session.firstCreditWindow) {
+      session = writeRoutingControllerSession({
+        ...session,
+        firstCreditWindow: true,
+        deadlineAt: Math.max(
+          Number(session.deadlineAt),
+          Number(session.enteredAt || now) + ROUTING_FIRST_CREDIT_DEADLINE_MS,
+        ),
+      });
     }
 
     const verificationRemainingMs = session.deadlineAt

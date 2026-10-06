@@ -1016,6 +1016,8 @@
       },
       streamVerification: {
         timeoutSeconds: Math.round(ROUTING_VERIFY_DEADLINE_MS / 1000),
+        firstCreditTimeoutSeconds: Math.round(ROUTING_FIRST_CREDIT_DEADLINE_MS / 1000),
+        firstCreditWindow: Boolean(routingSession.firstCreditWindow),
         finalPollWindowSeconds: Math.round(GQL_MIN_GAP_MS / 1000),
         finalPollTarget: finalVerificationPollTarget || null,
         finalPollAt: finalVerificationPollAt ? new Date(finalVerificationPollAt).toISOString() : null,
