@@ -1600,10 +1600,10 @@
   function mountProductTools() {
     const target=ui.shadow.getElementById('tdh-diagnostics-body');
     if(!target||target.querySelector('[data-exp-product-system]'))return;
-    ui.healthControl=ExtraPotionsCore.createProductTimeline('dropper',systemHealthSnapshot,setStatus);
-    const timeline=ui.healthControl.element,rows=document.createElement('div');
-    timeline.append(rows);
-    timeline.addEventListener('toggle',()=>{if(!timeline.open)return;rows.replaceChildren();
+    ui.healthControl=ExtraPotionsCore.createProductTimeline('dropper',systemHealthSnapshot,setStatus,{layout:'grouped'});
+    const timeline=ui.healthControl.element,log=ui.healthControl.log,rows=document.createElement('div');
+    ui.healthControl.activity.append(rows);
+    log.addEventListener('toggle',()=>{if(!log.open)return;rows.replaceChildren();
       const explanation=document.createElement('p');explanation.textContent=waitingExplanation(streamEarningHealthSnapshot(),Boolean(currentDrop),settings.findNextStream);rows.append(explanation);
       // Navigation already appears in the progress timeline; stream switch reasons stay in Streams.
       for(const entry of progressTimelineSnapshot().slice().reverse()){const reason=entry.type==='navigation'&&/^routing-/.test(entry.reason)?navigationReasonText(entry.reason):entry.reason;const line=document.createElement('p');line.textContent=`${new Date(entry.at).toLocaleTimeString()} · ${reason}${entry.minutes!==null?` · ${entry.minutes} credited min`:''}`;rows.append(line);}
@@ -1611,8 +1611,10 @@
     });
     const diagnostics=document.createElement('div');diagnostics.className='diagnostics-controls';
     diagnostics.append(target.querySelector('.action-pair'),target.querySelector('#tdh-diagnostics'));
-    const preferences=ExtraPotionsCore.createDisclosure('Menu Preferences',ExtraPotionsCore.createMenuSizeControls());
-    const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,preferences,onReset:resetAllDropperData,notify:setStatus});
+    // Menu size is a display choice, so it lives at the end of Appearance.
+    const appearance=ui.shadow.getElementById('tdh-progress-body');
+    if(appearance&&!appearance.querySelector('[data-dropper-menu-preferences]')){const preferences=ExtraPotionsCore.createDisclosure('Menu Preferences',ExtraPotionsCore.createMenuSizeControls());preferences.dataset.dropperMenuPreferences='1';appearance.append(preferences);}
+    const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,onReset:resetAllDropperData,notify:setStatus,layout:'grouped'});
     target.replaceChildren(system);
   }
 

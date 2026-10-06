@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.11
+// @version      3.4.12
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -3968,7 +3968,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.11";
+  const APP_VERSION = "3.4.12";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -4117,6 +4117,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.12": ["Keep Status open in System with its reason, recovery action, and recent activity.","Group Copy Diagnostics, Show Diagnostics, and Report a Problem under Support; reports include the current status.","Confirm Reset with a second tap inside the menu instead of browser dialogs.","Move Menu Preferences to the end of Appearance."],
     "3.4.11": ["Updates the shared foundation to exp-core 3.7.0.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.4.10": ["Keep a stream that Twitch confirms for your campaign open for up to six minutes while Twitch credits the first watched minute, instead of switching streams after 90 seconds.","Stop the repeated stream switching that paused recovery and left new campaigns at progress pending."],
     "3.4.9": ["Require exact selected-reward session evidence or credited Twitch progress before reporting a stream as earning.","Keep campaign-only matches in stream verification so non-crediting channels rotate after the verification window.","Recognize valid Twitch session envelopes without reward identity and report missing progress timestamps without Unix-epoch artifacts."],
@@ -20314,10 +20315,10 @@ const ExtraPotionsCore = (() => {
   function mountProductTools() {
     const target=ui.shadow.getElementById('tdh-diagnostics-body');
     if(!target||target.querySelector('[data-exp-product-system]'))return;
-    ui.healthControl=ExtraPotionsCore.createProductTimeline('dropper',systemHealthSnapshot,setStatus);
-    const timeline=ui.healthControl.element,rows=document.createElement('div');
-    timeline.append(rows);
-    timeline.addEventListener('toggle',()=>{if(!timeline.open)return;rows.replaceChildren();
+    ui.healthControl=ExtraPotionsCore.createProductTimeline('dropper',systemHealthSnapshot,setStatus,{layout:'grouped'});
+    const timeline=ui.healthControl.element,log=ui.healthControl.log,rows=document.createElement('div');
+    ui.healthControl.activity.append(rows);
+    log.addEventListener('toggle',()=>{if(!log.open)return;rows.replaceChildren();
       const explanation=document.createElement('p');explanation.textContent=waitingExplanation(streamEarningHealthSnapshot(),Boolean(currentDrop),settings.findNextStream);rows.append(explanation);
       // Navigation already appears in the progress timeline; stream switch reasons stay in Streams.
       for(const entry of progressTimelineSnapshot().slice().reverse()){const reason=entry.type==='navigation'&&/^routing-/.test(entry.reason)?navigationReasonText(entry.reason):entry.reason;const line=document.createElement('p');line.textContent=`${new Date(entry.at).toLocaleTimeString()} · ${reason}${entry.minutes!==null?` · ${entry.minutes} credited min`:''}`;rows.append(line);}
@@ -20325,8 +20326,10 @@ const ExtraPotionsCore = (() => {
     });
     const diagnostics=document.createElement('div');diagnostics.className='diagnostics-controls';
     diagnostics.append(target.querySelector('.action-pair'),target.querySelector('#tdh-diagnostics'));
-    const preferences=ExtraPotionsCore.createDisclosure('Menu Preferences',ExtraPotionsCore.createMenuSizeControls());
-    const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,preferences,onReset:resetAllDropperData,notify:setStatus});
+    // Menu size is a display choice, so it lives at the end of Appearance.
+    const appearance=ui.shadow.getElementById('tdh-progress-body');
+    if(appearance&&!appearance.querySelector('[data-dropper-menu-preferences]')){const preferences=ExtraPotionsCore.createDisclosure('Menu Preferences',ExtraPotionsCore.createMenuSizeControls());preferences.dataset.dropperMenuPreferences='1';appearance.append(preferences);}
+    const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,onReset:resetAllDropperData,notify:setStatus,layout:'grouped'});
     target.replaceChildren(system);
   }
 
