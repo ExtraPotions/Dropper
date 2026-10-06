@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.10
+// @version      3.4.11
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -57,7 +57,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.10";
+  const APP_VERSION = "3.4.11";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -206,6 +206,7 @@
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.11": ["Updates the shared foundation to exp-core 3.7.0.","Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.","Keeps Twitch routing, campaign, claim, and playback behavior unchanged.","Keeps the standalone userscript distribution while Core remains the single shared source."],
     "3.4.10": ["Keep a stream that Twitch confirms for your campaign open for up to six minutes while Twitch credits the first watched minute, instead of switching streams after 90 seconds.","Stop the repeated stream switching that paused recovery and left new campaigns at progress pending."],
     "3.4.9": ["Require exact selected-reward session evidence or credited Twitch progress before reporting a stream as earning.","Keep campaign-only matches in stream verification so non-crediting channels rotate after the verification window.","Recognize valid Twitch session envelopes without reward identity and report missing progress timestamps without Unix-epoch artifacts."],
     "3.4.8": ["Keep System focused on Dropper Status, diagnostics, issue reporting, menu preferences, and a confirmed product reset.","Keep missing Twitch progress pending and separate eligible streams from confirmed reward credit.","Use observed progress increases for earning checks and identify missing or changed Twitch session responses.","Clear stored Dropper data only after two reset confirmations."],
