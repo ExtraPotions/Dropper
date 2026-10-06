@@ -885,10 +885,12 @@
             navigatedToInventory: lastClaimIntegrityFallback.navigatedToInventory,
           }
         : null,
-      progressAgeSeconds: Math.max(0, Math.floor((now - lastProgressAt) / 1000)),
+      progressAgeSeconds: lastProgressAt
+        ? Math.max(0, Math.floor((now - lastProgressAt) / 1000))
+        : null,
       progressFreshnessBasis: "credited-minutes-or-percent",
       lastProgress,
-      lastProgressAt: new Date(lastProgressAt).toISOString(),
+      lastProgressAt: lastProgressAt ? new Date(lastProgressAt).toISOString() : null,
       navigationInFlight: (() => {
         const flight = navigationFlightSnapshot(now);
         return flight ? {
@@ -1069,6 +1071,7 @@
           domVideoPlaying: health.domVideoPlaying,
           domVideoPlayingAuthoritative: health.domVideoPlayingAuthoritative,
           creditedRecently: health.creditedRecently,
+          exactSessionVerified: health.exactSessionVerified,
           streamEligible: health.streamEligible,
           earningVerified: health.earningVerified,
           expectedGame: health.expectedGame,

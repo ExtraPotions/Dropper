@@ -34,6 +34,9 @@ test('session operation separates absent sessions from unavailable and changed e
   assert.equal(context.classify({data:{currentUser:{}}}).status,'shape-changed');
   assert.equal(context.classify({data:null}).status,'unavailable');
   assert.equal(context.classify({data:{currentUser:{dropCurrentSession:{unknown:1}}}}).status,'shape-changed');
+  const unidentified = context.classify({data:{currentUser:{dropCurrentSession:{channel:null,game:null,currentMinutesWatched:null,requiredMinutesWatched:null,dropID:null}}}});
+  assert.equal(unidentified.status,'unidentified');
+  assert.equal(unidentified.valid,true,'a recognized Twitch session envelope without reward identity is not a schema change');
   assert.equal(context.classify({data:{currentUser:{dropCurrentSession:{dropID:'reward',currentMinutesWatched:0}}}}).status,'ok');
 });
 test('selecting a reward with known requirement and unknown credit preserves pending state and credit timestamp', () => {
@@ -123,20 +126,35 @@ test('resetting prevents settings and session reads from migrating legacy record
   assert.equal(context.load().findNextStream,false);
   assert.equal(touches,0);
 });
-test('actual stream verification establishes historical progress as a baseline before crediting increases', () => {
-  const context = {currentDrop:{id:'reward',name:'Reward',game:'Game',campaignKey:'campaign',currentMinutes:20,percent:17},lastStreamVerification:null,PAGE_STARTED_AT:0,STREAM_ROUTE_SETTLE_MS:0,ROUTING_STATES:{EARNING:'earning',FIND_STREAM:'find-stream'},routing:{state:'verify-stream',targetStream:'channel',targetGame:'Game',targetDropId:'reward',targetCampaignKey:'campaign',candidateEvidence:{gqlCampaignSupported:true},verifyBaselineMinutes:null,verifyBaselinePercent:null},cleanText:v=>String(v??''),watchingLogin:()=> 'channel',readStreamInfo:()=>({live:true,game:'Game'}),gameNamesMatch:(a,b)=>a===b,setStatus:()=>{}};
+test('campaign support stays in verification until selected reward earning is proved', () => {
+  const context = {currentDrop:{id:'reward',name:'Reward',game:'Game',campaignKey:'campaign',currentMinutes:20,percent:17},lastStreamVerification:null,PAGE_STARTED_AT:0,STREAM_ROUTE_SETTLE_MS:0,GQL_MIN_GAP_MS:15000,ROUTING_STATES:{EARNING:'earning',FIND_STREAM:'find-stream'},routing:{state:'verify-stream',targetStream:'channel',targetGame:'Game',targetDropId:'reward',targetCampaignKey:'campaign',candidateEvidence:{gqlCampaignSupported:true},verifyBaselineMinutes:null,verifyBaselinePercent:null,deadlineAt:190000},cleanText:v=>String(v??''),watchingLogin:()=> 'channel',readStreamInfo:()=>({live:true,game:'Game',dropsEnabled:true}),gameNamesMatch:(a,b)=>a===b,setStatus:()=>{},requestFinalVerificationPoll:()=>false,routingControllerAddFailedStream:()=>[]};
   context.readRoutingControllerSession=()=>context.routing;
   context.syncRoutingCampaignAllowListEvidence=session=>session;
   context.writeRoutingControllerSession=session=>(context.routing=session);
   context.transitionRoutingController=(state,patch)=>(context.routing={...context.routing,...patch,state},true);
   vm.runInNewContext(block('  function routingControllerVerifyStream(', '\n  function routingControllerEarning')+'\nthis.verify=routingControllerVerifyStream;',context);
   context.verify(100000);
-  assert.equal(context.routing.state,'earning','supported stream remains eligible');
-  assert.equal(context.lastStreamVerification.proof.progressConfirmed,false,'historical20 is not current-stream credit');
+  assert.equal(context.routing.state,'verify-stream','campaign support alone is eligibility evidence, not earning proof');
+  assert.equal(context.lastStreamVerification,null,'historical progress does not create a verified earning record');
   assert.equal(context.routing.verifyBaselineMinutes,20);
   context.currentDrop={...context.currentDrop,currentMinutes:21,percent:18};
   context.verify(101000);
+  assert.equal(context.routing.state,'earning');
   assert.equal(context.lastStreamVerification.proof.progressConfirmed,true,'20→21 is an observed increase');
+});
+
+test('exact selected reward session can prove earning before the first credited minute', () => {
+  const context = {currentDrop:{id:'reward',name:'Reward',game:'Game',campaignKey:'campaign',currentMinutes:null,percent:null},lastStreamVerification:null,PAGE_STARTED_AT:0,STREAM_ROUTE_SETTLE_MS:0,GQL_MIN_GAP_MS:15000,ROUTING_STATES:{EARNING:'earning',FIND_STREAM:'find-stream'},routing:{state:'verify-stream',targetStream:'channel',targetGame:'Game',targetDropId:'reward',targetCampaignKey:'campaign',candidateEvidence:{gqlCampaignSupported:true,gqlSessionDropMatched:true,gqlSessionIdentityLevel:'exact-drop'},verifyBaselineMinutes:null,verifyBaselinePercent:null,deadlineAt:190000},cleanText:v=>String(v??''),watchingLogin:()=> 'channel',readStreamInfo:()=>({live:true,game:'Game',dropsEnabled:true}),gameNamesMatch:(a,b)=>a===b,setStatus:()=>{},requestFinalVerificationPoll:()=>false,routingControllerAddFailedStream:()=>[]};
+  context.readRoutingControllerSession=()=>context.routing;
+  context.syncRoutingCampaignAllowListEvidence=session=>session;
+  context.writeRoutingControllerSession=session=>(context.routing=session);
+  context.transitionRoutingController=(state,patch)=>(context.routing={...context.routing,...patch,state},true);
+  vm.runInNewContext(block('  function routingControllerVerifyStream(', '\n  function routingControllerEarning')+'\nthis.verify=routingControllerVerifyStream;',context);
+  context.verify(100000);
+  assert.equal(context.routing.state,'earning');
+  assert.equal(context.lastStreamVerification.method,'session-drop-match');
+  assert.equal(context.lastStreamVerification.proof.sessionDropMatched,true);
+  assert.equal(context.lastStreamVerification.proof.progressConfirmed,false);
 });
 test('legacy progress proof also requires known baselines rather than interpreting null as zero', () => {
   const context={lastProgressAt:0,dropMatchesHandoffTarget:()=>true};

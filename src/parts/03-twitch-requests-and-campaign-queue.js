@@ -636,14 +636,24 @@
     const session = user && Object.hasOwn(user, "dropCurrentSession") ? user.dropCurrentSession : user?.dropCurrentSessionContext;
     const node = session?.currentSession ?? session?.drop ?? session;
     const drop = node?.drop ?? node?.currentDrop ?? node;
-    const recognized = Boolean(node && typeof node === "object" && !Array.isArray(node) &&
+    const nodeObject = Boolean(node && typeof node === "object" && !Array.isArray(node));
+    const recognized = Boolean(nodeObject &&
       (drop?.id || drop?.name || node.dropID || session?.dropID));
+    const expectedSessionFields = Boolean(nodeObject && [
+      "dropID",
+      "currentMinutesWatched",
+      "requiredMinutesWatched",
+      "channel",
+      "game",
+    ].some((key) => Object.hasOwn(node, key)));
     let status = data == null || user == null ? "unavailable"
       : !hasSession ? "shape-changed"
         : session === null || (session && Object.hasOwn(session, "currentSession") && session.currentSession === null) ? "absent"
-          : recognized ? "ok" : "shape-changed";
+          : recognized ? "ok"
+            : expectedSessionFields ? "unidentified"
+              : "shape-changed";
     if (errors.length) status = recognized ? "partial-response" : "error";
-    return { valid: status === "ok" || status === "absent", status,
+    return { valid: status === "ok" || status === "absent" || status === "unidentified", status,
       shape: { data: type(data), currentUser: type(user), session: type(session), node: type(node),
         errorCount: errors.length, dataFields: fields(data), userFields: fields(user), sessionFields: fields(session), nodeFields: fields(node) } };
   }
