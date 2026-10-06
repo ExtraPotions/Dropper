@@ -253,7 +253,7 @@ test('user-facing earning status requires recent proof for the exact selected re
   const c = load(['hasConfirmedRewardProgress', 'rewardCreditStatus'], {
     Date: { now: () => now }, currentDrop: target(), watchingLogin: () => 'channel', rewardSessionResolution: null,
     inventoryResponseHealth: { valid: false }, HEALTHY_STREAM_DELAYED_MS: 300000,
-    campaignKeysMatch: (a, b) => a === b, lastStreamVerification: {
+    hasVerifiedRewardSession: () => false, campaignKeysMatch: (a, b) => a === b, lastStreamVerification: {
       at: now - 1000, dropId: 'selected', campaignKey: 'campaign-1', channel: 'channel', proof: { progressConfirmed: false },
     },
   });
