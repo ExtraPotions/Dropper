@@ -1114,6 +1114,7 @@
       (
         routingEvidence.gqlCampaignSupported ||
         routingEvidence.gqlSessionCampaignMatched ||
+        routingEvidence.gqlSessionDropMatched ||
         routingEvidence.campaignAclMatched
       )
     );
@@ -1128,6 +1129,7 @@
       ) ||
       restoredRoutingProof
     );
+    const exactSessionVerified = hasVerifiedRewardSession(currentDrop, login);
     const timing = currentStreamTimingSnapshot(now);
     const creditedRecently = Boolean(
       campaignVerified &&
@@ -1145,8 +1147,16 @@
       campaignVerified &&
       gameMatches
     );
-    const earningVerified = Boolean(streamEligible && creditedRecently &&
-      (verificationProof.progressConfirmed || routingEvidence.creditedProgressVerified));
+    const earningVerified = Boolean(
+      streamEligible &&
+      (
+        exactSessionVerified ||
+        (
+          creditedRecently &&
+          (verificationProof.progressConfirmed || routingEvidence.creditedProgressVerified)
+        )
+      )
+    );
     const healthy = Boolean(
       login &&
       currentDrop &&
@@ -1167,6 +1177,7 @@
       domVideoPlaying,
       domVideoPlayingAuthoritative: false,
       creditedRecently,
+      exactSessionVerified,
       earningVerified,
       streamEligible,
       expectedGame: currentDrop?.game || null,
@@ -1221,10 +1232,13 @@
     if (health?.recovery?.code === 'credit-stalled') {
       return { label: 'Progress stalled', detail: health.creditedProgressAgeMs ? `Last Twitch credit ${briefAge(health.creditedProgressAgeMs)} ago.` : 'Twitch has not credited new progress.', tone: 'bad' };
     }
-    if (health?.streamEligible && (!health.earningVerified || !hasConfirmedRewardProgress())) {
+    if (health?.streamEligible && !health.earningVerified) {
       return { label: 'Eligible stream', detail: rewardCreditStatus(), tone: 'warn' };
     }
     if (health?.earningVerified) {
+      if (!hasConfirmedRewardProgress() && health?.exactSessionVerified) {
+        return { label: 'Verified', detail: 'Twitch reports the selected reward as the active Drop session · waiting for first credit.', tone: 'good' };
+      }
       return { label: 'Verified', detail: health.creditedProgressAgeMs ? `Last Twitch credit ${briefAge(health.creditedProgressAgeMs)} ago.` : 'Campaign and stream evidence are verified.', tone: 'good' };
     }
     if (health?.inVerificationGrace || eligibility?.code === 'verification-pending' || eligibility?.code === 'unknown') {
@@ -1372,7 +1386,7 @@
     } else if ((routing.state === ROUTING_STATES.EARNING || health.earningVerified) && currentDrop) {
       const recoveryCode = health.recovery?.code || "healthy";
       if (health.inVerificationGrace) {
-        const confirmed = hasConfirmedRewardProgress();
+        const confirmed = health.earningVerified;
         label = confirmed ? (settings.backgroundEarning ? "BG Earning" : "Earning") : "Syncing";
         cls += confirmed ? " good" : " warn";
       } else if (recoveryCode === "credit-delayed-background") {
@@ -1388,7 +1402,7 @@
         label = "Delayed";
         cls += " warn";
       } else {
-        const confirmed = hasConfirmedRewardProgress();
+        const confirmed = health.earningVerified;
         label = confirmed ? (settings.backgroundEarning ? "BG Earning" : "Earning") : "Syncing";
         cls += confirmed ? " good" : " warn";
       }
