@@ -1,3 +1,15 @@
+## 3.4.11 — 2026-10-06
+
+- Updates the shared foundation to exp-core 3.7.0.
+- Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.
+- Leaves Dropper Twitch routing, campaign, claim, and playback behavior unchanged.
+- Keeps the standalone userscript distribution while Core remains the single shared source.
+
+## 3.4.10 — 2026-10-06
+
+- Keep a stream that Twitch confirms for your campaign open for up to six minutes while Twitch credits the first watched minute, instead of switching streams after 90 seconds.
+- Stop the repeated stream switching that paused recovery and left new campaigns at progress pending.
+
 ## 3.4.9 — 2026-10-06
 
 - Require exact selected-reward session evidence or credited Twitch progress before reporting a stream as earning.
