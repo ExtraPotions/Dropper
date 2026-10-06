@@ -1,3 +1,10 @@
+## 3.4.12 — 2026-10-06
+
+- Keep Status open in System with its reason, recovery action, and recent activity.
+- Group Copy Diagnostics, Show Diagnostics, and Report a Problem under Support; reports include the current status.
+- Confirm Reset with a second tap inside the menu instead of browser dialogs.
+- Move Menu Preferences to the end of Appearance.
+
 ## 3.4.11 — 2026-10-06
 
 - Updates the shared foundation to exp-core 3.7.0.
