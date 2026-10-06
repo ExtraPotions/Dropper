@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.8
+// @version      3.4.9
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -3909,7 +3909,7 @@ const ExtraPotionsCore = (() => {
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.8";
+  const APP_VERSION = "3.4.9";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -4055,6 +4055,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.9": ["Require exact selected-reward session evidence or credited Twitch progress before reporting a stream as earning.","Keep campaign-only matches in stream verification so non-crediting channels rotate after the verification window.","Recognize valid Twitch session envelopes without reward identity and report missing progress timestamps without Unix-epoch artifacts."],
     "3.4.8": ["Keep System focused on Dropper Status, diagnostics, issue reporting, menu preferences, and a confirmed product reset.","Keep missing Twitch progress pending and separate eligible streams from confirmed reward credit.","Use observed progress increases for earning checks and identify missing or changed Twitch session responses.","Clear stored Dropper data only after two reset confirmations."],
     "3.4.7": ["Move to another eligible campaign after two minutes without a compatible visible stream.","Retry deferred campaigns after five minutes while keeping channel restrictions enforced.","Show stream discovery time and deferred campaigns in System diagnostics."],
     "3.4.6": ["Open the correct Rainbow Six Siege category, including when an older route was saved.","Keep Dropper's signature menu colors alongside other ExtraPotions products.","Keep campaign-listed channels available across Twitch page changes and avoid unlisted channels for restricted campaigns.","Show Recovery Paused when a move is blocked, and clear the pending stream-opening state."],
@@ -7897,9 +7898,13 @@ const ExtraPotionsCore = (() => {
 
     if (campaignSupport !== true && !sessionMatches) return false;
 
+    const gqlCampaignSupported = Boolean(
+      session.candidateEvidence?.gqlCampaignSupported ||
+      campaignSupport === true
+    );
     const evidence = {
       ...(session.candidateEvidence || {}),
-      gqlCampaignSupported: true,
+      gqlCampaignSupported,
       gqlSessionMatched: sessionMatches,
       gqlSessionCampaignMatched: sessionCampaignMatches,
       gqlSessionDropMatched: sessionDropMatches,
@@ -7907,7 +7912,12 @@ const ExtraPotionsCore = (() => {
       gqlEvidenceAt: Date.now(),
     };
     writeRoutingControllerSession({ ...session, candidateEvidence: evidence });
-    logActivity("stream-verification-evidence", "Twitch GQL confirmed target campaign support", {
+    const evidenceMessage = sessionDropMatches
+      ? "Twitch GQL matched the selected Drop session"
+      : sessionCampaignMatches
+        ? "Twitch GQL matched the target campaign session"
+        : "Twitch GQL confirmed target campaign support";
+    logActivity("stream-verification-evidence", evidenceMessage, {
       channel: login,
       campaign: session.targetCampaign || null,
       campaignKey: session.targetCampaignKey || null,
@@ -8019,19 +8029,21 @@ const ExtraPotionsCore = (() => {
     const aclCampaignProof = Boolean(session.candidateEvidence?.campaignAclMatched);
     const gqlCampaignProof = Boolean(session.candidateEvidence?.gqlCampaignSupported);
     const campaignProof = aclCampaignProof || gqlCampaignProof;
+    const exactSessionProof = Boolean(
+      session.candidateEvidence?.gqlSessionDropMatched === true &&
+      session.candidateEvidence?.gqlSessionIdentityLevel === "exact-drop"
+    );
+    const earningProof = exactSessionProof || progressProof;
     if (
       info.live &&
       gameMatches &&
-      (
-        campaignProof ||
-        progressProof
-      )
+      earningProof
     ) {
       lastStreamVerification = {
         at: now,
         method: progressProof
           ? "credited-progress"
-          : "gql-campaign+game",
+          : "session-drop-match",
         channel: login || target || null,
         dropId: currentDrop?.id || null,
         game: targetGame || null,
@@ -8039,9 +8051,11 @@ const ExtraPotionsCore = (() => {
         campaignKey: session.targetCampaignKey || currentDrop?.campaignKey || currentDrop?.campaignId || null,
         proof: {
           gameMatched: true,
-          campaignSupported: campaignProof,
+          campaignSupported: campaignProof || exactSessionProof,
           campaignAclMatched: aclCampaignProof,
           gqlCampaignSupported: gqlCampaignProof,
+          sessionMatched: exactSessionProof,
+          sessionDropMatched: exactSessionProof,
           progressConfirmed: progressProof,
           directoryDropsVisible,
           liveDropsVisible,
@@ -8053,7 +8067,7 @@ const ExtraPotionsCore = (() => {
           earningStartedAt: now,
           candidateEvidence: {
             ...(session.candidateEvidence || {}),
-            campaignVerified: true,
+            campaignVerified: campaignProof || exactSessionProof,
             verifiedChannel: verificationLogin,
             creditedProgressVerified: progressProof,
             verifiedAt: now,
@@ -8067,7 +8081,7 @@ const ExtraPotionsCore = (() => {
           recoveryStartedAt: 0,
           recoveryLastCheckAt: 0,
         },
-        `Verified ${login || target} for ${session.targetCampaign || targetGame}`,
+        `Verified earning on ${login || target} for ${session.targetCampaign || targetGame}`,
       );
     }
 
@@ -8103,9 +8117,11 @@ const ExtraPotionsCore = (() => {
       info.dropsEnabled
     );
     setStatus(
-      genericDropsVisible
-        ? `Verifying ${target || login || "Drops Stream"} · Waiting For Campaign Proof`
-        : `Verifying ${target || login || "Drops Stream"} For ${targetGame}`,
+      campaignProof && info.live && gameMatches
+        ? `Eligible ${target || login || "Drops Stream"} · Waiting For Reward Session Or Twitch Credit`
+        : genericDropsVisible
+          ? `Verifying ${target || login || "Drops Stream"} · Waiting For Campaign Proof`
+          : `Verifying ${target || login || "Drops Stream"} For ${targetGame}`,
     );
     return false;
   }
@@ -11560,14 +11576,24 @@ const ExtraPotionsCore = (() => {
     const session = user && Object.hasOwn(user, "dropCurrentSession") ? user.dropCurrentSession : user?.dropCurrentSessionContext;
     const node = session?.currentSession ?? session?.drop ?? session;
     const drop = node?.drop ?? node?.currentDrop ?? node;
-    const recognized = Boolean(node && typeof node === "object" && !Array.isArray(node) &&
+    const nodeObject = Boolean(node && typeof node === "object" && !Array.isArray(node));
+    const recognized = Boolean(nodeObject &&
       (drop?.id || drop?.name || node.dropID || session?.dropID));
+    const expectedSessionFields = Boolean(nodeObject && [
+      "dropID",
+      "currentMinutesWatched",
+      "requiredMinutesWatched",
+      "channel",
+      "game",
+    ].some((key) => Object.hasOwn(node, key)));
     let status = data == null || user == null ? "unavailable"
       : !hasSession ? "shape-changed"
         : session === null || (session && Object.hasOwn(session, "currentSession") && session.currentSession === null) ? "absent"
-          : recognized ? "ok" : "shape-changed";
+          : recognized ? "ok"
+            : expectedSessionFields ? "unidentified"
+              : "shape-changed";
     if (errors.length) status = recognized ? "partial-response" : "error";
-    return { valid: status === "ok" || status === "absent", status,
+    return { valid: status === "ok" || status === "absent" || status === "unidentified", status,
       shape: { data: type(data), currentUser: type(user), session: type(session), node: type(node),
         errorCount: errors.length, dataFields: fields(data), userFields: fields(user), sessionFields: fields(session), nodeFields: fields(node) } };
   }
@@ -16584,6 +16610,23 @@ const ExtraPotionsCore = (() => {
       now >= Number(proof.at) && now - Number(proof.at) < HEALTHY_STREAM_DELAYED_MS);
   }
 
+  function hasVerifiedRewardSession(drop = currentDrop, login = watchingLogin()) {
+    const routing = readRoutingControllerSession();
+    const evidence = routing.candidateEvidence || {};
+    const currentCampaignKey = cleanText(drop?.campaignKey || drop?.campaignId);
+    const targetCampaignKey = cleanText(routing.targetCampaignKey);
+    return Boolean(
+      drop?.id &&
+      login &&
+      routing.state === ROUTING_STATES.EARNING &&
+      cleanText(routing.targetStream).toLowerCase() === cleanText(login).toLowerCase() &&
+      cleanText(routing.targetDropId) === cleanText(drop.id) &&
+      (!currentCampaignKey || !targetCampaignKey || campaignKeysMatch(targetCampaignKey, currentCampaignKey)) &&
+      evidence.gqlSessionDropMatched === true &&
+      evidence.gqlSessionIdentityLevel === "exact-drop"
+    );
+  }
+
   function rewardCreditStatus(drop = currentDrop, login = watchingLogin()) {
     const resolution = rewardSessionResolution;
     const sameTarget = resolution && resolution.channel === login &&
@@ -16596,6 +16639,7 @@ const ExtraPotionsCore = (() => {
       return `Twitch reports ${subject}: ${resolution.sessionName}${minutes} · Selected: ${drop.name || "Drop"}`;
     }
     if (hasConfirmedRewardProgress(drop, login)) return `Earning ${drop.name || "Drop"} On ${login}`;
+    if (hasVerifiedRewardSession(drop, login)) return `Earning ${drop.name || "Drop"} On ${login} · First Twitch Credit Pending`;
     return inventoryResponseHealth.valid
       ? "Eligible stream · syncing reward progress"
       : "Eligible stream · inventory unavailable, syncing reward progress";
@@ -19678,6 +19722,7 @@ const ExtraPotionsCore = (() => {
       (
         routingEvidence.gqlCampaignSupported ||
         routingEvidence.gqlSessionCampaignMatched ||
+        routingEvidence.gqlSessionDropMatched ||
         routingEvidence.campaignAclMatched
       )
     );
@@ -19692,6 +19737,7 @@ const ExtraPotionsCore = (() => {
       ) ||
       restoredRoutingProof
     );
+    const exactSessionVerified = hasVerifiedRewardSession(currentDrop, login);
     const timing = currentStreamTimingSnapshot(now);
     const creditedRecently = Boolean(
       campaignVerified &&
@@ -19709,8 +19755,16 @@ const ExtraPotionsCore = (() => {
       campaignVerified &&
       gameMatches
     );
-    const earningVerified = Boolean(streamEligible && creditedRecently &&
-      (verificationProof.progressConfirmed || routingEvidence.creditedProgressVerified));
+    const earningVerified = Boolean(
+      streamEligible &&
+      (
+        exactSessionVerified ||
+        (
+          creditedRecently &&
+          (verificationProof.progressConfirmed || routingEvidence.creditedProgressVerified)
+        )
+      )
+    );
     const healthy = Boolean(
       login &&
       currentDrop &&
@@ -19731,6 +19785,7 @@ const ExtraPotionsCore = (() => {
       domVideoPlaying,
       domVideoPlayingAuthoritative: false,
       creditedRecently,
+      exactSessionVerified,
       earningVerified,
       streamEligible,
       expectedGame: currentDrop?.game || null,
@@ -19785,10 +19840,13 @@ const ExtraPotionsCore = (() => {
     if (health?.recovery?.code === 'credit-stalled') {
       return { label: 'Progress stalled', detail: health.creditedProgressAgeMs ? `Last Twitch credit ${briefAge(health.creditedProgressAgeMs)} ago.` : 'Twitch has not credited new progress.', tone: 'bad' };
     }
-    if (health?.streamEligible && (!health.earningVerified || !hasConfirmedRewardProgress())) {
+    if (health?.streamEligible && !health.earningVerified) {
       return { label: 'Eligible stream', detail: rewardCreditStatus(), tone: 'warn' };
     }
     if (health?.earningVerified) {
+      if (!hasConfirmedRewardProgress() && health?.exactSessionVerified) {
+        return { label: 'Verified', detail: 'Twitch reports the selected reward as the active Drop session · waiting for first credit.', tone: 'good' };
+      }
       return { label: 'Verified', detail: health.creditedProgressAgeMs ? `Last Twitch credit ${briefAge(health.creditedProgressAgeMs)} ago.` : 'Campaign and stream evidence are verified.', tone: 'good' };
     }
     if (health?.inVerificationGrace || eligibility?.code === 'verification-pending' || eligibility?.code === 'unknown') {
@@ -19936,7 +19994,7 @@ const ExtraPotionsCore = (() => {
     } else if ((routing.state === ROUTING_STATES.EARNING || health.earningVerified) && currentDrop) {
       const recoveryCode = health.recovery?.code || "healthy";
       if (health.inVerificationGrace) {
-        const confirmed = hasConfirmedRewardProgress();
+        const confirmed = health.earningVerified;
         label = confirmed ? (settings.backgroundEarning ? "BG Earning" : "Earning") : "Syncing";
         cls += confirmed ? " good" : " warn";
       } else if (recoveryCode === "credit-delayed-background") {
@@ -19952,7 +20010,7 @@ const ExtraPotionsCore = (() => {
         label = "Delayed";
         cls += " warn";
       } else {
-        const confirmed = hasConfirmedRewardProgress();
+        const confirmed = health.earningVerified;
         label = confirmed ? (settings.backgroundEarning ? "BG Earning" : "Earning") : "Syncing";
         cls += confirmed ? " good" : " warn";
       }
@@ -21276,10 +21334,12 @@ const ExtraPotionsCore = (() => {
             navigatedToInventory: lastClaimIntegrityFallback.navigatedToInventory,
           }
         : null,
-      progressAgeSeconds: Math.max(0, Math.floor((now - lastProgressAt) / 1000)),
+      progressAgeSeconds: lastProgressAt
+        ? Math.max(0, Math.floor((now - lastProgressAt) / 1000))
+        : null,
       progressFreshnessBasis: "credited-minutes-or-percent",
       lastProgress,
-      lastProgressAt: new Date(lastProgressAt).toISOString(),
+      lastProgressAt: lastProgressAt ? new Date(lastProgressAt).toISOString() : null,
       navigationInFlight: (() => {
         const flight = navigationFlightSnapshot(now);
         return flight ? {
@@ -21460,6 +21520,7 @@ const ExtraPotionsCore = (() => {
           domVideoPlaying: health.domVideoPlaying,
           domVideoPlayingAuthoritative: health.domVideoPlayingAuthoritative,
           creditedRecently: health.creditedRecently,
+          exactSessionVerified: health.exactSessionVerified,
           streamEligible: health.streamEligible,
           earningVerified: health.earningVerified,
           expectedGame: health.expectedGame,
