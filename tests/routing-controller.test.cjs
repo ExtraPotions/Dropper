@@ -180,7 +180,7 @@ test('promoted and sponsored placements are rejected before routing', () => {
 });
 
 
-test('category cards without Drops badges use probationary verification', () => {
+test('category cards without Drops badges stay probationary until earning proof', () => {
   const findStart = source.indexOf('  function routingControllerFindStream');
   const findEnd = source.indexOf('\n  function routingControllerOpenStream', findStart);
   const find = source.slice(findStart, findEnd);
@@ -195,8 +195,9 @@ test('category cards without Drops badges use probationary verification', () => 
   const verifyEnd = source.indexOf('\n  function routingControllerEarning', verifyStart);
   const verify = source.slice(verifyStart, verifyEnd);
   assert.match(verify, /const liveDropsVisible = Boolean\(info\.dropsEnabled\)/u);
-  assert.match(verify, /campaignProof \|\|\s*progressProof/u);
-  assert.match(verify, /gql-campaign\+game/u);
+  assert.match(verify, /const exactSessionProof = Boolean\(/u);
+  assert.match(verify, /const earningProof = exactSessionProof \|\| progressProof/u);
+  assert.match(verify, /session-drop-match/u);
 });
 
 
@@ -215,7 +216,7 @@ test('category render wakes waiting discovery before retry deadline', () => {
 });
 
 
-test('positive GQL campaign support verifies probationary streams', () => {
+test('positive GQL campaign support records eligibility without proving earning', () => {
   assert.match(source, /function updateRoutingCampaignSupportEvidence\(channelLogin, availableCampaigns, sessionDrop = null\)/u);
   assert.match(source, /channelSupportsTargetCampaign\(availableCampaigns, session\)/u);
   assert.match(source, /gqlCampaignSupported: true/u);
@@ -225,8 +226,9 @@ test('positive GQL campaign support verifies probationary streams', () => {
   const verifyEnd = source.indexOf('\n  function routingControllerEarning', verifyStart);
   const verify = source.slice(verifyStart, verifyEnd);
   assert.match(verify, /const gqlCampaignProof = Boolean\(session\.candidateEvidence\?\.gqlCampaignSupported\)/u);
-  assert.match(verify, /campaignProof \|\|\s*progressProof/u);
-  assert.match(verify, /gql-campaign\+game/u);
+  assert.match(verify, /const exactSessionProof = Boolean\(/u);
+  assert.match(verify, /const earningProof = exactSessionProof \|\| progressProof/u);
+  assert.match(verify, /session-drop-match/u);
 
   const pollStart = source.indexOf('  async function pollGqlDrops()');
   const pollEnd = source.indexOf('\n  function applyDrop(', pollStart);
@@ -249,10 +251,11 @@ test('generic Drops tags do not verify campaign-restricted streams', () => {
     verify.indexOf('if (\n      info.live'),
     verify.indexOf('lastStreamVerification =', verify.indexOf('if (\n      info.live')),
   );
-  assert.match(acceptance, /campaignProof \|\|\s*progressProof/u);
+  assert.match(acceptance, /earningProof/u);
+  assert.doesNotMatch(acceptance, /campaignProof\s*\|\|/u);
   assert.doesNotMatch(acceptance, /liveDropsVisible|directoryDropsVisible/u);
 
-  assert.match(verify, /method: progressProof\s*\? "credited-progress"\s*:\s*"gql-campaign\+game"/u);
+  assert.match(verify, /method: progressProof\s*\? "credited-progress"\s*:\s*"session-drop-match"/u);
   assert.match(verify, /directoryDropsVisible,/u);
   assert.match(verify, /liveDropsVisible,/u);
 });
@@ -302,9 +305,10 @@ test('allow-list campaigns require permitted channels while unrestricted campaig
   const verifyStart = source.indexOf('  function routingControllerVerifyStream');
   const verifyEnd = source.indexOf('\n  function routingControllerEarning', verifyStart);
   const verify = source.slice(verifyStart, verifyEnd);
-  assert.match(verify, /campaignProof \|\|\s*progressProof/u);
+  assert.match(verify, /const exactSessionProof = Boolean\(/u);
+  assert.match(verify, /const earningProof = exactSessionProof \|\| progressProof/u);
   assert.doesNotMatch(verify, /not allowed by/u);
-  assert.match(verify, /campaignVerified: true/u);
+  assert.match(verify, /campaignVerified: campaignProof \|\| exactSessionProof/u);
   assert.match(verify, /verifiedChannel: verificationLogin/u);
 
   const earningStart = source.indexOf('  function routingControllerEarning');
