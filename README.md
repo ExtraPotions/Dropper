@@ -2,7 +2,7 @@
 
 # Dropper
 
-Current release: **3.4.16**.
+Current release: **3.4.17**.
 
 **Follow your Twitch Drops from watch time to reward**
 
