@@ -10,7 +10,7 @@ function validator() {
   const end = source.indexOf('\n  function handleInterceptedTwitchPayload', start);
   const c = {URL, location:{href:'https://www.twitch.tv/example',pathname:'/example'},
     storageAccountLogin:()=> 'viewer', CLIENT_IDS:['client'],
-    GQL_OPS:{inventory:{name:'Inventory'}}, Date};
+    GQL_OPS:{inventory:{name:'Inventory'},stream:{name:'VideoPlayerStreamInfoOverlayChannel'},claim:{name:'DropsPage_ClaimDropRewards'},details:{name:'DropCampaignDetails'}}, Date};
   vm.runInNewContext(source.slice(start,end),c);
   return detail => c.validateTwitchBridgePayload(detail,'correlation');
 }
@@ -53,6 +53,14 @@ test('integrity responses retain only bounded token and valid expiration',()=>{
   p.json={token:'token',expiration:Math.floor(Date.now()/1000)+300,private:'discard'};
   const validate=validator(),result=validate(p);assert.ok(result);assert.equal(result.json.private,undefined);
   p.json.expiration=1;assert.equal(validate(p),null);
+});
+
+test('supported stream, campaign-detail and claim operations retain their public response fields',()=>{
+ const p=payload();p.operations=['VideoPlayerStreamInfoOverlayChannel','DropCampaignDetails','DropsPage_ClaimDropRewards'].map(name=>({name,hash:'a'.repeat(64),variableKeys:[]}));
+ p.json=[{data:{user:{id:'1',login:'stream',stream:{id:'live'},broadcastSettings:{title:'Title'},email:'private'}}},
+  {data:{user:{dropCampaign:{id:'campaign'}}}}, {data:{claimDropRewards:{status:'ELIGIBLE_FOR_ALL',private:'discard'}}}];
+ const rows=validator()(p).json;assert.equal(rows[0].data.user.stream.id,'live');assert.equal(rows[0].data.user.email,undefined);
+ assert.equal(rows[1].data.user.dropCampaign.id,'campaign');assert.equal(rows[2].data.claimDropRewards.status,'ELIGIBLE_FOR_ALL');assert.equal(rows[2].data.claimDropRewards.private,undefined);
 });
 
 test('page hook preserves fetch responses and XHR calls while sending only Drops data',async()=>{
