@@ -1,3 +1,9 @@
+## 3.4.15 — 2026-10-06
+
+- Makes menu labels and captions easier to read at every size.
+- Aligns dropdowns, toggles, buttons, and section headings with consistent spacing.
+- Gives menus more room while keeping each product's signature colors.
+
 ## 3.4.14 — 2026-10-07
 
 - The standalone install is smaller while keeping all features bundled.

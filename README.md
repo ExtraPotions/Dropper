@@ -29,7 +29,7 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 
 - **Simple System menu:** Status stays open with its reason and recovery action, plus recent activity. Support holds Copy Diagnostics and Report a Problem. Reset asks for a second tap inside the menu.
 
-- **Readable menus:** choose Standard, Large, or Extra Large from Appearance > Menu Preferences. The choice applies to ExtraPotions menus on this site.
+- **Readable menus:** choose Standard (14px text), Large (16px), or Extra Large (18px) from Appearance > Menu Preferences. Captions start at 12px. Labels, dropdowns, toggles, and buttons share consistent spacing and alignment. The choice applies to ExtraPotions menus on this site.
 
 - **Interruption rules:** set quiet hours, protect channels from automatic switching, exclude channels, or stay on a stream while it is earning. Quiet hours also silence browser alerts.
 - **Honest progress:** show progress as pending when Twitch has not supplied it. Eligible streams and confirmed reward credit have separate status indicators.

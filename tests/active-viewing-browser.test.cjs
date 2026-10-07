@@ -348,7 +348,7 @@ test('ranked game priority is account-scoped, does not navigate, and single-size
   await page.evaluate(({ drop, campaigns }) => { window.__dropperTest.configure(drop, campaigns); window.__dropperTest.refresh(); window.dropperShow(); }, d);
   const widths = [];
   for (const viewportWidth of [280, 596, 1280]) {
-    const expected = Math.min(260, viewportWidth - 24);
+    const expected = Math.min(288, viewportWidth - 24);
     const mode = `viewport ${viewportWidth}`;
     await page.setViewportSize({ width: viewportWidth, height: 900 });
     await page.evaluate(mode => { const t = window.__dropperTest; t.relayout(); window.dropperShow(); const h = document.getElementById('tdh-root').shadowRoot.querySelector('[data-panel="tdh-drops-body"]'); const b = document.getElementById('tdh-root').shadowRoot.getElementById('tdh-drops-body'); if (b.classList.contains('fl-tool-hidden')) h.click(); }, mode);
