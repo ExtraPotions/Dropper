@@ -62,3 +62,5 @@ Screenshots show the current product with sample content.
 ## About
 
 Dropper is an independent project and is not affiliated with or endorsed by Twitch.
+
+Smaller install files keep installation lightweight without removing features.

@@ -36,11 +36,13 @@ test('dropper.user.js stays within the defensible single-file size ceiling', () 
   );
 });
 
-test('dropper.user.js stays readable below the 2 MB minify threshold', () => {
+test('dropper.user.js is minified below the size ceiling', () => {
   const bytes = fs.statSync(installPath).size;
   const install = fs.readFileSync(installPath, 'utf8');
-  assert.ok(bytes <= MAX_INSTALL_BYTES, `dropper.user.js is ${bytes} bytes; minify only above ${MAX_INSTALL_BYTES} bytes`);
-  assert.match(install, /function twitchDropsHelper/u);
+  assert.ok(bytes <= MAX_INSTALL_BYTES, `dropper.user.js is ${bytes} bytes; ceiling is ${MAX_INSTALL_BYTES} bytes`);
+  assert.doesNotMatch(install, /function twitchDropsHelper/u);
+  const { splitHeader } = require('../scripts/minify-dist.cjs');
+  assert.ok(splitHeader(install).body.trim().split('\n').length < 10);
 });
 
 test('dropper.user.js records a reproducible SHA256', () => {

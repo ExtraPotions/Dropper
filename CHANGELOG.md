@@ -1,3 +1,8 @@
+## 3.4.14 — 2026-10-07
+
+- The standalone install is smaller while keeping all features bundled.
+- Existing campaign, earning-status, and session fixes remain included.
+
 ## 3.4.13 — 2026-10-06
 
 - Overwatch drop campaigns now open the live Overwatch 2 Twitch directory instead of waiting on the retired Overwatch category.

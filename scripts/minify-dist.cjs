@@ -8,7 +8,6 @@ const { minify } = require('terser');
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_INPUT = path.join(ROOT, 'src', 'dropper.user.js');
 const DEFAULT_OUTPUT = path.join(ROOT, 'dropper.user.js');
-const MINIFY_THRESHOLD_BYTES = 2 * 1024 * 1024;
 const ICON_URL = 'https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg';
 const { assembleDropperSource } = require('./core-modules.cjs');
 
@@ -36,22 +35,7 @@ function cleanInstallHeader(header) {
     .join('\n');
 }
 
-function shouldMinify(byteLength, thresholdBytes = MINIFY_THRESHOLD_BYTES) {
-  return byteLength > thresholdBytes;
-}
-
-function readableInstall(source) {
-  const { header, body } = splitHeader(source);
-  const cleanedHeader = cleanInstallHeader(header);
-  if (cleanedHeader === header) {
-    if (source === '') return source;
-    return source.endsWith('\n') ? source : `${source}\n`;
-  }
-  const assembled = body ? `${cleanedHeader}\n\n${body}` : `${cleanedHeader}\n`;
-  return assembled.endsWith('\n') ? assembled : `${assembled}\n`;
-}
-
-async function minifyUserscript(inputPath, outputPath = DEFAULT_OUTPUT, options = {}) {
+async function minifyUserscript(inputPath, outputPath = DEFAULT_OUTPUT) {
   let source = fs.readFileSync(inputPath, 'utf8').replace(/\r\n/g, '\n');
   if (path.resolve(inputPath) === DEFAULT_INPUT) {
     source = assembleDropperSource(source, ROOT);
@@ -60,22 +44,14 @@ async function minifyUserscript(inputPath, outputPath = DEFAULT_OUTPUT, options 
     if (/data:image\//u.test(source)) throw new Error('Images must be referenced by URL instead of embedded data');
   }
   const originalBytes = Buffer.byteLength(source);
-  const thresholdBytes = options.thresholdBytes ?? MINIFY_THRESHOLD_BYTES;
-  let output;
-  let minified = false;
-  if (shouldMinify(originalBytes, thresholdBytes)) {
-    const { header, body } = splitHeader(source);
-    const result = await minify(body, {
-      compress: { passes: 3, ecma: 2020, dead_code: true },
-      mangle: { toplevel: true },
-      format: { comments: false, ecma: 2020 },
-    });
-    if (!result.code) throw new Error(`Terser produced empty output for ${inputPath}`);
-    output = `${cleanInstallHeader(header)}\n\n${result.code}\n`;
-    minified = true;
-  } else {
-    output = readableInstall(source);
-  }
+  const { header, body } = splitHeader(source);
+  const result = await minify(body, {
+    compress: { passes: 3, ecma: 2020, dead_code: true },
+    mangle: { toplevel: true },
+    format: { comments: false, ecma: 2020 },
+  });
+  if (!result.code) throw new Error(`Terser produced empty output for ${inputPath}`);
+  const output = `${cleanInstallHeader(header)}\n\n${result.code}\n`;
   fs.writeFileSync(outputPath, output);
   const outputBytes = Buffer.byteLength(output);
   const sha256 = crypto.createHash('sha256').update(output).digest('hex');
@@ -85,17 +61,14 @@ async function minifyUserscript(inputPath, outputPath = DEFAULT_OUTPUT, options 
     outputBytes,
     sha256,
     outputPath,
-    minified,
+    minified: true,
   };
 }
 
 module.exports = {
-  MINIFY_THRESHOLD_BYTES,
   minifyUserscript,
   splitHeader,
   cleanInstallHeader,
-  shouldMinify,
-  readableInstall,
 };
 
 if (require.main === module) {
