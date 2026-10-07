@@ -1,3 +1,9 @@
+## 3.4.16 — 2026-10-07
+
+- Keeps saved preferences in your userscript manager and safely migrates older settings.
+- Checks Twitch progress messages more carefully before using them.
+- Includes verified and rejected stream events in recent activity.
+
 ## 3.4.15 — 2026-10-06
 
 - Makes menu labels and captions easier to read at every size.

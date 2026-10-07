@@ -2,6 +2,8 @@
 
 # Dropper
 
+Current release: **3.4.16**.
+
 **Follow your Twitch Drops from watch time to reward**
 
 Track Twitch-credited progress, manage eligible streams, and claim available rewards from a compact menu.
