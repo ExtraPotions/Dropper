@@ -30,7 +30,7 @@ jobs:
     with:
       tag: ${{ github.event.client_payload.tag || inputs.tag || '' }}
       product: Dropper
-      node-version: "22"
+      node-version: "24"
       script-asset: dropper.user.js
       icon-asset: assets/dropper-launcher.svg
       release-sections: 3

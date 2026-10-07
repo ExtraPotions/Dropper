@@ -14,7 +14,7 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 test('Dropper delegates Core rollout orchestration to exp-core', () => {
   assert.match(workflow, /uses: ExtraPotions\/exp-core\/\.github\/workflows\/consumer-rollout\.yml@main/u);
   assert.match(workflow, /product: Dropper/u);
-  assert.match(workflow, /node-version: "22"/u);
+  assert.match(workflow, /node-version: "24"/u);
   assert.match(workflow, /script-asset: dropper\.user\.js/u);
   assert.match(workflow, /icon-asset: assets\/dropper-launcher\.svg/u);
   assert.match(workflow, /release-sections: 3/u);
