@@ -1788,6 +1788,7 @@
       failedStreams: [],
       excludedCampaignKeys: [],
       deferredCampaigns: {},
+      creditVerificationAttempts: {},
       streamDiscoveryStartedAt: 0,
       navigationTarget: "",
       navigationReason: "",
@@ -2542,6 +2543,49 @@
     return true;
   }
 
+  function routingRewardCreditState(session, now = Date.now()) {
+    const poll = typeof lastSessionPoll === 'undefined' ? null : lastSessionPoll;
+    const fresh = poll && cleanText(poll.channelLogin).toLowerCase() === cleanText(session.targetStream).toLowerCase() &&
+      Number(poll.at) <= now && now - Number(poll.at) <= 90 * 1000;
+    if (!fresh) return { code: 'session-check-pending', label: 'Waiting For Reward Session' };
+    if (poll.responseStatus === 'unidentified') return { code: 'session-unidentified', label: 'Reward Session Unidentified' };
+    if (poll.responseStatus === 'absent') return { code: 'session-absent', label: 'Reward Session Missing' };
+    if (['error','unavailable','partial-response'].includes(poll.responseStatus)) return { code: 'session-request-unavailable', label: 'Reward Session Check Unavailable' };
+    if (poll.responseStatus === 'shape-changed') return { code: 'session-shape-changed', label: 'Reward Session Format Unrecognized' };
+    if (poll.identityLevel === 'exact-drop') return { code: 'session-identified', label: 'Waiting For Twitch Credit' };
+    return { code: 'session-unmatched', label: 'Reward Session Does Not Match Selected Drop' };
+  }
+
+  function routingControllerCreditDeadline(session, login, now) {
+    const key = cleanText(session.targetCampaignKey).toLowerCase();
+    if (!key) return false;
+    const attempts = Object.fromEntries(Object.entries(session.creditVerificationAttempts || {})
+      .filter(([, entry]) => entry && Number(entry.expiresAt) > now).slice(-19));
+    const previous = attempts[key];
+    const count = Math.min(3, Math.max(0, Number(previous?.count) || 0) + 1);
+    attempts[key] = { count, expiresAt: now + 30 * 60 * 1000 };
+    session = writeRoutingControllerSession({ ...session, creditVerificationAttempts: attempts });
+    if (count < 3) return false;
+
+    // Campaign support without reward identity or new credit does not prove
+    // the channel failed. Bound these slow retries across stream navigations.
+    const retryAt = now + 15 * 60 * 1000;
+    attempts[key].expiresAt = retryAt;
+    const deferredCampaigns = Object.fromEntries(Object.entries(session.deferredCampaigns || {})
+      .filter(([, until]) => Number(until) > now));
+    deferredCampaigns[key] = retryAt;
+    const patch = { creditVerificationAttempts: attempts, deferredCampaigns,
+      streamDiscoveryStartedAt: 0, mismatchSince: 0, recoveryStage: 0 };
+    const { next, excluded } = pickViableCampaign({ ...session, ...patch }, { preferCurrent: false, now });
+    if (next) return transitionRoutingController(ROUTING_STATES.SELECT_CAMPAIGN, {
+      ...patch, excludedCampaignKeys: [...excluded], targetStream: '',
+      candidateEvidence: null, waitReason: '', deadlineAt: 0,
+    }, 'Reward credit unconfirmed after three stream attempts · deferring campaign for 15 minutes');
+    return transitionRoutingController(ROUTING_STATES.WAITING, {
+      ...patch, waitReason: 'reward-credit-unconfirmed', deadlineAt: retryAt,
+    }, `Reward credit unconfirmed · keeping ${login || session.targetStream || 'current stream'} open for a 15-minute cooldown`);
+  }
+
   function routingControllerVerifyStream(now = Date.now()) {
     let session = readRoutingControllerSession();
     const login = cleanText(watchingLogin()).toLowerCase();
@@ -2672,6 +2716,10 @@
           recoveryStage: 0,
           recoveryStartedAt: 0,
           recoveryLastCheckAt: 0,
+          creditVerificationAttempts: Object.fromEntries(Object.entries(session.creditVerificationAttempts || {})
+            .filter(([key]) => key !== cleanText(session.targetCampaignKey).toLowerCase())),
+          deferredCampaigns: Object.fromEntries(Object.entries(session.deferredCampaigns || {})
+            .filter(([key]) => key !== cleanText(session.targetCampaignKey).toLowerCase())),
         },
         `Verified earning on ${login || target} for ${session.targetCampaign || targetGame}`,
       );
@@ -2704,6 +2752,10 @@
     }
 
     if (session.deadlineAt && now >= session.deadlineAt) {
+      if (campaignProof && info.live && gameMatches) {
+        if (routingControllerCreditDeadline(session, target || login, now)) return true;
+        session = readRoutingControllerSession();
+      }
       return transitionRoutingController(
         ROUTING_STATES.FIND_STREAM,
         {
@@ -2723,7 +2775,7 @@
     );
     setStatus(
       campaignProof && info.live && gameMatches
-        ? `Eligible ${target || login || "Drops Stream"} · Waiting For Reward Session Or Twitch Credit`
+        ? `Eligible ${target || login || "Drops Stream"} · ${routingRewardCreditState(session, now).label}`
         : genericDropsVisible
           ? `Verifying ${target || login || "Drops Stream"} · Waiting For Campaign Proof`
           : `Verifying ${target || login || "Drops Stream"} For ${targetGame}`,
@@ -2972,6 +3024,31 @@
 
   function routingControllerWaiting(now = Date.now()) {
     const session = readRoutingControllerSession();
+    if (session.waitReason === 'reward-credit-unconfirmed') {
+      const matches = cleanText(currentDrop?.id) === cleanText(session.targetDropId) &&
+        cleanText(currentDrop?.campaignKey || currentDrop?.campaignId).toLowerCase() === cleanText(session.targetCampaignKey).toLowerCase();
+      const advanced = matches && (
+        (session.verifyBaselineMinutes != null && currentDrop?.currentMinutes != null && Number(currentDrop.currentMinutes) > Number(session.verifyBaselineMinutes)) ||
+        (session.verifyBaselinePercent != null && currentDrop?.percent != null && Number(currentDrop.percent) > Number(session.verifyBaselinePercent))
+      );
+      if (matches && ((session.verifyBaselineMinutes == null && currentDrop?.currentMinutes != null) ||
+        (session.verifyBaselinePercent == null && currentDrop?.percent != null))) {
+        writeRoutingControllerSession({ ...session,
+          verifyBaselineMinutes: session.verifyBaselineMinutes ?? currentDrop.currentMinutes,
+          verifyBaselinePercent: session.verifyBaselinePercent ?? currentDrop.percent,
+        });
+      }
+      if (advanced || session.candidateEvidence?.gqlSessionDropMatched === true) {
+        return routingControllerVerifyStream(now);
+      }
+      if (now < Number(session.deadlineAt || 0)) {
+        setStatus('Reward Credit Unconfirmed · Keeping Current Stream Open During Cooldown');
+        return false;
+      }
+      return transitionRoutingController(ROUTING_STATES.SELECT_CAMPAIGN, {
+        waitReason: '', deadlineAt: 0, targetStream: '', candidateEvidence: null,
+      }, 'Reward-credit cooldown ended · checking campaigns again');
+    }
     if (session.waitReason === "claim-disabled") {
       if (currentDrop?.isClaimed || !currentDrop) {
         return transitionRoutingController(ROUTING_STATES.SELECT_CAMPAIGN, { deadlineAt: 0 }, "Manual claim detected");
@@ -3046,6 +3123,12 @@
       deferredCampaigns: Object.entries(session.deferredCampaigns || {})
         .filter(([, until]) => Number(until) > now)
         .map(([campaignKey, until]) => ({ campaignKey, retryAt: new Date(Number(until)).toISOString() })),
+      creditVerification: {
+        attemptLimit: 3, cooldownSeconds: 900,
+        attempts: Math.min(3, Math.max(0, Number(session.creditVerificationAttempts?.[cleanText(session.targetCampaignKey).toLowerCase()]?.count) || 0)),
+        cooldownActive: session.waitReason === 'reward-credit-unconfirmed' && Number(session.deadlineAt) > now,
+        rewardSession: routingRewardCreditState(session, now),
+      },
       stateAgeSeconds: Math.max(0, Math.floor((now - Number(session.enteredAt || now)) / 1000)),
       deadlineAt: session.deadlineAt ? new Date(session.deadlineAt).toISOString() : null,
       deadlineRemainingSeconds: session.deadlineAt ? Math.max(0, Math.ceil((session.deadlineAt - now) / 1000)) : null,

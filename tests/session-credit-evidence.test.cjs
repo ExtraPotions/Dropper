@@ -132,7 +132,7 @@ test('campaign support stays in verification until selected reward earning is pr
   context.syncRoutingCampaignAllowListEvidence=session=>session;
   context.writeRoutingControllerSession=session=>(context.routing=session);
   context.transitionRoutingController=(state,patch)=>(context.routing={...context.routing,...patch,state},true);
-  vm.runInNewContext(block('  function routingControllerVerifyStream(', '\n  function routingControllerEarning')+'\nthis.verify=routingControllerVerifyStream;',context);
+  vm.runInNewContext(block('  function routingRewardCreditState(', '\n  function routingControllerVerifyStream')+block('  function routingControllerVerifyStream(', '\n  function routingControllerEarning')+'\nthis.verify=routingControllerVerifyStream;',context);
   context.verify(100000);
   assert.equal(context.routing.state,'verify-stream','campaign support alone is eligibility evidence, not earning proof');
   assert.equal(context.lastStreamVerification,null,'historical progress does not create a verified earning record');
@@ -149,7 +149,7 @@ test('exact selected reward session can prove earning before the first credited 
   context.syncRoutingCampaignAllowListEvidence=session=>session;
   context.writeRoutingControllerSession=session=>(context.routing=session);
   context.transitionRoutingController=(state,patch)=>(context.routing={...context.routing,...patch,state},true);
-  vm.runInNewContext(block('  function routingControllerVerifyStream(', '\n  function routingControllerEarning')+'\nthis.verify=routingControllerVerifyStream;',context);
+  vm.runInNewContext(block('  function routingRewardCreditState(', '\n  function routingControllerVerifyStream')+block('  function routingControllerVerifyStream(', '\n  function routingControllerEarning')+'\nthis.verify=routingControllerVerifyStream;',context);
   context.verify(100000);
   assert.equal(context.routing.state,'earning');
   assert.equal(context.lastStreamVerification.method,'session-drop-match');

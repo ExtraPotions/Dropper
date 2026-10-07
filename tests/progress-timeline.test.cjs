@@ -17,6 +17,13 @@ test('alternating status checks from the diagnostics report collapse to one row 
  assert.deepEqual([...c.progressTimelineSnapshot().slice(-2).map(r=>r.minutes)],[1,2],'new credited minutes are always recorded');
 });
 
+test('unknown progress stays unknown while an actual zero remains zero',()=>{
+ const now={value:1000},c=timelineContext(now);
+ c.recordProgressTimeline('progress',{reason:'Pending',currentMinutes:null});
+ now.value+=1000;c.recordProgressTimeline('progress',{reason:'Observed zero',currentMinutes:0});
+ assert.deepEqual([...c.progressTimelineSnapshot().map(row=>row.minutes)],[null,0]);
+});
+
 test('navigation rows use plain language instead of routing codes',()=>{
  const now={value:1000},c=timelineContext(now);
  c.recordProgressTimeline('navigation',{reason:'routing-find-category',message:'Automatic Twitch navigation'});

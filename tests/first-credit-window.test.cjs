@@ -17,7 +17,7 @@ function harness({ live = true, game = '007 First Light', campaignSupported = tr
   const transitions = [];
   const context = {
     ROUTING_SESSION_VERSION: 1,
-    ROUTING_STATES: { IDLE: 'idle', FIND_STREAM: 'find-stream', VERIFY_STREAM: 'verify-stream', EARNING: 'earning', WAITING: 'waiting', PAUSED: 'paused' },
+    ROUTING_STATES: { IDLE: 'idle', SELECT_CAMPAIGN:'select-campaign', FIND_STREAM: 'find-stream', VERIFY_STREAM: 'verify-stream', EARNING: 'earning', WAITING: 'waiting', PAUSED: 'paused' },
     ROUTING_FIRST_CREDIT_DEADLINE_MS: 6 * MINUTE,
     GQL_MIN_GAP_MS: 15 * 1000,
     STREAM_ROUTE_SETTLE_MS: 15 * 1000,
@@ -40,7 +40,8 @@ function harness({ live = true, game = '007 First Light', campaignSupported = tr
     clearSkipStreamerArm: () => {},
     logActivity: () => {},
     saveRecoverySnapshot: () => {},
-    Date: { now: () => context.now },
+    pickViableCampaign: () => ({next:{id:'next'},excluded:new Set()}),
+    Date: class extends Date { static now() { return context.now; } },
     now: ENTERED,
   };
   vm.runInNewContext([
@@ -48,8 +49,10 @@ function harness({ live = true, game = '007 First Light', campaignSupported = tr
     block('  function routingSessionDefaults', '\n  function writeRoutingControllerSession'),
     block('  function writeRoutingControllerSession', '\n  function routingControllerTargetFromDrop').replace(/\n  function [\s\S]*$/u, ''),
     block('  function transitionRoutingController', '\n  function routingControllerAddFailedStream').replace(/\n  function (?!transitionRoutingController)[\s\S]*$/u, ''),
+    block('  function routingRewardCreditState', '\n  function routingControllerVerifyStream'),
     block('  function routingControllerVerifyStream', '\n  function routingControllerEarning'),
-    'this.verify = routingControllerVerifyStream; this.write = writeRoutingControllerSession; this.read = readRoutingControllerSession; this.transition = transitionRoutingController;',
+    block('  function routingControllerWaiting', '\n  function routingControllerDiagnostics'),
+    'this.verify = routingControllerVerifyStream; this.wait = routingControllerWaiting; this.write = writeRoutingControllerSession; this.read = readRoutingControllerSession; this.transition = transitionRoutingController;',
   ].join('\n'), context);
   const original = context.transition;
   context.transition = (...args) => { transitions.push(args[0]); return original(...args); };
@@ -113,4 +116,72 @@ test('an offline stream or a different category never gets the longer window', (
 test('diagnostics report the first-credit window', () => {
   assert.match(source, /firstCreditTimeoutSeconds: Math\.round\(ROUTING_FIRST_CREDIT_DEADLINE_MS \/ 1000\)/u);
   assert.match(source, /firstCreditWindow: Boolean\(routingSession\.firstCreditWindow\)/u);
+});
+
+test('three completed first-credit windows defer the campaign instead of looping through streams',()=>{
+ const {context,tick}=harness();
+ for(let attempt=0;attempt<3;attempt++){
+  const entered=ENTERED+attempt*7*MINUTE;
+  context.now=entered;
+  context.write({...context.read(),state:'verify-stream',enteredAt:entered,deadlineAt:entered+6*MINUTE,firstCreditWindow:true,targetStream:'toly500',candidateEvidence:{gqlCampaignSupported:true}});
+  tick(attempt*7*MINUTE+6*MINUTE+1000);
+ }
+ const session=context.read();assert.equal(session.state,'select-campaign');
+ assert.equal(session.creditVerificationAttempts.campaign.count,3);
+ assert.equal(session.deferredCampaigns.campaign,context.now+15*MINUTE);
+ assert.equal(context.lastStreamVerification,null,'campaign support never fabricates earning');
+});
+
+test('when no alternative campaign exists, the exhausted credit budget waits on the current stream',()=>{
+ const {context,tick}=harness();context.pickViableCampaign=()=>({next:null,excluded:new Set()});
+ context.write({...context.read(),creditVerificationAttempts:{campaign:{count:2,channels:['other'],expiresAt:ENTERED+30*MINUTE}}});
+ tick(20*1000);tick(6*MINUTE+1000);
+ const session=context.read();assert.equal(session.state,'waiting');assert.equal(session.waitReason,'reward-credit-unconfirmed');
+ assert.equal(session.targetStream,'toly500');assert.equal(session.deadlineAt,context.now+15*MINUTE);
+});
+
+test('fresh credit takes precedence over an exhausted retry budget',()=>{
+ const {context,tick}=harness();context.write({...context.read(),creditVerificationAttempts:{campaign:{count:3,expiresAt:ENTERED+30*MINUTE}}});
+ tick(20*1000);context.currentDrop.currentMinutes=1;tick(6*MINUTE+1000);
+ assert.equal(context.read().state,'earning');assert.equal(context.lastStreamVerification.method,'credited-progress');
+ assert.equal(context.read().creditVerificationAttempts.campaign,undefined,'verified earning clears the retry budget');
+});
+
+test('credit cooldown holds the current stream and fresh credit can end the cooldown early',()=>{
+ const {context,tick}=harness();context.pickViableCampaign=()=>({next:null,excluded:new Set()});
+ context.write({...context.read(),creditVerificationAttempts:{campaign:{count:2,expiresAt:ENTERED+30*MINUTE}}});
+ tick(20*1000);tick(6*MINUTE+1000);context.now+=MINUTE;
+ context.wait(context.now);assert.equal(context.read().state,'waiting');
+ context.currentDrop.currentMinutes=1;context.wait(context.now);
+ assert.equal(context.read().state,'earning');
+ assert.equal(context.read().deferredCampaigns.campaign,undefined,'fresh earning clears the campaign deferral');
+});
+
+test('reward-session diagnostics distinguish unidentified identity from an identified session waiting for credit',()=>{
+ const context={cleanText:value=>String(value??'').trim(),lastSessionPoll:{at:1000,channelLogin:'channel',responseStatus:'unidentified',identityLevel:'none'}};
+ const code=block('  function routingRewardCreditState', '\n  function routingControllerCreditDeadline');
+ vm.runInNewContext(code+'\nthis.state=routingRewardCreditState;',context);
+ const session={targetStream:'channel'};
+ assert.equal(context.state(session,2000).code,'session-unidentified');
+ context.lastSessionPoll.responseStatus='absent';assert.equal(context.state(session,2000).code,'session-absent');
+ context.lastSessionPoll.responseStatus='ok';context.lastSessionPoll.identityLevel='exact-drop';assert.equal(context.state(session,2000).code,'session-identified');
+ assert.equal(context.state(session,100000).code,'session-check-pending','stale observations cannot describe the current stream');
+});
+
+test('expired attempt budgets start fresh and unknown first observations do not fabricate credit',()=>{
+ const {context,tick}=harness();context.pickViableCampaign=()=>({next:null,excluded:new Set()});
+ context.write({...context.read(),creditVerificationAttempts:{campaign:{count:3,expiresAt:ENTERED-1}}});
+ tick(20*1000);tick(6*MINUTE+1000);
+ assert.equal(context.read().state,'find-stream');assert.equal(context.read().creditVerificationAttempts.campaign.count,1);
+ context.write({...context.read(),state:'waiting',targetStream:'toly500',waitReason:'reward-credit-unconfirmed',deadlineAt:context.now+15*MINUTE,verifyBaselineMinutes:null,verifyBaselinePercent:null});
+ context.currentDrop.currentMinutes=20;context.wait(context.now);
+ assert.equal(context.read().state,'waiting','the first known value may be historical');
+ context.currentDrop.currentMinutes=21;context.wait(context.now);assert.equal(context.read().state,'earning');
+});
+
+test('cooldown expiry resumes campaign selection without permanently excluding the campaign',()=>{
+ const {context,tick}=harness();context.pickViableCampaign=()=>({next:null,excluded:new Set()});
+ context.write({...context.read(),creditVerificationAttempts:{campaign:{count:2,expiresAt:ENTERED+30*MINUTE}}});
+ tick(20*1000);tick(6*MINUTE+1000);context.now=context.read().deadlineAt;
+ context.wait(context.now);assert.equal(context.read().state,'select-campaign');assert.equal(context.read().excludedCampaignKeys.length,0);
 });

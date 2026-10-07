@@ -1,3 +1,9 @@
+## Unreleased
+
+- Bounds campaign-supported streams without identified earning to three attempts before a 15-minute campaign cooldown.
+- Keeps the current stream open during cooldown when no alternative campaign is available; fresh earning evidence can end the cooldown early.
+- Separates unidentified or missing reward sessions from waiting for credit, and keeps unknown timeline progress pending.
+
 ## 3.4.17 — 2026-10-07
 
 - Organizes related menu settings into compact tabs, with System last.

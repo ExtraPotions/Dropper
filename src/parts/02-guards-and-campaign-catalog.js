@@ -356,7 +356,7 @@
     return words?words.charAt(0).toUpperCase()+words.slice(1):'Automatic navigation';
   }
   function recordProgressTimeline(type, details = {}) {
-    const minutes=Number(details.currentMinutes);
+    const minutes=details.currentMinutes == null || details.currentMinutes === '' ? null : Number(details.currentMinutes);
     const kind=cleanText(type).slice(0,40);
     const reason=kind==='navigation'&&details.reason?navigationReasonText(details.reason):cleanText(details.reason||details.message);
     const row={at:Date.now(),type:kind,reason:reason.slice(0,180),minutes:Number.isFinite(minutes)&&minutes>=0?minutes:null};
