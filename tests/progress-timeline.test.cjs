@@ -32,3 +32,12 @@ test('System activity does not repeat navigation already in the timeline, and di
  assert.match(source,/matchingActiveCampaign: diagnosticStandbyMatches\.filter\(\(item\) => !diagnosticVisibleLogins\.has/);
  assert.match(source,/campaignKey: cleanText\(item\.campaignKey \|\| item\.campaignId\)\.slice\(0, 8\) \|\| null/);
 });
+
+test('actual stream outcome activity reaches the bounded progress timeline without credentials',()=>{
+ const now={value:1000},c=timelineContext(now);Object.assign(c,{activityLog:[],ACTIVITY_LOG_LIMIT:100,ACTIVITY_LOG_KEY:'activity',renderRoutingHistory:()=>{}});
+ for(const name of ['sanitizeDiagnosticMeta','logActivity']){const m=new RegExp('  function '+name+'\\([^]*?\\n  \\}').exec(source);assert.ok(m,name);vm.runInNewContext(m[0],c);}
+ c.logActivity('stream-verified','Compatible Drops stream verified',{channel:'example',token:'private'});
+ now.value+=1000;c.logActivity('stream-rejected','Stream did not verify for active campaign',{reason:'wrong-campaign',authorization:'private'});
+ const rows=c.progressTimelineSnapshot();assert.deepEqual(Array.from(rows,r=>r.type),['stream-verified','stream-rejected']);
+ assert.equal(rows[1].reason,'wrong-campaign');assert.ok(!JSON.stringify(rows).includes('private'));
+});

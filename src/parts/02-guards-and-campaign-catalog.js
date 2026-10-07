@@ -328,7 +328,7 @@
     };
     activityLog = [...(Array.isArray(activityLog) ? activityLog : []), entry].slice(-ACTIVITY_LOG_LIMIT);
     writeSession(ACTIVITY_LOG_KEY, activityLog);
-    if(/progress|verification|navigation|recovery-paused|recovery-resumed/.test(entry.type))recordProgressTimeline(entry.type,{...(entry.meta||{}),message:entry.message});
+    if(/progress|verification|navigation|recovery-paused|recovery-resumed|^stream-(verified|rejected)$/.test(entry.type))recordProgressTimeline(entry.type,{...(entry.meta||{}),message:entry.message});
     renderRoutingHistory();
     return entry;
   }
