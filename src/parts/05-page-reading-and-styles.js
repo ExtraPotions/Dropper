@@ -33,7 +33,17 @@
   function loadSettings() {
     if (productResetting) return { ...DEFAULTS };
     try {
-      const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+      let managed, managerReadable = false;
+      try {
+        if (typeof GM_getValue === 'function') {
+          managed = GM_getValue('exp:v3:dropper:settings', null);
+          managerReadable = !(managed && typeof managed.then === 'function');
+        }
+      } catch (_) { /* retain legacy preferences if manager storage is unavailable */ }
+      const migrated = managerReadable && managed != null;
+      let stored = migrated ? managed : JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+      if (!stored || typeof stored !== 'object' || Array.isArray(stored)) stored = {};
+      stored = JSON.parse(JSON.stringify(stored));
       if (
         stored.hideTwitchSubscriptionPromos == null &&
         stored.hideChatSubscriptionPromos != null
@@ -45,11 +55,25 @@
       delete stored.autoHideCard;
       delete stored.collapsedPanelWidth;
       delete stored.menuWidth;
+      delete stored.__proto__;
+      delete stored.constructor;
+      delete stored.prototype;
+      for (const [name, fallback] of Object.entries(DEFAULTS)) {
+        if (!Object.hasOwn(stored, name)) continue;
+        if (typeof fallback === 'boolean' && typeof stored[name] !== 'boolean') stored[name] = fallback;
+        if (typeof fallback === 'number' && !Number.isFinite(stored[name])) stored[name] = fallback;
+      }
       for (const name of ['protectedChannels','excludedChannels']) if (Object.hasOwn(stored,name)) stored[name] = Array.isArray(stored[name]) ? [...new Set(stored[name].filter(value=>typeof value==='string').map(value=>value.trim().toLowerCase()).filter(value=>/^[a-z0-9_]{1,25}$/.test(value)))].slice(0,100) : [];
       for (const name of ['quietHoursStart','quietHoursEnd']) if (Object.hasOwn(stored,name) && !/^([01]\d|2[0-3]):[0-5]\d$/.test(stored[name] || '')) stored[name] = DEFAULTS[name];
       if (Object.hasOwn(stored,'quietHoursEnabled')) stored.quietHoursEnabled = stored.quietHoursEnabled === true;
       if (Object.hasOwn(stored,'switchPolicy') && !['normal','stopped-earning'].includes(stored.switchPolicy)) stored.switchPolicy = DEFAULTS.switchPolicy;
-      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored)); } catch (_) { /* ignore */ }
+      if (managerReadable && typeof GM_setValue === 'function') {
+        try {
+          GM_setValue('exp:v3:dropper:settings', stored);
+          // Delete the page copy only after a confirmed manager write.
+          if (JSON.stringify(GM_getValue('exp:v3:dropper:settings', null)) === JSON.stringify(stored)) localStorage.removeItem(SETTINGS_KEY);
+        } catch (_) { /* do not destroy legacy data after a failed migration */ }
+      }
       return { ...DEFAULTS, ...stored };
     } catch (_) {
       return { ...DEFAULTS };
@@ -58,7 +82,9 @@
 
   function persistSettingsSnapshot() {
     if (productResetting) return;
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    if (typeof GM_setValue !== 'function') return false;
+    GM_setValue('exp:v3:dropper:settings', JSON.parse(JSON.stringify(settings)));
+    return true;
   }
 
   function saveSettings() {
@@ -954,7 +980,7 @@
 
   function muteOpenedStreamsEnabled() {
     try {
-      const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+      const stored = typeof GM_getValue === 'function' ? GM_getValue('exp:v3:dropper:settings', null) : null;
       if (typeof stored.muteRestarted === 'boolean') settings.muteRestarted = stored.muteRestarted;
     } catch (_) { /* keep the current preference when storage is unavailable */ }
     if (!settings.muteRestarted) writeSession(MUTE_PENDING_KEY, null);

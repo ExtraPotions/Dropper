@@ -20,6 +20,10 @@
 // @noframes
 // @grant        unsafeWindow
 // @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_deleteValue
+// @grant        GM_listValues
 // @connect      gql.twitch.tv
 // @connect      api.github.com
 // ==/UserScript==

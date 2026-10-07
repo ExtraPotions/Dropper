@@ -38,6 +38,7 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 - **Campaign browsing:** explore open campaigns and ignore games you do not want to follow.
 - **Your preferred layout:** keep progress by the launcher or use Badge Only to place it at the top of the menu.
 - **Your controls:** move the launcher and tune how the menu behaves from Appearance and System.
+- **Saved preferences:** your userscript manager keeps your settings. Existing preferences move automatically, and Reset All Settings clears them.
 
 ## See it in action
 
