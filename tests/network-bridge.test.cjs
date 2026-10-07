@@ -32,7 +32,8 @@ test('rejects wrong endpoints, stale scope, invalid credentials and mismatched b
     p=>p.requestScope.account='other',p=>p.requestScope.path='/other',p=>p.secret='other',
     p=>p.headers['client-id']='other',p=>p.headers['client-integrity']='bad\nvalue',
     p=>p.operations.push(p.operations[0]),p=>p.status=NaN,
-    p=>p.operations[0].hash='invalid',p=>p.operations[0].variableKeys=['__proto__']]) {
+    p=>p.operations[0].hash='invalid',p=>p.operations[0].variableKeys=['__proto__'],
+    p=>p.json=[{}],p=>p.json=[{data:'malformed'}],p=>p.json=[{errors:'malformed'}]]) {
     const p=payload();change(p);assert.equal(validate(p),null);
   }
 });

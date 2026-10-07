@@ -376,6 +376,9 @@
             op.variableKeys.some(key => typeof key !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(key) || ['__proto__', 'constructor', 'prototype'].includes(key))) return null;
         if (!supported.has(op.name)) continue;
         if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
+        if ((!Object.hasOwn(row, 'data') && !(Array.isArray(row.errors) && row.errors.length)) ||
+            (Object.hasOwn(row, 'data') && row.data !== null && (typeof row.data !== 'object' || Array.isArray(row.data))) ||
+            (Object.hasOwn(row, 'errors') && !Array.isArray(row.errors))) return null;
         const data = pick(row.data, ['currentUser', 'channelDropCampaigns', 'channel', 'user']);
         if (data?.currentUser) data.currentUser = pick(data.currentUser, ['inventory', 'dropCampaigns', 'dropCurrentSession', 'dropCurrentSessionContext']);
         if (data?.channel) data.channel = pick(data.channel, ['viewerDropCampaigns', 'dropCampaigns']);
