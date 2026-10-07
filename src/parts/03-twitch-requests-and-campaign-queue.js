@@ -318,6 +318,75 @@
     return true;
   }
 
+  // Page events are untrusted. The correlation token is not authentication.
+  // Bound traversal before copying, and expose only the fields Drops consumes.
+  function validateTwitchBridgePayload(detail, correlation) {
+    try {
+      if (!detail || detail.secret !== correlation) return null;
+      const url = new URL(detail.url, location.href);
+      if (url.protocol !== 'https:' || url.hostname !== 'gql.twitch.tv' || url.port || url.username || url.password ||
+          !['/gql', '/integrity'].includes(url.pathname) || url.search || url.hash) return null;
+      if (detail.requestScope?.account !== storageAccountLogin() || detail.requestScope?.path !== location.pathname) return null;
+      if (!Number.isInteger(detail.status) || detail.status < 200 || detail.status >= 300) return null;
+      const seen = new Set();
+      let nodes = 0, bytes = 0;
+      const bounded = (value, depth = 0) => {
+        if (++nodes > 100000 || depth > 32) return false;
+        if (value == null || typeof value === 'boolean') return true;
+        if (typeof value === 'number') return Number.isFinite(value);
+        if (typeof value === 'string') { bytes += value.length * 2; return bytes <= 2 * 1024 * 1024; }
+        if (typeof value !== 'object' || seen.has(value)) return false;
+        seen.add(value);
+        if (Array.isArray(value) && value.length > 10000) return false;
+        for (const [key, property] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+          bytes += key.length * 2 + 16;
+          if (bytes > 2 * 1024 * 1024 || ['__proto__', 'constructor', 'prototype'].includes(key) ||
+              !Object.hasOwn(property, 'value') || !bounded(property.value, depth + 1)) return false;
+        }
+        return true;
+      };
+      if (!bounded(detail.json) || !bounded(detail.headers || {}) || !bounded(detail.operations)) return null;
+      const headers = {};
+      const limits = {'client-id': 64, 'client-integrity': 8192, 'x-device-id': 128, 'device-id': 128, 'client-session-id': 128, 'client-version': 128};
+      for (const [key, value] of Object.entries(detail.headers || {})) {
+        const name = key.toLowerCase();
+        if (!Object.hasOwn(limits, name)) continue;
+        if (typeof value !== 'string' || !value.length || value.length > limits[name] || !/^[\x21-\x7e]+$/.test(value)) return null;
+        headers[name] = value;
+      }
+      if (headers['client-id'] && !CLIENT_IDS.includes(headers['client-id'])) return null;
+      if (url.pathname === '/integrity') {
+        const token = detail.json?.token, expiration = detail.json?.expiration;
+        const expiresAt = expiration > 1e12 ? expiration : expiration * 1000;
+        if (typeof token !== 'string' || !/^[\x21-\x7e]{1,8192}$/.test(token) ||
+            !Number.isFinite(expiration) || expiresAt <= Date.now() || expiresAt > Date.now() + 24 * 60 * 60 * 1000) return null;
+        return {url: url.href, headers, status: detail.status, json: {token, expiration}, operations: null};
+      }
+      const rows = Array.isArray(detail.json) ? detail.json : [detail.json];
+      const operations = detail.operations;
+      if (!Array.isArray(operations) || !operations.length || operations.length > 50 || rows.length !== operations.length) return null;
+      const supported = new Set(Object.values(GQL_OPS).map(op => op.name));
+      const selectedRows = [], selectedOperations = [];
+      const pick = (value, keys) => value === null ? null : value && typeof value === 'object' && !Array.isArray(value)
+        ? Object.fromEntries(keys.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]])) : undefined;
+      for (let index = 0; index < operations.length; index++) {
+        const op = operations[index], row = rows[index];
+        if (!op || typeof op.name !== 'string' || op.name.length > 80 || !/^[a-f0-9]{64}$/i.test(op.hash || '') ||
+            !Array.isArray(op.variableKeys) || op.variableKeys.length > 20 ||
+            op.variableKeys.some(key => typeof key !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(key) || ['__proto__', 'constructor', 'prototype'].includes(key))) return null;
+        if (!supported.has(op.name)) continue;
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
+        const data = pick(row.data, ['currentUser', 'channelDropCampaigns', 'channel', 'user']);
+        if (data?.currentUser) data.currentUser = pick(data.currentUser, ['inventory', 'dropCampaigns', 'dropCurrentSession', 'dropCurrentSessionContext']);
+        if (data?.channel) data.channel = pick(data.channel, ['viewerDropCampaigns', 'dropCampaigns']);
+        if (data?.user) data.user = pick(data.user, ['viewerDropCampaigns']);
+        selectedRows.push({data, ...(Array.isArray(row.errors) ? {errors: row.errors.slice(0, 10).map(error => ({message: typeof error?.message === 'string' ? error.message.slice(0, 240) : 'Twitch request failed'}))} : {})});
+        selectedOperations.push({name: op.name, hash: op.hash.toLowerCase(), variableKeys: [...op.variableKeys]});
+      }
+      return selectedRows.length ? {url: url.href, headers, status: detail.status, json: selectedRows, operations: selectedOperations} : null;
+    } catch (_) { return null; }
+  }
+
   function handleInterceptedTwitchPayload(url, headers, json, status = 200, operations = null) {
     captureTwitchNetworkHeaders(headers);
     if (!json) return;
@@ -342,6 +411,98 @@
     }
   }
 
+  function twitchPageNetworkHook(channel, correlation, supportedNames) {
+    if (window.__tdhTwitchNetHooked) return;
+    window.__tdhTwitchNetHooked = 1;
+    const limit = 1024 * 1024, supported = new Set(supportedNames);
+    const endpoint = value => {
+      try { const p = new URL(String(value || ''), location.href);
+        return p.protocol === 'https:' && p.hostname==="gql.twitch.tv" && !p.port && !p.username && !p.password &&
+          !p.search && !p.hash && ['/gql', '/integrity'].includes(p.pathname) ? p.pathname : ''; } catch (_) { return ''; }
+    };
+    const scope = () => {
+      const get = key => {
+        const value = document.cookie.split(';').map(x => x.trim()).find(x => x.startsWith(key + '='));
+        try { return value ? decodeURIComponent(value.slice(key.length + 1)) : ''; } catch (_) { return ''; }
+      };
+      return {account: (get('login') || get('name') || 'signed-out').toLowerCase(), path: location.pathname};
+    };
+    const headerNames = new Set(['client-id', 'client-integrity', 'x-device-id', 'device-id', 'client-session-id', 'client-version']);
+    const headers = input => {
+      const output = {};
+      try { new Headers(input || {}).forEach((value, key) => { if (headerNames.has(key)) output[key] = value; }); } catch (_) {}
+      return output;
+    };
+    const operations = body => {
+      try {
+        if (typeof body !== 'string' || body.length > limit) return null;
+        const rows = [].concat(JSON.parse(body));
+        if (!rows.length || rows.length > 50) return null;
+        return rows.map(row => ({name: row?.operationName || '', hash: row?.extensions?.persistedQuery?.sha256Hash || '', variableKeys: Object.keys(row?.variables || {})}));
+      } catch (_) { return null; }
+    };
+    const pick = (value, keys) => value === null ? null : value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(keys.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]])) : undefined;
+    const emit = (url, capturedHeaders, text, status, requestScope, ops) => {
+      try {
+        if (typeof text !== 'string' || text.length > limit || status < 200 || status >= 300) return;
+        let json = JSON.parse(text), selectedOps = null;
+        if (endpoint(url) === '/integrity') json = pick(json, ['token', 'expiration']);
+        else {
+          const rows = [].concat(json);
+          if (!ops || rows.length !== ops.length) return;
+          json = []; selectedOps = [];
+          ops.forEach((op, index) => {
+            if (!supported.has(op.name)) return;
+            const row = rows[index], data = pick(row?.data, ['currentUser', 'channelDropCampaigns', 'channel', 'user']);
+            if (data?.currentUser) data.currentUser = pick(data.currentUser, ['inventory', 'dropCampaigns', 'dropCurrentSession', 'dropCurrentSessionContext']);
+            if (data?.channel) data.channel = pick(data.channel, ['viewerDropCampaigns', 'dropCampaigns']);
+            if (data?.user) data.user = pick(data.user, ['viewerDropCampaigns']);
+            json.push({data, ...(Array.isArray(row?.errors) ? {errors: row.errors.slice(0, 10).map(error => ({message: String(error?.message || 'Twitch request failed').slice(0, 240)}))} : {})});
+            selectedOps.push(op);
+          });
+          if (!json.length) return;
+        }
+        window.dispatchEvent(new CustomEvent(channel, {detail: {secret: correlation, url, headers: capturedHeaders, json, status, requestScope, operations: selectedOps}}));
+      } catch (_) {}
+    };
+    const nativeFetch = window.fetch;
+    if (typeof nativeFetch === 'function') window.fetch = function(input, init) {
+      const url = typeof input === 'string' ? input : input?.url || String(input || '');
+      if (!endpoint(url)) return nativeFetch.apply(this, arguments);
+      const capturedHeaders = headers(init?.headers || input?.headers), requestScope = scope();
+      let body = Promise.resolve(init?.body);
+      try { if (init?.body === undefined && typeof input?.clone === 'function') body = input.clone().text(); } catch (_) {}
+      body = body.catch(() => undefined);
+      return nativeFetch.apply(this, arguments).then(response => {
+        try { Promise.all([response.clone().text(), body]).then(([text, requestBody]) => emit(url, capturedHeaders, text, response.status, requestScope, operations(requestBody))).catch(() => {}); } catch (_) {}
+        return response;
+      });
+    };
+    const X = window.XMLHttpRequest;
+    if (typeof X !== 'function') return;
+    const open = X.prototype.open, setHeader = X.prototype.setRequestHeader, send = X.prototype.send;
+    X.prototype.open = function(method, url) {
+      this.__tdhUrl = String(url || ''); this.__tdhHeaders = {};
+      return open.apply(this, arguments);
+    };
+    X.prototype.setRequestHeader = function(name, value) {
+      const key = String(name).toLowerCase();
+      if (headerNames.has(key)) (this.__tdhHeaders ||= {})[key] = String(value);
+      return setHeader.apply(this, arguments);
+    };
+    X.prototype.send = function(body) {
+      if (endpoint(this.__tdhUrl)) {
+        const requestScope = scope(), ops = operations(body), url = this.__tdhUrl, capturedHeaders = {...this.__tdhHeaders};
+        this.addEventListener('load', () => {
+          try { const text = this.responseType === 'json' ? JSON.stringify(this.response) : this.responseText;
+            emit(url, capturedHeaders, text, this.status, requestScope, ops); } catch (_) {}
+        }, {once: true});
+      }
+      return send.apply(this, arguments);
+    };
+  }
+
   function installTwitchNetworkHooks(uw = page) {
     if (twitchNetworkHooksInstalled || !uw) return;
     twitchNetworkHooksInstalled = true;
@@ -349,9 +510,8 @@
     const channel = "tdh-twitch-gql-intercept-v1";
     const secret = `tdh-${Math.random().toString(36).slice(2, 10)}`;
     const onPayload = (event) => {
-      const detail = event?.detail;
-      if (!detail || detail.secret !== secret) return;
-      if (!detail.requestScope || detail.requestScope.account !== storageAccountLogin() || detail.requestScope.path !== location.pathname) return;
+      const detail = validateTwitchBridgePayload(event?.detail, secret);
+      if (!detail) return;
       syncViewingContext();
       handleInterceptedTwitchPayload(detail.url, detail.headers || {}, detail.json, detail.status, detail.operations);
     };
@@ -359,7 +519,7 @@
     try { window.addEventListener(channel, onPayload, true); } catch (_) { /* ignore */ }
 
     // Page-world inject keeps ad-blocker failures off the Dropper.user.js stack.
-    const injector = `(()=>{if(window.__tdhTwitchNetHooked)return;window.__tdhTwitchNetHooked=1;const C=${JSON.stringify(channel)},S=${JSON.stringify(secret)};const gql=u=>{try{const p=new URL(String(u||""),location.href);return p.hostname==="gql.twitch.tv"&&(p.pathname==="/gql"||p.pathname==="/integrity")}catch(e){return!1}};const scope=()=>{const c=document.cookie.split(";").map(x=>x.trim());const get=k=>{const v=c.find(x=>x.startsWith(k+"="));try{return v?decodeURIComponent(v.slice(k.length+1)):""}catch(e){return""}};return{account:(get("login")||get("name")||"signed-out").toLowerCase(),path:location.pathname}};const emit=(u,h,j,s,q,o)=>{try{window.dispatchEvent(new CustomEvent(C,{detail:{secret:S,url:u,headers:h||{},json:j,status:s,requestScope:q,operations:o||null}}))}catch(e){}};const ops=b=>{try{if(typeof b!=="string")return null;return[].concat(JSON.parse(b)).map(x=>({name:String(x&&x.operationName||""),hash:String(x&&x.extensions&&x.extensions.persistedQuery&&x.extensions.persistedQuery.sha256Hash||""),variableKeys:Object.keys(x&&x.variables||{})}))}catch(e){return null}};const hdrs=h=>{const o={};if(!h)return o;if(typeof Headers!=="undefined"&&h instanceof Headers){h.forEach((v,k)=>{o[String(k).toLowerCase()]=String(v)});return o}if(Array.isArray(h)){for(const e of h){if(e&&e.length>=2)o[String(e[0]).toLowerCase()]=String(e[1])}return o}if(typeof h==="object"){for(const[k,v]of Object.entries(h)){if(v!=null)o[String(k).toLowerCase()]=String(v)}}return o};const urlOf=i=>typeof i==="string"?i:(i&&typeof i.url==="string"?i.url:String(i||""));const nf=window.fetch;if(typeof nf==="function"){window.fetch=function(i,n){const u=urlOf(i);if(!gql(u))return nf.apply(this,arguments);const rh=hdrs((n&&n.headers)||(i&&i.headers)),q=scope(),ob=ops(n&&n.body);return nf.apply(this,arguments).then(r=>{try{r.clone().json().then(j=>emit(u,rh,j,r.status,q,ob)).catch(()=>{})}catch(e){}return r})}}const X=window.XMLHttpRequest;if(typeof X==="function"){const o=X.prototype.open,sH=X.prototype.setRequestHeader,s=X.prototype.send;X.prototype.open=function(m,u){this.__tdhUrl=String(u||"");this.__tdhHeaders={};return o.apply(this,arguments)};X.prototype.setRequestHeader=function(n,v){if(!this.__tdhHeaders)this.__tdhHeaders={};this.__tdhHeaders[String(n).toLowerCase()]=String(v);return sH.apply(this,arguments)};X.prototype.send=function(b){if(gql(this.__tdhUrl)){const q=scope(),ob=ops(b);this.addEventListener("load",()=>{try{const t=this.responseText||"";emit(this.__tdhUrl,this.__tdhHeaders,t?JSON.parse(t):null,this.status,q,ob)}catch(e){}},{once:!0})}return s.apply(this,arguments)}}})();`;
+    const injector = `(${twitchPageNetworkHook.toString()})(${JSON.stringify(channel)},${JSON.stringify(secret)},${JSON.stringify(Object.values(GQL_OPS).map(op => op.name))});`;
 
     twitchNetworkHookMode = "unavailable";
     try {
