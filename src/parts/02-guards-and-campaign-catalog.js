@@ -12,6 +12,7 @@
     noteWatching();
     watchProgressTitle();
     restoreChannelPlayer();
+    contentWarningMemory.process();
     ensureStreamMuted();
     ensureStreamPlaying();
     void syncScreenWakeLock();

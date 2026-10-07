@@ -116,6 +116,8 @@
               <summary>Playback options</summary>
               <div class="auth-advanced-body">
                 ${switchHtml("tdh-mute-next", "Mute Opened Streams", "Mutes Streams Dropper Opens Or Switches To, Including Same-Tab Routing.", settings.muteRestarted)}
+                ${switchHtml("tdh-remember-content-warnings", "Remember Accepted Warnings", "Remembers content warning types you accept across all Twitch channels. New warning types still ask.", settings.rememberContentWarnings)}
+                <button id="tdh-forget-content-warnings" type="button" class="life-btn">Forget Accepted Warnings</button>
                 ${switchHtml("tdh-restore-channel-player", "Restore Channel Player On Arrival", "Returns An Initial Twitch Mini-player To The Normal Channel View. Stops After You Interact With The Page.", settings.restoreChannelPlayer)}
                 <button id="tdh-restore-channel-player-now" type="button" class="life-btn">Restore Channel Player</button>
                 ${switchHtml("tdh-background-earning", "Background Progress Tracking", "Reports Actual Twitch Credit In Hidden Tabs Or Picture-in-Picture. Does Not Simulate Viewing.", settings.backgroundEarning)}
@@ -1588,12 +1590,13 @@
     productResetting=true;
     settings.findNextStream=false;settings.claimDrops=false;settings.claimBonus=false;settings.keepTabActive=false;
     settings.backgroundEarning=false;settings.autoPictureInPicture=false;settings.restoreChannelPlayer=false;
+    settings.rememberContentWarnings=false;contentWarningMemory.dispose();
     clearInterval(heartbeatTimer);clearInterval(tabPresenceTimer);
     for(const timer of [claimScanTimer,updateReloadTimer,updateFallbackTimer,updateNoticeTimer])clearTimeout(timer);
     clearSkipStreamerArm('product-reset');resetClaimReadyTimer();
     try{screenWakeLock?.release();}catch{}screenWakeLock=null;
     try {
-      ExtraPotionsCore.clearProductData('dropper',{legacyKeys:["tdh-settings-v3", "dropper-account-scope-owner-v1", "tdh-launcher-top", "tdh-launcher-grid-delta-v3", "dropper-last-version-v2", "dropper-next-game-after-claim", "dropper-routing-session-v310", "dropper-auto-navigation-guard", "dropper-navigation-in-flight", "dropper-activity-log", "dropper-recovery-snapshot-v1", "dropper-notification-quiet-v1", "dropper-network-state", "dropper-standby-streams", "dropper-campaign-catalog", "dropper-campaign-page-import-v1", "dropper-campaign-memory-v1", "dropper-campaign-memory-reset-v1", "dropper-ignored-campaign-games-v1", "dropper-standby-refresh-at", "dropper-standby-maintenance-at", "dropper-mute-pending-v1", "dropper-tab-presence-v1", "dropper-tab-id-v1", "dropper-tab-started-v1", "dropper-category-slugs-v3", "dropper-update-reload-pending", "dropper-client-integrity-v1", "dropper-viewing-intent-v1", "dropper-viewing-navigation-v1", "dropper-viewing-selection-v1", "dropper-manual-stream-lock-v1", "dropper-claim-history-v1", "dropper-campaign-priority-v1", "dropper-campaign-priority-order-v1", "tdh-settings-v1", "tdh-settings-v2", "tdh-drop", "tdh-progress", "tdh-progress-at", "dropper-credited-progress-at-v1", "dropper-progress-timeline-v1", "dropper-recovery-loop-v1", "dropper-campaign-restrictions-v1", "dropper-temp-campaign-skips-v1", "dropper-update-state-v2", "dropper-gql-operations-v1"]});
+      ExtraPotionsCore.clearProductData('dropper',{legacyKeys:["exp:v3:dropper:content-warning-memory", "tdh-settings-v3", "dropper-account-scope-owner-v1", "tdh-launcher-top", "tdh-launcher-grid-delta-v3", "dropper-last-version-v2", "dropper-next-game-after-claim", "dropper-routing-session-v310", "dropper-auto-navigation-guard", "dropper-navigation-in-flight", "dropper-activity-log", "dropper-recovery-snapshot-v1", "dropper-notification-quiet-v1", "dropper-network-state", "dropper-standby-streams", "dropper-campaign-catalog", "dropper-campaign-page-import-v1", "dropper-campaign-memory-v1", "dropper-campaign-memory-reset-v1", "dropper-ignored-campaign-games-v1", "dropper-standby-refresh-at", "dropper-standby-maintenance-at", "dropper-mute-pending-v1", "dropper-tab-presence-v1", "dropper-tab-id-v1", "dropper-tab-started-v1", "dropper-category-slugs-v3", "dropper-update-reload-pending", "dropper-client-integrity-v1", "dropper-viewing-intent-v1", "dropper-viewing-navigation-v1", "dropper-viewing-selection-v1", "dropper-manual-stream-lock-v1", "dropper-claim-history-v1", "dropper-campaign-priority-v1", "dropper-campaign-priority-order-v1", "tdh-settings-v1", "tdh-settings-v2", "tdh-drop", "tdh-progress", "tdh-progress-at", "dropper-credited-progress-at-v1", "dropper-progress-timeline-v1", "dropper-recovery-loop-v1", "dropper-campaign-restrictions-v1", "dropper-temp-campaign-skips-v1", "dropper-update-state-v2", "dropper-gql-operations-v1"]});
       location.reload();
     } catch(error) {productResetting=false;throw error;}
   }
@@ -1621,6 +1624,9 @@
   function bindDropperControls() {
     const s = ui.shadow;
     mountProductTools();
+    s.getElementById('tdh-forget-content-warnings')?.addEventListener('click',()=>{
+      setStatus(contentWarningMemory.clear() ? 'Accepted content warnings forgotten across Twitch' : 'Could not clear remembered warnings in your userscript manager');
+    });
     s.getElementById('tdh-restore-channel-player-now')?.addEventListener('click',()=>{ const requested=restoreChannelPlayer(true);setStatus(requested?'Channel player restore requested':'No compatible Twitch mini-player found on this channel page'); });
     s.getElementById('tdh-resume-playback')?.addEventListener('click', () => {
       ensureStreamPlaying(true); refreshViewingControls();

@@ -553,6 +553,7 @@
     autoPictureInPicture: false,
     resumeSessionOnRestart: true,
     restoreChannelPlayer: true,
+    rememberContentWarnings: false,
     reduceMotion: false,
     uiTheme: "dropper",
     customOpacity: false,
@@ -2616,6 +2617,7 @@
       try { removeSession(NAVIGATION_FLIGHT_KEY); } catch (_) { /* clear inherited pre-3.1 navigation flight */ }
     }
     installViewingIntent();
+    contentWarningMemory.install();
     if (settings.keepTabActive) installKeepTabActive(page);
     installTwitchNetworkHooks(page);
     if (document.readyState === "loading") {
@@ -4855,6 +4857,7 @@
     noteWatching();
     watchProgressTitle();
     restoreChannelPlayer();
+    contentWarningMemory.process();
     ensureStreamMuted();
     ensureStreamPlaying();
     void syncScreenWakeLock();
@@ -13879,6 +13882,120 @@
     return document.querySelector("video");
   }
 
+  // BEGIN DROPPER CONTENT WARNING MEMORY
+  // Site-wide consent contains only known classification IDs in manager storage.
+  // A trusted manual confirmation teaches it; page clicks and unknown gates do not.
+  const contentWarningMemory = (() => {
+    const KEY = 'exp:v3:dropper:content-warning-memory';
+    const BUTTON = 'button[data-a-target="content-classification-gate-overlay-start-watching-button"]';
+    const ROOT = '[data-a-target="content-classification-gate-overlay"],[data-a-target="player-overlay-content-gate"]';
+    const labels = new Map([
+      ['mature-rated games', 'mature-rated-games'],
+      ['sexual themes', 'sexual-themes'],
+      ['drugs, intoxication, or excessive tobacco use', 'drugs-intoxication'],
+      ['drugs, alcohol use, or excessive tobacco use', 'drugs-intoxication'],
+      ['violent and graphic depictions', 'graphic-violence'],
+      ['significant profanity or vulgarity', 'profanity'],
+      ['gambling', 'gambling'],
+      ['politics and sensitive social issues', 'politics-sensitive-issues'],
+    ]);
+    const known = new Set(labels.values());
+    const normalize = value => String(value || '').normalize('NFKC').toLowerCase().replace(/[–—]/g, '-').replace(/\s+/g, ' ').trim();
+    const valid = value => Array.isArray(value) ? [...new Set(value.filter(id => known.has(id)))].slice(0, known.size) : [];
+    let installed = false, disposed = false, epoch = 0, state = 'idle';
+    let clicked = new WeakMap();
+    const attempts = new Map(), timers = new Set();
+
+    function read() {
+      if (productResetting || disposed) return [];
+      try { return typeof GM_getValue === 'function' ? valid(GM_getValue(KEY, [])) : []; } catch (_) { return []; }
+    }
+    function write(ids) {
+      if (productResetting || disposed || typeof GM_getValue !== 'function' || typeof GM_setValue !== 'function') return false;
+      try {
+        const value = valid(ids); GM_setValue(KEY, value);
+        return JSON.stringify(read()) === JSON.stringify(value);
+      } catch (_) { return false; }
+    }
+    function enabled() {
+      if (productResetting || disposed) return false;
+      try {
+        const current = typeof GM_getValue === 'function' ? GM_getValue('exp:v3:dropper:settings', null) : null;
+        if (typeof current?.rememberContentWarnings === 'boolean') return current.rememberContentWarnings;
+      } catch (_) { /* local opt-in remains available; missing consent never authorizes a click */ }
+      return settings.rememberContentWarnings === true;
+    }
+    function visible(node) {
+      if (!node?.isConnected || node.closest('[hidden],[inert]') || !node.getClientRects().length) return false;
+      const css = getComputedStyle(node);
+      return css.display !== 'none' && css.visibility === 'visible';
+    }
+    function prompt(button = document.querySelector(BUTTON)) {
+      const root = button?.closest(ROOT);
+      if (!root || !button.matches(BUTTON) || button.disabled || !visible(button)) return null;
+      // Content labels are acknowledgments, not login, age-verification or access controls.
+      if (root.querySelector('input,select,textarea') || /verify your age|age verification|date of birth|sign in to watch/i.test(root.textContent)) return null;
+      const items = [...root.querySelectorAll('li')].filter(visible);
+      if (!items.length || items.length > known.size) return null;
+      const ids = items.map(item => labels.get(normalize(item.textContent)));
+      if (ids.some(id => !id)) return null;
+      return { root, button, ids: [...new Set(ids)].sort(), route: location.pathname };
+    }
+    function refresh() { if (typeof renderSwitches === 'function') renderSwitches(); }
+    function later(callback, delay) {
+      const timer = setTimeout(() => { timers.delete(timer); callback(); }, delay);
+      timers.add(timer);
+    }
+    function manual(event) {
+      if (!event.isTrusted || event.defaultPrevented || event.button !== 0 || !enabled() || ExtraPotionsCore.suiteSitePaused?.()) return;
+      const button = event.target?.closest?.(BUTTON), accepted = prompt(button);
+      if (!accepted || !watchingLogin()) return;
+      recentPlaybackControl = { action:'resume', at:Date.now() };
+      const ticket = epoch;
+      function confirm(remaining) {
+        if (ticket !== epoch || !enabled() || ExtraPotionsCore.suiteSitePaused?.() || event.defaultPrevented || location.pathname !== accepted.route) return;
+        if (!visible(accepted.button) && !prompt()) {
+          if (write([...read(), ...accepted.ids])) {
+            state = 'remembered';
+            logActivity('content-warning', 'Remembered accepted Twitch content warnings', {scope:'site-wide', types:accepted.ids.length});
+            refresh();
+          } else state = 'storage-unavailable';
+        } else if (remaining > 0) later(() => confirm(remaining - 1), 200);
+        else state = 'confirmation-unavailable';
+      }
+      later(() => confirm(10), 0);
+    }
+    function process() {
+      if (!enabled() || ExtraPotionsCore.suiteSitePaused?.() || !watchingLogin()) return false;
+      if (typeof viewingIntent !== 'undefined' && viewingIntent.snapshot().pauseReason === 'viewer') return false;
+      const found = prompt(); if (!found) return false;
+      const saved = read();
+      if (!found.ids.every(id => saved.includes(id))) { state = 'awaiting-acceptance'; return false; }
+      const signature = found.route + ':' + found.ids.join(','), now = Date.now();
+      const previous = attempts.get(signature);
+      if (clicked.get(found.button) === signature || (previous && (now - previous.at < 10000 || previous.count >= 3))) return false;
+      clicked.set(found.button, signature);
+      attempts.set(signature, {at:now, count:(previous?.count || 0) + 1});
+      if (attempts.size > 50) attempts.delete(attempts.keys().next().value);
+      try {
+        recentPlaybackControl = {action:'resume', at:now};
+        found.button.click(); state = 'accepted-remembered';
+        logActivity('content-warning', 'Accepted remembered Twitch content warnings', {scope:'site-wide', types:found.ids.length});
+        return true;
+      } catch (_) { state = 'confirmation-unavailable'; return false; }
+    }
+    function clear() {
+      epoch += 1; for (const timer of timers) clearTimeout(timer); timers.clear();
+      clicked = new WeakMap(); attempts.clear();
+      const cleared = write([]); state = cleared ? 'forgotten' : 'storage-unavailable'; refresh(); return cleared;
+    }
+    function install() { if (installed || disposed) return; installed = true; document.addEventListener('click', manual, true); }
+    function dispose() { disposed = true; epoch += 1; for (const timer of timers) clearTimeout(timer); timers.clear(); document.removeEventListener('click', manual, true); }
+    function snapshot() { return {enabled:enabled(), scope:'site-wide', rememberedTypes:read().length, state}; }
+    return Object.freeze({install, process, clear, dispose, snapshot});
+  })();
+  // END DROPPER CONTENT WARNING MEMORY
+
   function playerPresentationSnapshot() {
     const video = streamVideoElement();
     const root = video?.closest('[data-a-player-state="mini"]');
@@ -15120,6 +15237,8 @@
               <summary>Playback options</summary>
               <div class="auth-advanced-body">
                 ${switchHtml("tdh-mute-next", "Mute Opened Streams", "Mutes Streams Dropper Opens Or Switches To, Including Same-Tab Routing.", settings.muteRestarted)}
+                ${switchHtml("tdh-remember-content-warnings", "Remember Accepted Warnings", "Remembers content warning types you accept across all Twitch channels. New warning types still ask.", settings.rememberContentWarnings)}
+                <button id="tdh-forget-content-warnings" type="button" class="life-btn">Forget Accepted Warnings</button>
                 ${switchHtml("tdh-restore-channel-player", "Restore Channel Player On Arrival", "Returns An Initial Twitch Mini-player To The Normal Channel View. Stops After You Interact With The Page.", settings.restoreChannelPlayer)}
                 <button id="tdh-restore-channel-player-now" type="button" class="life-btn">Restore Channel Player</button>
                 ${switchHtml("tdh-background-earning", "Background Progress Tracking", "Reports Actual Twitch Credit In Hidden Tabs Or Picture-in-Picture. Does Not Simulate Viewing.", settings.backgroundEarning)}
@@ -16592,12 +16711,13 @@
     productResetting=true;
     settings.findNextStream=false;settings.claimDrops=false;settings.claimBonus=false;settings.keepTabActive=false;
     settings.backgroundEarning=false;settings.autoPictureInPicture=false;settings.restoreChannelPlayer=false;
+    settings.rememberContentWarnings=false;contentWarningMemory.dispose();
     clearInterval(heartbeatTimer);clearInterval(tabPresenceTimer);
     for(const timer of [claimScanTimer,updateReloadTimer,updateFallbackTimer,updateNoticeTimer])clearTimeout(timer);
     clearSkipStreamerArm('product-reset');resetClaimReadyTimer();
     try{screenWakeLock?.release();}catch{}screenWakeLock=null;
     try {
-      ExtraPotionsCore.clearProductData('dropper',{legacyKeys:["tdh-settings-v3", "dropper-account-scope-owner-v1", "tdh-launcher-top", "tdh-launcher-grid-delta-v3", "dropper-last-version-v2", "dropper-next-game-after-claim", "dropper-routing-session-v310", "dropper-auto-navigation-guard", "dropper-navigation-in-flight", "dropper-activity-log", "dropper-recovery-snapshot-v1", "dropper-notification-quiet-v1", "dropper-network-state", "dropper-standby-streams", "dropper-campaign-catalog", "dropper-campaign-page-import-v1", "dropper-campaign-memory-v1", "dropper-campaign-memory-reset-v1", "dropper-ignored-campaign-games-v1", "dropper-standby-refresh-at", "dropper-standby-maintenance-at", "dropper-mute-pending-v1", "dropper-tab-presence-v1", "dropper-tab-id-v1", "dropper-tab-started-v1", "dropper-category-slugs-v3", "dropper-update-reload-pending", "dropper-client-integrity-v1", "dropper-viewing-intent-v1", "dropper-viewing-navigation-v1", "dropper-viewing-selection-v1", "dropper-manual-stream-lock-v1", "dropper-claim-history-v1", "dropper-campaign-priority-v1", "dropper-campaign-priority-order-v1", "tdh-settings-v1", "tdh-settings-v2", "tdh-drop", "tdh-progress", "tdh-progress-at", "dropper-credited-progress-at-v1", "dropper-progress-timeline-v1", "dropper-recovery-loop-v1", "dropper-campaign-restrictions-v1", "dropper-temp-campaign-skips-v1", "dropper-update-state-v2", "dropper-gql-operations-v1"]});
+      ExtraPotionsCore.clearProductData('dropper',{legacyKeys:["exp:v3:dropper:content-warning-memory", "tdh-settings-v3", "dropper-account-scope-owner-v1", "tdh-launcher-top", "tdh-launcher-grid-delta-v3", "dropper-last-version-v2", "dropper-next-game-after-claim", "dropper-routing-session-v310", "dropper-auto-navigation-guard", "dropper-navigation-in-flight", "dropper-activity-log", "dropper-recovery-snapshot-v1", "dropper-notification-quiet-v1", "dropper-network-state", "dropper-standby-streams", "dropper-campaign-catalog", "dropper-campaign-page-import-v1", "dropper-campaign-memory-v1", "dropper-campaign-memory-reset-v1", "dropper-ignored-campaign-games-v1", "dropper-standby-refresh-at", "dropper-standby-maintenance-at", "dropper-mute-pending-v1", "dropper-tab-presence-v1", "dropper-tab-id-v1", "dropper-tab-started-v1", "dropper-category-slugs-v3", "dropper-update-reload-pending", "dropper-client-integrity-v1", "dropper-viewing-intent-v1", "dropper-viewing-navigation-v1", "dropper-viewing-selection-v1", "dropper-manual-stream-lock-v1", "dropper-claim-history-v1", "dropper-campaign-priority-v1", "dropper-campaign-priority-order-v1", "tdh-settings-v1", "tdh-settings-v2", "tdh-drop", "tdh-progress", "tdh-progress-at", "dropper-credited-progress-at-v1", "dropper-progress-timeline-v1", "dropper-recovery-loop-v1", "dropper-campaign-restrictions-v1", "dropper-temp-campaign-skips-v1", "dropper-update-state-v2", "dropper-gql-operations-v1"]});
       location.reload();
     } catch(error) {productResetting=false;throw error;}
   }
@@ -16625,6 +16745,9 @@
   function bindDropperControls() {
     const s = ui.shadow;
     mountProductTools();
+    s.getElementById('tdh-forget-content-warnings')?.addEventListener('click',()=>{
+      setStatus(contentWarningMemory.clear() ? 'Accepted content warnings forgotten across Twitch' : 'Could not clear remembered warnings in your userscript manager');
+    });
     s.getElementById('tdh-restore-channel-player-now')?.addEventListener('click',()=>{ const requested=restoreChannelPlayer(true);setStatus(requested?'Channel player restore requested':'No compatible Twitch mini-player found on this channel page'); });
     s.getElementById('tdh-resume-playback')?.addEventListener('click', () => {
       ensureStreamPlaying(true); refreshViewingControls();
@@ -17588,6 +17711,7 @@
       },
       topLevelContext: window.top === window.self,
       playerPresentation: playerPresentationSnapshot(),
+      contentWarnings: contentWarningMemory.snapshot(),
       headerVersionControl: Boolean(ui?.shadow?.getElementById("tdh-header-version")),
       launcherGrid: {
         slot: ui?.host?.dataset?.launcherSlot || null,
@@ -18311,12 +18435,14 @@
       "tdh-background-earning": "backgroundEarning", "tdh-auto-pip": "autoPictureInPicture", "tdh-resume-session": "resumeSessionOnRestart", "tdh-badge-only": "badgeOnly", "tdh-reduce-motion": "reduceMotion", "tdh-notify-claimed": "notifyClaimed", "tdh-notify-ending": "notifyCampaignEnding", "tdh-notify-stalled": "notifyStalledProgress", "tdh-notify-switch": "notifyStreamSwitches", "tdh-notify-hidden": "notifyOnlyWhenHidden", "tdh-custom-opacity": "customOpacity",
       "tdh-hide-sub-promos": "hideTwitchSubscriptionPromos",
       "tdh-restore-channel-player": "restoreChannelPlayer",
+      "tdh-remember-content-warnings": "rememberContentWarnings",
       "tdh-queue-enabled": "queueEnabled", "tdh-queue-stall": "queueOnStall", "tdh-queue-offline": "queueOnOffline", "tdh-queue-category": "queueOnCategoryChange",
     };
     Object.entries(map).forEach(([id, key]) => {
       ui.shadow.getElementById(id)?.addEventListener("click", () => {
         settings[key] = !settings[key];
         saveSettings();
+        if (key === "rememberContentWarnings") contentWarningMemory.process();
         if (key === "claimBonus" || key === "claimDrops") syncClaimWatchers();
         if (key === "keepTabActive") void syncScreenWakeLock();
         if (key === "autoPictureInPicture") void syncAutoPictureInPicture("setting-changed");
@@ -18359,9 +18485,12 @@
       "tdh-background-earning": settings.backgroundEarning, "tdh-auto-pip": settings.autoPictureInPicture, "tdh-resume-session": settings.resumeSessionOnRestart, "tdh-badge-only": settings.badgeOnly, "tdh-reduce-motion": settings.reduceMotion, "tdh-notify-claimed": settings.notifyClaimed, "tdh-notify-ending": settings.notifyCampaignEnding, "tdh-notify-stalled": settings.notifyStalledProgress, "tdh-notify-switch": settings.notifyStreamSwitches, "tdh-notify-hidden": settings.notifyOnlyWhenHidden, "tdh-custom-opacity": settings.customOpacity,
       "tdh-hide-sub-promos": settings.hideTwitchSubscriptionPromos,
       "tdh-restore-channel-player": settings.restoreChannelPlayer,
+      "tdh-remember-content-warnings": settings.rememberContentWarnings,
       "tdh-queue-enabled": settings.queueEnabled, "tdh-queue-stall": settings.queueOnStall, "tdh-queue-offline": settings.queueOnOffline, "tdh-queue-category": settings.queueOnCategoryChange,
     };
     Object.entries(map).forEach(([id, on]) => ui.shadow.getElementById(id)?.setAttribute("aria-checked", String(Boolean(on))));
+    const forgetWarnings = ui.shadow.getElementById('tdh-forget-content-warnings');
+    if (forgetWarnings) forgetWarnings.disabled = contentWarningMemory.snapshot().rememberedTypes === 0;
   }
 
   window.dropperDebug = function dropperDebug() { return dropperDebugSnapshot(); };

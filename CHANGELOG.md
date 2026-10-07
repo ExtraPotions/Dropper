@@ -1,3 +1,9 @@
+## Unreleased
+
+- Adds site-wide memory for content warning types you manually accept on Twitch, with a toggle in Streams > Playback options.
+- Automatically accepts remembered warning types on other channels while leaving new types for you to review.
+- Adds Forget Accepted Warnings and includes remembered-type counts in diagnostics. Reset clears the saved choices.
+
 ## 3.4.16 — 2026-10-07
 
 - Keeps saved preferences in your userscript manager and safely migrates older settings.

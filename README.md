@@ -41,6 +41,7 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 - **Your preferred layout:** keep progress by the launcher or use Badge Only to place it at the top of the menu.
 - **Your controls:** move the launcher and tune how the menu behaves from Appearance and System.
 - **Saved preferences:** your userscript manager keeps your settings. Existing preferences move automatically, and Reset All Settings clears them.
+- **Remember accepted warnings:** enable this in Streams > Playback options to remember content warning types you accept across all Twitch channels. Different warning types still ask. Forget Accepted Warnings clears the remembered choices.
 
 ## See it in action
 

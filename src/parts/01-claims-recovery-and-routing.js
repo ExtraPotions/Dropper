@@ -1035,6 +1035,7 @@
       try { removeSession(NAVIGATION_FLIGHT_KEY); } catch (_) { /* clear inherited pre-3.1 navigation flight */ }
     }
     installViewingIntent();
+    contentWarningMemory.install();
     if (settings.keepTabActive) installKeepTabActive(page);
     installTwitchNetworkHooks(page);
     if (document.readyState === "loading") {

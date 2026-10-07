@@ -553,6 +553,7 @@
     autoPictureInPicture: false,
     resumeSessionOnRestart: true,
     restoreChannelPlayer: true,
+    rememberContentWarnings: false,
     reduceMotion: false,
     uiTheme: "dropper",
     customOpacity: false,

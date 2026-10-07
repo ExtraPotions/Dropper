@@ -740,6 +740,7 @@
       },
       topLevelContext: window.top === window.self,
       playerPresentation: playerPresentationSnapshot(),
+      contentWarnings: contentWarningMemory.snapshot(),
       headerVersionControl: Boolean(ui?.shadow?.getElementById("tdh-header-version")),
       launcherGrid: {
         slot: ui?.host?.dataset?.launcherSlot || null,
@@ -1463,12 +1464,14 @@
       "tdh-background-earning": "backgroundEarning", "tdh-auto-pip": "autoPictureInPicture", "tdh-resume-session": "resumeSessionOnRestart", "tdh-badge-only": "badgeOnly", "tdh-reduce-motion": "reduceMotion", "tdh-notify-claimed": "notifyClaimed", "tdh-notify-ending": "notifyCampaignEnding", "tdh-notify-stalled": "notifyStalledProgress", "tdh-notify-switch": "notifyStreamSwitches", "tdh-notify-hidden": "notifyOnlyWhenHidden", "tdh-custom-opacity": "customOpacity",
       "tdh-hide-sub-promos": "hideTwitchSubscriptionPromos",
       "tdh-restore-channel-player": "restoreChannelPlayer",
+      "tdh-remember-content-warnings": "rememberContentWarnings",
       "tdh-queue-enabled": "queueEnabled", "tdh-queue-stall": "queueOnStall", "tdh-queue-offline": "queueOnOffline", "tdh-queue-category": "queueOnCategoryChange",
     };
     Object.entries(map).forEach(([id, key]) => {
       ui.shadow.getElementById(id)?.addEventListener("click", () => {
         settings[key] = !settings[key];
         saveSettings();
+        if (key === "rememberContentWarnings") contentWarningMemory.process();
         if (key === "claimBonus" || key === "claimDrops") syncClaimWatchers();
         if (key === "keepTabActive") void syncScreenWakeLock();
         if (key === "autoPictureInPicture") void syncAutoPictureInPicture("setting-changed");
@@ -1511,9 +1514,12 @@
       "tdh-background-earning": settings.backgroundEarning, "tdh-auto-pip": settings.autoPictureInPicture, "tdh-resume-session": settings.resumeSessionOnRestart, "tdh-badge-only": settings.badgeOnly, "tdh-reduce-motion": settings.reduceMotion, "tdh-notify-claimed": settings.notifyClaimed, "tdh-notify-ending": settings.notifyCampaignEnding, "tdh-notify-stalled": settings.notifyStalledProgress, "tdh-notify-switch": settings.notifyStreamSwitches, "tdh-notify-hidden": settings.notifyOnlyWhenHidden, "tdh-custom-opacity": settings.customOpacity,
       "tdh-hide-sub-promos": settings.hideTwitchSubscriptionPromos,
       "tdh-restore-channel-player": settings.restoreChannelPlayer,
+      "tdh-remember-content-warnings": settings.rememberContentWarnings,
       "tdh-queue-enabled": settings.queueEnabled, "tdh-queue-stall": settings.queueOnStall, "tdh-queue-offline": settings.queueOnOffline, "tdh-queue-category": settings.queueOnCategoryChange,
     };
     Object.entries(map).forEach(([id, on]) => ui.shadow.getElementById(id)?.setAttribute("aria-checked", String(Boolean(on))));
+    const forgetWarnings = ui.shadow.getElementById('tdh-forget-content-warnings');
+    if (forgetWarnings) forgetWarnings.disabled = contentWarningMemory.snapshot().rememberedTypes === 0;
   }
 
   window.dropperDebug = function dropperDebug() { return dropperDebugSnapshot(); };
