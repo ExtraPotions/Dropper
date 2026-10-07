@@ -12,29 +12,22 @@ test('System groups Status, Support, and Reset and keeps them readable and conta
   const host = page.locator('#tdh-root'); await host.waitFor({state:'attached'});
   await host.locator('#tdh-settings-launcher').click(); await host.locator('[data-panel="tdh-diagnostics-body"]').click();
   const system = host.locator('[data-exp-product-system]');
-  assert.deepEqual(await system.locator(':scope > [data-exp-system-item]').evaluateAll(nodes => nodes.map(n => n.dataset.expSystemItem)), ['status','support','reset']);
+  assert.deepEqual(await system.locator('[data-exp-system-item]').evaluateAll(nodes => nodes.map(n => n.dataset.expSystemItem)), ['status','support','reset']);
   assert.equal(await system.locator('[data-exp-system-item="status"]').evaluate(n => n.open), true, 'Status stays open so Resume recovery is visible');
   assert.equal(await host.locator('#tdh-progress-body [data-dropper-menu-preferences]').count(), 1, 'Menu Preferences live in Appearance');
-  await system.locator('[data-exp-system-item="support"]').evaluate(n => { n.open = true; });
+  await system.getByRole('tab',{name:'Support',exact:true}).click();
   assert.deepEqual(await system.locator('.action-pair button').evaluateAll(nodes => nodes.map(n => n.textContent)), ['Copy Diagnostics','Show Diagnostics'], 'Copy comes first');
   assert.equal(await system.getByRole('button',{name:'Show Diagnostics',exact:true}).count(),1);
   assert.equal(await system.getByRole('button',{name:'Copy Diagnostics',exact:true}).count(),1);
   assert.equal(await system.getByText('Maintenance',{exact:true}).count(),0);
   for(const width of [280,596,1280]) {
     await page.setViewportSize({width,height:720});
-    for(const open of [false,true]) {
-      const result = await system.evaluate((group, open) => {
-        const cards = [...group.querySelectorAll(':scope > details')]; cards.forEach(c => { c.open = open; });
-        const status=group.querySelector('[data-exp-system-item="status"]'),support=group.querySelector('[data-exp-system-item="support"]'),issue=group.querySelector('[data-exp-system-report]'),reset=group.querySelector('[data-exp-system-item="reset"] button');
-        return { columns:getComputedStyle(group).gridTemplateColumns.split(' ').length, horizontal:group.scrollWidth-group.clientWidth,
-          diagnosticGap:support.getBoundingClientRect().top-status.getBoundingClientRect().bottom,
-          summaryTargets:cards.map(c=>c.querySelector('summary').getBoundingClientRect().height),
-          issueWidth:issue.getBoundingClientRect().width,resetWidth:reset.getBoundingClientRect().width };
-      },open);
-      assert.equal(result.columns,1,JSON.stringify({width,open,result})); assert.ok(result.horizontal<=1,JSON.stringify(result));
-      assert.ok(result.diagnosticGap>=7,JSON.stringify(result)); assert.ok(result.summaryTargets.every(height=>height>=24),JSON.stringify(result));
-      // Buttons inside closed groups are hidden; compare their widths when the groups are open.
-      if(open)assert.ok(Math.abs(result.issueWidth-result.resetWidth)<2,JSON.stringify(result));
+    for(const name of ['Status','Support','Reset']) {
+      await system.getByRole('tab',{name,exact:true}).click();
+      const result=await system.evaluate(group=>({horizontal:group.scrollWidth-group.clientWidth,selected:group.querySelectorAll('[role="tab"][aria-selected="true"]').length,visiblePanels:[...group.querySelectorAll('[role="tabpanel"]')].filter(n=>!n.hidden).length,targets:[...group.querySelectorAll('[role="tab"]')].map(n=>n.getBoundingClientRect().height)}));
+      assert.ok(result.horizontal<=1,JSON.stringify(result));assert.equal(result.selected,1);assert.equal(result.visiblePanels,1);assert.ok(result.targets.every(height=>height>=32),JSON.stringify(result));
+      if(name==='Support')assert.equal(await system.getByRole('button',{name:'Show Diagnostics',exact:true}).isVisible(),true);
+      if(name==='Reset'){const button=system.getByRole('button',{name:'Reset All Settings',exact:true});assert.equal(await button.isVisible(),true);assert.equal(await button.evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(225, 20, 40)');}
     }
   }
 });

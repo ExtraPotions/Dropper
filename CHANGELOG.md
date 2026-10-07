@@ -1,6 +1,9 @@
 ## Unreleased
 
-- Adds site-wide memory for content warning types you manually accept on Twitch, with a toggle in Streams > Playback options.
+- Replaces nested menu sections with compact tabs while keeping each product's colors and System last.
+- Remembers the selected tab during menu refreshes and supports arrow-key navigation.
+
+- Adds site-wide memory for content warning types you manually accept on Twitch, with a toggle in Streams > Playback.
 - Automatically accepts remembered warning types on other channels while leaving new types for you to review.
 - Adds Forget Accepted Warnings and includes remembered-type counts in diagnostics. Reset clears the saved choices.
 

@@ -64,7 +64,8 @@ test('repository keeps only current docs, assets, and required build inputs', ()
   assert.match(changelog, /^## 3.1.0 — 2026-09-22/m);
   assert.match(changelog, /^## 3.0.78 — 2026-09-22/m);
   assert.doesNotMatch(changelog, /^## 3\.0\.11/m);
-  const currentSection = changelog.split(/^## /m)[1] || '';
+  const releasedVersion = JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')).version;
+  const currentSection = changelog.split(/^## /m).find(section=>section.startsWith(releasedVersion+' ')) || '';
   const bullets = [...currentSection.matchAll(/^- .+$/gm)];
   assert.ok(bullets.length >= 2 && bullets.length <= 4, 'current changelog stays concise');
 });

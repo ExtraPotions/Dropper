@@ -30,7 +30,7 @@ test('installed Dropper migrates preferences, keeps the page bridge working, and
  assert.equal(event.headers.authorization,undefined);assert.equal(event.json[0].data.currentUser.email,undefined);
  assert.equal(await page.evaluate(()=>fixtureResponse[0].data.chat),'private','Twitch still receives its original response');
  await page.evaluate(()=>dropperShow());await host.locator('[data-panel="tdh-diagnostics-body"]').click();
- await host.locator('[data-exp-system-item="reset"]').evaluate(node=>node.open=true);
+ await host.getByRole('tab',{name:'Reset',exact:true}).click();
  await host.getByRole('button',{name:'Reset All Settings',exact:true}).click();
  assert.equal(await page.evaluate(()=>fixtureManager.has('exp:v3:dropper:settings')),true,'first tap only arms reset');
  // Cancel the navigation while inspecting the state immediately after reset.

@@ -22,6 +22,8 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 
 ## What you can do
 
+- **Compact submenu tabs:** switch between related settings without opening a stack of nested menus. Each product keeps its own colors, and System stays last.
+
 - **Distinct menu colors:** Dropper keeps its signature appearance alongside other ExtraPotions products.
 - **Accurate category routes:** Rainbow Six Siege and Overwatch (now the Overwatch 2 directory) open their correct Twitch directories, including after an older route was saved.
 - **Bounded stream discovery:** after two minutes without a compatible visible stream, try another eligible campaign and revisit the deferred campaign after five minutes. If no alternative exists, keep waiting for a compatible stream.
@@ -29,9 +31,9 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 - **Recent progress:** see the last 30 progress and recovery events in System. Repeated recovery switches pause until you choose Resume.
 - **Campaign-aware stream choices:** restricted campaigns use their listed channels, with known restrictions retained across Twitch page changes. If recovery pauses, System explains why and offers Resume recovery.
 
-- **Simple System menu:** Status stays open with its reason and recovery action, plus recent activity. Support holds Copy Diagnostics and Report a Problem. Reset asks for a second tap inside the menu.
+- **Simple System menu:** The Status tab shows its reason and recovery action, plus recent activity. Support holds Copy Diagnostics and Report a Problem. Reset asks for a second tap inside the menu.
 
-- **Readable menus:** choose Standard (14px text), Large (16px), or Extra Large (18px) from Appearance > Menu Preferences. Captions start at 12px. Labels, dropdowns, toggles, and buttons share consistent spacing and alignment. The choice applies to ExtraPotions menus on this site.
+- **Readable menus:** choose Standard (14px text), Large (16px), or Extra Large (18px) from Appearance > Menu. Captions start at 12px. Labels, dropdowns, toggles, and buttons share consistent spacing and alignment. The choice applies to ExtraPotions menus on this site.
 
 - **Interruption rules:** set quiet hours, protect channels from automatic switching, exclude channels, or stay on a stream while it is earning. Quiet hours also silence browser alerts.
 - **Honest progress:** show progress as pending when Twitch has not supplied it. Eligible streams and confirmed reward credit have separate status indicators.
@@ -41,7 +43,7 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 - **Your preferred layout:** keep progress by the launcher or use Badge Only to place it at the top of the menu.
 - **Your controls:** move the launcher and tune how the menu behaves from Appearance and System.
 - **Saved preferences:** your userscript manager keeps your settings. Existing preferences move automatically, and Reset All Settings clears them.
-- **Remember accepted warnings:** enable this in Streams > Playback options to remember content warning types you accept across all Twitch channels. Different warning types still ask. Forget Accepted Warnings clears the remembered choices.
+- **Remember accepted warnings:** enable this in Streams > Playback to remember content warning types you accept across all Twitch channels. Different warning types still ask. Forget Accepted Warnings clears the remembered choices.
 
 ## See it in action
 
