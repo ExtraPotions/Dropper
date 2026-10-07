@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.17
+// @version      3.4.18
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.17";
+  const APP_VERSION = "3.4.18";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -211,6 +211,7 @@
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.18": ["Bounds campaign-supported streams without identified earning to three attempts before a 15-minute campaign cooldown.","Keeps the current stream open during cooldown when no alternative campaign is available; fresh earning evidence can end the cooldown early.","Separates unidentified or missing reward sessions from waiting for credit, and keeps unknown timeline progress pending."],
     "3.4.17": ["Organizes related menu settings into compact tabs, with System last.","Keeps your selected tab during menu refreshes and supports keyboard navigation.","Remembers Twitch content warning types you manually accept across channels when enabled in Streams > Playback.","Adds Forget Accepted Warnings; resetting settings also clears remembered warnings."],
     "3.4.16": ["Keeps saved preferences in your userscript manager and safely migrates older settings.","Checks Twitch progress messages more carefully before using them.","Includes verified and rejected stream events in recent activity."],
     "3.4.15": ["Makes menu labels and captions easier to read at every size.","Aligns dropdowns, toggles, buttons, and section headings with consistent spacing.","Gives menus more room while keeping each product's signature colors."],

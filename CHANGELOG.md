@@ -1,4 +1,4 @@
-## Unreleased
+## 3.4.18 — 2026-10-07
 
 - Bounds campaign-supported streams without identified earning to three attempts before a 15-minute campaign cooldown.
 - Keeps the current stream open during cooldown when no alternative campaign is available; fresh earning evidence can end the cooldown early.
