@@ -99,11 +99,11 @@ test(`Badge Only keeps progress in the menu at ${viewport.width}px with a ${anch
       return {
         inFlow:getComputedStyle(card).position === 'relative',
         insideSlot:cardBox.top>=slotBox.top && cardBox.bottom<=slotBox.bottom+1 && cardBox.left>=slotBox.left && cardBox.right<=slotBox.right+1,
-        aboveHeader:cardBox.bottom<=headerBox.top+1,
+        belowHeader:cardBox.top>=headerBox.bottom-1,
 
         parent: card.parentElement.id,
         slotParent: slot.parentElement.id,
-        slotAboveDrops: slot.nextElementSibling?.querySelector?.('[data-panel="tdh-drops-body"]') != null,
+        slotAboveTabs: slot.nextElementSibling?.hasAttribute('data-exp-submenu-tabs') === true,
         slotInsideDrops: dropsBody.contains(slot),
         presentation: card.dataset.presentation,
         slotHidden: slot.hidden,
@@ -112,11 +112,11 @@ test(`Badge Only keeps progress in the menu at ${viewport.width}px with a ${anch
       };
     });
     assert.deepEqual(facts, {
-      inFlow:true, insideSlot:true, aboveHeader:true,
+      inFlow:true, insideSlot:true, belowHeader:true,
       parent: 'tdh-badge-only-progress-slot',
-      slotParent: 'tdh-tools-dock',
-      slotAboveDrops: true,
-      slotInsideDrops: false,
+      slotParent: 'tdh-drops-body',
+      slotAboveTabs: true,
+      slotInsideDrops: true,
       presentation: 'menu-card',
       slotHidden: false,
       cardVisible: true,

@@ -46,8 +46,8 @@
               <a class="update-action" id="tdh-update-action" href="#" target="_blank" rel="noopener noreferrer" role="button">View Update</a>
             </div>
           </div>
-          <div class="badge-only-progress-slot" id="tdh-badge-only-progress-slot" aria-label="Drop progress" hidden></div>
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-drops-body"><span class="fl-tool-title">Drops</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-drops-body">
+            <div class="badge-only-progress-slot" id="tdh-badge-only-progress-slot" aria-label="Drop progress" hidden></div>
             ${switchHtml("tdh-claim-drops", "Auto-Claim Drops", "", settings.claimDrops)}
             ${switchHtml("tdh-claim-bonus", "Auto-Claim Bonus Chests", "Attempts Free Bonus Claims. A Click Is Not Counted As Confirmation.", settings.claimBonus)}
             <div class="auth-required" id="tdh-auth-required" hidden>

@@ -1616,7 +1616,7 @@ const ExpMenuArrangement = (() => {
       const drops=id==='dropper'&&container.id==='tdh-drops-body';
       const retailer=id==='ward'&&container.id==='exp-ward-view-tools';
       for(const node of [...container.children]) {
-        if(node.matches('style,script,[data-exp-submenu-tabs]'))continue;
+        if(node.matches('style,script,[data-exp-submenu-tabs],.badge-only-progress-slot'))continue;
         let label=tabLabel(node);
         if(stream){
           const key=slug(node.querySelector(':scope>summary')?.textContent);
@@ -1661,7 +1661,8 @@ const ExpMenuArrangement = (() => {
         event.preventDefault();choose(index,true);
       }
       list.addEventListener('click',click);list.addEventListener('keydown',keydown);
-      container.replaceChildren(root);
+      const progressSlot=container.querySelector(':scope>.badge-only-progress-slot');
+      container.replaceChildren(...(progressSlot?[progressSlot,root]:[root]));
       const saved=groups.findIndex(group=>group.label===selection.get(key));
       choose(saved<0?0:saved);
       mounted.set(container,{root,syncOpen,destroy(restore){list.removeEventListener('click',click);list.removeEventListener('keydown',keydown);for(const group of groups)for(const node of group.nodes)delete node.dataset.expTabItem;if(restore){for(const [node,open]of detailsState)node.open=open;container.replaceChildren(...original);}}});
@@ -1830,6 +1831,22 @@ const ExpMenuTypography = (() => {
     [data-exp-menu-typography] :is([data-exp-part="subtitle"],#tdh-rail-subtitle){font-size:var(--exp-font-size-small,12px)!important;line-height:1.4!important}
     [data-exp-menu-typography] :is([data-exp-part="version"],#tdh-header-version){font-weight:600!important;line-height:1.2!important;font-variant-numeric:tabular-nums}
     [data-exp-menu-typography] :is(output,.status-value,.step-value,.status-check-value){font-variant-numeric:tabular-nums}
+    [data-exp-menu-typography] .fl-tool-panel{margin-top:0!important;border:0!important;border-bottom:1px solid var(--theme-line)!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
+    [data-exp-menu-typography] .fl-tool-header{padding:10px 4px!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;color:var(--theme-text)}
+    [data-exp-menu-typography] .fl-tool-header::before{display:none!important}
+    [data-exp-menu-typography] .fl-tool-header[aria-expanded=true]{color:var(--theme-accent2,var(--theme-accent))!important}
+    [data-exp-menu-typography] .fl-tool-header:hover{background:color-mix(in srgb,var(--theme-accent) 7%,transparent)!important}
+    [data-exp-menu-typography] .fl-tool-header:focus-visible{outline:2px solid var(--theme-focus,var(--theme-accent2));outline-offset:-2px}
+    [data-exp-menu-typography] .fl-tool-body{padding:4px 4px 12px!important}
+    [data-exp-menu-typography] :is(.row,.mini-row,.fl-switch,.setting-row){padding-block:7px!important}
+    [data-exp-menu-typography] :is(.row,.mini-row,.fl-switch,.setting-row)+:is(.row,.mini-row,.fl-switch,.setting-row){border-top-color:transparent!important}
+    [data-exp-menu-typography] .exp-submenu-tablist{gap:4px;padding:2px 0 10px;margin-bottom:8px;border-bottom:0}
+    [data-exp-menu-typography] .exp-submenu-tablist>button{border-color:transparent!important;border-radius:6px!important;font-weight:500!important}
+    [data-exp-menu-typography] .exp-submenu-tablist>button[aria-selected=true]{color:var(--theme-text)!important;background:color-mix(in srgb,var(--theme-accent) 17%,var(--theme-inset,var(--theme-panel)))!important}
+    [data-exp-menu-typography] :is(.appearance-group,.exp-system-card,[data-exp-menu-submenu]){border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
+    [data-exp-menu-typography] .diagnostics-controls{margin-bottom:16px}
+    [data-exp-menu-typography] .badge-only-progress-slot{margin:0 0 12px!important}
+    [data-exp-menu-typography] .badge-only-progress-slot #tdh-drop-card{border:0!important;background:transparent!important;box-shadow:none!important;padding-inline:0!important}
   `;
   function mount({shadow,panel}) {
     panel.dataset.expMenuTypography='1';
@@ -1873,7 +1890,7 @@ const ExpMenuPreferences = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.7.3';
+  const version = '3.7.4';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';

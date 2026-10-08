@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.20
+// @version      3.4.21
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.20";
+  const APP_VERSION = "3.4.21";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -211,6 +211,7 @@
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.21": ["Gives menus a lighter layout with subtle section dividers and softly filled tabs.","Keeps every existing control, setting, and product color, with consistent spacing and readable text.","Shows badge-only progress inside Drops, above its tabs."],
     "3.4.20": ["Stops selecting non-repeatable rewards that Twitch already confirms as claimed.","Keeps other rewards in the same campaign eligible and preserves unknown watch progress.","Distinguishes an inactive reward session from an unidentified one in diagnostics."],
     "3.4.19": ["Keeps campaign cooldowns active through stream changes, restarts, and campaign selection.","Selects another eligible campaign during cooldown, or keeps the current stream open when none is available."],
     "3.4.18": ["Bounds campaign-supported streams without identified earning to three attempts before a 15-minute campaign cooldown.","Keeps the current stream open during cooldown when no alternative campaign is available; fresh earning evidence can end the cooldown early.","Separates unidentified or missing reward sessions from waiting for credit, and keeps unknown timeline progress pending."],
@@ -15369,8 +15370,8 @@
               <a class="update-action" id="tdh-update-action" href="#" target="_blank" rel="noopener noreferrer" role="button">View Update</a>
             </div>
           </div>
-          <div class="badge-only-progress-slot" id="tdh-badge-only-progress-slot" aria-label="Drop progress" hidden></div>
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-drops-body"><span class="fl-tool-title">Drops</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-drops-body">
+            <div class="badge-only-progress-slot" id="tdh-badge-only-progress-slot" aria-label="Drop progress" hidden></div>
             ${switchHtml("tdh-claim-drops", "Auto-Claim Drops", "", settings.claimDrops)}
             ${switchHtml("tdh-claim-bonus", "Auto-Claim Bonus Chests", "Attempts Free Bonus Claims. A Click Is Not Counted As Confirmation.", settings.claimBonus)}
             <div class="auth-required" id="tdh-auth-required" hidden>

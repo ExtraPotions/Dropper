@@ -1,8 +1,8 @@
 {
-  "coreVersion": "3.7.3",
+  "coreVersion": "3.7.4",
   "source": {
     "source": "ExtraPotions/exp-core",
-    "sourceVersion": "3.7.3",
+    "sourceVersion": "3.7.4",
     "architecture": "core-native"
   },
   "suiteContract": {
@@ -177,16 +177,16 @@
       "rootId": "exp-prisma-root"
     }
   },
-  "bundleSha256": "344a1ca37680275f57ed23a800dd6891a569097ee9e743688857922b591fa8ae",
+  "bundleSha256": "4ca721214da1ca358f953c31f302af6b4ecc0557e1e88f59c9219b3e3a6203e1",
   "files": {
     "foundation.js": "0db984edc78917edf5cadd4218d80b1ca426f8a10fac3eb7002489ba08fea8c3",
     "diagnostic-report.js": "8882589ec3ae690ce384913b997bc632e30e0c50e2d0c32aa12e28b91a4c9358",
     "lifecycle.js": "e1d1fd4dd5d08c500d52bf8d615d22bd504b0cfbee25b03328c4c9816395bf89",
     "product-tools.js": "6bc1651220b2f34698d3ae052e11c39db1f818ae9a6175e3edaacae085a21c7c",
-    "menu-arrangement.js": "ec8f8056ce31f33760809fa7d3e57d28ab02c9bb2ebdab2eb35d1309fe66a3e0",
+    "menu-arrangement.js": "74f1e45f3af1fd5d3b8a2f12bd1b01e506124e4307292fe0c4cbade27d7eaba8",
     "health-summary.js": "dccf0a557e5dff4e91199346b53deee65fd4165e4d8fd7bb04a6c5dcd88236eb",
     "recovery-control.js": "c9f1b6383ffda72235ca59bca1a1308bfad5b3fb6552f7ba4305795bfcbdf2af",
-    "menu-typography.js": "c19a97485250730fec143df508681d05ff6f4e5cfe0ebd1a396c0f6561b0ae1b",
+    "menu-typography.js": "70aa4c4a014fe3a0a8beefae1800cd6b01099257643bc8fc648e69a106249908",
     "menu-preferences.js": "1a15af7a5707ccccd57d66569691cb300d73253b1e775b7f2f9524cbec358753",
     "runtime.js": "32e5c805aa150f81f1824043c786008e63945abd3d04b91350eb1aa6aa0f98e7",
     "suite-contract.json": "1b60485eeb48388692eadbc6a2de2c8916f7a67baadcb9ef277c44360b79b773"

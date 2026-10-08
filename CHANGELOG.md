@@ -1,3 +1,9 @@
+## 3.4.21 — 2026-10-08
+
+- Gives menus a lighter layout with subtle section dividers and softly filled tabs.
+- Keeps every existing control, setting, and product color, with consistent spacing and readable text.
+- Shows badge-only progress inside Drops, above its tabs.
+
 ## 3.4.20 — 2026-10-08
 
 - Stops selecting non-repeatable rewards that Twitch already confirms as claimed.
