@@ -1,4 +1,4 @@
-## Unreleased
+## 3.4.19 — 2026-10-08
 
 - Keeps campaign cooldowns active through stream changes, restarts, and campaign selection.
 - Selects another eligible campaign during cooldown, or keeps the current stream open when none is available.
