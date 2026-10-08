@@ -1804,7 +1804,7 @@
         .toggleSwitch[aria-checked="true"] { border-color:Highlight; background:Highlight; }
         .toggleSwitch[aria-checked="true"]::after { border-color:HighlightText; background:HighlightText; }
       }
-            .cluster[data-theme-skin="gradient"] #tdh-tools-dock {
+            .cluster[data-theme-skin="gradient"] #tdh-tools-dock:not([data-exp-menu-layout="lean"]) {
         border:1px solid transparent !important;
         background-origin:border-box !important;
         background-clip:padding-box, border-box !important;

@@ -127,9 +127,11 @@ test(`Badge Only keeps progress in the menu at ${viewport.width}px with a ${anch
       shadow.querySelector('[data-panel="tdh-progress-body"]').click();
       shadow.getElementById('tdh-badge-only').click();
       const card=shadow.getElementById('tdh-drop-card');
-      return {inLauncher:card.parentElement.classList.contains('badge-row'),position:getComputedStyle(card).position};
+      const assertMenuCard = card.parentElement.id === 'tdh-badge-only-progress-slot';
+      shadow.getElementById('tdh-rail-close').click();
+      return {inMenuWhileOpen:assertMenuCard,inLauncher:card.parentElement.classList.contains('badge-row'),position:getComputedStyle(card).position};
     });
-    assert.deepEqual(restored,{inLauncher:true,position:'relative'});
+    assert.deepEqual(restored,{inMenuWhileOpen:true,inLauncher:true,position:'relative'});
 
   } finally {
     await browser.close();
@@ -189,4 +191,11 @@ test('the changelog notice stays fixed inside the viewport', async () => {
   } finally {
     await browser.close();
   }
+});
+
+
+test('normal progress opens inside Drops and returns to the page when the menu closes',async()=>{
+ const browser=await chromium.launch();try{const page=await browser.newPage();await page.route('https://www.twitch.tv/**',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><body></body>'}));await page.goto('https://www.twitch.tv/menu-progress');await page.evaluate(()=>window.GM_xmlhttpRequest=()=>{});await page.addScriptTag({content:fs.readFileSync(installPath,'utf8')});
+ const facts=await page.evaluate(()=>{const shadow=document.getElementById('tdh-root').shadowRoot,card=shadow.getElementById('tdh-drop-card');const before=card.parentElement.className;window.dropperShow();const inside=card.parentElement.id,visible=card.getBoundingClientRect().height>0,expanded=shadow.querySelector('[data-panel="tdh-drops-body"]').getAttribute('aria-expanded');shadow.getElementById('tdh-rail-close').click();return{before,inside,visible,expanded,after:card.parentElement.className,badgeOnly:shadow.getElementById('tdh-badge-only').getAttribute('aria-checked')};});assert.deepEqual(facts,{before:'badge-row',inside:'tdh-badge-only-progress-slot',visible:true,expanded:'true',after:'badge-row',badgeOnly:'false'});
+ }finally{await browser.close();}
 });

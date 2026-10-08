@@ -2,7 +2,7 @@
 
 # Dropper
 
-Current release: **3.4.21**.
+Current release: **3.4.22**.
 
 **Follow your Twitch Drops from watch time to reward**
 
@@ -22,7 +22,7 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 
 ## What you can do
 
-- **Badge-only progress:** open Drops to see your progress above the submenu tabs.
+- **Progress in Drops:** open the menu to see your progress above its tabs. Close the menu to restore the page card when Badge Only is off.
 
 - **Lean menus:** subtle dividers and compact tabs keep related settings easy to reach. Every control and setting remains available, each product keeps its own colors, and System stays last.
 

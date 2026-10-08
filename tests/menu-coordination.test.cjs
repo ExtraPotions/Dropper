@@ -37,12 +37,12 @@ function fixture() {
   const c = {
     ExpMenuPreferences:{bindMenuSize:()=>()=>{}},
     railOpen: false, document,
-    ui: { dock: new Target(), launcher: new Target(), shadow: { getElementById: () => null } },
+    ui: { dock: new Target(), launcher: new Target(), shadow: { getElementById: () => null, querySelector: () => null } },
     Event: class { constructor(type) { this.type = type; } },
     CustomEvent: class { constructor(type) { this.type = type; } },
     HTMLSelectElement: class {}, Date,
     setTimeout: () => { throw new Error('auto-close is disabled in this fixture'); }, clearTimeout: noop,
-    collapseToolPanels: noop, collapseNestedPanels: noop, refreshTwitchAuthStatus: noop,
+    syncProgressPanelPlacement: noop, collapseToolPanels: noop, collapseNestedPanels: noop, refreshTwitchAuthStatus: noop,
     layoutChrome: noop, requestAnimationFrame: noop, clearSkipStreamerArm: noop,
     ExtraPotionsCore: { focusMenuSurface: () => { focus.push('menu'); return true; } },
   };

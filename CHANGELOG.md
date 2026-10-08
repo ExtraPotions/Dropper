@@ -1,3 +1,9 @@
+## 3.4.22 — 2026-10-08
+
+- Matches the approved Lean menu proportions, header, flat surfaces, section navigation, compact tabs, controls, and footer.
+- Preserves every existing control and setting, each product color, readable menu sizes, and System last.
+- Shows progress inside Drops whenever the menu is open, with the page card restored when it closes.
+
 ## 3.4.21 — 2026-10-08
 
 - Gives menus a lighter layout with subtle section dividers and softly filled tabs.

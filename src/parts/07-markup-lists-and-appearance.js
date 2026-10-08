@@ -21,7 +21,7 @@
                   <h2 id="tdh-rail-title">Dropper</h2>
                   <button type="button" id="tdh-header-version" aria-label="View Dropper v${APP_VERSION} Changelog" title="View Changelog">v${APP_VERSION}</button>
                 </div>
-                <div id="tdh-rail-subtitle">Twitch Drops: Track and Redeem</div>
+                <div id="tdh-rail-subtitle">Twitch Drops</div>
               </div>
             </div>
             <div class="header-actions">
@@ -1482,7 +1482,7 @@
     const menuSlot = ui.shadow.getElementById("tdh-badge-only-progress-slot");
     const badgeRow = ui.shadow.querySelector(".badge-row");
     if (!card || !menuSlot || !badgeRow || !ui.launcher) return;
-    if (settings.badgeOnly) {
+    if (settings.badgeOnly || railOpen) {
       menuSlot.hidden = false;
       if (card.parentElement !== menuSlot) menuSlot.append(card);
       card.dataset.presentation = "menu-card";

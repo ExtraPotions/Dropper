@@ -1263,14 +1263,15 @@
     const badgeRow = ui.shadow.querySelector(".badge-row");
     const progressStack = ui.shadow.querySelector(".progress-stack");
     const progressCard = ui.shadow.getElementById("tdh-drop-card");
-    const rowHeight = settings.badgeOnly ? 48 : Math.max(112, progressCard?.offsetHeight || 112);
+    const pageCardShown = progressCard?.dataset.presentation === "page-card";
+    const rowHeight = pageCardShown ? Math.max(112, progressCard.offsetHeight || 112) : 48;
     const panelWidth = ExtraPotionsCore.menuWidth();
     const menuPanelWidth = Math.min(panelWidth, Math.max(0, window.innerWidth - 24));
     const launcherWidth = 48;
-    const rowGap = settings.badgeOnly ? 0 : 8;
-    const rowWidth = settings.badgeOnly ? launcherWidth : panelWidth + rowGap + launcherWidth;
+    const rowGap = pageCardShown ? 8 : 0;
+    const rowWidth = pageCardShown ? panelWidth + rowGap + launcherWidth : launcherWidth;
 
-    const reservedRows = 1;
+    const reservedRows = pageCardShown ? 1 : 0;
     if (ui.host.dataset.launcherReservedRows !== String(reservedRows)) {
       ui.host.dataset.launcherReservedRows = String(reservedRows);
       document.dispatchEvent(new CustomEvent("exp-core:coordination", { detail: { type: "launcher-reservation", productId: "dropper", rows: reservedRows } }));
@@ -1369,9 +1370,11 @@
   function setRailOpen(open, focus) {
     if(open)ui.healthControl?.refresh();
     railOpen = open;
+    syncProgressPanelPlacement();
     if (open) {
       collapseToolPanels();
       collapseNestedPanels();
+      ui.shadow.querySelector('.fl-tool-header[data-panel="tdh-drops-body"]')?.click();
     }
     ui.menuController.state(open);
     ui.launcher.setAttribute("aria-expanded", String(open));
@@ -1409,6 +1412,7 @@
     ui.shadow.querySelectorAll(".fl-tool-header").forEach((header) => {
       const body = ui.shadow.getElementById(header.dataset.panel);
       body.classList.add("fl-tool-hidden");
+      header.setAttribute("aria-expanded", "false");
       header.classList.toggle("last-opened", header.dataset.panel === lastPanelId);
       const chevron = header.querySelector(".fl-tool-chevron");
       chevron.textContent = "▸";
@@ -1448,6 +1452,7 @@
           const body = ui.shadow.getElementById(other.dataset.panel);
           const open = other === header && willOpen;
           body.classList.toggle("fl-tool-hidden", !open);
+          other.setAttribute("aria-expanded", String(open));
           other.querySelector(".fl-tool-chevron").textContent = open ? "▾" : "▸";
           other.querySelector(".fl-tool-chevron").setAttribute("aria-expanded", String(open));
           other.classList.toggle("last-opened", other.dataset.panel === lastPanelId);

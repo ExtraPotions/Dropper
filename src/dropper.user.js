@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.21
+// @version      3.4.22
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.21";
+  const APP_VERSION = "3.4.22";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -211,6 +211,7 @@
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const RELEASE_NOTES = {
+    "3.4.22": ["Matches the approved Lean menu proportions, header, flat surfaces, section navigation, compact tabs, controls, and footer.","Preserves every existing control and setting, each product color, readable menu sizes, and System last.","Shows progress inside Drops whenever the menu is open, with the page card restored when it closes."],
     "3.4.21": ["Gives menus a lighter layout with subtle section dividers and softly filled tabs.","Keeps every existing control, setting, and product color, with consistent spacing and readable text.","Shows badge-only progress inside Drops, above its tabs."],
     "3.4.20": ["Stops selecting non-repeatable rewards that Twitch already confirms as claimed.","Keeps other rewards in the same campaign eligible and preserves unknown watch progress.","Distinguishes an inactive reward session from an unidentified one in diagnostics."],
     "3.4.19": ["Keeps campaign cooldowns active through stream changes, restarts, and campaign selection.","Selects another eligible campaign during cooldown, or keeps the current stream open when none is available."],
@@ -14873,7 +14874,7 @@
         .toggleSwitch[aria-checked="true"] { border-color:Highlight; background:Highlight; }
         .toggleSwitch[aria-checked="true"]::after { border-color:HighlightText; background:HighlightText; }
       }
-            .cluster[data-theme-skin="gradient"] #tdh-tools-dock {
+            .cluster[data-theme-skin="gradient"] #tdh-tools-dock:not([data-exp-menu-layout="lean"]) {
         border:1px solid transparent !important;
         background-origin:border-box !important;
         background-clip:padding-box, border-box !important;
@@ -15345,7 +15346,7 @@
                   <h2 id="tdh-rail-title">Dropper</h2>
                   <button type="button" id="tdh-header-version" aria-label="View Dropper v${APP_VERSION} Changelog" title="View Changelog">v${APP_VERSION}</button>
                 </div>
-                <div id="tdh-rail-subtitle">Twitch Drops: Track and Redeem</div>
+                <div id="tdh-rail-subtitle">Twitch Drops</div>
               </div>
             </div>
             <div class="header-actions">
@@ -16806,7 +16807,7 @@
     const menuSlot = ui.shadow.getElementById("tdh-badge-only-progress-slot");
     const badgeRow = ui.shadow.querySelector(".badge-row");
     if (!card || !menuSlot || !badgeRow || !ui.launcher) return;
-    if (settings.badgeOnly) {
+    if (settings.badgeOnly || railOpen) {
       menuSlot.hidden = false;
       if (card.parentElement !== menuSlot) menuSlot.append(card);
       card.dataset.presentation = "menu-card";
@@ -18437,14 +18438,15 @@
     const badgeRow = ui.shadow.querySelector(".badge-row");
     const progressStack = ui.shadow.querySelector(".progress-stack");
     const progressCard = ui.shadow.getElementById("tdh-drop-card");
-    const rowHeight = settings.badgeOnly ? 48 : Math.max(112, progressCard?.offsetHeight || 112);
+    const pageCardShown = progressCard?.dataset.presentation === "page-card";
+    const rowHeight = pageCardShown ? Math.max(112, progressCard.offsetHeight || 112) : 48;
     const panelWidth = ExtraPotionsCore.menuWidth();
     const menuPanelWidth = Math.min(panelWidth, Math.max(0, window.innerWidth - 24));
     const launcherWidth = 48;
-    const rowGap = settings.badgeOnly ? 0 : 8;
-    const rowWidth = settings.badgeOnly ? launcherWidth : panelWidth + rowGap + launcherWidth;
+    const rowGap = pageCardShown ? 8 : 0;
+    const rowWidth = pageCardShown ? panelWidth + rowGap + launcherWidth : launcherWidth;
 
-    const reservedRows = 1;
+    const reservedRows = pageCardShown ? 1 : 0;
     if (ui.host.dataset.launcherReservedRows !== String(reservedRows)) {
       ui.host.dataset.launcherReservedRows = String(reservedRows);
       document.dispatchEvent(new CustomEvent("exp-core:coordination", { detail: { type: "launcher-reservation", productId: "dropper", rows: reservedRows } }));
@@ -18543,9 +18545,11 @@
   function setRailOpen(open, focus) {
     if(open)ui.healthControl?.refresh();
     railOpen = open;
+    syncProgressPanelPlacement();
     if (open) {
       collapseToolPanels();
       collapseNestedPanels();
+      ui.shadow.querySelector('.fl-tool-header[data-panel="tdh-drops-body"]')?.click();
     }
     ui.menuController.state(open);
     ui.launcher.setAttribute("aria-expanded", String(open));
@@ -18583,6 +18587,7 @@
     ui.shadow.querySelectorAll(".fl-tool-header").forEach((header) => {
       const body = ui.shadow.getElementById(header.dataset.panel);
       body.classList.add("fl-tool-hidden");
+      header.setAttribute("aria-expanded", "false");
       header.classList.toggle("last-opened", header.dataset.panel === lastPanelId);
       const chevron = header.querySelector(".fl-tool-chevron");
       chevron.textContent = "▸";
@@ -18622,6 +18627,7 @@
           const body = ui.shadow.getElementById(other.dataset.panel);
           const open = other === header && willOpen;
           body.classList.toggle("fl-tool-hidden", !open);
+          other.setAttribute("aria-expanded", String(open));
           other.querySelector(".fl-tool-chevron").textContent = open ? "▾" : "▸";
           other.querySelector(".fl-tool-chevron").setAttribute("aria-expanded", String(open));
           other.classList.toggle("last-opened", other.dataset.panel === lastPanelId);
