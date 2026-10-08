@@ -1,4 +1,4 @@
-## Unreleased
+## 3.4.20 — 2026-10-08
 
 - Stops selecting non-repeatable rewards that Twitch already confirms as claimed.
 - Keeps other rewards in the same campaign eligible and preserves unknown watch progress.

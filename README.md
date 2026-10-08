@@ -2,7 +2,7 @@
 
 # Dropper
 
-Current release: **3.4.19**.
+Current release: **3.4.20**.
 
 **Follow your Twitch Drops from watch time to reward**
 
@@ -27,6 +27,7 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 - **Distinct menu colors:** Dropper keeps its signature appearance alongside other ExtraPotions products.
 - **Accurate category routes:** Rainbow Six Siege and Overwatch (now the Overwatch 2 directory) open their correct Twitch directories, including after an older route was saved.
 - **Bounded stream discovery:** after two minutes without a compatible visible stream, try another eligible campaign and revisit the deferred campaign after five minutes. If no alternative exists, keep waiting for a compatible stream.
+- **Already-claimed rewards:** skip non-repeatable rewards Twitch confirms as claimed, while keeping other rewards in the same campaign eligible.
 - **Bounded credit recovery:** after three campaign-supported stream attempts without identified earning, defer the campaign for 15 minutes. If no other campaign is available, keep the current stream open; fresh earning evidence can end the cooldown early.
 - **System status:** see Working, Waiting, Paused, or Needs attention, with a reason and a safe recovery action when available.
 - **Recent progress:** see the last 30 progress and recovery events in System. Repeated recovery switches pause until you choose Resume.
