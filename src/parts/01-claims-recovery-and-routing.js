@@ -2107,6 +2107,11 @@
       return advanceAfterWatchComplete(currentDrop, reason);
     }
 
+    const key = cleanText(currentDrop.campaignKey || currentDrop.campaignId).toLowerCase();
+    if (Number(readRoutingControllerSession().deferredCampaigns?.[key]) > Date.now()) {
+      return routingControllerSelectCampaign();
+    }
+
     const login = watchingLogin();
     const info = login ? readStreamInfo() : null;
     if (login && info?.live && info.game && gameNamesMatch(currentDrop.game || "", info.game)) {
@@ -2146,6 +2151,8 @@
 
   function routingControllerSelectCampaign(now = Date.now()) {
     let session = readRoutingControllerSession();
+    const currentKey = cleanText(currentDrop?.campaignKey || currentDrop?.campaignId).toLowerCase();
+    const retryAt = Number(session.deferredCampaigns?.[currentKey]) || 0;
 
     if (currentDrop && !currentDrop.isClaimed && dropProgressComplete(currentDrop)) {
       return advanceAfterWatchComplete(currentDrop, "Completed Drop already has full watch credit");
@@ -2157,6 +2164,7 @@
       !dropProgressComplete(currentDrop) &&
       !campaignMarkedComplete(currentDrop.campaignKey || currentDrop.campaignId || "") &&
       !campaignIsExcluded(currentDrop) &&
+      retryAt <= now &&
       campaignIsRoutingOpen(currentDrop, now) &&
       dropFitsCampaignWindow(currentDrop, now)
     ) {
@@ -2178,6 +2186,15 @@
     const { next, excluded } = pickViableCampaign(session, { now });
 
     if (!next) {
+      if (currentDrop && !currentDrop.isClaimed && retryAt > now) {
+        const creditCooldown = Number(session.creditVerificationAttempts?.[currentKey]?.count) >= 3;
+        return transitionRoutingController(ROUTING_STATES.WAITING, {
+          ...routingControllerTargetFromDrop(currentDrop),
+          targetStream: watchingLogin() || session.targetStream || '',
+          waitReason: creditCooldown ? 'reward-credit-unconfirmed' : 'no-eligible-campaign',
+          deadlineAt: retryAt,
+        }, 'Campaign deferred · keeping current stream open until cooldown ends');
+      }
       queueGqlPollSoon("routing-no-campaign", 0);
       return transitionRoutingController(
         ROUTING_STATES.WAITING,
@@ -3185,7 +3202,16 @@
       }
     }
 
-    if (!reason) return false;
+    if (!reason) {
+      // Stored targets can survive navigation or a pause. Recheck their cooldown
+      // before any bootstrap, discovery, or verification path can resume them.
+      if (Number(session.deferredCampaigns?.[key]) > now &&
+          !(session.state === ROUTING_STATES.WAITING && session.waitReason === 'reward-credit-unconfirmed')) {
+        routingControllerSelectCampaign(now);
+        return true;
+      }
+      return false;
+    }
 
     const excludedCampaignKeys = normalizeExcludedCampaignKeys([
       ...(session.excludedCampaignKeys || []),

@@ -1,3 +1,8 @@
+## Unreleased
+
+- Keeps campaign cooldowns active through stream changes, restarts, and campaign selection.
+- Selects another eligible campaign during cooldown, or keeps the current stream open when none is available.
+
 ## 3.4.18 — 2026-10-07
 
 - Bounds campaign-supported streams without identified earning to three attempts before a 15-minute campaign cooldown.

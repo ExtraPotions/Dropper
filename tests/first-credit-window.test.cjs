@@ -17,7 +17,7 @@ function harness({ live = true, game = '007 First Light', campaignSupported = tr
   const transitions = [];
   const context = {
     ROUTING_SESSION_VERSION: 1,
-    ROUTING_STATES: { IDLE: 'idle', SELECT_CAMPAIGN:'select-campaign', FIND_STREAM: 'find-stream', VERIFY_STREAM: 'verify-stream', EARNING: 'earning', WAITING: 'waiting', PAUSED: 'paused' },
+    ROUTING_STATES: { IDLE: 'idle', SELECT_CAMPAIGN:'select-campaign', FIND_STREAM: 'find-stream', OPEN_STREAM: 'open-stream', ERROR: 'error', VERIFY_STREAM: 'verify-stream', EARNING: 'earning', WAITING: 'waiting', PAUSED: 'paused' },
     ROUTING_FIRST_CREDIT_DEADLINE_MS: 6 * MINUTE,
     GQL_MIN_GAP_MS: 15 * 1000,
     STREAM_ROUTE_SETTLE_MS: 15 * 1000,
@@ -184,4 +184,85 @@ test('cooldown expiry resumes campaign selection without permanently excluding t
  context.write({...context.read(),creditVerificationAttempts:{campaign:{count:2,expiresAt:ENTERED+30*MINUTE}}});
  tick(20*1000);tick(6*MINUTE+1000);context.now=context.read().deadlineAt;
  context.wait(context.now);assert.equal(context.read().state,'select-campaign');assert.equal(context.read().excludedCampaignKeys.length,0);
+});
+function fullRoutingHarness({ alternative = false } = {}) {
+  const { context, tick } = harness();
+  const next = { id: 'other-drop', campaignKey: 'other-campaign', game: 'Other Game', requiredMinutes: 60 };
+  Object.assign(context, {
+    settings: { findNextStream: true },
+    routingControllerResetLegacyHandoff: () => {},
+    recoveryNavigationState: () => ({ suspended: false }),
+    isAutoRoutingController: () => true,
+    viewingNavigationAllowed: () => true,
+    clearSyntheticWaitingDrop: () => {}, expireEndedOpenCampaigns: () => {},
+    routingControllerNavigationInFlight: () => false,
+    dropProgressComplete: () => false, campaignMarkedComplete: () => false,
+    campaignIsExcluded: () => false, campaignIsRoutingOpen: () => true,
+    dropFitsCampaignWindow: () => true,
+    campaignRoutingState: () => ({ open: true }),
+    campaignExpirySnapshot: () => null, mergeCampaigns: () => [],
+    lastInventoryCampaigns: [], lastCampaignCatalog: [],
+    routingCampaignPool: () => [], campaignDetailsMissedRecently: () => false,
+    pickNextOpenCampaignDrop: (_pool, excluded) => {
+      if (!excluded.includes('campaign')) return { ...context.currentDrop, requiredMinutes: 60 };
+      return alternative && !excluded.includes(next.campaignKey) ? next : null;
+    },
+    routingControllerTargetFromDrop: drop => ({ targetCampaignKey: drop.campaignKey, targetDropId: drop.id, targetGame: drop.game }),
+    adoptSelectedTargetDrop: drop => { context.currentDrop = drop; },
+    clearStoredCurrentDrop: () => { context.currentDrop = null; },
+    routingControllerFindStream: () => { throw Error('Deferred campaign reached stream discovery'); },
+    routingControllerOpenStream: () => { throw Error('Deferred campaign opened another stream'); },
+    ROUTING_VERIFY_DEADLINE_MS: 90 * 1000,
+  });
+  vm.runInNewContext([
+    block('  function routingControllerBootstrap', '\n  function routingControllerFindStream'),
+    block('  function routingControllerReconcileActiveTarget', '\n  // The viewer changed Campaign Order'),
+    fs.readFileSync(path.join(parts, '01-claims-recovery-and-routing.js'), 'utf8').split(/(?=  function routingControllerTick\()/u).at(-1),
+    'this.select = routingControllerSelectCampaign; this.bootstrap = routingControllerBootstrap; this.controllerTick = routingControllerTick;',
+  ].join('\n'), context);
+  return { context, tick };
+}
+
+test('full routing tick chooses an alternative after three uncredited attempts instead of resuming the deferred target', () => {
+  const { context, tick } = fullRoutingHarness({ alternative: true });
+  context.write({ ...context.read(), creditVerificationAttempts: { campaign: { count: 2, expiresAt: ENTERED + 30 * MINUTE } } });
+  tick(20 * 1000); tick(6 * MINUTE + 1000);
+  assert.equal(context.read().state, 'select-campaign');
+  context.controllerTick(context.now);
+  assert.equal(context.read().targetCampaignKey, 'other-campaign');
+  assert.equal(context.currentDrop.campaignKey, 'other-campaign');
+  assert.ok(context.read().deferredCampaigns.campaign > context.now);
+});
+
+test('restart states and direct bootstrap hold a deferred target without restarting stream discovery', () => {
+  for (const state of ['idle', 'paused', 'error', 'select-campaign', 'find-stream', 'open-stream', 'verify-stream']) {
+    const { context } = fullRoutingHarness();
+    const deadline = ENTERED + 15 * MINUTE;
+    context.write({ ...context.read(), state, creditVerificationAttempts: { campaign: { count: 3 } }, deferredCampaigns: { campaign: deadline } });
+    context.controllerTick(ENTERED);
+    assert.equal(context.read().state, 'waiting', state);
+    assert.equal(context.read().waitReason, 'reward-credit-unconfirmed', state);
+    assert.equal(context.read().deadlineAt, deadline, 'the cooldown must not extend');
+    context.controllerTick(ENTERED + MINUTE);
+    assert.equal(context.read().state, 'waiting');
+  }
+  const { context } = fullRoutingHarness();
+  context.write({ ...context.read(), creditVerificationAttempts: { campaign: { count: 3 } }, deferredCampaigns: { campaign: ENTERED + 15 * MINUTE } });
+  context.bootstrap();
+  assert.equal(context.read().state, 'waiting');
+});
+
+test('full routing tick accepts fresh credit during cooldown and resumes normal selection after expiry', () => {
+  const { context } = fullRoutingHarness();
+  context.write({ ...context.read(), state: 'find-stream', creditVerificationAttempts: { campaign: { count: 3 } }, deferredCampaigns: { campaign: ENTERED + 15 * MINUTE } });
+  context.controllerTick(ENTERED);
+  context.currentDrop.currentMinutes = 1;
+  context.controllerTick(ENTERED + MINUTE);
+  assert.equal(context.read().state, 'earning');
+  assert.equal(context.read().deferredCampaigns.campaign, undefined);
+  const other = fullRoutingHarness().context;
+  other.write({ ...other.read(), state: 'select-campaign', deferredCampaigns: { campaign: ENTERED - 1 } });
+  other.controllerTick(ENTERED);
+  assert.equal(other.read().state, 'find-stream');
+  assert.equal(other.read().targetCampaignKey, 'campaign');
 });
