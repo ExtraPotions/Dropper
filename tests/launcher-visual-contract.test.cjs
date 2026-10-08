@@ -132,9 +132,10 @@ test('launcher host is protected from hostile site CSS', () => {
 });
 
 test('progress visibility preserves the badge-only controls', () => {
-  assert.match(source, /const rowHeight = settings\.badgeOnly \? 48 : Math\.max\(112, progressCard\?\.offsetHeight \|\| 112\);/u);
-  assert.match(source, /const rowGap = settings\.badgeOnly \? 0 : 8;/u);
-  assert.match(source, /const rowWidth = settings\.badgeOnly \? launcherWidth : panelWidth \+ rowGap \+ launcherWidth;/u);
+  assert.match(source, /const reservedRows = pageCardShown \? 1 : 0;/u);
+  assert.match(source, /const rowHeight = pageCardShown \? Math\.max\(112, progressCard\.offsetHeight \|\| 112\) : 48;/u);
+  assert.match(source, /const rowGap = pageCardShown \? 8 : 0;/u);
+  assert.match(source, /const rowWidth = pageCardShown \? panelWidth \+ rowGap \+ launcherWidth : launcherWidth;/u);
   assert.match(source, /\.progress-stack\.badge-only \.badge-row \{ justify-content:flex-end; min-height:48px!important; \}/u);
   assert.match(source, /id="tdh-badge-only-progress-slot"[^>]*hidden/u);
   assert.match(source, /id="tdh-drops-body">\s*<div class="badge-only-progress-slot"/u);
@@ -173,10 +174,10 @@ test('all Dropper update and changelog notices share one menu-width card space',
   assert.doesNotMatch(source, /placement: options\.placement === "menu" \? "menu" : "launcher-grid"/u);
 });
 
-test('progress panel remains in the launcher row instead of taking fixed viewport coordinates', () => {
+test('page progress uses the launcher row while menu progress stays in normal flow', () => {
   assert.match(source, /#tdh-tools-dock \{\s+position:fixed;/u);
   assert.match(source, /#tdh-drop-card\[data-presentation="page-card"\]\{position:relative!important;/u);
-  assert.match(source, /const rowWidth = settings\.badgeOnly \? launcherWidth : panelWidth \+ rowGap \+ launcherWidth;/u);
+  assert.match(source, /const rowWidth = pageCardShown \? panelWidth \+ rowGap \+ launcherWidth : launcherWidth;/u);
   assert.match(source, /progressCard\.style\.setProperty\("width"/u);
   assert.match(source, /for \(const property of \["left", "right", "top", "bottom"\]\) progressCard\.style\.removeProperty\(property\);/u);
   // exp-core places the menu; Dropper only marks the progress card as a reserved surface.
