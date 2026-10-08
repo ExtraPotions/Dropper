@@ -1024,6 +1024,7 @@
   }
 
   function campaignWatchDropsComplete(campaign) {
+    if (campaign?.nativeRewardsPending) return false;
     const drops = campaignWatchDrops(campaign);
     return Boolean(drops.length && drops.every((drop) => {
       const required = Number(drop?.requiredMinutesWatched || 0);
@@ -1811,7 +1812,7 @@
     );
     const preferred = suppressPageCampaignsWithAuthoritativeMatches(merged);
     const datedOpen = preferred.filter((campaign) => campaignIsRoutingOpen(campaign, now));
-    return overlayCurrentDropProgressOnCampaigns(datedOpen, currentDrop);
+    return overlayCurrentDropProgressOnCampaigns(overlayNativeClaimedRewards(datedOpen), currentDrop);
   }
   function isPageCatalogSource(source = "") {
     return /campaigns-page|page-scrape|campaign-audit|integrity-fallback/i.test(cleanText(source));

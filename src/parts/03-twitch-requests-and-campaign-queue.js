@@ -224,6 +224,7 @@
       }
       const available = data.channelDropCampaigns || data.channel?.viewerDropCampaigns || data.user?.viewerDropCampaigns || data.channel?.dropCampaigns;
       if (Array.isArray(available)) {
+        nativeRewardClaimEvidence(null, available);
         availableCampaigns = available;
         touched = true;
       }
@@ -811,16 +812,25 @@
       "channel",
       "game",
     ].some((key) => Object.hasOwn(node, key)));
+    const inactive = nodeObject && !recognized && node.dropID === '' &&
+      node.channel === null && node.game === null &&
+      node.currentMinutesWatched === 0 && node.requiredMinutesWatched === 0;
+    const valueSummary = Object.fromEntries([
+      'dropID', 'currentMinutesWatched', 'requiredMinutesWatched', 'channel', 'game',
+    ].map(key => [key, { present: Boolean(nodeObject && Object.hasOwn(node, key)),
+      type: type(node?.[key]), empty: node?.[key] === '' || node?.[key] == null,
+      zero: node?.[key] === 0 }]));
     let status = data == null || user == null ? "unavailable"
       : !hasSession ? "shape-changed"
         : session === null || (session && Object.hasOwn(session, "currentSession") && session.currentSession === null) ? "absent"
+          : inactive ? "inactive"
           : recognized ? "ok"
             : expectedSessionFields ? "unidentified"
               : "shape-changed";
     if (errors.length) status = recognized ? "partial-response" : "error";
-    return { valid: status === "ok" || status === "absent" || status === "unidentified", status,
+    return { valid: ['ok', 'absent', 'inactive', 'unidentified'].includes(status), status,
       shape: { data: type(data), currentUser: type(user), session: type(session), node: type(node),
-        errorCount: errors.length, dataFields: fields(data), userFields: fields(user), sessionFields: fields(session), nodeFields: fields(node) } };
+        errorCount: errors.length, dataFields: fields(data), userFields: fields(user), sessionFields: fields(session), nodeFields: fields(node), valueSummary } };
   }
 
   function gqlOperationFailureKind(row) {
@@ -876,11 +886,76 @@
       return result;
     }
     const discovered = extractCampaignCatalog(row);
+    nativeRewardClaimEvidence(row?.data?.currentUser?.inventory, discovered);
     if (discovered.length) rememberCampaignCatalog(discovered, source);
     applyInventorySnapshot(result.campaigns, source);
     reconcileClaimHistory(result.campaigns);
     void queueInventoryClaimSweep(result.campaigns, source);
     return result;
+  }
+
+  function nativeRewardClaimEvidence(inventory = null, campaigns = []) {
+    const storageKey = 'dropper-native-earned-rewards-v1';
+    const saved = readSession(storageKey, { claims: [], groups: [] });
+    const claims = new Set(Array.isArray(saved?.claims) ? saved.claims : []);
+    const groups = new Map((Array.isArray(saved?.groups) ? saved.groups : []).map(group => [group.key, group]));
+    let changed = false;
+    for (const edge of Array.isArray(inventory?.earnedDropRewards?.edges) ? inventory.earnedDropRewards.edges : []) {
+      const reward = edge?.node;
+      const campaignId = cleanText(reward?.campaign?.id).toLowerCase();
+      const rewardId = cleanText(reward?.item?.id);
+      if (reward?.status !== 'CLAIMED' || !campaignId || !rewardId) continue;
+      const key = campaignId + ':' + rewardId;
+      if (!claims.has(key)) { claims.add(key); changed = true; }
+    }
+    for (const campaign of campaigns || []) {
+      const campaignId = cleanText(campaign?.id).toLowerCase();
+      if (!campaignId) continue;
+      for (const group of Array.isArray(campaign.rewardGroups) ? campaign.rewardGroups : []) {
+        const id = cleanText(group?.id);
+        if (!id) continue;
+        const key = campaignId + ':' + id;
+        const rewardIds = (Array.isArray(group.rewards) ? group.rewards : []).map(reward => cleanText(reward?.id));
+        const criteria = group.progressCriteria;
+        // Only exact, complete identities for explicitly non-repeatable watch
+        // groups prove that the corresponding routing target is already done.
+        if (criteria?.requirementType !== 'WATCH') {
+          if (groups.delete(key)) changed = true;
+          continue;
+        }
+        const claimableOnce = criteria.isRepeatable === false && rewardIds.length > 0 && rewardIds.every(Boolean);
+        const record = { key, campaignId, id, rewardIds, claimableOnce, name: cleanText(group.name),
+          requiredMinutes: Number(criteria.requirements?.minutesWatched) || 0 };
+        if (JSON.stringify(groups.get(key)) !== JSON.stringify(record)) { groups.set(key, record); changed = true; }
+      }
+    }
+    const state = { claims: [...claims].slice(-2000), groups: [...groups.values()].slice(-2000) };
+    if (changed) writeSession(storageKey, state);
+    const retainedClaims = new Set(state.claims);
+    const claimedGroups = new Set(state.groups.filter(group => group.claimableOnce && group.rewardIds.length &&
+      group.rewardIds.every(id => retainedClaims.has(group.campaignId + ':' + id))).map(group => group.key));
+    return { ...state, claimedGroups };
+  }
+
+  function overlayNativeClaimedRewards(campaigns) {
+    const evidence = nativeRewardClaimEvidence(null, campaigns);
+    return (campaigns || []).map(campaign => {
+      const campaignId = cleanText(campaign?.id).toLowerCase();
+      const drops = (campaign.timeBasedDrops || campaign.drops || []).map(drop =>
+        evidence.claimedGroups.has(campaignId + ':' + cleanText(drop.id))
+          ? { ...drop, self: { ...drop.self, isClaimed: true } } : drop);
+      for (const group of evidence.groups) {
+        if (group.campaignId !== campaignId || !evidence.claimedGroups.has(group.key) ||
+            drops.some(drop => cleanText(drop.id) === group.id)) continue;
+        drops.push({ id: group.id, name: group.name, requiredMinutesWatched: group.requiredMinutes,
+          self: { isClaimed: true, currentMinutesWatched: null } });
+      }
+      // A partial legacy list must not turn one claimed native group into a
+      // completed campaign. Missing groups still need an authoritative lookup.
+      const nativeRewardsPending = evidence.groups.some(group => group.campaignId === campaignId &&
+        !evidence.claimedGroups.has(group.key) && !drops.some(drop => cleanText(drop.id) === group.id));
+      return { ...campaign, timeBasedDrops: drops, nativeRewardsPending };
+    });
   }
 
   function checkGqlOperationResults(requests, json, status, payloads = []) {
@@ -1610,7 +1685,7 @@
       // ViewerDropsDashboard often returns open campaigns without timeBasedDrops.
       // Still queue them by end date so ending-soonest is not skipped for Inventory-only rows.
       if (!addedWatchDrop) {
-        if (watchDrops.length) continue;
+        if (watchDrops.length && !campaign.nativeRewardsPending) continue;
         const window = campaignWindow(campaign);
         candidates.push({
           id: "",

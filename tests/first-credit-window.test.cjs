@@ -200,6 +200,7 @@ function fullRoutingHarness({ alternative = false } = {}) {
     campaignIsExcluded: () => false, campaignIsRoutingOpen: () => true,
     dropFitsCampaignWindow: () => true,
     campaignRoutingState: () => ({ open: true }),
+    nativeRewardClaimEvidence: () => ({ claimedGroups: new Set() }),
     campaignExpirySnapshot: () => null, mergeCampaigns: () => [],
     lastInventoryCampaigns: [], lastCampaignCatalog: [],
     routingCampaignPool: () => [], campaignDetailsMissedRecently: () => false,
@@ -265,4 +266,18 @@ test('full routing tick accepts fresh credit during cooldown and resumes normal 
   other.controllerTick(ENTERED);
   assert.equal(other.read().state, 'find-stream');
   assert.equal(other.read().targetCampaignKey, 'campaign');
+});
+
+test('full routing tick evicts an exactly claimed target before discovery without excluding its campaign', () => {
+  for (const state of ['idle', 'find-stream', 'verify-stream', 'earning', 'waiting']) {
+    const { context } = fullRoutingHarness();
+    context.nativeRewardClaimEvidence = () => ({ claimedGroups: new Set(['campaign:drop']) });
+    context.write({ ...context.read(), state });
+    context.controllerTick(ENTERED);
+    assert.equal(context.currentDrop, null, state);
+    assert.equal(context.read().state, 'select-campaign', state);
+    assert.equal(context.read().targetDropId, '');
+    assert.equal(context.read().excludedCampaignKeys.length, 0);
+    assert.equal(Object.keys(context.read().deferredCampaigns).length, 0);
+  }
 });

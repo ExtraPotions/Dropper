@@ -645,8 +645,8 @@
     inventory: {
       name: "Inventory",
       // Keep the operation name, document hash and declared variables together.
-      hash: "8337eb8541b314040b0edde0c09c5c7a2783ba1960aa9edfbf3bac16d0fec404",
-      variables: { fetchRewardCampaigns: false },
+      hash: "3ab317a5753b25125f47d4ce962ebe928ff4e85047b77508340c94ebc20b6230",
+      variables: { fetchRewardCampaigns: true },
     },
     viewerDropsDashboard: {
       name: "ViewerDropsDashboard",

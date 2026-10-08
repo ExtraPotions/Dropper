@@ -645,8 +645,8 @@
     inventory: {
       name: "Inventory",
       // Keep the operation name, document hash and declared variables together.
-      hash: "8337eb8541b314040b0edde0c09c5c7a2783ba1960aa9edfbf3bac16d0fec404",
-      variables: { fetchRewardCampaigns: false },
+      hash: "3ab317a5753b25125f47d4ce962ebe928ff4e85047b77508340c94ebc20b6230",
+      variables: { fetchRewardCampaigns: true },
     },
     viewerDropsDashboard: {
       name: "ViewerDropsDashboard",
@@ -4151,6 +4151,7 @@
       Number(poll.at) <= now && now - Number(poll.at) <= 90 * 1000;
     if (!fresh) return { code: 'session-check-pending', label: 'Waiting For Reward Session' };
     if (poll.responseStatus === 'unidentified') return { code: 'session-unidentified', label: 'Reward Session Unidentified' };
+    if (poll.responseStatus === 'inactive') return { code: 'session-inactive', label: 'No Active Reward Session' };
     if (poll.responseStatus === 'absent') return { code: 'session-absent', label: 'Reward Session Missing' };
     if (['error','unavailable','partial-response'].includes(poll.responseStatus)) return { code: 'session-request-unavailable', label: 'Reward Session Check Unavailable' };
     if (poll.responseStatus === 'shape-changed') return { code: 'session-shape-changed', label: 'Reward Session Format Unrecognized' };
@@ -4756,6 +4757,16 @@
 
   function routingControllerReconcileActiveTarget(now = Date.now()) {
     if (!currentDrop) return false;
+    const claimed = nativeRewardClaimEvidence().claimedGroups.has(
+      cleanText(currentDrop.campaignKey || currentDrop.campaignId).toLowerCase() + ':' + cleanText(currentDrop.id));
+    if (claimed) {
+      clearStoredCurrentDrop();
+      transitionRoutingController(ROUTING_STATES.SELECT_CAMPAIGN, {
+        targetGame: '', targetCampaign: '', targetCampaignKey: '', targetDropId: '',
+        targetStream: '', candidateEvidence: null, waitReason: '', deadlineAt: 0,
+      }, 'Twitch inventory confirms the selected reward was already claimed · selecting next reward');
+      return true;
+    }
     if (dropProgressComplete(currentDrop)) return false;
 
     const session = readRoutingControllerSession();
@@ -5981,6 +5992,7 @@
   }
 
   function campaignWatchDropsComplete(campaign) {
+    if (campaign?.nativeRewardsPending) return false;
     const drops = campaignWatchDrops(campaign);
     return Boolean(drops.length && drops.every((drop) => {
       const required = Number(drop?.requiredMinutesWatched || 0);
@@ -6768,7 +6780,7 @@
     );
     const preferred = suppressPageCampaignsWithAuthoritativeMatches(merged);
     const datedOpen = preferred.filter((campaign) => campaignIsRoutingOpen(campaign, now));
-    return overlayCurrentDropProgressOnCampaigns(datedOpen, currentDrop);
+    return overlayCurrentDropProgressOnCampaigns(overlayNativeClaimedRewards(datedOpen), currentDrop);
   }
   function isPageCatalogSource(source = "") {
     return /campaigns-page|page-scrape|campaign-audit|integrity-fallback/i.test(cleanText(source));
@@ -7484,6 +7496,7 @@
       }
       const available = data.channelDropCampaigns || data.channel?.viewerDropCampaigns || data.user?.viewerDropCampaigns || data.channel?.dropCampaigns;
       if (Array.isArray(available)) {
+        nativeRewardClaimEvidence(null, available);
         availableCampaigns = available;
         touched = true;
       }
@@ -8071,16 +8084,25 @@
       "channel",
       "game",
     ].some((key) => Object.hasOwn(node, key)));
+    const inactive = nodeObject && !recognized && node.dropID === '' &&
+      node.channel === null && node.game === null &&
+      node.currentMinutesWatched === 0 && node.requiredMinutesWatched === 0;
+    const valueSummary = Object.fromEntries([
+      'dropID', 'currentMinutesWatched', 'requiredMinutesWatched', 'channel', 'game',
+    ].map(key => [key, { present: Boolean(nodeObject && Object.hasOwn(node, key)),
+      type: type(node?.[key]), empty: node?.[key] === '' || node?.[key] == null,
+      zero: node?.[key] === 0 }]));
     let status = data == null || user == null ? "unavailable"
       : !hasSession ? "shape-changed"
         : session === null || (session && Object.hasOwn(session, "currentSession") && session.currentSession === null) ? "absent"
+          : inactive ? "inactive"
           : recognized ? "ok"
             : expectedSessionFields ? "unidentified"
               : "shape-changed";
     if (errors.length) status = recognized ? "partial-response" : "error";
-    return { valid: status === "ok" || status === "absent" || status === "unidentified", status,
+    return { valid: ['ok', 'absent', 'inactive', 'unidentified'].includes(status), status,
       shape: { data: type(data), currentUser: type(user), session: type(session), node: type(node),
-        errorCount: errors.length, dataFields: fields(data), userFields: fields(user), sessionFields: fields(session), nodeFields: fields(node) } };
+        errorCount: errors.length, dataFields: fields(data), userFields: fields(user), sessionFields: fields(session), nodeFields: fields(node), valueSummary } };
   }
 
   function gqlOperationFailureKind(row) {
@@ -8136,11 +8158,76 @@
       return result;
     }
     const discovered = extractCampaignCatalog(row);
+    nativeRewardClaimEvidence(row?.data?.currentUser?.inventory, discovered);
     if (discovered.length) rememberCampaignCatalog(discovered, source);
     applyInventorySnapshot(result.campaigns, source);
     reconcileClaimHistory(result.campaigns);
     void queueInventoryClaimSweep(result.campaigns, source);
     return result;
+  }
+
+  function nativeRewardClaimEvidence(inventory = null, campaigns = []) {
+    const storageKey = 'dropper-native-earned-rewards-v1';
+    const saved = readSession(storageKey, { claims: [], groups: [] });
+    const claims = new Set(Array.isArray(saved?.claims) ? saved.claims : []);
+    const groups = new Map((Array.isArray(saved?.groups) ? saved.groups : []).map(group => [group.key, group]));
+    let changed = false;
+    for (const edge of Array.isArray(inventory?.earnedDropRewards?.edges) ? inventory.earnedDropRewards.edges : []) {
+      const reward = edge?.node;
+      const campaignId = cleanText(reward?.campaign?.id).toLowerCase();
+      const rewardId = cleanText(reward?.item?.id);
+      if (reward?.status !== 'CLAIMED' || !campaignId || !rewardId) continue;
+      const key = campaignId + ':' + rewardId;
+      if (!claims.has(key)) { claims.add(key); changed = true; }
+    }
+    for (const campaign of campaigns || []) {
+      const campaignId = cleanText(campaign?.id).toLowerCase();
+      if (!campaignId) continue;
+      for (const group of Array.isArray(campaign.rewardGroups) ? campaign.rewardGroups : []) {
+        const id = cleanText(group?.id);
+        if (!id) continue;
+        const key = campaignId + ':' + id;
+        const rewardIds = (Array.isArray(group.rewards) ? group.rewards : []).map(reward => cleanText(reward?.id));
+        const criteria = group.progressCriteria;
+        // Only exact, complete identities for explicitly non-repeatable watch
+        // groups prove that the corresponding routing target is already done.
+        if (criteria?.requirementType !== 'WATCH') {
+          if (groups.delete(key)) changed = true;
+          continue;
+        }
+        const claimableOnce = criteria.isRepeatable === false && rewardIds.length > 0 && rewardIds.every(Boolean);
+        const record = { key, campaignId, id, rewardIds, claimableOnce, name: cleanText(group.name),
+          requiredMinutes: Number(criteria.requirements?.minutesWatched) || 0 };
+        if (JSON.stringify(groups.get(key)) !== JSON.stringify(record)) { groups.set(key, record); changed = true; }
+      }
+    }
+    const state = { claims: [...claims].slice(-2000), groups: [...groups.values()].slice(-2000) };
+    if (changed) writeSession(storageKey, state);
+    const retainedClaims = new Set(state.claims);
+    const claimedGroups = new Set(state.groups.filter(group => group.claimableOnce && group.rewardIds.length &&
+      group.rewardIds.every(id => retainedClaims.has(group.campaignId + ':' + id))).map(group => group.key));
+    return { ...state, claimedGroups };
+  }
+
+  function overlayNativeClaimedRewards(campaigns) {
+    const evidence = nativeRewardClaimEvidence(null, campaigns);
+    return (campaigns || []).map(campaign => {
+      const campaignId = cleanText(campaign?.id).toLowerCase();
+      const drops = (campaign.timeBasedDrops || campaign.drops || []).map(drop =>
+        evidence.claimedGroups.has(campaignId + ':' + cleanText(drop.id))
+          ? { ...drop, self: { ...drop.self, isClaimed: true } } : drop);
+      for (const group of evidence.groups) {
+        if (group.campaignId !== campaignId || !evidence.claimedGroups.has(group.key) ||
+            drops.some(drop => cleanText(drop.id) === group.id)) continue;
+        drops.push({ id: group.id, name: group.name, requiredMinutesWatched: group.requiredMinutes,
+          self: { isClaimed: true, currentMinutesWatched: null } });
+      }
+      // A partial legacy list must not turn one claimed native group into a
+      // completed campaign. Missing groups still need an authoritative lookup.
+      const nativeRewardsPending = evidence.groups.some(group => group.campaignId === campaignId &&
+        !evidence.claimedGroups.has(group.key) && !drops.some(drop => cleanText(drop.id) === group.id));
+      return { ...campaign, timeBasedDrops: drops, nativeRewardsPending };
+    });
   }
 
   function checkGqlOperationResults(requests, json, status, payloads = []) {
@@ -8870,7 +8957,7 @@
       // ViewerDropsDashboard often returns open campaigns without timeBasedDrops.
       // Still queue them by end date so ending-soonest is not skipped for Inventory-only rows.
       if (!addedWatchDrop) {
-        if (watchDrops.length) continue;
+        if (watchDrops.length && !campaign.nativeRewardsPending) continue;
         const window = campaignWindow(campaign);
         candidates.push({
           id: "",
@@ -12154,7 +12241,9 @@
   function parseAvailableCampaigns(result) {
     const channel = result?.data?.channel || result?.data?.user || {};
     const campaigns = result?.data?.channelDropCampaigns || channel.viewerDropCampaigns || channel.dropCampaigns;
-    return Array.isArray(campaigns) ? campaigns : [];
+    if (!Array.isArray(campaigns)) return [];
+    nativeRewardClaimEvidence(null, campaigns);
+    return campaigns;
   }
 
   function findActiveDropInCampaigns(campaigns, active = currentDrop) {
@@ -16829,7 +16918,7 @@
     clearSkipStreamerArm('product-reset');resetClaimReadyTimer();
     try{screenWakeLock?.release();}catch{}screenWakeLock=null;
     try {
-      ExtraPotionsCore.clearProductData('dropper',{legacyKeys:["exp:v3:dropper:content-warning-memory", "tdh-settings-v3", "dropper-account-scope-owner-v1", "tdh-launcher-top", "tdh-launcher-grid-delta-v3", "dropper-last-version-v2", "dropper-next-game-after-claim", "dropper-routing-session-v310", "dropper-auto-navigation-guard", "dropper-navigation-in-flight", "dropper-activity-log", "dropper-recovery-snapshot-v1", "dropper-notification-quiet-v1", "dropper-network-state", "dropper-standby-streams", "dropper-campaign-catalog", "dropper-campaign-page-import-v1", "dropper-campaign-memory-v1", "dropper-campaign-memory-reset-v1", "dropper-ignored-campaign-games-v1", "dropper-standby-refresh-at", "dropper-standby-maintenance-at", "dropper-mute-pending-v1", "dropper-tab-presence-v1", "dropper-tab-id-v1", "dropper-tab-started-v1", "dropper-category-slugs-v3", "dropper-update-reload-pending", "dropper-client-integrity-v1", "dropper-viewing-intent-v1", "dropper-viewing-navigation-v1", "dropper-viewing-selection-v1", "dropper-manual-stream-lock-v1", "dropper-claim-history-v1", "dropper-campaign-priority-v1", "dropper-campaign-priority-order-v1", "tdh-settings-v1", "tdh-settings-v2", "tdh-drop", "tdh-progress", "tdh-progress-at", "dropper-credited-progress-at-v1", "dropper-progress-timeline-v1", "dropper-recovery-loop-v1", "dropper-campaign-restrictions-v1", "dropper-temp-campaign-skips-v1", "dropper-update-state-v2", "dropper-gql-operations-v1"]});
+      ExtraPotionsCore.clearProductData('dropper',{legacyKeys:["exp:v3:dropper:content-warning-memory", "tdh-settings-v3", "dropper-account-scope-owner-v1", "tdh-launcher-top", "tdh-launcher-grid-delta-v3", "dropper-last-version-v2", "dropper-next-game-after-claim", "dropper-routing-session-v310", "dropper-auto-navigation-guard", "dropper-navigation-in-flight", "dropper-activity-log", "dropper-recovery-snapshot-v1", "dropper-notification-quiet-v1", "dropper-network-state", "dropper-standby-streams", "dropper-campaign-catalog", "dropper-campaign-page-import-v1", "dropper-campaign-memory-v1", "dropper-campaign-memory-reset-v1", "dropper-ignored-campaign-games-v1", "dropper-standby-refresh-at", "dropper-standby-maintenance-at", "dropper-mute-pending-v1", "dropper-tab-presence-v1", "dropper-tab-id-v1", "dropper-tab-started-v1", "dropper-category-slugs-v3", "dropper-update-reload-pending", "dropper-client-integrity-v1", "dropper-viewing-intent-v1", "dropper-viewing-navigation-v1", "dropper-viewing-selection-v1", "dropper-manual-stream-lock-v1", "dropper-claim-history-v1", "dropper-campaign-priority-v1", "dropper-campaign-priority-order-v1", "tdh-settings-v1", "tdh-settings-v2", "tdh-drop", "tdh-progress", "tdh-progress-at", "dropper-credited-progress-at-v1", "dropper-progress-timeline-v1", "dropper-recovery-loop-v1", "dropper-campaign-restrictions-v1", "dropper-temp-campaign-skips-v1", "dropper-update-state-v2", "dropper-gql-operations-v1", "dropper-native-earned-rewards-v1"]});
       location.reload();
     } catch(error) {productResetting=false;throw error;}
   }
@@ -17652,6 +17741,7 @@
       VIEWING_SELECTION_KEY,
       MUTE_PENDING_KEY,
       CAMPAIGN_CATALOG_KEY,
+      'dropper-native-earned-rewards-v1',
       CAMPAIGN_PAGE_IMPORT_KEY,
       "tdh-drop",
       "tdh-progress",

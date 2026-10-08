@@ -56,6 +56,7 @@ function inventoryFixture() {
     Date: { now: () => now }, lastInventoryCampaigns: [campaign()],
     inventoryResponseHealth: { valid: true, status: 'ok', at: now - 60000, lastValidAt: now - 60000 },
     inventoryClaimSweepState: {}, extractCampaignCatalog: () => [], rememberCampaignCatalog: () => {},
+    nativeRewardClaimEvidence: () => ({ claimedGroups: new Set() }),
     applyInventorySnapshot: rows => { events.push('apply'); c.lastInventoryCampaigns = rows; },
     reconcileClaimHistory: () => events.push('reconcile'),
     queueInventoryClaimSweep: () => events.push('sweep'),
@@ -283,6 +284,7 @@ function pollFixture(row = inventory(), { id = 'session', minutes = 12, requestF
       return [row, { data: { user: { id: '123', stream: { game: { name: 'Game' } } } } }];
     },
     extractCampaignCatalog: () => [], rememberCampaignCatalog: () => {},
+    nativeRewardClaimEvidence: () => ({ claimedGroups: new Set() }),
     applyInventorySnapshot: rows => { calls.push('inventory-apply'); c.lastInventoryCampaigns = rows; },
     reconcileClaimHistory: () => calls.push('claims-reconcile'), queueInventoryClaimSweep: () => calls.push('claims-sweep'),
     enrichRoutingTargetCampaign: async () => { calls.push('details-check'); return false; },

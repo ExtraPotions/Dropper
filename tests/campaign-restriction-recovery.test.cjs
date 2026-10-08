@@ -8,6 +8,7 @@ function context(storage=new Map()) {return {cleanText:v=>String(v||'').trim(),c
 test('real campaign pool retains fetched restrictions when inventory has an empty summary',()=>{
   const storage=new Map(),c=context(storage);
   Object.assign(c,{Date,campaignKey:n=>n.id,lastCampaignCatalog:[],campaignDetailsCache:new Map([['campaign-a',{id:'campaign-a',allow:{isEnabled:true,channels:[{login:'listed',id:'1'}]}}]]),lastInventoryCampaigns:[{id:'campaign-a',allow:{isEnabled:true,channels:[]}}],openCampaignsFromMemory:()=>[],scrapeCampaignsFromPage:()=>[],suppressPageCampaignsWithAuthoritativeMatches:v=>v,overlayCurrentDropProgressOnCampaigns:v=>v});
+  c.overlayNativeClaimedRewards = campaigns => campaigns;
   for(const name of ['mergeCampaigns','routingCampaignPool','campaignAllowedChannels','activeCampaignAllowedChannels'])load(name,c);
   assert.equal(c.activeCampaignAllowedChannels()[0]?.login,'listed');
   assert.equal(storage.size,1);
@@ -48,4 +49,3 @@ test('a recovery-blocked move clears Opening state and pending destination',()=>
   load('routingControllerNavigate',c);assert.equal(c.routingControllerNavigate('https://www.twitch.tv/unlisted'),false);
   assert.equal(session.state,'paused');assert.equal(session.deadlineAt,0);assert.equal(session.navigationTarget,null);assert.equal(session.targetStream,'');
 });
-

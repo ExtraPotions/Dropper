@@ -6,7 +6,7 @@ const { loadDropperSource } = require('./load-source.cjs');
 const source = loadDropperSource();
 const cleanText = value => String(value ?? '').replace(/\s+/g, ' ').trim();
 const OLD_HASH = '2ccf98c1806c3aec3c44f49984d44397ff1df5644b561f887f4e159254db03be';
-const CURRENT_HASH = '8337eb8541b314040b0edde0c09c5c7a2783ba1960aa9edfbf3bac16d0fec404';
+const CURRENT_HASH = '3ab317a5753b25125f47d4ce962ebe928ff4e85047b77508340c94ebc20b6230';
 const missingOperation = () => ({ errors: [{ message: "operation with name 'Inventory' not found" }] });
 const inventory = () => ({ data: { currentUser: { inventory: { dropCampaignsInProgress: [] } } } });
 const stream = () => ({ data: { user: { id: 'channel-id', stream: { game: { name: 'Game' } } } } });
@@ -47,7 +47,7 @@ test('Inventory uses the documented name, hash and required Boolean variable tog
   const payload = c.gqlPayload(c.ops.inventory);
   assert.equal(payload.operationName, 'Inventory');
   assert.equal(payload.extensions.persistedQuery.sha256Hash, CURRENT_HASH);
-  assert.equal(payload.variables.fetchRewardCampaigns, false);
+  assert.equal(payload.variables.fetchRewardCampaigns, true);
 });
 
 test('an isolated Inventory operation error does not discard a successful stream read or retry the batch', async () => {
@@ -81,7 +81,7 @@ test('a rejected learned operation is removed, and the next request uses the cor
   await c.gql(reads, options);
   assert.equal(calls[0].body[0].extensions.persistedQuery.sha256Hash, OLD_HASH);
   assert.equal(calls[1].body[0].extensions.persistedQuery.sha256Hash, CURRENT_HASH);
-  assert.equal(calls[1].body[0].variables.fetchRewardCampaigns, false);
+  assert.equal(calls[1].body[0].variables.fetchRewardCampaigns, true);
   assert.equal(c.gqlOperationsSnapshot().Inventory.source, 'built-in');
 });
 
@@ -98,7 +98,7 @@ test('a response for an older payload cannot erase a newer validated page-learne
 test('a page-observed Boolean variable remains supplied when the learned Inventory needs it', () => {
   const { c } = load([]);
   c.learnGqlOperationsFromPage([{ name: 'Inventory', hash: 'f'.repeat(64), variableKeys: ['fetchRewardCampaigns'] }], [inventory()]);
-  assert.equal(c.gqlPayload(c.ops.inventory).variables.fetchRewardCampaigns, false);
+  assert.equal(c.gqlPayload(c.ops.inventory).variables.fetchRewardCampaigns, true);
 });
 
 for (const failure of [

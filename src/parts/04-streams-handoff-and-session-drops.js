@@ -2388,7 +2388,9 @@
   function parseAvailableCampaigns(result) {
     const channel = result?.data?.channel || result?.data?.user || {};
     const campaigns = result?.data?.channelDropCampaigns || channel.viewerDropCampaigns || channel.dropCampaigns;
-    return Array.isArray(campaigns) ? campaigns : [];
+    if (!Array.isArray(campaigns)) return [];
+    nativeRewardClaimEvidence(null, campaigns);
+    return campaigns;
   }
 
   function findActiveDropInCampaigns(campaigns, active = currentDrop) {

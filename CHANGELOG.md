@@ -1,3 +1,9 @@
+## Unreleased
+
+- Stops selecting non-repeatable rewards that Twitch already confirms as claimed.
+- Keeps other rewards in the same campaign eligible and preserves unknown watch progress.
+- Distinguishes an inactive reward session from an unidentified one in diagnostics.
+
 ## 3.4.19 — 2026-10-08
 
 - Keeps campaign cooldowns active through stream changes, restarts, and campaign selection.

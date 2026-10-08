@@ -569,6 +569,7 @@
       VIEWING_SELECTION_KEY,
       MUTE_PENDING_KEY,
       CAMPAIGN_CATALOG_KEY,
+      'dropper-native-earned-rewards-v1',
       CAMPAIGN_PAGE_IMPORT_KEY,
       "tdh-drop",
       "tdh-progress",

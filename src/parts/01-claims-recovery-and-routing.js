@@ -2566,6 +2566,7 @@
       Number(poll.at) <= now && now - Number(poll.at) <= 90 * 1000;
     if (!fresh) return { code: 'session-check-pending', label: 'Waiting For Reward Session' };
     if (poll.responseStatus === 'unidentified') return { code: 'session-unidentified', label: 'Reward Session Unidentified' };
+    if (poll.responseStatus === 'inactive') return { code: 'session-inactive', label: 'No Active Reward Session' };
     if (poll.responseStatus === 'absent') return { code: 'session-absent', label: 'Reward Session Missing' };
     if (['error','unavailable','partial-response'].includes(poll.responseStatus)) return { code: 'session-request-unavailable', label: 'Reward Session Check Unavailable' };
     if (poll.responseStatus === 'shape-changed') return { code: 'session-shape-changed', label: 'Reward Session Format Unrecognized' };
@@ -3171,6 +3172,16 @@
 
   function routingControllerReconcileActiveTarget(now = Date.now()) {
     if (!currentDrop) return false;
+    const claimed = nativeRewardClaimEvidence().claimedGroups.has(
+      cleanText(currentDrop.campaignKey || currentDrop.campaignId).toLowerCase() + ':' + cleanText(currentDrop.id));
+    if (claimed) {
+      clearStoredCurrentDrop();
+      transitionRoutingController(ROUTING_STATES.SELECT_CAMPAIGN, {
+        targetGame: '', targetCampaign: '', targetCampaignKey: '', targetDropId: '',
+        targetStream: '', candidateEvidence: null, waitReason: '', deadlineAt: 0,
+      }, 'Twitch inventory confirms the selected reward was already claimed · selecting next reward');
+      return true;
+    }
     if (dropProgressComplete(currentDrop)) return false;
 
     const session = readRoutingControllerSession();
