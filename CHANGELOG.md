@@ -1,3 +1,9 @@
+## 3.4.23 — 2026-10-08
+
+- Gives each menu category a distinct, meaningful icon.
+- Tightens typography and reduces panel width and spacing while preserving every control and setting.
+- Keeps readable text, menu-size preferences, compact tabs, and each product color.
+
 ## 3.4.22 — 2026-10-08
 
 - Matches the approved Lean menu proportions, header, flat surfaces, section navigation, compact tabs, controls, and footer.

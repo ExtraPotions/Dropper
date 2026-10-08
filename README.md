@@ -2,7 +2,7 @@
 
 # Dropper
 
-Current release: **3.4.22**.
+Current release: **3.4.23**.
 
 **Follow your Twitch Drops from watch time to reward**
 
@@ -24,7 +24,7 @@ Sign in to Twitch and open the Dropper launcher. Check Drops for progress and cl
 
 - **Progress in Drops:** open the menu to see your progress above its tabs. Close the menu to restore the page card when Badge Only is off.
 
-- **Lean menus:** subtle dividers and compact tabs keep related settings easy to reach. Every control and setting remains available, each product keeps its own colors, and System stays last.
+- **Lean menus:** distinct category icons, tighter typography, and smaller panels keep settings easy to reach. Every control remains available, with Standard, Large, and Extra Large sizes.
 
 - **Distinct menu colors:** Dropper keeps its signature appearance alongside other ExtraPotions products.
 - **Accurate category routes:** Rainbow Six Siege and Overwatch (now the Overwatch 2 directory) open their correct Twitch directories, including after an older route was saved.
