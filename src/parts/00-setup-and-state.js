@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.25
+// @version      3.4.26
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.25";
+  const APP_VERSION = "3.4.26";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -210,8 +210,9 @@
   const UPDATE_RETURN_DELAY_MS = 3 * 1000;
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
-  const QUIET_RELEASES = Object.freeze([]);
+  const QUIET_RELEASES = Object.freeze(["3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.26": ["Captures README screenshots with the shared ExtraPotions tool.","Keeps the README screenshot list in step with the README."],
     "3.4.25": ["Checks for updates at most every 12 hours.","Supports quiet maintenance releases that show only the update badge."],
     "3.4.24": ["Shortens the README to a quick overview of what Dropper does.","Replaces the README screenshots with current captures of the menu."],
     "3.4.23": ["Gives each menu category a distinct, meaningful icon.","Tightens typography and reduces panel width and spacing while preserving every control and setting.","Keeps readable text, menu-size preferences, compact tabs, and each product color."],
