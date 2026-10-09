@@ -25,6 +25,8 @@ async function paintSampleProgress(page, host) {
     const fill = shadow.getElementById('tdh-drop-fill');
     if (fill) fill.style.width = '47%';
   });
+  // The progress bar animates its width; let it settle so captures are repeatable.
+  await page.waitForTimeout(600);
 }
 
 module.exports = {
