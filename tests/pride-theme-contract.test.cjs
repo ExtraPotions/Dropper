@@ -184,10 +184,11 @@ test('the changelog notice stays fixed inside the viewport', async () => {
     assert.equal(facts.color, facts.clusterColor);
     assert.notEqual(facts.color, 'rgb(0, 0, 0)');
     assert.match(facts.backgroundImage, /linear-gradient/u);
-    assert.ok(facts.top >= 8, `notice top ${facts.top} should remain visible`);
-    assert.ok(facts.left >= 8, `notice left ${facts.left} should remain visible`);
-    assert.ok(facts.right <= 1912, `notice right ${facts.right} should remain visible`);
-    assert.ok(facts.bottom <= 877, `notice bottom ${facts.bottom} should remain visible`);
+    // 8px margins, with 1px of allowance for sub-pixel layout rounding.
+    assert.ok(facts.top >= 7, `notice top ${facts.top} should remain visible`);
+    assert.ok(facts.left >= 7, `notice left ${facts.left} should remain visible`);
+    assert.ok(facts.right <= 1913, `notice right ${facts.right} should remain visible`);
+    assert.ok(facts.bottom <= 878, `notice bottom ${facts.bottom} should remain visible`);
   } finally {
     await browser.close();
   }

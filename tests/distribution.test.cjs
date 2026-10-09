@@ -40,14 +40,8 @@ test('repository keeps only current docs, assets, and required build inputs', ()
   const screenshots = fs.readdirSync(path.join(root, 'docs', 'screenshots')).filter((name) => name.endsWith('.png'));
   assert.deepEqual(
     screenshots.sort(),
-    [
-      'appearance-menu.png',
-      'diagnostics-menu.png',
-      'drops-menu.png',
-      'progress-panel.png',
-      'streams-menu.png',
-    ],
-    'docs/screenshots should contain exactly five current images',
+    ['drops-menu.png', 'streams-menu.png'],
+    'docs/screenshots should contain exactly the two README images',
   );
 
   const changelog = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');

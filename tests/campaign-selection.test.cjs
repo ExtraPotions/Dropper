@@ -352,10 +352,10 @@ assert.equal(memoryContext.marked(open), false, "unfinished campaign memory rema
 memoryContext.rememberStates([{ ...open, timeBasedDrops: [{ ...open.timeBasedDrops[0], self: { currentMinutesWatched: 60, isClaimed: false } }] }], "test-complete");
 assert.equal(memoryContext.marked(open), true, "earning every watch-time drop permanently marks the campaign complete");
 
-assert.equal(pickerContext.isOpen(open, null, Date.parse("2026-09-19T00:00:00Z")), true, "ACTIVE campaigns inside their date window are open");
-assert.equal(pickerContext.isOpen(expiredStatus, null, Date.parse("2026-09-19T00:00:00Z")), false, "Twitch EXPIRED campaigns are not open even if their dates overlap");
+assert.equal(pickerContext.isOpen(open, null, Date.now()), true, "ACTIVE campaigns inside their date window are open");
+assert.equal(pickerContext.isOpen(expiredStatus, null, Date.now()), false, "Twitch EXPIRED campaigns are not open even if their dates overlap");
 assert.equal(
-  pickerContext.isRoutingOpen(open, Date.parse("2026-09-19T00:00:00Z")),
+  pickerContext.isRoutingOpen(open, Date.now()),
   true,
   "routing accepts a campaign only while its verified campaign date window is open",
 );
@@ -375,7 +375,7 @@ assert.equal(
   "future campaigns cannot route before their start date",
 );
 assert.equal(
-  pickerContext.routingState({ ...open, id: "memory-open", status: "OPEN" }, Date.parse("2026-09-19T00:00:00Z")).open,
+  pickerContext.routingState({ ...open, id: "memory-open", status: "OPEN" }, Date.now()).open,
   true,
   "persisted campaign-memory OPEN status remains routable while its dates are active",
 );
