@@ -25,6 +25,7 @@ if (!Array.isArray(notes) || notes.length < 2 || notes.length > 4 || notes.some(
   throw new Error('Feature releases need 2-4 non-empty release notes');
 }
 notes = notes.map(note => note.trim());
+const quiet = process.env.RELEASE_QUIET === '1';
 
 const pkg = JSON.parse(read('package.json'));
 const previous = pkg.version;
@@ -55,11 +56,19 @@ source = replaceRequired(
 const marker = /const RELEASE_NOTES = \{\n/;
 if (!marker.test(source)) throw new Error('Could not locate RELEASE_NOTES');
 source = source.replace(marker, match => match + `    "${next}": [${notes.map(JSON.stringify).join(',')}],\n`);
+if (quiet) {
+  const quietLine = /const QUIET_RELEASES = Object\.freeze\((\[[^\]\n]*\])\);/;
+  const match = source.match(quietLine);
+  if (!match) throw new Error('Could not locate QUIET_RELEASES');
+  const listed = JSON.parse(match[1]);
+  if (!listed.includes(next)) listed.unshift(next);
+  source = source.replace(quietLine, `const QUIET_RELEASES = Object.freeze(${JSON.stringify(listed)});`);
+}
 write(HEADER_PART, source);
 
 let changelog = read('CHANGELOG.md');
-const section = `## ${next} — ${date}\n\n${notes.map(note => `- ${note}`).join('\n')}\n\n`;
+const section = `## ${next} — ${date}${quiet ? ' (quiet)' : ''}\n\n${notes.map(note => `- ${note}`).join('\n')}\n\n`;
 if (!changelog.startsWith(`## ${next} `)) changelog = section + changelog;
 write('CHANGELOG.md', changelog);
 
-console.log(`Prepared Dropper ${next} feature release from ${previous} with ${notes.length} release notes.`);
+console.log(`Prepared Dropper ${next} feature release from ${previous} with ${notes.length} release notes${quiet ? ' (quiet)' : ''}.`);

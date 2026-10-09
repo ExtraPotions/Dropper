@@ -210,6 +210,7 @@
   const UPDATE_RETURN_DELAY_MS = 3 * 1000;
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
+  const QUIET_RELEASES = Object.freeze([]);
   const RELEASE_NOTES = {
     "3.4.24": ["Shortens the README to a quick overview of what Dropper does.","Replaces the README screenshots with current captures of the menu."],
     "3.4.23": ["Gives each menu category a distinct, meaningful icon.","Tightens typography and reduces panel width and spacing while preserving every control and setting.","Keeps readable text, menu-size preferences, compact tabs, and each product color."],
