@@ -1,3 +1,8 @@
+## 3.4.25 — 2026-10-09
+
+- Checks for updates at most every 12 hours.
+- Supports quiet maintenance releases that show only the update badge.
+
 ## 3.4.24 — 2026-10-09
 
 - Shortens the README to a quick overview of what Dropper does.

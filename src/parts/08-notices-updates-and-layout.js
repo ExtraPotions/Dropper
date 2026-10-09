@@ -454,9 +454,9 @@
     }
 
     if (alreadyAnnounced) return;
+    lastUpdateNoticeVersion = version;
     // Quiet releases show only the badge and label above.
     if (quiet) return;
-    lastUpdateNoticeVersion = version;
     if (!claimNotice(`available:${version}`)) return;
 
     showUpdateNotice(
