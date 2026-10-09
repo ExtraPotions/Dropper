@@ -7,7 +7,7 @@
     "build": "node scripts/assemble-parts.cjs && node scripts/minify-dist.cjs",
     "test": "npm run build && node --test tests/*.test.cjs",
     "minify": "npm run build",
-    "capture-screenshots": "npm run build && node scripts/capture-screenshots.cjs",
+    "screenshots": "node ../exp-core/scripts/capture-screenshots.cjs Dropper",
     "watch": "node scripts/watch-dropper.cjs",
     "watch:once": "node scripts/watch-dropper.cjs --once",
     "watch:import-auth": "node scripts/watch-import-auth.cjs",
