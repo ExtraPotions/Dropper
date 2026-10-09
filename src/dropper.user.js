@@ -17621,7 +17621,7 @@
     };
   }
 
-  function markUpdateAvailable(version, details = []) {
+  function markUpdateAvailable(version, details = [], quiet = false) {
     if (!ui || !version || compareVersions(version, APP_VERSION) <= 0) return;
 
     const alreadyAnnounced = lastUpdateNoticeVersion === version;
@@ -17632,6 +17632,8 @@
     }
 
     if (alreadyAnnounced) return;
+    // Quiet releases show only the badge and label above.
+    if (quiet) return;
     lastUpdateNoticeVersion = version;
     if (!claimNotice(`available:${version}`)) return;
 
@@ -17668,7 +17670,7 @@
   function checkCachedUpdateNotice() {
     const status = updateChecker.status();
     if (status.available && status.latest) {
-      markUpdateAvailable(status.latest, status.details);
+      markUpdateAvailable(status.latest, status.details, status.quiet);
       return true;
     }
     clearUpdateAvailableIndicator();
@@ -17679,7 +17681,9 @@
     clearUpdateAvailableIndicator();
 
     const previous = localStorage.getItem(LAST_VERSION_KEY);
-    if (previous && previous !== APP_VERSION && claimNotice(`updated:${APP_VERSION}`)) {
+    if (previous && previous !== APP_VERSION
+        && !ExtraPotionsCore.isQuietUpgrade(previous, APP_VERSION, Object.keys(RELEASE_NOTES), QUIET_RELEASES)
+        && claimNotice(`updated:${APP_VERSION}`)) {
       showUpdateNotice(
         "Dropper Updated",
         `Updated from v${previous} to v${APP_VERSION}.`,
@@ -17706,7 +17710,7 @@
             remoteVersion: result.latest,
           });
         }
-        markUpdateAvailable(result.latest, result.details);
+        markUpdateAvailable(result.latest, result.details, result.quiet);
       } else if (result.latest) {
         clearUpdateAvailableIndicator();
       } else if (result.state === "failed" && result.lastError) {
