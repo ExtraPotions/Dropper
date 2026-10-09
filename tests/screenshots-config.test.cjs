@@ -15,7 +15,7 @@ test('README screenshots and the shot list name the same images', () => {
 
 test('screenshots run through the shared exp-core tool', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  assert.match(pkg.scripts.screenshots, /^node \.\.\/exp-core\/scripts\/capture-screenshots\.cjs (Dropper|SHIFT|WARD|PRISMA)$/);
+  assert.equal(pkg.scripts.screenshots, 'node ../exp-core/scripts/capture-screenshots.cjs Dropper');
   for (const retired of ['capture-screenshots', 'visual:capture']) assert.equal(pkg.scripts[retired], undefined, retired);
   for (const file of ['scripts/capture-screenshots.cjs', 'scripts/capture-visuals.cjs']) assert.equal(fs.existsSync(path.join(root, file)), false, file);
 });

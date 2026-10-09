@@ -3,7 +3,8 @@
 // README screenshots, captured by exp-core's shared tool: npm run screenshots
 
 // Twitch campaign data is not available offline, so the progress card shows sample values.
-async function paintSampleProgress(page, host) {
+// Dropper redraws the card a few seconds later, so paint again right before each capture.
+async function paintValues(host) {
   await host.evaluate(node => {
     const shadow = node.shadowRoot;
     const set = (id, text, className) => {
@@ -25,8 +26,13 @@ async function paintSampleProgress(page, host) {
     const fill = shadow.getElementById('tdh-drop-fill');
     if (fill) fill.style.width = '47%';
   });
+}
+
+async function paintSampleProgress(page, host) {
+  await paintValues(host);
   // The progress bar animates its width; let it settle so captures are repeatable.
   await page.waitForTimeout(600);
+  await paintValues(host);
 }
 
 module.exports = {
