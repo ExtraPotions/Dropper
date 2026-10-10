@@ -15366,6 +15366,7 @@
             </div>
           </div>
           <div class="header-divider"></div>
+          <div class="badge-only-progress-slot" id="tdh-badge-only-progress-slot" aria-label="Drop progress" hidden></div>
           <div class="toast" id="tdh-toast" hidden></div>
           <div class="update-notice" id="tdh-update-notice" data-exp-update-notice="1" hidden>
             <button type="button" class="update-dismiss" id="tdh-update-dismiss" aria-label="Dismiss Update Notice">×</button>
@@ -15384,7 +15385,6 @@
             </div>
           </div>
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-drops-body"><span class="fl-tool-title">Drops</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-drops-body">
-            <div class="badge-only-progress-slot" id="tdh-badge-only-progress-slot" aria-label="Drop progress" hidden></div>
             ${switchHtml("tdh-claim-drops", "Auto-Claim Drops", "", settings.claimDrops)}
             ${switchHtml("tdh-claim-bonus", "Auto-Claim Bonus Chests", "Attempts Free Bonus Claims. A Click Is Not Counted As Confirmation.", settings.claimBonus)}
             <div class="auth-required" id="tdh-auth-required" hidden>
@@ -15505,7 +15505,7 @@
             ${switchHtml("tdh-progress-title", "Show Progress In Tab", "", settings.progressInTitle)}
             ${switchHtml("tdh-keep-tab", "Keep Screen Awake", "Requests A Screen Wake Lock During Actual Playback. Does Not Override Visibility Or Pauses.", settings.keepTabActive)}
             ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "", settings.hideTwitchSubscriptionPromos)}
-            ${switchHtml("tdh-badge-only", "Badge Only", "Keeps Only The Dropper Badge On The Page And Shows Progress At The Top Of The Drops Menu.", settings.badgeOnly)}
+            ${switchHtml("tdh-badge-only", "Badge Only", "Keeps Only The Dropper Badge On The Page And Shows Progress At The Top Of The Menu.", settings.badgeOnly)}
             ${switchHtml("tdh-reduce-motion", "Reduce motion", "", settings.reduceMotion)}
             <hr class="appearance-separator">
             ${switchHtml("tdh-custom-opacity", "Custom Opacity", "Makes Dropper panels translucent while keeping the launcher fully visible.", settings.customOpacity)}
