@@ -1618,7 +1618,7 @@
     // Menu size is a display choice, so it lives at the end of Appearance.
     const appearance=ui.shadow.getElementById('tdh-progress-body');
     if(appearance&&!appearance.querySelector('[data-dropper-menu-preferences]')){const preferences=ExtraPotionsCore.createDisclosure('Menu Preferences',ExtraPotionsCore.createMenuSizeControls());preferences.dataset.dropperMenuPreferences='1';appearance.append(preferences);}
-    const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,onReset:resetAllDropperData,notify:setStatus,layout:'grouped'});
+    const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,onReset:resetAllDropperData,notify:setStatus,layout:'grouped',issueSettings:()=>({current:settings,defaults:DEFAULTS})});
     target.replaceChildren(system);
   }
 
