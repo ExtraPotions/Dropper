@@ -29,7 +29,7 @@ test('installed Dropper migrates preferences, keeps the page bridge working, and
  const event=await page.evaluate(()=>fixtureEvents.at(-1));assert.equal(event.operations.length,1);assert.equal(event.operations[0].name,'Inventory');
  assert.equal(event.headers.authorization,undefined);assert.equal(event.json[0].data.currentUser.email,undefined);
  assert.equal(await page.evaluate(()=>fixtureResponse[0].data.chat),'private','Twitch still receives its original response');
- await page.evaluate(()=>dropperShow());await host.locator('[data-panel="tdh-diagnostics-body"]').click();
+ await page.evaluate(()=>dropperShow());await host.locator('[data-exp-section-tab="tdh-diagnostics-body"]').click();
  await host.getByRole('tab',{name:'Reset',exact:true}).click();
  await host.getByRole('button',{name:'Reset All Settings',exact:true}).click();
  assert.equal(await page.evaluate(()=>fixtureManager.has('exp:v3:dropper:settings')),true,'first tap only arms reset');

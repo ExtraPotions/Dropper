@@ -73,7 +73,7 @@
               <div class="eligibility-detail" id="tdh-eligibility-detail">Dropper does not yet have enough information to verify this stream.</div>
               <div class="eligibility-checklist-list" id="tdh-eligibility-checklist-list"></div>
             </details>
-            <button type="button" class="life-btn" id="tdh-toggle-inventory">Show Drops Inventory</button>
+            <button type="button" class="life-btn" id="tdh-toggle-inventory" data-exp-primary="1">Show Drops Inventory</button>
             <div class="compact-inventory" id="tdh-compact-inventory"><div class="inventory-head"><div><strong>Campaign Drops</strong><span id="tdh-inventory-game"></span></div></div><div class="inventory-list" id="tdh-inventory-list"></div></div>
             <details class="campaign-manager" id="tdh-claim-history-panel">
               <summary><span class="campaign-manager-title">Claim History</span><span class="unclaimed-badge" id="tdh-unclaimed-summary" hidden></span><span class="campaign-manager-summary" id="tdh-claim-health">No claims yet</span></summary>
@@ -257,6 +257,7 @@
     bindSwitches();
     bindPanels();
     ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { ExtraPotionsCore.resetLauncherGrid("dropper"); requestAnimationFrame(layoutChrome); } });
+    ExtraPotionsCore.setMenuStatus("dropper", systemHealthSnapshot);
     ui.menuController = ExtraPotionsCore.createMenuController({
       id: "dropper", host, shadow, panel: ui.dock,
       getSettings: () => settings, setOpen: setRailOpen, onLayout:layoutChrome,

@@ -96,7 +96,7 @@ test(`Badge Only keeps progress in the menu at ${viewport.width}px with a ${anch
       const launcher = shadow.getElementById('tdh-settings-launcher');
       const cardBox=card.getBoundingClientRect(),slotBox=slot.getBoundingClientRect();
       const headerBox=shadow.querySelector('.menu-head').getBoundingClientRect();
-      const dropsBox=shadow.querySelector('[data-panel="tdh-drops-body"]').getBoundingClientRect();
+      const dropsBox=shadow.querySelector('[data-exp-section-tabs][role=tablist]').getBoundingClientRect();
       return {
         inFlow:getComputedStyle(card).position === 'relative',
         insideSlot:cardBox.top>=slotBox.top && cardBox.bottom<=slotBox.bottom+1 && cardBox.left>=slotBox.left && cardBox.right<=slotBox.right+1,

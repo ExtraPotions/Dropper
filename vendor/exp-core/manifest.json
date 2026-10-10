@@ -1,8 +1,8 @@
 {
-  "coreVersion": "3.7.9",
+  "coreVersion": "3.8.0",
   "source": {
     "source": "ExtraPotions/exp-core",
-    "sourceVersion": "3.7.9",
+    "sourceVersion": "3.8.0",
     "architecture": "core-native"
   },
   "suiteContract": {
@@ -177,19 +177,20 @@
       "rootId": "exp-prisma-root"
     }
   },
-  "bundleSha256": "9cd6cd693b778641b66ad5c673733f761ee4c2706a2c369f928f57ead52fe973",
+  "bundleSha256": "27f653e594ba792769ccbfa82308dc56606d3d91f79ca0778094559af5109630",
   "files": {
     "foundation.js": "2b91c99fbc11c1dcac6daf1414acb402e824ba39650549775cdfc7bb404ba341",
     "diagnostic-report.js": "ffc3e1b8d66381dbe9a79a1632affb0fbc1f724c168a986502a01e642e5dcd89",
     "lifecycle.js": "fc7d4e72f5edc54e5b9edce2578125d8091c207467d606260d4e9204b4c4712d",
-    "product-tools.js": "b822a855d0cfeff906a316970dd0d84c69502d791afedcbfeba422f1f710a672",
-    "menu-arrangement.js": "74f1e45f3af1fd5d3b8a2f12bd1b01e506124e4307292fe0c4cbade27d7eaba8",
+    "product-tools.js": "4dc80acb5b3c91a78b3854f29fb6655cda7ff52784edbabbc9a6f5903e0bb803",
+    "menu-tabs.js": "cfa26d041b5fe6e19fe55d83681fad9e0aa096afc847bd289ab17969d4725ea6",
+    "menu-arrangement.js": "941fa7e11011bfedce2d2ec6a06825f6115a926481e538b8198b73cd34beae86",
     "health-summary.js": "dccf0a557e5dff4e91199346b53deee65fd4165e4d8fd7bb04a6c5dcd88236eb",
     "recovery-control.js": "c9f1b6383ffda72235ca59bca1a1308bfad5b3fb6552f7ba4305795bfcbdf2af",
-    "lean-menu.js": "66eba307255b8cdc56c6bba222b95bb59e81ead643aa39417bf474878126798c",
+    "lean-menu.js": "7df82f9a35e52f5157b5cab49ac1cd689f9f4413f15fc3b9aec8c8970d27d0cc",
     "menu-typography.js": "18e595bc7e29bb6230b51a9a12a57727938783ad01d8b7a9b7102b892b5cb437",
     "menu-preferences.js": "6c25d0739857a4a6c1f3549da90c27828ac815693d0c0c58459606df958fa8d6",
-    "runtime.js": "94c7a425dc26557ed97b2d7320d73d581ddc8f0ced73ceb07765e4539b46aeaf",
+    "runtime.js": "be024c1fa2478608fef2dc1773be5b0c6744196a744bb97aad4fcee1d2de6a60",
     "suite-contract.json": "1b60485eeb48388692eadbc6a2de2c8916f7a67baadcb9ef277c44360b79b773"
   }
 }

@@ -1598,6 +1598,7 @@ const ExtraPotionsTools = (() => {
       disarm();reset.disabled=true;
       try{await onReset();notify(product+' reset complete.');}catch{notify('Reset did not complete. Check storage permissions and try again.');}finally{reset.disabled=false;}
     }));
+    reset.dataset.expDestructive='1';
     function disarm(){clearTimeout(armTimer);armedUntil=0;reset.textContent='Reset All Settings';delete reset.dataset.expResetArmed;resetStatus.textContent='';}
     reset.style.cssText+=';border:1px solid #ff2438;background:#e11428;color:#fff;font-weight:700';
     const resetCard=ExtraPotionsCore.createDisclosure('Reset',note(`Clears ${product} settings and stored data on this browser. This cannot be undone.`),reset,resetStatus);
@@ -1626,6 +1627,153 @@ const ExtraPotionsTools = (() => {
     return system;
   }
   return Object.freeze({issueSummary,productIssueUrl,productDataResetting,clearProductData,groupTimelineEntries,createProductTimeline,createProductSystem,placeDonationPanel,createBitcoinDonation,compatibilitySnapshot,createCompatibilityControls,createSuiteSiteControls});
+})();
+
+/* Product sections as one row of tabs. Core opens a section by clicking the product's own
+   (hidden) section header, so each product keeps its section code and lazy rendering. */
+const ExpMenuTabs = (() => {
+  const shortLabels = Object.freeze({ appearance: 'Look', protection: 'Protect' });
+  const icons = Object.freeze({ drops: 'gift', streams: 'screen', appearance: 'brush', advanced: 'sliders', system: 'system', highlights: 'sparkle', protection: 'shield', amazon: 'bag' });
+  // Disclosures that are inline controls, not groups, stay collapsible.
+  // Products use data-exp-collapsible for groups that build expensive content when opened.
+  const KEEP_COLLAPSIBLE = '.eligibility-chip,[data-shift-appearance-explanation],[data-exp-tab-item],[data-exp-collapsible]';
+  // The doubled attribute outranks Core's content-driven `:host(...) :is(.fl-tool-header,...)` rule,
+  // which would otherwise give the hidden headers their full height back.
+  const css = `
+    [data-exp-section-tabs][data-exp-section-tabs]>.fl-tool-panel>.fl-tool-header,[data-exp-section-tabs][data-exp-section-tabs] nav>.fl-tool-panel>.fl-tool-header{position:absolute!important;width:1px!important;height:1px!important;min-height:0!important;margin:-1px!important;padding:0!important;border:0!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important}
+    [data-exp-section-tabs] .fl-tool-panel{margin:0!important;border:0!important;background:transparent!important}
+    [data-exp-section-tabs] .fl-tool-body{padding:0!important}
+    .exp-section-tabs{display:flex;gap:2px;margin:0 0 2px;padding:3px;border-radius:9px;background:var(--exp-menu-track,#18181b);min-width:0}
+    .exp-section-tabs>[role=tab]{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:4px;min-width:0;min-height:28px;padding:4px 2px;border:0;border-radius:7px;background:transparent;color:var(--theme-muted);font:500 11.5px/1.2 Inter,"Segoe UI",system-ui,sans-serif;white-space:nowrap;cursor:pointer}
+    .exp-section-tabs>[role=tab]:hover{color:var(--theme-text)}
+    .exp-section-tabs>[role=tab][aria-selected=true]{background:var(--theme-line);color:var(--theme-text);box-shadow:inset 0 -2px 0 var(--theme-accent)}
+    .exp-section-tabs>[role=tab]:focus-visible{outline:2px solid var(--theme-accent);outline-offset:1px}
+    .exp-section-tabs .exp-section-icon{flex:0 0 12px;transform:scale(.8)}
+    .exp-section-tabs .exp-section-tab-label{overflow:hidden;text-overflow:ellipsis}
+    .exp-section-tabs[data-compact="1"] .exp-section-tab-label{display:none}
+    [data-exp-section-tabs] details[data-exp-flat]{border:0!important;padding:0!important;margin:0!important;background:transparent!important}
+    [data-exp-section-tabs] details[data-exp-flat]>summary{display:block!important;margin:14px 0 6px!important;padding:0!important;list-style:none!important;color:var(--theme-muted)!important;font:500 11px/1.3 Inter,"Segoe UI",system-ui,sans-serif!important;pointer-events:none!important}
+    [data-exp-section-tabs] details[data-exp-flat]>summary::before,[data-exp-section-tabs] details[data-exp-flat]>summary::after{display:none!important}
+    [data-exp-section-tabs] details[data-exp-flat]>summary::-webkit-details-marker{display:none}
+    [data-exp-section-tabs] details[data-exp-flat]>:not(summary){margin:0!important;border:1px solid var(--theme-line)!important;border-top-width:0!important;border-radius:0!important;background:var(--theme-panel)!important}
+    [data-exp-section-tabs] details[data-exp-flat]>summary+*{border-top-width:1px!important;border-top-left-radius:10px!important;border-top-right-radius:10px!important}
+    [data-exp-section-tabs] details[data-exp-flat]>:not(summary):last-child{border-bottom-left-radius:10px!important;border-bottom-right-radius:10px!important}
+    [data-exp-section-tabs] details[data-exp-flat]>:not(summary)+:not(summary){border-top:1px solid var(--exp-menu-soft,#1c1c1f)!important}
+    [data-exp-section-tabs] details[data-exp-flat]>:is(.row,.mini-row,.fl-switch,.setting-row){padding:9px 11px!important}
+  `;
+  const read = key => { try { return localStorage.getItem(key); } catch { return null; } };
+  const write = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
+  const isOpen = entry => !entry.body.hidden && !entry.body.classList.contains('fl-tool-hidden');
+  let serial = 0;
+
+  function mount({ panel, id, entries }) {
+    const document = panel.ownerDocument, view = document.defaultView;
+    const style = document.createElement('style'); style.textContent = css;
+    const styleRoot = panel.getRootNode();
+    (styleRoot instanceof view.ShadowRoot ? styleRoot : (document.head || document.documentElement)).append(style);
+    const storageKey = 'exp:suite:menu-tab:' + id;
+    const list = document.createElement('div');
+    list.className = 'exp-section-tabs'; list.dataset.expSectionTabs = '1';
+    list.setAttribute('role', 'tablist'); list.setAttribute('aria-label', 'Sections');
+    const saved = new Map();
+    const tabs = entries.map(entry => {
+      const index = ++serial, slug = entry.label.toLowerCase();
+      const tab = document.createElement('button');
+      tab.type = 'button'; tab.id = 'exp-section-tab-' + index; tab.dataset.expSectionTab = entry.key;
+      tab.setAttribute('role', 'tab'); tab.setAttribute('aria-label', entry.label);
+      if (!entry.body.id) entry.body.id = 'exp-section-panel-' + index;
+      tab.setAttribute('aria-controls', entry.body.id);
+      const icon = document.createElement('span'); icon.className = 'exp-section-icon'; icon.setAttribute('aria-hidden', 'true');
+      if (icons[slug]) icon.dataset.icon = icons[slug];
+      const text = document.createElement('span'); text.className = 'exp-section-tab-label'; text.textContent = shortLabels[slug] || entry.label;
+      tab.append(icon, text); list.append(tab);
+      saved.set(entry, { tabindex: entry.header.getAttribute('tabindex'), hidden: entry.header.getAttribute('aria-hidden'), role: entry.body.getAttribute('role'), labelledby: entry.body.getAttribute('aria-labelledby') });
+      entry.header.setAttribute('tabindex', '-1'); entry.header.setAttribute('aria-hidden', 'true');
+      entry.body.setAttribute('role', 'tabpanel'); entry.body.setAttribute('aria-labelledby', tab.id);
+      return tab;
+    });
+    panel.dataset.expSectionTabs = '1';
+    let wasVisible = false, syncing = false, disposed = false, queued = false;
+    const visible = () => !panel.hidden && panel.getClientRects().length > 0;
+
+    function place() {
+      const parent = entries[0].section.parentElement; if (!parent) return;
+      const first = [...parent.children].find(node => entries.some(entry => entry.section === node));
+      if (first && list.nextElementSibling !== first) parent.insertBefore(list, first);
+    }
+    function flatten() {
+      for (const entry of entries) for (const details of entry.body.querySelectorAll('details')) {
+        // A group can become an inner-tab item after it was flattened; inner tabs own it then.
+        if (details.matches(KEEP_COLLAPSIBLE)) { if (details.dataset.expFlat) delete details.dataset.expFlat; continue; }
+        details.dataset.expFlat = '1';
+        if (!details.open) details.open = true;
+      }
+    }
+    // Tabs shrink with an ellipsis instead of overflowing the row, so a label that no longer
+    // fits is the signal to drop to icons.
+    function compact() {
+      list.dataset.compact = '0';
+      const clipped = list.scrollWidth > list.clientWidth + 1 || [...list.querySelectorAll('.exp-section-tab-label')].some(label => label.scrollWidth > label.clientWidth + 1);
+      list.dataset.compact = clipped ? '1' : '0';
+    }
+    function open(index) { if (entries[index] && !isOpen(entries[index])) entries[index].header.click(); }
+    function sync() {
+      if (syncing || disposed) return;
+      syncing = true;
+      try {
+        place();
+        const nowVisible = visible();
+        let active = entries.findIndex(isOpen);
+        if (nowVisible) {
+          const remembered = entries.findIndex(entry => entry.key === read(storageKey));
+          // On opening, the remembered tab wins over a product's default first section; a section
+          // the product opened on purpose (anything but the first) is kept.
+          if (!wasVisible && remembered >= 0 && active <= 0 && remembered !== active) open(remembered);
+          else if (active < 0) open(remembered >= 0 ? remembered : 0);
+          active = entries.findIndex(isOpen);
+        }
+        wasVisible = nowVisible;
+        tabs.forEach((tab, i) => { const on = i === active; tab.setAttribute('aria-selected', String(on)); tab.tabIndex = on || (active < 0 && i === 0) ? 0 : -1; });
+        flatten();
+        if (nowVisible) compact();
+      } finally { syncing = false; }
+    }
+    function select(index, focus = false) {
+      if (!entries[index]) return;
+      write(storageKey, entries[index].key);
+      open(index); sync();
+      if (focus) tabs[index].focus();
+    }
+    const click = event => { const index = tabs.indexOf(event.target.closest('[role=tab]')); if (index >= 0) select(index); };
+    const keydown = event => {
+      const current = tabs.indexOf(event.target); if (current < 0) return;
+      const last = tabs.length - 1;
+      const index = event.key === 'ArrowRight' ? (current + 1) % tabs.length : event.key === 'ArrowLeft' ? (current + last) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? last : -1;
+      if (index < 0) return;
+      event.preventDefault(); select(index, true);
+    };
+    list.addEventListener('click', click); list.addEventListener('keydown', keydown);
+    const observer = new view.MutationObserver(() => { if (!queued && !disposed) { queued = true; queueMicrotask(() => { queued = false; sync(); }); } });
+    observer.observe(panel, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'class', 'aria-expanded', 'open'] });
+    const resize = new view.ResizeObserver(() => { if (visible()) compact(); }); resize.observe(panel);
+    sync();
+    return {
+      update: sync,
+      select: key => select(entries.findIndex(entry => entry.key === key)),
+      destroy() {
+        disposed = true; observer.disconnect(); resize.disconnect();
+        list.removeEventListener('click', click); list.removeEventListener('keydown', keydown); list.remove(); style.remove();
+        delete panel.dataset.expSectionTabs;
+        for (const [entry, before] of saved) {
+          for (const [node, name, value] of [[entry.header, 'tabindex', before.tabindex], [entry.header, 'aria-hidden', before.hidden], [entry.body, 'role', before.role], [entry.body, 'aria-labelledby', before.labelledby]]) {
+            if (value === null) node.removeAttribute(name); else node.setAttribute(name, value);
+          }
+          entry.body.querySelectorAll('details[data-exp-flat]').forEach(details => delete details.dataset.expFlat);
+        }
+      },
+    };
+  }
+  return Object.freeze({ mount });
 })();
 
 // Shared ExtraPotions menu categories, submenu behavior, reordering, and visibility.
@@ -1835,7 +1983,7 @@ const ExpMenuArrangement = (() => {
       return { section, header, body, label, key };
     }).filter(entry => entry?.key);
     const tabs=mountTabs({panel,id,onChange});
-    const none = { update() { collapseSubmenus(panel);tabs.update(); }, describe: () => [], destroy() {tabs.destroy();} };
+    const none = { update() { collapseSubmenus(panel);tabs.update(); }, select() {}, describe: () => [], destroy() {tabs.destroy();} };
     if (entries.length < 2) return none;
     const parent = entries[0].section.parentElement;
     if (entries.some(entry => entry.section.parentElement !== parent)) return none;
@@ -1857,10 +2005,13 @@ const ExpMenuArrangement = (() => {
       onChange();
     }
     apply();
+    const sectionTabs = ExpMenuTabs.mount({ panel, id, entries: desired });
     return {
-      update() { collapseSubmenus(panel);tabs.update(); },
+      update() { collapseSubmenus(panel); tabs.update(); sectionTabs.update(); },
+      select: key => sectionTabs.select(key),
       describe: () => describe(id, entries.map(({ key, label, category }) => ({ key, label, category }))),
       destroy() {
+        sectionTabs.destroy();
         tabs.destroy();
         style.remove();
         entries.forEach(entry => { delete entry.section.dataset.expMenuCategory; });
@@ -1939,33 +2090,33 @@ const ExpRecoveryControl = (() => {
 
 // Layout and surfaces from the approved Lean menu, with product-specific colors.
 const ExpLeanMenu = (() => {
-  const palettes = Object.freeze({
-    dropper: {bg:'#141019',panel:'#1e1827',line:'#393043',text:'#f4effb',muted:'#bbb0ca',accent:'#bc94f5',hover:'#272031'},
-    prisma: {bg:'#111723',panel:'#1a2434',line:'#344259',text:'#eff5ff',muted:'#afbed4',accent:'#91bfff',hover:'#25334a'},
-    shift: {bg:'#111c1d',panel:'#1b2a2c',line:'#34494b',text:'#effafa',muted:'#afc6c7',accent:'#80d7d2',hover:'#25383a'},
-    ward: {bg:'#1c1711',panel:'#2a2219',line:'#4b3e2d',text:'#fff6e9',muted:'#cbbb9f',accent:'#e7bb75',hover:'#382d20'},
-  });
+  // Neutral surfaces shared by every product; only the accent identifies the product.
+  const neutral = Object.freeze({bg:'#09090b',panel:'#0c0c0e',line:'#27272a',text:'#fafafa',muted:'#a1a1aa',hover:'#18181b'});
+  const accents = Object.freeze({dropper:'#bc94f5',prisma:'#91bfff',shift:'#80d7d2',ward:'#e7bb75'});
+  const palettes = Object.freeze(Object.fromEntries(Object.entries(accents).map(([id,accent])=>[id,{...neutral,accent}])));
   const sectionIcons = Object.freeze({drops:'gift',streams:'screen',appearance:'brush',advanced:'sliders',system:'system',highlights:'sparkle',protection:'shield',amazon:'bag'});
   const css = `
-    [data-exp-menu-layout="lean"]{box-sizing:border-box!important;padding:10px!important;border:1px solid var(--theme-line)!important;border-radius:14px!important;background:var(--theme-bg)!important;background-image:none!important;box-shadow:0 16px 44px #0004!important;color:var(--theme-text)!important;font:400 var(--exp-font-size-body,14px)/1.35 "Segoe UI",system-ui,sans-serif!important;text-align:start;letter-spacing:-.1px;transition:none!important}
+    [data-exp-menu-layout="lean"]{--exp-menu-soft:#1c1c1f;--exp-menu-track:#18181b;box-sizing:border-box!important;padding:0 14px 14px!important;border:1px solid var(--theme-line)!important;border-radius:16px!important;background:var(--theme-bg)!important;background-image:none!important;box-shadow:0 16px 44px #0006!important;color:var(--theme-text)!important;font:400 calc(var(--exp-font-size-body,14px) - 1px)/1.45 Inter,"Segoe UI",system-ui,sans-serif!important;text-align:start;letter-spacing:-.1px;transition:none!important}
     [data-exp-menu-layout="lean"] *{box-sizing:border-box}
-    [data-exp-menu-layout="lean"] .menu-head{display:flex!important;align-items:center!important;gap:11px!important;width:calc(100% + 20px)!important;margin:-10px -10px 8px!important;padding:12px!important;border-bottom:1px solid var(--theme-line)!important}
-    [data-exp-menu-layout="lean"] .header-brand{display:flex!important;align-items:center!important;gap:11px!important;flex:1;min-width:0;width:auto!important}
-    [data-exp-menu-layout="lean"] .header-icon{flex:0 0 42px;width:42px!important;height:42px!important;border:1px solid var(--theme-line)!important;border-radius:10px!important;background:var(--theme-panel)!important;box-shadow:none!important}
-    [data-exp-menu-layout="lean"] .header-icon .menu-icon{width:40px!important;height:40px!important;object-fit:contain}
+    [data-exp-menu-layout="lean"] .menu-head{display:flex!important;align-items:center!important;gap:10px!important;width:calc(100% + 28px)!important;margin:0 -14px 2px!important;padding:14px 14px 12px!important;border:0!important;background:transparent!important}
+    [data-exp-menu-layout="lean"] .header-brand{display:flex!important;align-items:center!important;gap:10px!important;flex:1;min-width:0}
+    [data-exp-menu-layout="lean"] .header-icon{flex:0 0 30px;width:30px!important;height:30px!important;border:0!important;border-radius:8px!important;background:transparent!important;overflow:hidden}
+    [data-exp-menu-layout="lean"] .header-icon .menu-icon{width:30px!important;height:30px!important;object-fit:contain}
     [data-exp-menu-layout="lean"] .header-copy{flex:1;min-width:0;overflow:visible!important}
     [data-exp-menu-layout="lean"] .header-title-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-    [data-exp-menu-layout="lean"] :is(.header-title-row h2,[data-exp-part="title"],#tdh-rail-title){margin:0!important;font-size:calc(var(--exp-font-size-body,14px) + 3px)!important;line-height:1.2!important;font-weight:650!important;letter-spacing:-.25px!important;color:var(--theme-text)!important}
-    [data-exp-menu-layout="lean"] :is([data-exp-part="subtitle"],#tdh-rail-subtitle){display:block!important;margin-top:3px!important;font-size:var(--exp-font-size-small,12px)!important;line-height:1.45!important;color:var(--theme-muted)!important}
-    [data-exp-menu-layout="lean"] :is([data-exp-part="version"],#tdh-header-version){padding:2px 5px!important;min-height:0!important;border:1px solid var(--theme-line)!important;border-radius:5px!important;background:transparent!important;background-image:none!important;color:var(--theme-muted)!important;font-size:var(--exp-font-size-small,12px)!important;line-height:1.2!important;font-weight:500!important}
-    [data-exp-menu-layout="lean"] .header-actions{display:flex!important;align-items:center!important;gap:7px!important;flex:none}
-    [data-exp-menu-layout="lean"] :is(.support-button,[data-exp-part="close"],#tdh-rail-close){display:grid!important;place-items:center!important;flex:none;width:30px!important;height:30px!important;min-width:30px!important;min-height:30px!important;margin:0!important;padding:6px!important;border:1px solid var(--theme-line)!important;border-radius:7px!important;background:transparent!important;background-image:none!important;color:var(--theme-muted)!important;box-shadow:none!important}
+    [data-exp-menu-layout="lean"] :is(.header-title-row h2,[data-exp-part="title"],#tdh-rail-title){margin:0!important;font-size:14px!important;font-weight:600!important;line-height:1.3!important;letter-spacing:0!important}
+    [data-exp-menu-layout="lean"] :is([data-exp-part="subtitle"],#tdh-rail-subtitle){display:block!important;margin-top:1px!important;color:var(--theme-muted)!important;font-size:11.5px!important;line-height:1.35!important}
+    [data-exp-menu-layout="lean"] :is([data-exp-part="version"],#tdh-header-version){padding:0!important;min-height:0!important;border:0!important;background:transparent!important;color:var(--theme-muted)!important;font-size:11px!important;font-weight:400!important}
+    [data-exp-menu-layout="lean"] .header-actions{display:flex!important;align-items:center!important;gap:6px!important;flex:none}
+    [data-exp-menu-layout="lean"] :is(.support-button,[data-exp-part="close"],#tdh-rail-close){display:grid!important;place-items:center!important;flex:none;width:26px!important;height:26px!important;min-width:26px!important;min-height:26px!important;margin:0!important;padding:0!important;border:1px solid var(--theme-line)!important;border-radius:7px!important;background:transparent!important;background-image:none!important;color:var(--theme-muted)!important;box-shadow:none!important}
+    [data-exp-menu-layout="lean"] :is(.support-button,[data-exp-part="close"],#tdh-rail-close):hover{color:var(--theme-text)!important;background:var(--exp-menu-hover)!important}
     [data-exp-menu-layout="lean"] .header-divider{display:none!important}
     [data-exp-menu-layout="lean"]>nav{padding:0!important;margin:0!important}
     [data-exp-menu-layout="lean"] .fl-tool-panel{margin:3px 0 0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
     [data-exp-menu-layout="lean"] .fl-tool-header{min-height:38px!important;display:flex!important;align-items:center!important;gap:9px!important;padding:9px 10px!important;border:0!important;border-bottom:1px solid var(--theme-line)!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;color:var(--theme-text)!important}
     [data-exp-menu-layout="lean"] .fl-tool-header::before{display:none!important}
-    [data-exp-menu-layout="lean"] .fl-tool-title{flex:1;min-width:0;font-size:var(--exp-font-size-body,14px)!important;font-weight:500!important;line-height:1.35!important;letter-spacing:-.1px!important;color:inherit!important}
+    [data-exp-menu-layout="lean"] :is(.label,.fl-switch-text,.copy>strong,.row-copy>strong,.row>select,.mini-row>select,.setting-row>select,.fl-switch>select){font-size:calc(var(--exp-font-size-body,14px) - 1px)!important}
+    [data-exp-menu-layout="lean"] .fl-tool-title{flex:1;min-width:0;font-size:calc(var(--exp-font-size-body,14px) - 1px)!important;font-weight:500!important;line-height:1.35!important;letter-spacing:-.1px!important;color:inherit!important}
     [data-exp-menu-layout="lean"] .fl-tool-header:is([aria-expanded=true],:has(.fl-tool-chevron[aria-expanded=true])){color:var(--theme-accent)!important}
     [data-exp-menu-layout="lean"] .fl-tool-header:hover{background:var(--exp-menu-hover)!important}
     [data-exp-menu-layout="lean"] .fl-tool-header:focus-visible{outline:2px solid var(--theme-accent)!important;outline-offset:-2px}
@@ -1973,25 +2124,29 @@ const ExpLeanMenu = (() => {
     [data-exp-menu-layout="lean"] .fl-tool-chevron::after{content:'';position:absolute;top:1px;left:1px;display:block;width:6px;height:6px;border-top:1.5px solid var(--theme-muted);border-right:1.5px solid var(--theme-muted);transform:rotate(45deg);margin:3px}
     [data-exp-menu-layout="lean"] .fl-tool-header:is([aria-expanded=true],:has(.fl-tool-chevron[aria-expanded=true])) .fl-tool-chevron::after{transform:rotate(135deg)}
     [data-exp-menu-layout="lean"] .fl-tool-body{padding:12px 9px 10px!important}
-    [data-exp-menu-layout="lean"] .exp-submenu-tablist{display:flex!important;justify-content:flex-start;gap:4px!important;padding:0 0 8px!important;margin:0 0 9px!important;border-bottom:1px solid var(--theme-line)!important}
-    [data-exp-menu-layout="lean"] .exp-submenu-tablist>button{flex:0 1 auto!important;min-height:32px!important;padding:5px 9px!important;border:0!important;border-radius:5px!important;background:transparent!important;color:var(--theme-muted)!important;font-size:calc(var(--exp-font-size-body,14px) - 1px)!important;font-weight:400!important;line-height:1.35!important}
-    [data-exp-menu-layout="lean"] .exp-submenu-tablist>button[aria-selected=true]{background:var(--exp-menu-hover)!important;color:var(--theme-text)!important}
+    [data-exp-menu-layout="lean"] .exp-submenu-tablist{display:flex!important;flex-wrap:nowrap!important;overflow-x:auto!important;scrollbar-width:none;gap:14px!important;margin:0 0 2px!important;padding:9px 0 2px!important;border-bottom:1px solid var(--exp-menu-soft)!important}
+    [data-exp-menu-layout="lean"] .exp-submenu-tablist>button{flex:none!important;min-height:0!important;padding:0 0 7px!important;border:0!important;border-radius:0!important;background:transparent!important;color:var(--theme-muted)!important;font:500 12px/1.3 Inter,"Segoe UI",system-ui,sans-serif!important}
+    [data-exp-menu-layout="lean"] .exp-submenu-tablist>button[aria-selected=true]{background:transparent!important;color:var(--theme-text)!important;box-shadow:inset 0 -2px 0 var(--theme-accent)!important}
     [data-exp-menu-layout="lean"] :is(.row,.mini-row,.fl-switch,.setting-row){gap:12px!important;padding:8px 0!important;line-height:1.35!important}
     [data-exp-menu-layout="lean"] :is(.row,.mini-row,.fl-switch,.setting-row)+:is(.row,.mini-row,.fl-switch,.setting-row){border-top:1px solid var(--theme-line)!important}
     [data-exp-menu-layout="lean"] :is(.label,.setting-label,.fl-switch-text,.copy>strong,.row-copy>strong,.mini-row>span){font-weight:500!important;line-height:1.35!important}
     [data-exp-menu-layout="lean"] :is(.copy>.help,.row-copy>small,.help,.row-help,.note,.empty,.meta){line-height:1.4!important;color:var(--theme-muted)!important}
     [data-exp-menu-layout="lean"] :is(.row,.mini-row,.setting-row):has(>select){grid-template-columns:minmax(0,1fr) minmax(104px,.8fr)!important;gap:14px!important}
-    [data-exp-menu-layout="lean"] select{border:1px solid var(--theme-line)!important;border-radius:6px!important;background:var(--theme-panel)!important;background-image:none!important;color:var(--theme-text)!important;font-weight:400!important}
+    [data-exp-menu-layout="lean"] select{min-height:28px!important;padding:3px 9px!important;border:1px solid var(--theme-line)!important;border-radius:7px!important;background:transparent!important;color:var(--theme-text)!important;font-size:12px!important}
     [data-exp-menu-layout="lean"] :is(.group>h3,.section>h3,.section>h2,.stream-subsection-label){margin:10px 0 4px!important;font-weight:600!important;line-height:1.45!important;color:var(--theme-muted)!important}
     [data-exp-menu-layout="lean"] :is(.group,.section):first-child>h3{margin-top:0!important}
-    [data-exp-menu-layout="lean"] :is(.fl-tool-body,.route-body) :is(.life-btn,.action,.secondary,.primary,.compact){padding:7px 10px!important;border:1px solid var(--theme-line)!important;border-radius:7px!important;background:var(--theme-panel)!important;background-image:none!important;color:var(--theme-text)!important;font-weight:500!important;box-shadow:none!important}
+    /* Core's own header and chrome buttons carry data-exp-part and keep their styling. */
+    [data-exp-menu-layout="lean"] :is(.life-btn,.action,.secondary,.primary,.compact):not([data-exp-part]){min-height:32px!important;padding:6px 10px!important;border:1px solid var(--theme-line)!important;border-radius:8px!important;background:transparent!important;color:var(--theme-text)!important;font:500 12px/1.3 Inter,"Segoe UI",system-ui,sans-serif!important}
+    [data-exp-menu-layout="lean"] [data-exp-primary="1"]:not([data-exp-part]){border-color:var(--theme-accent)!important;background:var(--theme-accent)!important;color:#09090b!important;font-weight:600!important}
+    [data-exp-menu-layout="lean"] [data-exp-destructive="1"]:not([data-exp-part]){border-color:#f87171!important;color:#fca5a5!important;background:transparent!important}
     [data-exp-menu-layout="lean"] :is(.button-grid,.actions,.profile-actions,.menu-footer,.diagnostics-controls>div,.rules-transfer){gap:7px!important}
-    [data-exp-menu-layout="lean"] .toggleSwitch{width:34px!important;min-width:34px!important;height:20px!important;min-height:20px!important;padding:2px!important;border:0!important;border-radius:6px!important;background:color-mix(in srgb,var(--theme-muted) 40%,var(--theme-panel))!important;box-shadow:none!important}
-    [data-exp-menu-layout="lean"] .toggleSwitch::after{top:3px!important;left:3px!important;width:14px!important;height:14px!important;border:0!important;border-radius:3px!important;background:#fff!important;box-shadow:none!important}
-    [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]{background:color-mix(in srgb,var(--theme-accent) 65%,var(--theme-panel))!important}
-    [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]::after{transform:translateX(14px)!important}
+    [data-exp-menu-layout="lean"] .toggleSwitch{width:30px!important;min-width:30px!important;max-width:30px!important;height:17px!important;min-height:17px!important;max-height:17px!important;padding:0!important;border:0!important;border-radius:999px!important;background:var(--theme-line)!important}
+    [data-exp-menu-layout="lean"] .toggleSwitch::after{top:2px!important;left:2px!important;width:13px!important;height:13px!important;border:0!important;background:var(--theme-muted)!important;transform:none!important}
+    [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true],
+    :is(.exp-core-theme,.cluster)[data-theme-skin]:not([data-ui-theme="contrast"]) [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]{background:var(--theme-accent)!important}
+    [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]::after{background:#09090b!important;transform:translateX(13px)!important}
     [data-exp-menu-layout="lean"] .diagnostics-controls{margin:10px 0 16px!important}
-    [data-exp-menu-layout="lean"] [data-exp-product-system] [data-exp-system-item="reset"] button, [data-exp-menu-layout="lean"] [data-exp-product-system] button[data-exp-system-item="reset"]{margin-top:14px!important;border:0!important;background:#e11428!important;color:#fff!important;font-weight:600!important}
+    [data-exp-menu-layout="lean"] [data-exp-product-system] [data-exp-system-item="reset"] button, [data-exp-menu-layout="lean"] [data-exp-product-system] button[data-exp-system-item="reset"]{margin-top:14px!important}
     [data-exp-menu-layout="lean"] .badge-only-progress-slot{margin:0 0 16px!important}
     [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card::before,[data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card::after{display:none!important}
     [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card{border:0!important;background:transparent!important;background-image:none!important;box-shadow:none!important;padding:0!important}
@@ -2006,7 +2161,7 @@ const ExpLeanMenu = (() => {
     [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card .progress-reward-row{line-height:1.35!important}
 
     [data-exp-menu-layout="lean"] .badge-only-progress-slot .drop-percent{font-size:calc(var(--exp-font-size-body,14px) + 7px)!important;color:var(--theme-accent)!important;font-weight:650!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot .stream-channel{font-size:var(--exp-font-size-body,14px)!important;font-weight:600!important}
+    [data-exp-menu-layout="lean"] .badge-only-progress-slot .stream-channel{font-size:calc(var(--exp-font-size-body,14px) - 1px)!important;font-weight:600!important}
     [data-exp-menu-layout="lean"] .badge-only-progress-slot :is(.stream-game,.drop-meta,.drop-name,.state-pill,#tdh-updated-ago){font-size:var(--exp-font-size-small,12px)!important;line-height:1.35!important}
     [data-exp-menu-layout="lean"] .badge-only-progress-slot .drop-bar{height:6px!important;margin:11px 0 7px!important;border-radius:3px!important;background:#ffffff12!important}
     [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-fill{background:var(--theme-accent)!important;border-radius:3px!important}
@@ -2030,13 +2185,26 @@ const ExpLeanMenu = (() => {
     [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=shield]::after{left:5px;top:4px;width:6px;height:4px;border-left:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg)}
     [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=bag]::before{inset:4px 1px 0;border:1.5px solid currentColor;border-radius:2px}
     [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=bag]::after{left:5px;top:0;width:6px;height:7px;border:1.5px solid currentColor;border-bottom:0;border-radius:3px 3px 0 0}
+    [data-exp-menu-layout="lean"][data-exp-menu-status] :is([data-exp-part="subtitle"],#tdh-rail-subtitle){display:none!important}
+    [data-exp-menu-layout="lean"] [data-exp-part="status"]{display:flex;align-items:center;gap:6px;margin-top:1px;color:var(--theme-muted);font-size:11.5px;line-height:1.35}
+    [data-exp-menu-layout="lean"] .exp-status-dot{flex:none;width:6px;height:6px;border-radius:50%;background:#a1a1aa}
+    [data-exp-menu-layout="lean"] .exp-status-dot[data-state=working]{background:#4ade80}
+    [data-exp-menu-layout="lean"] .exp-status-dot:is([data-state=waiting],[data-state=paused]){background:#fbbf24}
+    [data-exp-menu-layout="lean"] .exp-status-dot[data-state=attention]{background:#f87171}
     [data-ui-theme="contrast"] [data-exp-menu-layout="lean"] .toggleSwitch{background:#000!important;border:1px solid #fff!important}
     [data-ui-theme="contrast"] [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]{background:#fff!important}
     [data-ui-theme="contrast"] [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]::after{background:#000!important}
     @media(max-height:400px){[data-exp-menu-layout="lean"] .exp-menu-footer{padding-block:6px;margin-top:4px}[data-exp-menu-layout="lean"] .fl-tool-body{padding-bottom:4px!important}}
     @media(pointer:coarse){[data-exp-menu-layout="lean"] .exp-submenu-tablist>button{min-height:44px!important}}
-    @media(forced-colors:active){[data-exp-menu-layout="lean"] .toggleSwitch{border:1px solid ButtonText!important;background:Canvas!important}[data-exp-menu-layout="lean"] .toggleSwitch::after{background:ButtonText!important}[data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]{background:Highlight!important}[data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]::after{background:HighlightText!important}}
+    @media(forced-colors:active){[data-exp-menu-layout="lean"] .toggleSwitch{border:1px solid ButtonText!important;background:Canvas!important}[data-exp-menu-layout="lean"] .toggleSwitch::after{background:ButtonText!important}[data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true],:is(.exp-core-theme,.cluster)[data-theme-skin][data-ui-theme] [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]{background:Highlight!important}[data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]::after{background:HighlightText!important}}
   `;
+  // Products register how to read their health; the header shows it in place of the tagline.
+  const statusSources=new Map(),statusPanels=new Map();
+  function setMenuStatus(id,getHealth){
+    if(typeof getHealth!=='function')throw new TypeError('Menu status needs a health function');
+    statusSources.set(String(id).toLowerCase(),getHealth);
+    for(const refresh of statusPanels.get(String(id).toLowerCase())||[])refresh();
+  }
   function mount({shadow,panel}) {
     const document=panel.ownerDocument,host=shadow.host;
     const id=host?.dataset.productId||host?.id.replace(/^(exp-)|(\-root)$/g,'').replace(/^tdh$/,'dropper');
@@ -2057,6 +2225,25 @@ const ExpLeanMenu = (() => {
     applyPalette();
     const themeObserver=new MutationObserver(applyPalette);if(themeRoot)themeObserver.observe(themeRoot,{attributes:true,attributeFilter:['data-ui-theme']});
     const style=document.createElement('style');style.dataset.expLeanMenu='1';style.textContent=css;shadow.append(style);
+    const status=document.createElement('div');status.dataset.expPart='status';status.setAttribute('role','status');
+    const dot=document.createElement('span');dot.className='exp-status-dot';const statusText=document.createElement('span');statusText.className='exp-status-text';status.append(dot,statusText);
+    let statusTicket=0,statusTimer=0;
+    async function refreshStatus(){
+      const source=statusSources.get(id);
+      if(!source){delete panel.dataset.expMenuStatus;status.remove();return;}
+      const copy=panel.querySelector('.header-copy');
+      if(!copy){delete panel.dataset.expMenuStatus;status.remove();return;}
+      if(!copy.contains(status))copy.append(status);
+      panel.dataset.expMenuStatus='1';const ticket=++statusTicket;
+      let value=null;try{value=await source();}catch{}
+      if(ticket!==statusTicket)return;
+      const health=ExpHealthSummary.normalizeHealth(value);
+      dot.dataset.state=health.state;statusText.textContent=health.label;
+    }
+    if(!statusPanels.has(id))statusPanels.set(id,new Set());statusPanels.get(id).add(refreshStatus);
+    const visibility=new MutationObserver(()=>{clearInterval(statusTimer);statusTimer=0;if(!panel.hidden){refreshStatus();statusTimer=setInterval(refreshStatus,10000);}});
+    visibility.observe(panel,{attributes:true,attributeFilter:['hidden']});
+    refreshStatus();if(!panel.hidden)statusTimer=setInterval(refreshStatus,10000);
     const icons=new Set();
     function decorate(){
       for(const header of panel.querySelectorAll('.fl-tool-header')){
@@ -2068,9 +2255,9 @@ const ExpLeanMenu = (() => {
       }
     }
     decorate();const observer=new MutationObserver(decorate);observer.observe(panel,{childList:true,subtree:true});
-    return ()=>{themeObserver.disconnect();observer.disconnect();icons.forEach(icon=>icon.remove());style.remove();for(const[key,[value,priority]]of saved){if(value)panel.style.setProperty(key,value,priority);else panel.style.removeProperty(key);}delete panel.dataset.expMenuLayout;};
+    return ()=>{visibility.disconnect();clearInterval(statusTimer);statusPanels.get(id)?.delete(refreshStatus);status.remove();delete panel.dataset.expMenuStatus;themeObserver.disconnect();observer.disconnect();icons.forEach(icon=>icon.remove());style.remove();for(const[key,[value,priority]]of saved){if(value)panel.style.setProperty(key,value,priority);else panel.style.removeProperty(key);}delete panel.dataset.expMenuLayout;};
   }
-  return Object.freeze({mount});
+  return Object.freeze({mount,setMenuStatus});
 })();
 
 // Shared type and alignment for product menus, including custom shells.
@@ -2147,7 +2334,7 @@ const ExpMenuPreferences = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.7.9';
+  const version = '3.8.0';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -4380,6 +4567,6 @@ const ExtraPotionsCore = (() => {
     return Object.freeze({ lifecycle, diagnostics, updates });
   }
 
-  const api = Object.freeze({...ExtraPotionsTools,...ExpMenuPreferences,normalizeHealth,createHealthControls,createRecoveryGuard,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createMenuController,createProduct,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,bindLauncherDrag,launcherPlacement,placeMenu,placeNotice,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidth,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,isQuietUpgrade,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,suiteSitePaused,setSuiteSitePaused,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,mountSubmenuTabs:ExpMenuArrangement.mountTabs,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
+  const api = Object.freeze({...ExtraPotionsTools,...ExpMenuPreferences,normalizeHealth,createHealthControls,createRecoveryGuard,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createMenuController,createProduct,setMenuStatus:ExpLeanMenu.setMenuStatus,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,bindLauncherDrag,launcherPlacement,placeMenu,placeNotice,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidth,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,isQuietUpgrade,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,suiteSitePaused,setSuiteSitePaused,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,mountSubmenuTabs:ExpMenuArrangement.mountTabs,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
   return api;
 })();
