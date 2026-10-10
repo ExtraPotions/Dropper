@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.27
+// @version      3.4.28
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.27";
+  const APP_VERSION = "3.4.28";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.28": ["Shows drop progress under the menu header instead of inside Drops.","Report a Problem fills in the GitHub issue with a short summary and copies the full diagnostics.","Removes the menu footer."],
     "3.4.27": ["Ranks campaigns with fewer storage reads.","Includes the faster shared ExtraPotions core."],
     "3.4.26": ["Captures README screenshots with the shared ExtraPotions tool.","Keeps the README screenshot list in step with the README."],
     "3.4.25": ["Checks for updates at most every 12 hours.","Supports quiet maintenance releases that show only the update badge."],
@@ -16955,7 +16956,7 @@
     // Menu size is a display choice, so it lives at the end of Appearance.
     const appearance=ui.shadow.getElementById('tdh-progress-body');
     if(appearance&&!appearance.querySelector('[data-dropper-menu-preferences]')){const preferences=ExtraPotionsCore.createDisclosure('Menu Preferences',ExtraPotionsCore.createMenuSizeControls());preferences.dataset.dropperMenuPreferences='1';appearance.append(preferences);}
-    const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,onReset:resetAllDropperData,notify:setStatus,layout:'grouped'});
+    const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,onReset:resetAllDropperData,notify:setStatus,layout:'grouped',issueSettings:()=>({current:settings,defaults:DEFAULTS})});
     target.replaceChildren(system);
   }
 

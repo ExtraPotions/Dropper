@@ -1,3 +1,9 @@
+## 3.4.28 — 2026-10-10
+
+- Shows drop progress under the menu header instead of inside Drops.
+- Report a Problem fills in the GitHub issue with a short summary and copies the full diagnostics.
+- Removes the menu footer.
+
 ## 3.4.27 — 2026-10-10 (quiet)
 
 - Ranks campaigns with fewer storage reads.

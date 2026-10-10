@@ -1459,20 +1459,48 @@ const ExtraPotionsTools = (() => {
   const productRepositories = Object.freeze({dropper:'Dropper',shift:'SHIFT',prisma:'PRISMA',ward:'WARD'});
   // GitHub prefills an issue from the link; longer links fail, so a large report goes by clipboard.
   const ISSUE_URL_LIMIT=8000;
-  function productIssueUrl(id, version, {health,diagnostics,copied=false}={}) {
+  const plain=(value,limit=200)=>String(value||'').replace(/https?:\/\/\S+/gi,'[link]').replace(/\S+@\S+/g,'[address]').replace(/\s+/g,' ').trim().slice(0,limit);
+  function browserName(agent=''){
+    const version=pattern=>(agent.match(pattern)||[])[1];
+    const name=version(/Edg\/(\d+)/)?'Edge '+version(/Edg\/(\d+)/):version(/OPR\/(\d+)/)?'Opera '+version(/OPR\/(\d+)/):version(/Firefox\/(\d+)/)?'Firefox '+version(/Firefox\/(\d+)/):version(/Chrome\/(\d+)/)?'Chrome '+version(/Chrome\/(\d+)/):version(/Version\/(\d+)[^ ]* Safari/)?'Safari '+version(/Version\/(\d+)[^ ]* Safari/):'Unknown browser';
+    const os=/Windows/.test(agent)?'Windows':/Android/.test(agent)?'Android':/iPhone|iPad/.test(agent)?'iOS':/Mac OS X/.test(agent)?'macOS':/CrOS/.test(agent)?'ChromeOS':/Linux/.test(agent)?'Linux':'Unknown OS';
+    return name+' · '+os;
+  }
+  // The minimum a maintainer needs to triage, small enough to always fit in the issue link.
+  // Only settings that differ from the product's defaults are listed.
+  function issueSummary(report={},{settings,activity=[]}={}){
+    const lines=[],add=(label,value)=>{if(value)lines.push(`- ${label}: ${value}`);};
+    const self=report.plugin?.id;
+    add('Product',[productRepositories[self]||self,report.plugin?.version].filter(Boolean).join(' ')+(report.technical?.core?.version?' · Core '+report.technical.core.version:''));
+    add('Other products on page',(report.plugin?.compatibility?.products||[]).filter(p=>p.id!==self&&p.status==='observed').map(p=>(productRepositories[p.id]||p.id)+' '+(p.versions||[]).join('/')).join(', '));
+    const manager=report.technical?.manager;add('Userscript manager',manager?.name?plain(manager.name+' '+(manager.version||''),60):'');
+    const env=report.environment||{};add('Browser',env.userAgent?browserName(env.userAgent):'');add('Site',plain(env.hostname,100));
+    if(env.viewport)add('Viewport',`${env.viewport.width}×${env.viewport.height} @${env.viewport.pixelRatio}x`);
+    if(settings?.current&&settings?.defaults){
+      const changed=Object.keys(settings.current).filter(key=>JSON.stringify(settings.current[key])!==JSON.stringify(settings.defaults[key])).slice(0,25);
+      add('Settings changed from defaults',changed.map(key=>`${key}: ${plain(JSON.stringify(settings.current[key]),60)}`).join(', ')||'none');
+    }
+    const errors=[...(report.core?.errors||[]).map(e=>[e.source,e.code,e.message].filter(Boolean).join(' ')),...(report.console?.entries||[]).filter(e=>/error|warn/.test(e.level)).map(e=>e.message||e.text||'')].filter(Boolean).slice(-5);
+    if(errors.length)lines.push('- Recent errors:',...errors.map(e=>'  - '+plain(e,200)));
+    const recent=activity.map(entry=>plain(entry,120)).filter(Boolean).slice(-5);
+    if(recent.length)lines.push('- Recent activity:',...recent.map(e=>'  - '+e));
+    return lines.join('\n');
+  }
+  function productIssueUrl(id, version, {health,diagnostics,copied=false,summary=''}={}) {
     if (!Object.hasOwn(productRepositories,id)) throw new Error('Unknown product');
     const product=productRepositories[id];
     const safeVersion=/^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(String(version))?String(version):'unknown';
     // Status is the product's own plain-language health text with links and addresses removed.
     // Diagnostics are the product's own redacted report, attached only when the person reports.
-    const plain=value=>String(value||'').replace(/https?:\/\/\S+/gi,'[link]').replace(/\S+@\S+/g,'[address]').replace(/\s+/g,' ').trim().slice(0,200);
     const status=health&&plain(health.label)?`\nStatus: ${plain(health.label)}${plain(health.reason)?' - '+plain(health.reason):''}\n`:'';
-    const template=`Product: ${product} v${safeVersion}\n${status}\nWhat happened?\n\nSteps to reproduce\n1. \n\nExpected behavior\n\nActual behavior\n\nBrowser and userscript manager\n\n`;
+    const template=`Product: ${product} v${safeVersion}\n${status}\nWhat happened?\n\nSteps to reproduce\n1. \n\nExpected behavior\n\nActual behavior\n\n`+(summary?`Summary (review and remove anything private before submitting)\n${summary}\n\n`:'Browser and userscript manager\n\n');
     const link=body=>'https://github.com/ExtraPotions/'+product+'/issues/new?title='+encodeURIComponent('['+product+' '+safeVersion+'] Issue')+'&body='+encodeURIComponent(body);
     if(diagnostics&&typeof diagnostics==='object'){
-      const review='Diagnostics (review and remove anything private before submitting)\n';
+      const review='Full diagnostics\n';
       for(const text of [JSON.stringify(diagnostics,null,2),JSON.stringify(diagnostics)]){const url=link(template+review+'```json\n'+text+'\n```\n');if(url.length<=ISSUE_URL_LIMIT)return url;}
-      return link(template+review+(copied?'The diagnostics were copied to your clipboard when you selected Report a Problem. Paste them here.\n':'The diagnostics are too long for the link. Select Copy Diagnostics and paste them here.\n'));
+      const url=link(template+review+(copied?'The full diagnostics were copied to your clipboard when you selected Report a Problem. Paste them here if asked.\n':'Select Copy Diagnostics and paste the full diagnostics here if asked.\n'));
+      if(url.length<=ISSUE_URL_LIMIT||summary.length<=1500)return url;
+      return productIssueUrl(id,version,{health,diagnostics,copied,summary:summary.slice(0,1500)});
     }
     return link(template+'Diagnostics (optional)\nSelect Copy Diagnostics, paste them here, and remove anything private.\n');
   }
@@ -1530,7 +1558,7 @@ const ExtraPotionsTools = (() => {
     return {element:timeline,dispose(){disposed=true;health.dispose();},refresh:health.refresh};
   }
   const RESET_ARM_MS=4000;
-  function groupedProductSystem({id,version,timeline,diagnostics,preferences,onReset,notify}) {
+  function groupedProductSystem({id,version,timeline,diagnostics,preferences,onReset,notify,issueSettings}) {
     const product=productRepositories[id];
     const system=document.createElement('div');system.dataset.expProductSystem=id;system.dataset.expSystemLayout='grouped';
     system.style.cssText='display:grid;grid-template-columns:minmax(0,1fr);gap:8px;min-width:0;max-width:100%;overflow-wrap:anywhere';
@@ -1548,7 +1576,11 @@ const ExtraPotionsTools = (() => {
       let data=null,copied=false;
       try{const source=typeof ExtraPotionsDiagnostics==='object'?ExtraPotionsDiagnostics.reportSource?.(diagnostics):null;if(source)data=await source();}catch{}
       if(data){try{await navigator.clipboard.writeText(JSON.stringify(data,null,2));copied=true;}catch{}}
-      try{const link=document.createElement('a');link.href=productIssueUrl(id,version,{health:health(),diagnostics:data,copied});link.target='_blank';link.rel='noopener noreferrer';link.click();}
+      let summary='';
+      if(data){try{let settings=null;try{settings=issueSettings?.()||null;}catch{}
+        const reason=health().reason.trim(),activity=[...(timeline.querySelectorAll?.('p')||[])].map(p=>p.textContent.trim()).filter(text=>text&&text!==reason).slice(-5);
+        summary=issueSummary(data,{settings,activity});}catch{}}
+      try{const link=document.createElement('a');link.href=productIssueUrl(id,version,{health:health(),diagnostics:data,copied,summary});link.target='_blank';link.rel='noopener noreferrer';link.click();}
       finally{report.disabled=false;}
     }));
     report.dataset.expSystemReport='1';
@@ -1576,9 +1608,9 @@ const ExtraPotionsTools = (() => {
     }
     return system;
   }
-  function createProductSystem({id,version,timeline,diagnostics,preferences,onReset,notify=()=>{},layout='classic'}) {
+  function createProductSystem({id,version,timeline,diagnostics,preferences,onReset,notify=()=>{},layout='classic',issueSettings}) {
     if(!Object.hasOwn(productRepositories,id))throw new Error('Unknown product');
-    if(layout==='grouped')return groupedProductSystem({id,version,timeline,diagnostics,preferences,onReset,notify});
+    if(layout==='grouped')return groupedProductSystem({id,version,timeline,diagnostics,preferences,onReset,notify,issueSettings});
     const system=document.createElement('div');system.dataset.expProductSystem=id;
     system.style.cssText='display:grid;grid-template-columns:minmax(0,1fr);gap:8px;min-width:0;max-width:100%;overflow-wrap:anywhere';
     const issue=button('Create GitHub Issue',()=>{const link=document.createElement('a');link.href=productIssueUrl(id,version);link.target='_blank';link.rel='noopener noreferrer';link.click();});
@@ -1593,7 +1625,7 @@ const ExtraPotionsTools = (() => {
     for(const [key,node] of [['timeline',timeline],['diagnostics',diagnostics],['issue',issue],['preferences',preferences],['reset',reset]]){node.dataset.expSystemItem=key;node.style.minWidth='0';node.style.maxWidth='100%';const summary=node.tagName==='DETAILS'?node.querySelector(':scope > summary'):null;if(summary)summary.style.cssText+=';min-height:28px;padding:4px 0;box-sizing:border-box;cursor:pointer';system.append(node);}
     return system;
   }
-  return Object.freeze({productIssueUrl,productDataResetting,clearProductData,groupTimelineEntries,createProductTimeline,createProductSystem,placeDonationPanel,createBitcoinDonation,compatibilitySnapshot,createCompatibilityControls,createSuiteSiteControls});
+  return Object.freeze({issueSummary,productIssueUrl,productDataResetting,clearProductData,groupTimelineEntries,createProductTimeline,createProductSystem,placeDonationPanel,createBitcoinDonation,compatibilitySnapshot,createCompatibilityControls,createSuiteSiteControls});
 })();
 
 // Shared ExtraPotions menu categories, submenu behavior, reordering, and visibility.
