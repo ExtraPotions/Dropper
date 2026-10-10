@@ -1378,7 +1378,11 @@
     if (open) {
       collapseToolPanels();
       collapseNestedPanels();
-      ui.shadow.querySelector('.fl-tool-header[data-panel="tdh-drops-body"]')?.click();
+      // Core's section tabs remember the user's last tab under this key; reopen it, else Drops.
+      let remembered = null;
+      try { remembered = localStorage.getItem("exp:suite:menu-tab:dropper"); } catch {}
+      const sectionHeader = (key) => /^[a-z0-9-]+$/.test(key || "") ? ui.shadow.querySelector(`.fl-tool-header[data-panel="${key}"]`) : null;
+      (sectionHeader(remembered) || sectionHeader("tdh-drops-body"))?.click();
     }
     ui.menuController.state(open);
     ui.launcher.setAttribute("aria-expanded", String(open));
