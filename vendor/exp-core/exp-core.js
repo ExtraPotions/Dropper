@@ -1188,6 +1188,85 @@ function createProductLifecycle(shared) {
     };
   }
 
+  // Shadow roots share one constructed sheet per stylesheet text. Paint is probed once per
+  // page: every probe forces a style recalculation of the whole page, which on a site with
+  // thousands of components (Reddit) cost seconds. Later roots only check that their adopted
+  // list took the sheet. A root that edits its style gets its own copy first.
+  const sharedShadowSheets = new Map();
+  // null until the first connected root answers; false sends every later root to the fallback.
+  let shadowAdoptionPaints = null;
+
+  function withoutOne(list, sheet, replacement) {
+    const next = [...list];
+    const index = next.lastIndexOf(sheet);
+    if (index >= 0) { if (replacement) next[index] = replacement; else next.splice(index, 1); }
+    return next;
+  }
+
+  function adoptionPaints(root, Ctor, view) {
+    const token = paintToken();
+    const probe = new Ctor();
+    writeSheet(probe, withPaintProbe('', token), view);
+    setAdopted(root, [...root.adoptedStyleSheets, probe]);
+    try { return sawPaint(token, root); } finally { try { setAdopted(root, withoutOne(root.adoptedStyleSheets, probe)); } catch {} }
+  }
+
+  function adoptShared(root, css) {
+    const view = pageView();
+    const Ctor = view.CSSStyleSheet || (typeof CSSStyleSheet === 'function' ? CSSStyleSheet : null);
+    if (typeof Ctor !== 'function' || !Ctor.prototype.replaceSync) return null;
+    const current = root.adoptedStyleSheets;
+    if (!current || typeof current[Symbol.iterator] !== 'function') return null;
+    if (shadowAdoptionPaints === false) throw new Error('adoptedStyleSheets did not paint');
+    let entry = sharedShadowSheets.get(css);
+    if (!entry) {
+      const created = new Ctor();
+      writeSheet(created, css, view);
+      entry = { sheet: created, users: 0 };
+    }
+    let sheet = entry.sheet;
+    const before = current.length;
+    setAdopted(root, [...current, sheet]);
+    if (root.adoptedStyleSheets.length !== before + 1) {
+      try { setAdopted(root, withoutOne(root.adoptedStyleSheets, sheet)); } catch {}
+      throw new Error('adoptedStyleSheets ignored');
+    }
+    if (shadowAdoptionPaints === null && isConnectedNode(root)) {
+      let painted = false;
+      try { painted = adoptionPaints(root, Ctor, view); } catch {}
+      shadowAdoptionPaints = painted;
+      if (!painted) {
+        try { setAdopted(root, withoutOne(root.adoptedStyleSheets, sheet)); } catch {}
+        throw new Error('adoptedStyleSheets did not paint');
+      }
+    }
+    entry.users += 1;
+    sharedShadowSheets.set(css, entry);
+    let shared = true;
+    const release = () => {
+      if (!shared) return;
+      shared = false;
+      entry.users -= 1;
+      if (entry.users <= 0 && sharedShadowSheets.get(css) === entry) sharedShadowSheets.delete(css);
+    };
+    return {
+      write(text) {
+        if (!shared) { writeSheet(sheet, text, view); return; }
+        const own = new Ctor();
+        writeSheet(own, text, view);
+        const list = [...root.adoptedStyleSheets];
+        // A component that reassigned its list dropped the shared copy; the edit still lands.
+        setAdopted(root, list.includes(sheet) ? withoutOne(list, sheet, own) : [...list, own]);
+        release();
+        sheet = own;
+      },
+      detach() {
+        try { setAdopted(root, withoutOne(root.adoptedStyleSheets, sheet)); } catch {}
+        release();
+      }
+    };
+  }
+
   function injectShadowStyle(root, css, data) {
     const mark = (node) => {
       node.dataset.expOwned = '1';
@@ -1199,7 +1278,7 @@ function createProductLifecycle(shared) {
     // blocks <style>. GM_addElement / GM_addStyle are not used here: managers
     // attach those to the document and leak header/nav/button/* onto the site.
     try {
-      const adopted = adoptConstructable(root, css, root);
+      const adopted = adoptShared(root, css);
       if (adopted) {
         const node = document.createElement('style');
         let current = css;
@@ -2016,7 +2095,7 @@ const ExpMenuPreferences = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.7.7';
+  const version = '3.7.8';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -2846,10 +2925,15 @@ const ExtraPotionsCore = (() => {
     return setPresentationState(target, productId, Object.fromEntries(PRESENTATION_CHANNELS.map(channel => [channel, null])));
   }
 
+  // Only elements carrying the attribute are parsed; closest() skips the rest natively.
+  // Visibility checks call this for every candidate element, so an ancestor-by-ancestor
+  // JSON walk cost seconds on deep pages.
   function presentationStateChain(target) {
     const chain = [];
     let node = target instanceof Element ? target : target?.parentElement;
     while (node instanceof Element) {
+      node = node.closest(PRESENTATION_STATE_SELECTOR);
+      if (!node) break;
       const state = readPresentationState(node);
       if (Object.keys(state).length) chain.push(Object.freeze({ node, state }));
       node = node.parentElement;
@@ -2857,6 +2941,7 @@ const ExtraPotionsCore = (() => {
     return Object.freeze(chain);
   }
 
+  const PRESENTATION_STATE_SELECTOR = '[data-exp-presentation-state]';
   function isPresentationSuppressed(target) {
     for (const entry of presentationStateChain(target)) {
       for (const state of Object.values(entry.state)) {
@@ -2892,11 +2977,29 @@ const ExtraPotionsCore = (() => {
       state.removed += record.removedNodes?.length || 0;
       pending.set(target, state);
     };
+    // Roots are delivered in chunks, each a complete epoch through every phase, and the
+    // event loop gets a turn whenever a task has run past its budget: listeners do real
+    // work per root, and one task holding a whole page's batch froze Reddit for seconds.
+    const CHUNK_ROOTS = 32;
+    const TASK_BUDGET_MS = 8;
     const flush = () => {
       timer = 0;
-      const entries = [...pending.entries()].filter(([target]) => target.isConnected);
-      pending.clear();
-      if (!entries.length) return;
+      const started = performance.now();
+      while (pending.size) {
+        const chunk = [];
+        for (const entry of pending) {
+          pending.delete(entry[0]);
+          if (entry[0].isConnected) chunk.push(entry);
+          if (chunk.length >= CHUNK_ROOTS) break;
+        }
+        if (chunk.length) deliver(chunk);
+        if (pending.size && performance.now() - started >= TASK_BUDGET_MS) {
+          timer = setTimeout(flush, 0);
+          return;
+        }
+      }
+    };
+    const deliver = (entries) => {
       epoch += 1;
       marker.dataset.expPageObserverEpoch = String(epoch);
       const payloads = entries.map(([target, state], index) => [target, JSON.stringify({
