@@ -1650,28 +1650,35 @@ const ExpMenuTabs = (() => {
     [data-exp-section-tabs] .fl-tool-panel{margin:0!important;border:0!important;background:transparent!important}
     [data-exp-section-tabs] .fl-tool-body{padding:0!important}
     .exp-section-tabs{display:flex;gap:2px;margin:0 0 2px;padding:3px;border-radius:9px;background:var(--exp-menu-track,#18181b);min-width:0}
-    .exp-section-tabs>[role=tab]{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:4px;min-width:0;min-height:28px;padding:4px 2px;border:0;border-radius:7px;background:transparent;color:var(--theme-muted);font:500 11.5px/1.2 Inter,"Segoe UI",system-ui,sans-serif;white-space:nowrap;cursor:pointer}
+    .exp-section-tabs>[role=tab]{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:4px;min-width:0;min-height:28px;padding:4px 2px;border:0;border-radius:7px;background:transparent;color:var(--theme-muted);font:500 calc(var(--exp-font-size-small,12px) - .5px)/1.2 Inter,"Segoe UI",system-ui,sans-serif;white-space:nowrap;cursor:pointer}
     .exp-section-tabs>[role=tab]:hover{color:var(--theme-text)}
     .exp-section-tabs>[role=tab][aria-selected=true]{background:var(--theme-line);color:var(--theme-text);box-shadow:inset 0 -2px 0 var(--theme-accent)}
     .exp-section-tabs>[role=tab]:focus-visible{outline:2px solid var(--theme-accent);outline-offset:1px}
     .exp-section-tabs .exp-section-icon{flex:0 0 12px;transform:scale(.8)}
+    .exp-section-tabs .exp-section-icon:not([data-icon]){display:none}
     .exp-section-tabs .exp-section-tab-label{overflow:hidden;text-overflow:ellipsis}
-    .exp-section-tabs[data-compact="1"] .exp-section-tab-label{display:none}
+    .exp-section-tabs[data-compact="1"] .exp-section-icon[data-icon]+.exp-section-tab-label{display:none}
+    @media(forced-colors:active){.exp-section-tabs>[role=tab][aria-selected=true]{border-bottom:2px solid Highlight}}
     [data-exp-section-tabs] details[data-exp-flat]{border:0!important;padding:0!important;margin:0!important;background:transparent!important}
-    [data-exp-section-tabs] details[data-exp-flat]>summary{display:block!important;margin:14px 0 6px!important;padding:0!important;list-style:none!important;color:var(--theme-muted)!important;font:500 11px/1.3 Inter,"Segoe UI",system-ui,sans-serif!important;pointer-events:none!important}
+    [data-exp-section-tabs] details[data-exp-flat]>summary{display:block!important;margin:14px 0 6px!important;padding:0!important;list-style:none!important;color:var(--theme-muted)!important;font:500 calc(var(--exp-font-size-small,12px) - 1px)/1.3 Inter,"Segoe UI",system-ui,sans-serif!important;pointer-events:none!important}
     [data-exp-section-tabs] details[data-exp-flat]>summary::before,[data-exp-section-tabs] details[data-exp-flat]>summary::after{display:none!important}
     [data-exp-section-tabs] details[data-exp-flat]>summary::-webkit-details-marker{display:none}
     /* Each run of visible setting rows is one card: the run's first row opens it, its last row closes it. */
-    ${P} ${V}{margin:0!important;padding:9px 11px!important;border:1px solid var(--theme-line)!important;border-block-width:0!important;border-radius:0!important;background:var(--theme-panel)!important}
+    ${P} ${V}{margin:0!important;padding:9px 11px!important;border:1px solid var(--theme-line)!important;border-block-width:0!important;border-radius:0!important;background:var(--theme-panel)!important;box-shadow:none!important}
     ${P} ${V}:not(${AFTER_ROW}){border-top-width:1px!important;border-top-left-radius:10px!important;border-top-right-radius:10px!important}
     ${P} ${V}:not(${AFTER_ROW}):not(:nth-child(1 of :not([hidden]))){margin-top:6px!important}
     ${P} ${V}${AFTER_ROW}{border-top:1px solid var(--exp-menu-soft,#1c1c1f)!important}
     ${P} ${V}:not(:has(${BEFORE_ROW})){border-bottom-width:1px!important;border-bottom-left-radius:10px!important;border-bottom-right-radius:10px!important}
     ${P} ${V}:not(:has(${BEFORE_ROW})):has(~:not([hidden])){margin-bottom:10px!important}
+    /* A flex or grid gap would open the card between its rows, so a parent of a card with several rows has none.
+       Other children of that parent keep a 6px space; the zero-specificity rule yields to any margin a product sets. */
+    ${P} :has(>${V}${AFTER_ROW}){row-gap:0!important}
+    :where(${P} :has(>${V}${AFTER_ROW})>:not(${R}):not(${R}+*):not(:nth-child(1 of :not([hidden])))){margin-top:6px}
   `;
   const read = key => { try { return localStorage.getItem(key); } catch { return null; } };
   const write = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
   const isOpen = entry => !entry.body.hidden && !entry.body.classList.contains('fl-tool-hidden');
+  const FOCUSABLE = 'a[href],button,input,select,textarea,summary,[tabindex],[contenteditable]';
   let serial = 0;
 
   function mount({ panel, id, entries }) {
@@ -1683,7 +1690,14 @@ const ExpMenuTabs = (() => {
     const list = document.createElement('div');
     list.className = 'exp-section-tabs'; list.dataset.expSectionTabs = '1';
     list.setAttribute('role', 'tablist'); list.setAttribute('aria-label', 'Sections');
-    const saved = new Map();
+    const saved = new Map(), tabStops = new Map();
+    // Hidden headers and flattened group labels are not controls anyone can see; the tabs replace them.
+    function untab(node) { if (!tabStops.has(node)) tabStops.set(node, node.getAttribute('tabindex')); node.setAttribute('tabindex', '-1'); }
+    function retab(node) {
+      if (!tabStops.has(node)) return;
+      const before = tabStops.get(node); tabStops.delete(node);
+      if (before === null) node.removeAttribute('tabindex'); else node.setAttribute('tabindex', before);
+    }
     const tabs = entries.map(entry => {
       const index = ++serial, slug = entry.label.toLowerCase();
       const tab = document.createElement('button');
@@ -1701,7 +1715,7 @@ const ExpMenuTabs = (() => {
       return tab;
     });
     panel.dataset.expSectionTabs = '1';
-    let wasVisible = false, syncing = false, disposed = false, queued = false;
+    let syncing = false, disposed = false, queued = false;
     const visible = () => !panel.hidden && panel.getClientRects().length > 0;
 
     function place() {
@@ -1716,7 +1730,17 @@ const ExpMenuTabs = (() => {
         details.dataset.expFlat = '1';
         if (!details.open) details.open = true;
       }
+      for (const [node] of tabStops) if (node.matches('summary') && !node.matches('details[data-exp-flat]>summary')) retab(node);
+      for (const entry of entries) {
+        entry.header.querySelectorAll(FOCUSABLE).forEach(untab);
+        entry.body.querySelectorAll('details[data-exp-flat]>summary').forEach(untab);
+      }
     }
+    // A flattened group label stays open: clicking it, or Enter or Space on it, does nothing.
+    const guard = event => {
+      const summary = event.target.closest?.('summary');
+      if (summary && summary === event.target.closest(FOCUSABLE) && summary.matches('details[data-exp-flat]>summary')) event.preventDefault();
+    };
     // Tabs shrink with an ellipsis instead of overflowing the row, so a label that no longer
     // fits is the signal to drop to icons.
     function compact() {
@@ -1733,14 +1757,11 @@ const ExpMenuTabs = (() => {
         const nowVisible = visible();
         let active = entries.findIndex(isOpen);
         if (nowVisible) {
-          const remembered = entries.findIndex(entry => entry.key === read(storageKey));
-          // On opening, the remembered tab wins over a product's default first section; a section
-          // the product opened on purpose (anything but the first) is kept.
-          if (!wasVisible && remembered >= 0 && active <= 0 && remembered !== active) open(remembered);
-          else if (active < 0) open(remembered >= 0 ? remembered : 0);
+          // Products close their sections as the menu opens, so the remembered tab is restored then.
+          // A section the product opened itself, the first one included, is kept.
+          if (active < 0) { const remembered = entries.findIndex(entry => entry.key === read(storageKey)); open(remembered >= 0 ? remembered : 0); }
           active = entries.findIndex(isOpen);
         }
-        wasVisible = nowVisible;
         tabs.forEach((tab, i) => { const on = i === active; tab.setAttribute('aria-selected', String(on)); tab.tabIndex = on || (active < 0 && i === 0) ? 0 : -1; });
         flatten();
         if (nowVisible) compact();
@@ -1760,7 +1781,7 @@ const ExpMenuTabs = (() => {
       if (index < 0) return;
       event.preventDefault(); select(index, true);
     };
-    list.addEventListener('click', click); list.addEventListener('keydown', keydown);
+    list.addEventListener('click', click); list.addEventListener('keydown', keydown); panel.addEventListener('click', guard, true);
     const observer = new view.MutationObserver(() => { if (!queued && !disposed) { queued = true; queueMicrotask(() => { queued = false; sync(); }); } });
     observer.observe(panel, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'class', 'aria-expanded', 'open'] });
     const resize = new view.ResizeObserver(() => { if (visible()) compact(); }); resize.observe(panel);
@@ -1770,7 +1791,8 @@ const ExpMenuTabs = (() => {
       select: key => select(entries.findIndex(entry => entry.key === key)),
       destroy() {
         disposed = true; observer.disconnect(); resize.disconnect();
-        list.removeEventListener('click', click); list.removeEventListener('keydown', keydown); list.remove(); style.remove();
+        list.removeEventListener('click', click); list.removeEventListener('keydown', keydown); panel.removeEventListener('click', guard, true); list.remove(); style.remove();
+        for (const [node] of tabStops) retab(node);
         delete panel.dataset.expSectionTabs;
         for (const [entry, before] of saved) {
           for (const [node, name, value] of [[entry.header, 'tabindex', before.tabindex], [entry.header, 'aria-hidden', before.hidden], [entry.body, 'role', before.role], [entry.body, 'aria-labelledby', before.labelledby]]) {
@@ -2112,9 +2134,9 @@ const ExpLeanMenu = (() => {
     [data-exp-menu-layout="lean"] .header-icon .menu-icon{width:30px!important;height:30px!important;object-fit:contain}
     [data-exp-menu-layout="lean"] .header-copy{flex:1;min-width:0;overflow:visible!important}
     [data-exp-menu-layout="lean"] .header-title-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-    [data-exp-menu-layout="lean"] :is(.header-title-row h2,[data-exp-part="title"],#tdh-rail-title){margin:0!important;font-size:14px!important;font-weight:600!important;line-height:1.3!important;letter-spacing:0!important}
-    [data-exp-menu-layout="lean"] :is([data-exp-part="subtitle"],#tdh-rail-subtitle){display:block!important;margin-top:1px!important;color:var(--theme-muted)!important;font-size:11.5px!important;line-height:1.35!important}
-    [data-exp-menu-layout="lean"] :is([data-exp-part="version"],#tdh-header-version){padding:0!important;min-height:0!important;border:0!important;background:transparent!important;color:var(--theme-muted)!important;font-size:11px!important;font-weight:400!important}
+    [data-exp-menu-layout="lean"] :is(.header-title-row h2,[data-exp-part="title"],#tdh-rail-title){margin:0!important;font-size:var(--exp-font-size-body,14px)!important;font-weight:600!important;line-height:1.3!important;letter-spacing:0!important}
+    [data-exp-menu-layout="lean"] :is([data-exp-part="subtitle"],#tdh-rail-subtitle){display:block!important;margin-top:1px!important;color:var(--theme-muted)!important;font-size:calc(var(--exp-font-size-small,12px) - .5px)!important;line-height:1.35!important}
+    [data-exp-menu-layout="lean"] :is([data-exp-part="version"],#tdh-header-version){padding:0!important;min-height:0!important;border:0!important;background:transparent!important;color:var(--theme-muted)!important;font-size:calc(var(--exp-font-size-small,12px) - 1px)!important;font-weight:400!important}
     [data-exp-menu-layout="lean"] .header-actions{display:flex!important;align-items:center!important;gap:6px!important;flex:none}
     [data-exp-menu-layout="lean"] :is(.support-button,[data-exp-part="close"],#tdh-rail-close){display:grid!important;place-items:center!important;flex:none;width:26px!important;height:26px!important;min-width:26px!important;min-height:26px!important;margin:0!important;padding:0!important;border:1px solid var(--theme-line)!important;border-radius:7px!important;background:transparent!important;background-image:none!important;color:var(--theme-muted)!important;box-shadow:none!important}
     [data-exp-menu-layout="lean"] :is(.support-button,[data-exp-part="close"],#tdh-rail-close):hover{color:var(--theme-text)!important;background:var(--exp-menu-hover)!important}
@@ -2133,18 +2155,18 @@ const ExpLeanMenu = (() => {
     [data-exp-menu-layout="lean"] .fl-tool-header:is([aria-expanded=true],:has(.fl-tool-chevron[aria-expanded=true])) .fl-tool-chevron::after{transform:rotate(135deg)}
     [data-exp-menu-layout="lean"] .fl-tool-body{padding:12px 9px 10px!important}
     [data-exp-menu-layout="lean"] .exp-submenu-tablist{display:flex!important;flex-wrap:nowrap!important;overflow-x:auto!important;scrollbar-width:none;gap:14px!important;margin:0 0 2px!important;padding:9px 0 2px!important;border-bottom:1px solid var(--exp-menu-soft)!important}
-    [data-exp-menu-layout="lean"] .exp-submenu-tablist>button{flex:none!important;display:inline-flex!important;align-items:flex-end!important;min-height:28px!important;box-sizing:border-box!important;padding:0 0 7px!important;border:0!important;border-radius:0!important;background:transparent!important;color:var(--theme-muted)!important;font:500 12px/1.3 Inter,"Segoe UI",system-ui,sans-serif!important}
+    [data-exp-menu-layout="lean"] .exp-submenu-tablist>button{flex:none!important;display:inline-flex!important;align-items:flex-end!important;min-height:28px!important;box-sizing:border-box!important;padding:0 0 7px!important;border:0!important;border-radius:0!important;background:transparent!important;color:var(--theme-muted)!important;font:500 var(--exp-font-size-small,12px)/1.3 Inter,"Segoe UI",system-ui,sans-serif!important}
     [data-exp-menu-layout="lean"] .exp-submenu-tablist>button[aria-selected=true]{background:transparent!important;color:var(--theme-text)!important;box-shadow:inset 0 -2px 0 var(--theme-accent)!important}
     [data-exp-menu-layout="lean"] :is(.row,.mini-row,.fl-switch,.setting-row){gap:12px!important;padding:8px 0!important;line-height:1.35!important}
     [data-exp-menu-layout="lean"] :is(.row,.mini-row,.fl-switch,.setting-row)+:is(.row,.mini-row,.fl-switch,.setting-row){border-top:1px solid var(--theme-line)!important}
     [data-exp-menu-layout="lean"] :is(.label,.setting-label,.fl-switch-text,.copy>strong,.row-copy>strong,.mini-row>span){font-weight:500!important;line-height:1.35!important}
     [data-exp-menu-layout="lean"] :is(.copy>.help,.row-copy>small,.help,.row-help,.note,.empty,.meta){line-height:1.4!important;color:var(--theme-muted)!important}
     [data-exp-menu-layout="lean"] :is(.row,.mini-row,.setting-row):has(>select){grid-template-columns:minmax(0,1fr) minmax(104px,.8fr)!important;gap:14px!important}
-    [data-exp-menu-layout="lean"] select{min-height:28px!important;padding:3px 9px!important;border:1px solid var(--theme-line)!important;border-radius:7px!important;background:transparent!important;color:var(--theme-text)!important;font-size:12px!important}
+    [data-exp-menu-layout="lean"] select{min-height:28px!important;padding:3px 9px!important;border:1px solid var(--theme-line)!important;border-radius:7px!important;background:transparent!important;color:var(--theme-text)!important;font-size:var(--exp-font-size-small,12px)!important}
     [data-exp-menu-layout="lean"] :is(.group>h3,.section>h3,.section>h2,.stream-subsection-label){margin:10px 0 4px!important;font-weight:600!important;line-height:1.45!important;color:var(--theme-muted)!important}
     [data-exp-menu-layout="lean"] :is(.group,.section):first-child>h3{margin-top:0!important}
     /* Core's own header and chrome buttons carry data-exp-part and keep their styling. */
-    [data-exp-menu-layout="lean"] :is(.life-btn,.action,.secondary,.primary,.compact):not([data-exp-part]){min-height:32px!important;padding:6px 10px!important;border:1px solid var(--theme-line)!important;border-radius:8px!important;background:transparent!important;color:var(--theme-text)!important;font:500 12px/1.3 Inter,"Segoe UI",system-ui,sans-serif!important}
+    [data-exp-menu-layout="lean"] :is(.life-btn,.action,.secondary,.primary,.compact):not([data-exp-part]){min-height:32px!important;padding:6px 10px!important;border:1px solid var(--theme-line)!important;border-radius:8px!important;background:transparent!important;color:var(--theme-text)!important;font:500 var(--exp-font-size-small,12px)/1.3 Inter,"Segoe UI",system-ui,sans-serif!important}
     [data-exp-menu-layout="lean"] [data-exp-primary="1"]:not([data-exp-part]){border-color:var(--theme-accent)!important;background:var(--theme-accent)!important;color:#09090b!important;font-weight:600!important}
     [data-exp-menu-layout="lean"] [data-exp-destructive="1"]:not([data-exp-part]){border-color:#f87171!important;color:#fca5a5!important;background:transparent!important}
     [data-exp-menu-layout="lean"] :is(.button-grid,.actions,.profile-actions,.menu-footer,.diagnostics-controls>div,.rules-transfer){gap:7px!important}
@@ -2194,7 +2216,7 @@ const ExpLeanMenu = (() => {
     [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=bag]::before{inset:4px 1px 0;border:1.5px solid currentColor;border-radius:2px}
     [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=bag]::after{left:5px;top:0;width:6px;height:7px;border:1.5px solid currentColor;border-bottom:0;border-radius:3px 3px 0 0}
     [data-exp-menu-layout="lean"][data-exp-menu-status] :is([data-exp-part="subtitle"],#tdh-rail-subtitle){display:none!important}
-    [data-exp-menu-layout="lean"] [data-exp-part="status"]{display:flex;align-items:center;gap:6px;margin-top:1px;color:var(--theme-muted);font-size:11.5px;line-height:1.35}
+    [data-exp-menu-layout="lean"] [data-exp-part="status"]{display:flex;align-items:center;gap:6px;margin-top:1px;color:var(--theme-muted);font-size:calc(var(--exp-font-size-small,12px) - .5px);line-height:1.35}
     [data-exp-menu-layout="lean"] .exp-status-dot{flex:none;width:6px;height:6px;border-radius:50%;background:#a1a1aa}
     [data-exp-menu-layout="lean"] .exp-status-dot[data-state=working]{background:#4ade80}
     [data-exp-menu-layout="lean"] .exp-status-dot:is([data-state=waiting],[data-state=paused]){background:#fbbf24}
@@ -2204,7 +2226,7 @@ const ExpLeanMenu = (() => {
     [data-ui-theme="contrast"] [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]::after{background:#000!important}
     @media(max-height:400px){[data-exp-menu-layout="lean"] .exp-menu-footer{padding-block:6px;margin-top:4px}[data-exp-menu-layout="lean"] .fl-tool-body{padding-bottom:4px!important}}
     @media(pointer:coarse){[data-exp-menu-layout="lean"] .exp-submenu-tablist>button{min-height:44px!important}}
-    @media(forced-colors:active){[data-exp-menu-layout="lean"] .toggleSwitch{border:1px solid ButtonText!important;background:Canvas!important}[data-exp-menu-layout="lean"] .toggleSwitch::after{background:ButtonText!important}[data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true],:is(.exp-core-theme,.cluster)[data-theme-skin][data-ui-theme] [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]{background:Highlight!important}[data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]::after{background:HighlightText!important}}
+    @media(forced-colors:active){[data-exp-menu-layout="lean"] .toggleSwitch{border:1px solid ButtonText!important;background:Canvas!important}[data-exp-menu-layout="lean"] .toggleSwitch::after{background:ButtonText!important}[data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true],:is(.exp-core-theme,.cluster)[data-theme-skin][data-ui-theme] [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]{background:Highlight!important}[data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]::after{background:HighlightText!important}[data-exp-menu-layout="lean"] .exp-submenu-tablist>button[aria-selected=true]{border-bottom:2px solid Highlight!important}}
   `;
   // Products register how to read their health; the header shows it in place of the tagline.
   const statusSources=new Map(),statusPanels=new Map();
@@ -2242,16 +2264,30 @@ const ExpLeanMenu = (() => {
       const copy=panel.querySelector('.header-copy');
       if(!copy){delete panel.dataset.expMenuStatus;status.remove();return;}
       if(!copy.contains(status))copy.append(status);
-      panel.dataset.expMenuStatus='1';const ticket=++statusTicket;
+      if(panel.dataset.expMenuStatus!=='1')panel.dataset.expMenuStatus='1';const ticket=++statusTicket;
       let value=null;try{value=await source();}catch{}
       if(ticket!==statusTicket)return;
       const health=ExpHealthSummary.normalizeHealth(value);
-      dot.dataset.state=health.state;statusText.textContent=health.label;
+      // Unchanged values are not written again, so observers and screen readers are not woken every poll.
+      if(dot.dataset.state!==health.state)dot.dataset.state=health.state;
+      if(statusText.textContent!==health.label)statusText.textContent=health.label;
     }
     if(!statusPanels.has(id))statusPanels.set(id,new Set());statusPanels.get(id).add(refreshStatus);
-    const visibility=new MutationObserver(()=>{clearInterval(statusTimer);statusTimer=0;if(!panel.hidden){refreshStatus();statusTimer=setInterval(refreshStatus,10000);}});
-    visibility.observe(panel,{attributes:true,attributeFilter:['hidden']});
-    refreshStatus();if(!panel.hidden)statusTimer=setInterval(refreshStatus,10000);
+    // Polls only while the menu is on screen. Products show it by the hidden attribute, a class (Dropper's
+    // dock, WARD's shell) or an ancestor; the resize observer sees the panel gain or lose its box.
+    const shown=()=>!panel.hidden&&panel.getClientRects().length>0;
+    let statusShown=shown();
+    // A product that hides and shows the panel in one task leaves no hidden state to observe;
+    // the hidden attribute's old value still says the menu was reopened.
+    function followVisibility(reopened=false){
+      const now=shown();if(now===statusShown&&!(now&&reopened))return;statusShown=now;
+      clearInterval(statusTimer);statusTimer=0;
+      if(now){refreshStatus();statusTimer=setInterval(refreshStatus,10000);}
+    }
+    const visibility=new MutationObserver(records=>followVisibility(records.some(record=>record.attributeName==='hidden'&&record.oldValue!==null)));
+    visibility.observe(panel,{attributes:true,attributeOldValue:true,attributeFilter:['hidden','class','style']});
+    const visibilityResize=new ResizeObserver(()=>followVisibility());visibilityResize.observe(panel);
+    refreshStatus();if(statusShown)statusTimer=setInterval(refreshStatus,10000);
     const icons=new Set();
     function decorate(){
       for(const header of panel.querySelectorAll('.fl-tool-header')){
@@ -2263,7 +2299,7 @@ const ExpLeanMenu = (() => {
       }
     }
     decorate();const observer=new MutationObserver(decorate);observer.observe(panel,{childList:true,subtree:true});
-    return ()=>{visibility.disconnect();clearInterval(statusTimer);statusPanels.get(id)?.delete(refreshStatus);status.remove();delete panel.dataset.expMenuStatus;themeObserver.disconnect();observer.disconnect();icons.forEach(icon=>icon.remove());style.remove();for(const[key,[value,priority]]of saved){if(value)panel.style.setProperty(key,value,priority);else panel.style.removeProperty(key);}delete panel.dataset.expMenuLayout;};
+    return ()=>{visibility.disconnect();visibilityResize.disconnect();clearInterval(statusTimer);statusPanels.get(id)?.delete(refreshStatus);status.remove();delete panel.dataset.expMenuStatus;themeObserver.disconnect();observer.disconnect();icons.forEach(icon=>icon.remove());style.remove();for(const[key,[value,priority]]of saved){if(value)panel.style.setProperty(key,value,priority);else panel.style.removeProperty(key);}delete panel.dataset.expMenuLayout;};
   }
   return Object.freeze({mount,setMenuStatus});
 })();

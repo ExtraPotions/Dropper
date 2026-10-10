@@ -1,3 +1,8 @@
+## 3.4.29 — 2026-10-10
+
+- Redesigned menu with tabs and a cleaner look.
+- Shows a live status line in the menu header.
+
 ## 3.4.28 — 2026-10-10
 
 - Shows drop progress under the menu header instead of inside Drops.
