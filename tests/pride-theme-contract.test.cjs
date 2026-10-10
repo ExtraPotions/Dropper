@@ -88,22 +88,24 @@ test(`Badge Only keeps progress in the menu at ${viewport.width}px with a ${anch
       const shadow = document.getElementById('tdh-root').shadowRoot;
       shadow.querySelector('[data-panel="tdh-progress-body"]').click();
       shadow.getElementById('tdh-badge-only').click();
-      shadow.querySelector('[data-panel="tdh-drops-body"]').click();
+      shadow.querySelector('[data-panel="tdh-progress-body"]').click();
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const slot = shadow.getElementById('tdh-badge-only-progress-slot');
       const card = shadow.getElementById('tdh-drop-card');
       const dropsBody = shadow.getElementById('tdh-drops-body');
       const launcher = shadow.getElementById('tdh-settings-launcher');
       const cardBox=card.getBoundingClientRect(),slotBox=slot.getBoundingClientRect();
-      const headerBox=shadow.querySelector('[data-panel="tdh-drops-body"]').getBoundingClientRect();
+      const headerBox=shadow.querySelector('.menu-head').getBoundingClientRect();
+      const dropsBox=shadow.querySelector('[data-panel="tdh-drops-body"]').getBoundingClientRect();
       return {
         inFlow:getComputedStyle(card).position === 'relative',
         insideSlot:cardBox.top>=slotBox.top && cardBox.bottom<=slotBox.bottom+1 && cardBox.left>=slotBox.left && cardBox.right<=slotBox.right+1,
         belowHeader:cardBox.top>=headerBox.bottom-1,
+        aboveDrops:cardBox.bottom<=dropsBox.top+1,
 
         parent: card.parentElement.id,
         slotParent: slot.parentElement.id,
-        slotAboveTabs: slot.nextElementSibling?.hasAttribute('data-exp-submenu-tabs') === true,
+        slotAfterHeader: slot.previousElementSibling?.classList.contains('header-divider') === true,
         slotInsideDrops: dropsBody.contains(slot),
         presentation: card.dataset.presentation,
         slotHidden: slot.hidden,
@@ -112,11 +114,11 @@ test(`Badge Only keeps progress in the menu at ${viewport.width}px with a ${anch
       };
     });
     assert.deepEqual(facts, {
-      inFlow:true, insideSlot:true, belowHeader:true,
+      inFlow:true, insideSlot:true, belowHeader:true, aboveDrops:true,
       parent: 'tdh-badge-only-progress-slot',
-      slotParent: 'tdh-drops-body',
-      slotAboveTabs: true,
-      slotInsideDrops: true,
+      slotParent: 'tdh-tools-dock',
+      slotAfterHeader: true,
+      slotInsideDrops: false,
       presentation: 'menu-card',
       slotHidden: false,
       cardVisible: true,

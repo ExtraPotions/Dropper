@@ -138,7 +138,9 @@ test('progress visibility preserves the badge-only controls', () => {
   assert.match(source, /const rowWidth = pageCardShown \? panelWidth \+ rowGap \+ launcherWidth : launcherWidth;/u);
   assert.match(source, /\.progress-stack\.badge-only \.badge-row \{ justify-content:flex-end; min-height:48px!important; \}/u);
   assert.match(source, /id="tdh-badge-only-progress-slot"[^>]*hidden/u);
-  assert.match(source, /id="tdh-drops-body">\s*<div class="badge-only-progress-slot"/u);
+  // The menu card sits under the header, outside every section.
+  assert.match(source, /<div class="header-divider"><\/div>\s*<div class="badge-only-progress-slot"/u);
+  assert.doesNotMatch(source, /id="tdh-drops-body">\s*<div class="badge-only-progress-slot"/u);
   assert.match(source, /function syncProgressPanelPlacement\(\)/u);
   assert.match(source, /menuSlot\.append\(card\)/u);
   assert.match(source, /badgeRow\.insertBefore\(card, ui\.launcher\)/u);
