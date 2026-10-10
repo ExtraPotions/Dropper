@@ -826,7 +826,8 @@
     // you set with the arrows; under any other Campaign Order it is the order that strategy produces.
     const strategy = normalizedCampaignStrategy();
     const manualOrder = strategy === 'priority';
-    const queueOrder = manualOrder ? [] : campaignQueueGameOrder(now);
+    const pickOrder = campaignQueueGameOrder(now);
+    const queueOrder = manualOrder ? [] : pickOrder;
     const position = (order, item) => {
       const index = order.indexOf(normalizeGameName(item.game));
       return index < 0 ? Number.MAX_SAFE_INTEGER : index;
@@ -839,7 +840,7 @@
       return position(visiblePriorityOrder, a) - position(visiblePriorityOrder, b);
     });
     const watchingKey = normalizeGameName(currentDrop?.game || '');
-    const nextKey = campaignQueueGameOrder(now).find(key => key !== watchingKey) || '';
+    const nextKey = pickOrder.find(key => key !== watchingKey) || '';
     const orderNote = ui.shadow.getElementById('tdh-campaign-order-note');
     if (orderNote) {
       orderNote.textContent = manualOrder

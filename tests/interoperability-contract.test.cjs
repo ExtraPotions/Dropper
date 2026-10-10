@@ -25,9 +25,13 @@ test('generated Dropper userscript keeps the same Core-owned interoperability bo
 
 test('Dropper publishes compact non-identifying suite state', () => {
   const source = read('src/dropper.user.js');
-  assert.match(source, /publishSuiteState\?\.\("dropper", "dropper\.state-changed"/u);
+  assert.match(source, /ExtraPotionsCore\.publishSuiteState\("dropper", "dropper\.state-changed"/u);
   assert.match(source, /activeReward/u);
   assert.match(source, /progressPercent/u);
   assert.match(source, /routingState/u);
-  assert.doesNotMatch(source.slice(source.indexOf('publishSuiteState?.("dropper"'), source.indexOf('refreshOpenCampaignList();', source.indexOf('publishSuiteState?.("dropper"'))), /streamer|login|rewardName|title|account/i);
+  assert.doesNotMatch(source.slice(source.indexOf('publishSuiteState("dropper"'), source.indexOf('refreshOpenCampaignList();', source.indexOf('publishSuiteState("dropper"'))), /streamer|login|rewardName|title|account/i);
+});
+
+test('Dropper reaches Core through the bundle-local binding, never an unassigned global', () => {
+  assert.doesNotMatch(read('src/dropper.user.js'), /globalThis\.ExtraPotionsCore/u);
 });

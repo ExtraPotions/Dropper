@@ -711,8 +711,8 @@
     }
   }
 
-  function campaignPriorityEntry(game) {
-    const key = scopedLocalStorageKey(CAMPAIGN_PRIORITY_KEY) + ':' + encodeURIComponent(normalizeGameName(game));
+  function campaignPriorityEntry(game, baseKey = scopedLocalStorageKey(CAMPAIGN_PRIORITY_KEY)) {
+    const key = baseKey + ':' + encodeURIComponent(normalizeGameName(game));
     try {
       const raw = localStorage.getItem(key);
       if (raw == null) return { value: 0, explicit: false, key };
@@ -738,25 +738,31 @@
     const keyed = new Map((openGames || []).map(item => [normalizeGameName(item.game), item]).filter(([key]) => key));
     const existing = readCampaignPriorityOrder();
     const missing = [...keyed.keys()].filter(key => !existing.includes(key));
+    const baseKey = scopedLocalStorageKey(CAMPAIGN_PRIORITY_KEY);
     missing.sort((left, right) => {
-      const a = campaignPriorityEntry(keyed.get(left)?.game).value;
-      const b = campaignPriorityEntry(keyed.get(right)?.game).value;
+      const a = campaignPriorityEntry(keyed.get(left)?.game, baseKey).value;
+      const b = campaignPriorityEntry(keyed.get(right)?.game, baseKey).value;
       return b - a;
     });
     const next = [...existing, ...missing].slice(0, 250);
     if (JSON.stringify(next) !== JSON.stringify(existing)) writeCampaignPriorityOrder(next);
     return next;
   }
-  function campaignPriorityRank(game) {
+  function campaignPriorityRank(game, order = readCampaignPriorityOrder(), legacyBaseKey) {
     const key = normalizeGameName(game);
-    const order = readCampaignPriorityOrder();
     const index = order.indexOf(key);
     if (index >= 0) return { rank: index + 1, score: 1000 - index, explicit: true, source: 'ranked' };
-    const legacy = campaignPriorityEntry(game);
+    const legacy = campaignPriorityEntry(game, legacyBaseKey);
     return { rank: null, score: legacy.value, explicit: legacy.explicit, source: legacy.explicit ? 'legacy' : 'default' };
   }
   function campaignPriority(game) {
     return campaignPriorityRank(game).score;
+  }
+  // Ranking scores every open campaign; read the stored order and the account key (a cookie read) once per pass.
+  function campaignPriorityScorer() {
+    const order = readCampaignPriorityOrder();
+    const legacyBaseKey = scopedLocalStorageKey(CAMPAIGN_PRIORITY_KEY);
+    return game => campaignPriorityRank(game, order, legacyBaseKey).score;
   }
   function setCampaignPriority(game, priority) {
     if (productResetting) return;
@@ -799,7 +805,7 @@
 
   function rankCampaignCandidatesForStrategy(candidates, now = Date.now()) {
     const base = DropperActiveViewing.rankCampaignCandidates(candidates, {
-      priorityOf: campaignPriority,
+      priorityOf: campaignPriorityScorer(),
       now,
       activeGame: currentDrop?.game || '',
     });

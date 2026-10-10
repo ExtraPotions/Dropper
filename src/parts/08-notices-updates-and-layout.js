@@ -1405,7 +1405,7 @@
 
     layoutChrome();
     requestAnimationFrame(layoutChrome);
-    if (focus && open && !globalThis.ExtraPotionsCore?.focusMenuSurface?.(ui.dock)) {
+    if (focus && open && !ExtraPotionsCore.focusMenuSurface(ui.dock)) {
       ui.dock.tabIndex = -1;
       ui.dock.focus({ preventScroll: true });
     }
