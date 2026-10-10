@@ -1,3 +1,8 @@
+## 3.4.30 — 2026-10-10 (quiet)
+
+- Reopens the menu on the last tab you chose.
+- Opens on Drops when no tab was chosen before.
+
 ## 3.4.29 — 2026-10-10
 
 - Redesigned menu with tabs and a cleaner look.

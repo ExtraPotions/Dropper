@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.29
+// @version      3.4.30
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.29";
+  const APP_VERSION = "3.4.30";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -210,8 +210,9 @@
   const UPDATE_RETURN_DELAY_MS = 3 * 1000;
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
-  const QUIET_RELEASES = Object.freeze(["3.4.27","3.4.26"]);
+  const QUIET_RELEASES = Object.freeze(["3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.30": ["Reopens the menu on the last tab you chose.","Opens on Drops when no tab was chosen before."],
     "3.4.29": ["Redesigned menu with tabs and a cleaner look.","Shows a live status line in the menu header."],
     "3.4.28": ["Shows drop progress under the menu header instead of inside Drops.","Report a Problem fills in the GitHub issue with a short summary and copies the full diagnostics.","Removes the menu footer."],
     "3.4.27": ["Ranks campaigns with fewer storage reads.","Includes the faster shared ExtraPotions core."],
