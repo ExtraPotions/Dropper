@@ -1655,11 +1655,13 @@ const ExpMenuTabs = (() => {
     [data-exp-section-tabs] details[data-exp-flat]>summary{display:block!important;margin:14px 0 6px!important;padding:0!important;list-style:none!important;color:var(--theme-muted)!important;font:500 11px/1.3 Inter,"Segoe UI",system-ui,sans-serif!important;pointer-events:none!important}
     [data-exp-section-tabs] details[data-exp-flat]>summary::before,[data-exp-section-tabs] details[data-exp-flat]>summary::after{display:none!important}
     [data-exp-section-tabs] details[data-exp-flat]>summary::-webkit-details-marker{display:none}
-    [data-exp-section-tabs] details[data-exp-flat]>:not(summary){margin:0!important;border:1px solid var(--theme-line)!important;border-top-width:0!important;border-radius:0!important;background:var(--theme-panel)!important}
-    [data-exp-section-tabs] details[data-exp-flat]>summary+*{border-top-width:1px!important;border-top-left-radius:10px!important;border-top-right-radius:10px!important}
-    [data-exp-section-tabs] details[data-exp-flat]>:not(summary):last-child{border-bottom-left-radius:10px!important;border-bottom-right-radius:10px!important}
-    [data-exp-section-tabs] details[data-exp-flat]>:not(summary)+:not(summary){border-top:1px solid var(--exp-menu-soft,#1c1c1f)!important}
-    [data-exp-section-tabs] details[data-exp-flat]>:is(.row,.mini-row,.fl-switch,.setting-row){padding:9px 11px!important}
+    /* Each run of consecutive setting rows is one card: the run's first row opens it, its last row closes it. */
+    [data-exp-section-tabs][data-exp-section-tabs] :is(.row,.mini-row,.fl-switch,.setting-row){margin:0!important;padding:9px 11px!important;border:1px solid var(--theme-line)!important;border-block-width:0!important;border-radius:0!important;background:var(--theme-panel)!important}
+    [data-exp-section-tabs][data-exp-section-tabs] :is(.row,.mini-row,.fl-switch,.setting-row):not(:is(.row,.mini-row,.fl-switch,.setting-row)+*){border-top-width:1px!important;border-top-left-radius:10px!important;border-top-right-radius:10px!important}
+    [data-exp-section-tabs][data-exp-section-tabs] :is(.row,.mini-row,.fl-switch,.setting-row):not(:is(.row,.mini-row,.fl-switch,.setting-row)+*):not(:first-child){margin-top:6px!important}
+    [data-exp-section-tabs][data-exp-section-tabs] :is(.row,.mini-row,.fl-switch,.setting-row)+:is(.row,.mini-row,.fl-switch,.setting-row){border-top:1px solid var(--exp-menu-soft,#1c1c1f)!important}
+    [data-exp-section-tabs][data-exp-section-tabs] :is(.row,.mini-row,.fl-switch,.setting-row):not(:has(+:is(.row,.mini-row,.fl-switch,.setting-row))){border-bottom-width:1px!important;border-bottom-left-radius:10px!important;border-bottom-right-radius:10px!important}
+    [data-exp-section-tabs][data-exp-section-tabs] :is(.row,.mini-row,.fl-switch,.setting-row):not(:has(+:is(.row,.mini-row,.fl-switch,.setting-row))):has(+*){margin-bottom:10px!important}
   `;
   const read = key => { try { return localStorage.getItem(key); } catch { return null; } };
   const write = (key, value) => { try { localStorage.setItem(key, value); } catch {} };

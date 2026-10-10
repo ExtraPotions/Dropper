@@ -177,13 +177,13 @@
       "rootId": "exp-prisma-root"
     }
   },
-  "bundleSha256": "392bc86429ad13647bb00afb18561197eb042a6e307a602cb3a95679f09cbc25",
+  "bundleSha256": "be28dc8eb6c679c6c3801044451937949aca49f74d56581b0f2f484cf90b1689",
   "files": {
     "foundation.js": "2b91c99fbc11c1dcac6daf1414acb402e824ba39650549775cdfc7bb404ba341",
     "diagnostic-report.js": "ffc3e1b8d66381dbe9a79a1632affb0fbc1f724c168a986502a01e642e5dcd89",
     "lifecycle.js": "fc7d4e72f5edc54e5b9edce2578125d8091c207467d606260d4e9204b4c4712d",
     "product-tools.js": "4dc80acb5b3c91a78b3854f29fb6655cda7ff52784edbabbc9a6f5903e0bb803",
-    "menu-tabs.js": "cfa26d041b5fe6e19fe55d83681fad9e0aa096afc847bd289ab17969d4725ea6",
+    "menu-tabs.js": "e7fd5638a0f43bd6309c211fa59ef0cd08396270cf2854f0f0a89d4586f28adc",
     "menu-arrangement.js": "941fa7e11011bfedce2d2ec6a06825f6115a926481e538b8198b73cd34beae86",
     "health-summary.js": "dccf0a557e5dff4e91199346b53deee65fd4165e4d8fd7bb04a6c5dcd88236eb",
     "recovery-control.js": "c9f1b6383ffda72235ca59bca1a1308bfad5b3fb6552f7ba4305795bfcbdf2af",
