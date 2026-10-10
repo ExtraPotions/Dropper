@@ -1637,6 +1637,12 @@ const ExpMenuTabs = (() => {
   // Disclosures that are inline controls, not groups, stay collapsible.
   // Products use data-exp-collapsible for groups that build expensive content when opened.
   const KEEP_COLLAPSIBLE = '.eligibility-chip,[data-shift-appearance-explanation],[data-exp-tab-item],[data-exp-collapsible]';
+  // Setting rows for the cards. Rows with the hidden attribute are skipped when finding where a run
+  // starts and ends; selectors cannot skip an unbounded number, so up to three hidden rows in a row are bridged.
+  const P = '[data-exp-section-tabs][data-exp-section-tabs]', R = ':is(.row,.mini-row,.fl-switch,.setting-row)';
+  const V = R + ':not([hidden])', H = R + '[hidden]', HIDDEN = [0, 1, 2, 3].map(n => Array(n).fill(H));
+  const AFTER_ROW = ':is(' + HIDDEN.map(h => [V, ...h, '*'].join('+')).join(',') + ')';
+  const BEFORE_ROW = HIDDEN.map(h => ['', ...h, V].join('+')).join(',');
   // The doubled attribute outranks Core's content-driven `:host(...) :is(.fl-tool-header,...)` rule,
   // which would otherwise give the hidden headers their full height back.
   const css = `
@@ -1655,13 +1661,13 @@ const ExpMenuTabs = (() => {
     [data-exp-section-tabs] details[data-exp-flat]>summary{display:block!important;margin:14px 0 6px!important;padding:0!important;list-style:none!important;color:var(--theme-muted)!important;font:500 11px/1.3 Inter,"Segoe UI",system-ui,sans-serif!important;pointer-events:none!important}
     [data-exp-section-tabs] details[data-exp-flat]>summary::before,[data-exp-section-tabs] details[data-exp-flat]>summary::after{display:none!important}
     [data-exp-section-tabs] details[data-exp-flat]>summary::-webkit-details-marker{display:none}
-    /* Each run of consecutive setting rows is one card: the run's first row opens it, its last row closes it. */
-    [data-exp-section-tabs][data-exp-section-tabs] :is(.row,.mini-row,.fl-switch,.setting-row){margin:0!important;padding:9px 11px!important;border:1px solid var(--theme-line)!important;border-block-width:0!important;border-radius:0!important;background:var(--theme-panel)!important}
-    [data-exp-section-tabs][data-exp-section-tabs] :is(.row,.mini-row,.fl-switch,.setting-row):not(:is(.row,.mini-row,.fl-switch,.setting-row)+*){border-top-width:1px!important;border-top-left-radius:10px!important;border-top-right-radius:10px!important}
-    [data-exp-section-tabs][data-exp-section-tabs] :is(.row,.mini-row,.fl-switch,.setting-row):not(:is(.row,.mini-row,.fl-switch,.setting-row)+*):not(:first-child){margin-top:6px!important}
-    [data-exp-section-tabs][data-exp-section-tabs] :is(.row,.mini-row,.fl-switch,.setting-row)+:is(.row,.mini-row,.fl-switch,.setting-row){border-top:1px solid var(--exp-menu-soft,#1c1c1f)!important}
-    [data-exp-section-tabs][data-exp-section-tabs] :is(.row,.mini-row,.fl-switch,.setting-row):not(:has(+:is(.row,.mini-row,.fl-switch,.setting-row))){border-bottom-width:1px!important;border-bottom-left-radius:10px!important;border-bottom-right-radius:10px!important}
-    [data-exp-section-tabs][data-exp-section-tabs] :is(.row,.mini-row,.fl-switch,.setting-row):not(:has(+:is(.row,.mini-row,.fl-switch,.setting-row))):has(+*){margin-bottom:10px!important}
+    /* Each run of visible setting rows is one card: the run's first row opens it, its last row closes it. */
+    ${P} ${V}{margin:0!important;padding:9px 11px!important;border:1px solid var(--theme-line)!important;border-block-width:0!important;border-radius:0!important;background:var(--theme-panel)!important}
+    ${P} ${V}:not(${AFTER_ROW}){border-top-width:1px!important;border-top-left-radius:10px!important;border-top-right-radius:10px!important}
+    ${P} ${V}:not(${AFTER_ROW}):not(:nth-child(1 of :not([hidden]))){margin-top:6px!important}
+    ${P} ${V}${AFTER_ROW}{border-top:1px solid var(--exp-menu-soft,#1c1c1f)!important}
+    ${P} ${V}:not(:has(${BEFORE_ROW})){border-bottom-width:1px!important;border-bottom-left-radius:10px!important;border-bottom-right-radius:10px!important}
+    ${P} ${V}:not(:has(${BEFORE_ROW})):has(~:not([hidden])){margin-bottom:10px!important}
   `;
   const read = key => { try { return localStorage.getItem(key); } catch { return null; } };
   const write = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
