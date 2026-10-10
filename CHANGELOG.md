@@ -1,3 +1,10 @@
+## 3.4.31 — 2026-10-10
+
+- Updates the shared foundation to exp-core 3.8.1.
+- Rebuilds shared UI, launcher, diagnostics, notices, and coordination from the pinned Core release.
+- Leaves Dropper Twitch routing, campaign, claim, and playback behavior unchanged.
+- Keeps the standalone userscript distribution while Core remains the single shared source.
+
 ## 3.4.30 — 2026-10-10 (quiet)
 
 - Reopens the menu on the last tab you chose.

@@ -737,6 +737,50 @@ const ExtraPotionsDiagnostics = (() => {
       status: conflicts.length ? 'conflicts-detected' : 'no-conflicts-observed',
       limitations: ['Disabled products and products outside their match rules cannot be enumerated.', 'Only reported registrations, protocol mismatches, duplicate instances and observable launcher overlap are checked.'] };
   }
+  // Diagnostics: the hardest-to-read text on screen and what covers the page, so a washed-out site can be
+  // diagnosed from a copied report. Records colors and element names only, never page text.
+  function readabilityScan({limit=25,budget=6000}={}){
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const context=canvas.getContext('2d',{willReadFrequently:true});
+    const rgba=color=>{context.clearRect(0,0,1,1);context.fillStyle='#000';context.fillStyle=color;context.fillRect(0,0,1,1);return [...context.getImageData(0,0,1,1).data].map(n=>n/255);};
+    const channel=v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4,luminance=c=>.2126*channel(c[0])+.7152*channel(c[1])+.0722*channel(c[2]);
+    const up=node=>node.parentElement||node.getRootNode?.().host||null;
+    const css=color=>'rgb('+color.slice(0,3).map(v=>Math.round(v*255)).join(', ')+')';
+    const name=node=>({tag:node.tagName.toLowerCase(),id:node.id?String(node.id).slice(0,40):'',cls:String(node.className?.baseVal??node.className??'').slice(0,80),host:node.getRootNode?.().host?.tagName.toLowerCase()||''});
+    const backdrop=node=>{const layers=[];for(let n=node;n;n=up(n)){const c=rgba(getComputedStyle(n).backgroundColor);if(c[3]>0)layers.push(c);if(c[3]>=.99)break;}return layers.reduceRight((base,c)=>base.map((v,i)=>c[i]*c[3]+v*(1-c[3])),[1,1,1]);};
+    const nodes=[];const walk=root=>{for(const node of root.querySelectorAll('*')){if(nodes.length>=budget)return;if(node.closest('[data-exp-owned="1"]')||node.id?.startsWith('exp-'))continue;nodes.push(node);if(node.shadowRoot)walk(node.shadowRoot);}};
+    walk(document);
+    const rows=[];
+    for(const node of nodes){
+      const text=[...node.childNodes].reduce((sum,child)=>sum+(child.nodeType===3?child.textContent.trim().length:0),0);
+      if(!text)continue;
+      const box=node.getBoundingClientRect();
+      if(!box.width||!box.height||box.bottom<0||box.top>innerHeight*2)continue;
+      const style=getComputedStyle(node),fg=rgba(style.color),bg=backdrop(node),mixed=fg.slice(0,3).map((v,i)=>v*fg[3]+bg[i]*(1-fg[3]));
+      const a=luminance(mixed),b=luminance(bg);
+      rows.push({ratio:Math.round((Math.max(a,b)+.05)/(Math.min(a,b)+.05)*100)/100,...name(node),textLength:text,color:style.color,background:css(bg),opacity:style.opacity,
+        ...(style.filter!=='none'?{filter:style.filter}:{}),...(node.closest('[data-exp-shift-preserve]')?{preserved:true}:{}),...(node.hasAttribute('data-exp-shift-live')?{repaired:true}:{})});
+    }
+    rows.sort((x,y)=>x.ratio-y.ratio);
+    const layer=node=>{const style=getComputedStyle(node);return {...name(node),background:style.backgroundColor,opacity:style.opacity,position:style.position,...(style.filter!=='none'?{filter:style.filter}:{}),...(style.backdropFilter&&style.backdropFilter!=='none'?{backdropFilter:style.backdropFilter}:{}),...(style.mixBlendMode!=='normal'?{blend:style.mixBlendMode}:{})};};
+    const points=[[.5,.4],[.1,.4],[.5,.85]].map(([x,y])=>{
+      const px=Math.round(innerWidth*x),py=Math.round(innerHeight*y);
+      const stack=document.elementsFromPoint(px,py).filter(node=>!node.closest('[data-exp-owned="1"]')).slice(0,6).map(layer);
+      let root=document,deepest=null;for(let i=0;i<20;i++){const hit=root.elementFromPoint(px,py);if(!hit||hit===deepest)break;deepest=hit;if(!hit.shadowRoot)break;root=hit.shadowRoot;}
+      const chain=[];for(let n=deepest;n&&chain.length<10;n=up(n))chain.push(layer(n));
+      return {x:px,y:py,stack,chain};
+    });
+    // Click-through layers (pointer-events:none) never show up at a point, so list large painted layers too.
+    const overlays=[];
+    for(const node of nodes){
+      if(overlays.length>=8)break;
+      const style=getComputedStyle(node);if(style.position!=='fixed'&&style.position!=='absolute'&&style.position!=='sticky')continue;
+      const box=node.getBoundingClientRect(),area=Math.max(0,Math.min(box.right,innerWidth)-Math.max(box.left,0))*Math.max(0,Math.min(box.bottom,innerHeight)-Math.max(box.top,0));
+      if(area<innerWidth*innerHeight*.5)continue;
+      const painted=rgba(style.backgroundColor)[3]>0||style.filter!=='none'||(style.backdropFilter&&style.backdropFilter!=='none')||style.mixBlendMode!=='normal';
+      if(painted)overlays.push({...layer(node),coverage:Math.round(area/(innerWidth*innerHeight)*100)/100,pointerEvents:style.pointerEvents,zIndex:style.zIndex});
+    }
+    return {scanned:nodes.length,truncated:nodes.length>=budget,viewport:{width:innerWidth,height:innerHeight},colorScheme:getComputedStyle(document.documentElement).colorScheme,worst:rows.slice(0,limit),overlays,points};
+  }
   function createReport(product, details = {}, core = {}) {
     const { host, shadow: suppliedShadow, ...rest } = details;
     const shadow = suppliedShadow || host?.shadowRoot;
@@ -792,7 +836,8 @@ const ExtraPotionsDiagnostics = (() => {
       console: { startedAt, scope: 'accessible-userscript-realm-and-window-events', limit: LIMIT, omitted, hooks: hooks.map(h => ({ level: h.level, installed: console[h.level] === h.wrapped })), entries: clean(entries), limitations: ['No DevTools history, browser-internal logs, or inaccessible isolated-world console messages.', 'Messages are redacted and bounded; attribution to another script is not inferred.'] },
       // Product state is reported once, at the top level of the report.
       plugin: { id, version: data.product?.version || data.version || registration?.dataset.expProductVersion || null, stateLocation: 'top-level', compatibility: compatibility() },
-      environment, ui, core: data.core || clean(core) };
+      environment, ui, core: data.core || clean(core),
+      readability: data.readability || (() => { try { return readabilityScan(); } catch (error) { return { error: String(error?.message || error) }; } })() };
   }
   function dispose() {
     active = false;
@@ -847,7 +892,7 @@ const ExtraPotionsDiagnostics = (() => {
     bindControls({ show, copy, output, getReport, notify });
     actions.append(show, copy); wrapper.append(actions, output); return wrapper;
   }
-  return Object.freeze({ createReport, registerProduct, compatibility, bindControls, createControls, reportSource, dispose });
+  return Object.freeze({ createReport, readabilityScan, registerProduct, compatibility, bindControls, createControls, reportSource, dispose });
 })();
 
 /* Canonical ExtraPotions shared lifecycle runtime. */
@@ -2378,7 +2423,7 @@ const ExpMenuPreferences = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.8.0';
+  const version = '3.8.1';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
