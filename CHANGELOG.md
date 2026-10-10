@@ -1,3 +1,8 @@
+## 3.4.27 — 2026-10-10 (quiet)
+
+- Ranks campaigns with fewer storage reads.
+- Includes the faster shared ExtraPotions core.
+
 ## 3.4.26 — 2026-10-09 (quiet)
 
 - Captures README screenshots with the shared ExtraPotions tool.
