@@ -5,7 +5,7 @@
   "description": "Twitch Drops companion userscript",
   "scripts": {
     "build": "node scripts/assemble-parts.cjs && node scripts/minify-dist.cjs",
-    "test": "npm run build && node --test tests/*.test.cjs",
+    "test": "npm run build && node scripts/run-tests.cjs",
     "minify": "npm run build",
     "screenshots": "node ../exp-core/scripts/capture-screenshots.cjs Dropper",
     "watch": "node scripts/watch-dropper.cjs",
@@ -14,7 +14,9 @@
     "prepare:release:feature": "node scripts/prepare-feature-release.cjs && npm run build",
     "prepare:release:core": "node scripts/prepare-core-release.cjs",
     "test:installed-browser": "node scripts/test-installed-browser.cjs",
-    "build:check": "node scripts/assemble-parts.cjs --check"
+    "build:check": "node scripts/assemble-parts.cjs --check",
+    "release:check": "node scripts/verify-exp-core-pin.cjs && npm test && npm run build:check",
+    "verify:release": "npm run release:check"
   },
   "engines": {
     "node": ">=24"

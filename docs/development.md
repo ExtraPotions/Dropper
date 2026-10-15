@@ -34,3 +34,11 @@ Suite-wide steps (shared Core changes, release order, screenshots, adding a prod
 ## Writing about Dropper
 
 Describe what the menu shows: drop progress, eligibility, campaigns, history, inventory and games. Do not describe Dropper as automating anything in the README or other public text.
+
+## Single local release gate
+
+Run `npm run verify:release` once. It builds and runs all release checks, including the full suite and published Core pin check. Do not run `npm test` separately first. Windows test entry points limit concurrency to two files; CI keeps its normal concurrency.
+
+Publishing calls the reusable Verify workflow and reuses its checked artifact for the exact commit. Commit generated files before requesting a release; CI rejects build drift rather than committing or rebasing during publication. The publisher checks the stored commit and SHA256 checksums and does not rebuild.
+
+Claude, Codex and Antigravity should follow this gate and acknowledge the applicable workflow rules in their next handoff. The workspace AGENTS.md contains the shared routing; completed history belongs in HANDOFF.md, with TASK.md limited to the current assignment.

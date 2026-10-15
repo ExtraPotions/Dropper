@@ -7,9 +7,9 @@ const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 
 test('release rejects a rebuilt artifact that differs from its tagged source', t => {
-  const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/release.yml'), 'utf8');
+  const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/verify.yml'), 'utf8');
   const command = workflow.match(/^\s+(git diff --exit-code -- src\/dropper\.user\.js dropper\.user\.js)$/m)?.[1];
-  assert.ok(command && workflow.indexOf(command) < workflow.indexOf('- name: Publish assets'));
+  assert.ok(command && workflow.indexOf(command) < workflow.indexOf('- name: Retain verified release'));
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dropper-release-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const git = args => execFileSync('git', args, { cwd: directory, stdio: 'pipe' });
