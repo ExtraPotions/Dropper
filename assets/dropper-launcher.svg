@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Dropper Launcher Mark</title>
+  <desc id="desc">Gem-only micro mark for the Dropper launcher.</desc>
+  <polygon points="494,210 285,500 430,590" fill="#D9B5FF"/>
+  <polygon points="494,210 430,590 494,470" fill="#9B5AF9"/>
+  <polygon points="285,500 285,685 430,590" fill="#8C39F2"/>
+  <polygon points="285,685 494,842 430,590" fill="#5417B3"/>
+  <polygon points="430,590 494,470 494,842" fill="#7428E8"/>
+  <polygon points="530,210 739,500 594,590" fill="#AEB0C2"/>
+  <polygon points="530,210 594,590 530,470" fill="#6A6E87"/>
+  <polygon points="739,500 739,685 594,590" fill="#4E5268"/>
+  <polygon points="739,685 530,842 594,590" fill="#242633"/>
+  <polygon points="594,590 530,470 530,842" fill="#3F4254"/>
+  <rect x="502" y="205" width="20" height="650" rx="10" fill="#101017"/>
+</svg>
