@@ -7,7 +7,6 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'release.yml'), 'utf8');
-const prepare = fs.readFileSync(path.join(root, 'scripts', 'prepare-core-release.cjs'), 'utf8');
 const featurePrepare = fs.readFileSync(path.join(root, 'scripts', 'prepare-feature-release.cjs'), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
@@ -17,18 +16,12 @@ test('Core updates do not start downstream publication', () => {
   assert.doesNotMatch(workflow, /repository_dispatch:|schedule:|consumer-rollout|needs:/u);
 });
 
-test('Dropper keeps only its product-specific release preparation locally', () => {
-  assert.match(prepare, /bumpPatch/u);
-  assert.match(prepare, /Updates the shared foundation to exp-core/u);
-  assert.match(prepare, /Twitch routing, campaign, claim, and playback behavior unchanged/u);
-});
 
 
-test('feature and Core release preparation stay separate', () => {
+test('feature release preparation remains available', () => {
   assert.equal(pkg.scripts['prepare:release:feature'], 'node scripts/prepare-feature-release.cjs && npm run build');
-  assert.equal(pkg.scripts['prepare:release:core'], 'node scripts/prepare-core-release.cjs');
+  assert.equal(pkg.scripts['prepare:release:core'], undefined);
   assert.match(featurePrepare, /RELEASE_NOTES_JSON is required for a feature release/u);
   assert.match(featurePrepare, /notes\.length < 2 \|\| notes\.length > 4/u);
   assert.doesNotMatch(featurePrepare, /Updates the shared foundation to exp-core/u);
-  assert.match(prepare, /Updates the shared foundation to exp-core/u);
 });

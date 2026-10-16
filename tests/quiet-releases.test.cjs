@@ -47,7 +47,7 @@ test('a normal release leaves QUIET_RELEASES alone and adds no marker', () => {
   assert.deepEqual(quietList(source), before);
 });
 
-test('the Core-sync bot heading format passes the quiet consistency check', () => {
+test('an unmarked maintenance heading passes the quiet consistency check', () => {
   const changelog = `## 9.9.9 — 2026-10-12\n\n- Includes exp-core 9.9.9.\n- Keeps every setting.\n\n${read('CHANGELOG.md')}`;
   assert.deepEqual([...quietList(read(HEADER_PART))].sort(), quietHeadings(changelog).sort());
 });

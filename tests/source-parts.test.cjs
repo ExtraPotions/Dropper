@@ -45,7 +45,7 @@ test('the version and release notes live only in the first part, where the relea
     }
   }
   assert.deepEqual(counts, { version: 1, appVersion: 1, notes: 1 });
-  for (const script of ['scripts/prepare-feature-release.cjs', 'scripts/prepare-core-release.cjs']) {
+  for (const script of ['scripts/prepare-feature-release.cjs']) {
     assert.ok(read(script).includes('HEADER_PART'), `${script} edits the first part`);
     assert.ok(/sort\(\)(\[0\]|;)/u.test(read(script)), `${script} picks the first part by sorted name`);
     assert.ok(!/read\('src\/dropper\.user\.js'\)/u.test(read(script)), `${script} no longer edits the generated file`);
