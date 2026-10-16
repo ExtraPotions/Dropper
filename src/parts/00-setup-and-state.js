@@ -1243,10 +1243,13 @@
   let lastPanelId = "";
   let lastSubmenuId = "";
   let clusterTop = 0;
-  let launcherGridDelta = Number(localStorage.getItem(LAUNCHER_GRID_DELTA_KEY) || 0);
+  let launcherGridDelta = 0;
+  try {
+    launcherGridDelta = Number(localStorage.getItem(LAUNCHER_GRID_DELTA_KEY) || 0);
+    localStorage.removeItem(LEGACY_LAUNCHER_TOP_KEY);
+    localStorage.removeItem(LEGACY_LAUNCHER_GRID_DELTA_KEY);
+  } catch (_) {}
   if (!Number.isFinite(launcherGridDelta)) launcherGridDelta = 0;
-  localStorage.removeItem(LEGACY_LAUNCHER_TOP_KEY);
-  localStorage.removeItem(LEGACY_LAUNCHER_GRID_DELTA_KEY);
   let lastUiProgressPercent = null;
   let lastUiRoutingState = "";
   let updateNoticeTimer = null;

@@ -520,7 +520,8 @@
   function checkVersionNotice() {
     clearUpdateAvailableIndicator();
 
-    const previous = localStorage.getItem(LAST_VERSION_KEY);
+    let previous = '';
+    try { previous = localStorage.getItem(LAST_VERSION_KEY) || ''; } catch (_) {}
     if (previous && previous !== APP_VERSION
         && !ExtraPotionsCore.isQuietUpgrade(previous, APP_VERSION, Object.keys(RELEASE_NOTES), QUIET_RELEASES)
         && claimNotice(`updated:${APP_VERSION}`)) {
@@ -532,7 +533,7 @@
         { kicker: "Update Complete", version: APP_VERSION, details: RELEASE_NOTES[APP_VERSION] || [], placement: "menu" },
       );
     }
-    localStorage.setItem(LAST_VERSION_KEY, APP_VERSION);
+    try { localStorage.setItem(LAST_VERSION_KEY, APP_VERSION); } catch (_) {}
     // Older builds kept their own copy of the update state; exp-core owns it now.
     try { localStorage.removeItem("dropper-update-state-v2"); } catch (_) { /* ignore */ }
     checkCachedUpdateNotice();
