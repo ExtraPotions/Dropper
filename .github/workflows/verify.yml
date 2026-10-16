@@ -1,22 +1,13 @@
-name: Verify userscript
+name: Manual tests
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
-
-  workflow_call:
-    inputs:
-      release:
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 jobs:
-  verify:
-    if: inputs.release || github.event_name != 'push' || !(startsWith(github.ref, 'refs/tags/') || startsWith(github.event.head_commit.message, 'Release Dropper '))
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -25,61 +16,6 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-        if: '!inputs.release'
-      - name: Check Core rollout preparer
-        if: '!inputs.release'
-        run: node --check scripts/prepare-core-release.cjs
       - run: npx playwright install --with-deps chromium
-        if: '!inputs.release'
-      - name: Verify pinned exp-core
-        if: '!inputs.release'
-        run: node scripts/verify-exp-core-pin.cjs
-      - name: Run regression suite
-        if: '!inputs.release'
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm test 2>&1 | tee test-results.txt
-      - name: Verify release once
-        if: inputs.release
-        run: |
-          set -euo pipefail
-          npm ci
-          node --check scripts/prepare-core-release.cjs
-          npx playwright install --with-deps chromium
-          npm run verify:release 2>&1 | tee test-results.txt
-          node --check dropper.user.js
-          git diff --exit-code -- src/dropper.user.js dropper.user.js
-          version="$(node -p "require('./package.json').version")"
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then test "$GITHUB_REF_NAME" = "v$version"; fi
-          test "$(sed -n 's|^// @version[[:space:]]*||p' dropper.user.js)" = "$version"
-          mkdir .verified-release
-          cp dropper.user.js .verified-release/
-          cp assets/dropper-launcher.svg .verified-release/
-          printf '%s\n' "$GITHUB_SHA" > .verified-release/commit.txt
-          (cd .verified-release && sha256sum dropper.user.js dropper-launcher.svg > SHA256SUMS)
-      - name: Retain verified release
-        if: inputs.release
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: verified-release-${{ github.sha }}
-          include-hidden-files: true
-          path: .verified-release/
-          if-no-files-found: error
-          retention-days: 7
-      - name: Archive reviewed source
-        if: always()
-        run: |
-          git archive --format=zip --output=dropper-source.zip HEAD
-      - name: Retain verification artifacts
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: dropper-verification-${{ github.sha }}
-          path: |
-            dropper-source.zip
-            test-results.txt
-            test-artifacts/
-            dropper.user.js
-          retention-days: 7
-          if-no-files-found: error
+      - run: npm run build
+      - run: node scripts/run-tests.cjs

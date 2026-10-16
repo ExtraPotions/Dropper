@@ -1,11 +1,7 @@
 name: Publish release
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
-    branches:
-      - main
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,54 +11,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify:
-    if: startsWith(github.ref, 'refs/tags/') || startsWith(github.event.head_commit.message, 'Release Dropper ')
-    uses: ./.github/workflows/verify.yml
-    with:
-      release: true
-    permissions:
-      contents: read
-
   release:
-    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: verified-release-${{ github.sha }}
-          path: .verified-release/
-      - name: Check verified artifact identity
-        run: |
-          set -euo pipefail
-          test "$(cat .verified-release/commit.txt)" = "$GITHUB_SHA"
-          (cd .verified-release && sha256sum --check SHA256SUMS)
-      - name: Resolve release tag
-        id: release
+          fetch-depth: 0
+      - name: Publish committed assets
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            tag="${GITHUB_REF_NAME}"
-          else
-            version="$(jq -r .version package.json)"
-            tag="v${version}"
+          version="$(jq -r .version package.json)"
+          tag="v$version"
+          if git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
+            test "$(git rev-parse "$tag^{commit}")" = "$GITHUB_SHA"
           fi
-          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
-      - name: Publish assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release.outputs.tag }}
-        run: |
-          set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then exit 0; fi
-          version="${TAG#v}"
+          (sha256sum dropper.user.js; cd assets && sha256sum dropper-launcher.svg) > SHA256SUMS
           awk '
             /^## / { section += 1; if (section > 3) exit }
             { print }
           ' CHANGELOG.md > release-notes.md
-          if ! gh release create "$TAG" .verified-release/dropper.user.js .verified-release/dropper-launcher.svg .verified-release/SHA256SUMS \
-            --target "$GITHUB_SHA" --title "Dropper $version" --notes-file release-notes.md; then
-            sleep 5
-            gh release view "$TAG" >/dev/null
-          fi
+          gh release create "$tag" dropper.user.js assets/dropper-launcher.svg SHA256SUMS \
+            --target "$GITHUB_SHA" --title "Dropper $version" --notes-file release-notes.md

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.42
+// @version      3.4.43
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.42";
+  const APP_VERSION = "3.4.43";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -210,8 +210,9 @@
   const UPDATE_RETURN_DELAY_MS = 3 * 1000;
   const UPDATE_RELOAD_FALLBACK_MS = 45 * 1000;
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
-  const QUIET_RELEASES = Object.freeze(["3.4.30","3.4.27","3.4.26"]);
+  const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.43": ["Maintenance release; product features and settings are unchanged.","Includes the current shared foundation."],
     "3.4.42": ["Keeps the launcher clear of floating site buttons that mark themselves as a button on their outer element.","Updates the shared foundation to exp-core 3.9.3."],
     "3.4.41": ["Keeps the launcher clear of Twitch's Sign Up bar at phone width.","Keeps the launcher clear of floating site buttons such as a store's shopping assistant, with the shared foundation updated to exp-core 3.9.2."],
     "3.4.40": ["The progress strip names why Twitch is not counting progress, such as a wrong category, an offline stream, or a stall, in place of the bar.","Campaigns whose game account is not linked still count watch time; Dropper flags the link once every eligible reward is earned.","Updates the shared foundation to exp-core 3.9.1."],

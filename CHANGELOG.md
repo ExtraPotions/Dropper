@@ -1,3 +1,8 @@
+## 3.4.43 — 2026-10-16 (quiet)
+
+- Maintenance release; product features and settings are unchanged.
+- Includes the current shared foundation.
+
 ## 3.4.42 — 2026-10-15
 
 - Keeps the launcher clear of floating site buttons that mark themselves as a button on their outer element.
