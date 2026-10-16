@@ -1,3 +1,8 @@
+## 3.4.44 — 2026-10-16
+
+- Uses less memory before the menu is first opened, with shared foundation exp-core 3.9.5.
+- Keeps the launcher and update notices working when the page denies local storage.
+
 ## 3.4.43 — 2026-10-16 (quiet)
 
 - Maintenance release; product features and settings are unchanged.
