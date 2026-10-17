@@ -148,6 +148,7 @@ function css() {
       [data-exp-part="dock"]:focus { outline:none; }
       [data-exp-part="dock"] :is(.fl-tool-body,.row,.group,.section,.fl-tool-title) { min-width:0; max-width:100%; overflow-wrap:anywhere; }
       [data-exp-part="dock"] :is(input,select,textarea) { min-width:0; max-width:100%; }
+      [data-exp-part="dock"] :is(option,optgroup) { background:var(--theme-panel) !important; color:var(--theme-text) !important; }
       .menu-head {
         position:relative;
         display:grid; grid-template-columns:minmax(0,1fr) auto;
@@ -2512,7 +2513,7 @@ const ExpLauncherFlyout = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.9.5';
+  const version = '3.9.6';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -3585,15 +3586,22 @@ const ExtraPotionsCore = (() => {
     const node = document.createElement('style');
     Object.assign(node.dataset, data);
     node.dataset.expOwned = '1';
+    // Keep the editable handle without parsing a second copy of the adopted CSS.
+    node.type = 'text/plain';
     node.textContent = css;
-    shadow.append(node);
-    // Constructed sheets survive pages that block style elements. Keep the style
-    // node as a fallback and as the editable public handle used by product code.
     let sheet;
-    try { sheet = new CSSStyleSheet(); sheet.replaceSync(OWNED_SHEET_MARKER + css); shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, sheet]; } catch {}
-    const observe = new MutationObserver(() => { if (sheet) { try { sheet.replaceSync(OWNED_SHEET_MARKER + node.textContent); } catch {} } });
-    observe.observe(node, { childList: true, characterData: true, subtree: true });
-    node.dispose = () => { observe.disconnect(); if (sheet) shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets].filter(s => s !== sheet); node.remove(); };
+    try {
+      sheet = new CSSStyleSheet(); sheet.replaceSync(OWNED_SHEET_MARKER + css);
+      shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, sheet];
+      if (!shadow.adoptedStyleSheets.includes(sheet)) throw new Error('Style adoption ignored');
+    } catch {
+      if (sheet) { try { shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets].filter(item => item !== sheet); } catch {} }
+      sheet = undefined; node.type = 'text/css';
+    }
+    shadow.append(node);
+    const observe = sheet ? new MutationObserver(() => { try { sheet.replaceSync(OWNED_SHEET_MARKER + node.textContent); } catch {} }) : null;
+    observe?.observe(node, { childList: true, characterData: true, subtree: true });
+    node.dispose = () => { observe?.disconnect(); if (sheet) shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets].filter(item => item !== sheet); node.remove(); };
     node.expSheet = sheet;
     return node;
   }

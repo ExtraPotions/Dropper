@@ -1573,6 +1573,7 @@
       #tdh-tools-dock:focus { outline:none; }
       #tdh-tools-dock :is(.fl-tool-body,.row,.group,.section,.fl-tool-title) { min-width:0; max-width:100%; overflow-wrap:anywhere; }
       #tdh-tools-dock :is(input,select,textarea) { min-width:0; max-width:100%; }
+      #tdh-tools-dock :is(option,optgroup) { background:var(--theme-panel) !important; color:var(--theme-text) !important; }
       .menu-head {
         position:relative;
         display:grid; grid-template-columns:minmax(0,1fr) auto;

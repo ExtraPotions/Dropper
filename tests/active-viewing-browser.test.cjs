@@ -439,6 +439,22 @@ test('an unlinked campaign is still earned, then skipped for the next game once 
   assert.equal(result.afterEarned, 'Next Game');
 }));
 
+test('campaign order popup keeps explicit theme colors with a native light color scheme', async () => fixture(async page => {
+  const facts = await page.evaluate(() => {
+    const root = document.querySelector('#tdh-root').shadowRoot;
+    const select = root.querySelector('#tdh-campaign-strategy');
+    select.style.colorScheme = 'light';
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--theme-text)';
+    probe.style.background = 'var(--theme-panel)';
+    select.parentElement.append(probe);
+    const colors = node => ({ color: getComputedStyle(node).color, background: getComputedStyle(node).backgroundColor });
+    return { options: [...select.options].map(colors), expected: colors(probe) };
+  });
+  assert.notEqual(facts.expected.background, 'rgba(0, 0, 0, 0)');
+  for (const option of facts.options) assert.deepEqual(option, facts.expected);
+}));
+
 test('known-unfinishable campaign cannot win even with high personal priority', async () => fixture(async page => {
   const now = Date.now();
   const iso = ms => new Date(ms).toISOString();

@@ -1,3 +1,8 @@
+## 3.4.46 — 2026-10-17
+
+- Pairs dropdown option backgrounds and text colors for readable campaign and settings menus.
+- Includes Core 3.9.6 with reduced duplicate stylesheet parsing.
+
 ## 3.4.45 — 2026-10-17
 
 - Choose any campaign priority position directly instead of moving games one step at a time.

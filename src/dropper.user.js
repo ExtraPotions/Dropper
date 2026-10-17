@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.45
+// @version      3.4.46
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.45";
+  const APP_VERSION = "3.4.46";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.46": ["Pairs dropdown option backgrounds and text colors for readable campaign and settings menus.","Includes Core 3.9.6 with reduced duplicate stylesheet parsing."],
     "3.4.45": ["Choose any campaign priority position directly instead of moving games one step at a time.","Keep the position picker open during background refreshes and preserve keyboard focus after reordering.","Load position choices only while needed to keep long campaign lists lighter."],
     "3.4.44": ["Uses less memory before the menu is first opened, with shared foundation exp-core 3.9.5.","Keeps the launcher and update notices working when the page denies local storage."],
     "3.4.43": ["Maintenance release; product features and settings are unchanged.","Includes the current shared foundation."],
@@ -14733,6 +14734,7 @@
       #tdh-tools-dock:focus { outline:none; }
       #tdh-tools-dock :is(.fl-tool-body,.row,.group,.section,.fl-tool-title) { min-width:0; max-width:100%; overflow-wrap:anywhere; }
       #tdh-tools-dock :is(input,select,textarea) { min-width:0; max-width:100%; }
+      #tdh-tools-dock :is(option,optgroup) { background:var(--theme-panel) !important; color:var(--theme-text) !important; }
       .menu-head {
         position:relative;
         display:grid; grid-template-columns:minmax(0,1fr) auto;
