@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.44
+// @version      3.4.45
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.44";
+  const APP_VERSION = "3.4.45";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.45": ["Choose any campaign priority position directly instead of moving games one step at a time.","Keep the position picker open during background refreshes and preserve keyboard focus after reordering.","Load position choices only while needed to keep long campaign lists lighter."],
     "3.4.44": ["Uses less memory before the menu is first opened, with shared foundation exp-core 3.9.5.","Keeps the launcher and update notices working when the page denies local storage."],
     "3.4.43": ["Maintenance release; product features and settings are unchanged.","Includes the current shared foundation."],
     "3.4.42": ["Keeps the launcher clear of floating site buttons that mark themselves as a button on their outer element.","Updates the shared foundation to exp-core 3.9.3."],
@@ -2423,20 +2424,22 @@
       else localStorage.setItem(entry.key, String(priority));
     } catch (_) {}
   }
-  function moveCampaignPriority(game, direction, openGames = []) {
+  function setCampaignPriorityPosition(game, position, openGames = []) {
+    if (productResetting || !Number.isInteger(position)) return false;
     const order = reconcileCampaignPriorityOrder(openGames);
     const visible = [...new Set((openGames || []).map(item => normalizeGameName(item.game)).filter(Boolean))]
       .filter(key => order.includes(key))
       .sort((left, right) => order.indexOf(left) - order.indexOf(right));
     const key = normalizeGameName(game);
     const visibleIndex = visible.indexOf(key);
-    const targetVisibleIndex = visibleIndex + Number(direction || 0);
-    if (visibleIndex < 0 || targetVisibleIndex < 0 || targetVisibleIndex >= visible.length) return false;
-    const targetKey = visible[targetVisibleIndex];
-    const index = order.indexOf(key);
-    const target = order.indexOf(targetKey);
-    [order[index], order[target]] = [order[target], order[index]];
-    writeCampaignPriorityOrder(order);
+    const targetVisibleIndex = position - 1;
+    if (visibleIndex < 0 || targetVisibleIndex < 0 || targetVisibleIndex >= visible.length || targetVisibleIndex === visibleIndex) return false;
+    const visibleKeys = new Set(visible);
+    visible.splice(visibleIndex, 1);
+    visible.splice(targetVisibleIndex, 0, key);
+    let index = 0;
+    // Keep inactive games in their saved slots while shifting the visible games.
+    writeCampaignPriorityOrder(order.map(entry => visibleKeys.has(entry) ? visible[index++] : entry));
     return true;
   }
   function normalizedCampaignStrategy(value = settings.campaignStrategy) {
@@ -14999,11 +15002,11 @@
       .status-check-value[data-tone="warn"] { color:#f2cf75; }
       .status-check-value[data-tone="bad"] { color:#ff9ea6; }
       #tdh-stream-lock[aria-pressed="true"] { border-color:color-mix(in srgb,var(--theme-accent) 72%,var(--theme-line)); background:color-mix(in srgb,var(--theme-panel) 76%,var(--theme-accent) 24%); }
-      .campaign-priority-controls { display:flex; align-items:center; gap:4px; margin-top:4px; }
-      .campaign-priority-rank { min-width:22px; color:var(--theme-accent2); font-size:var(--exp-font-size-small,11px); font-weight:900; }
-      .campaign-priority-button { width:24px; height:22px; padding:0; border:1px solid var(--theme-line); border-radius:5px; background:var(--theme-panel); color:var(--theme-text); cursor:pointer; font-size:var(--exp-font-size-small,11px); }
-      .campaign-priority-button:disabled { opacity:.35; cursor:default; }
-      .campaign-priority-button:not(:disabled):hover,.campaign-priority-button:not(:disabled):focus-visible { border-color:var(--theme-accent); outline:none; }
+      .campaign-priority-controls { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-top:4px; color:var(--theme-text); font-size:var(--exp-font-size-small,11px); }
+      #tdh-open-campaigns .campaign-priority-position { width:auto; min-width:72px; max-width:100%; min-height:36px !important; border-radius:5px; border-color:var(--theme-muted) !important; background:var(--theme-panel) !important; }
+      #tdh-open-campaigns .campaign-priority-position:focus-visible { outline:2px solid var(--theme-focus) !important; outline-offset:2px; }
+      .campaign-priority-position:disabled { opacity:.6; cursor:default; }
+      @media (pointer:coarse) { #tdh-open-campaigns .campaign-priority-position { min-height:44px !important; } }
       .routing-history-list,.claim-history-list { max-height:180px; overflow:auto; padding:3px 8px 7px; }
       .routing-history-row,.claim-history-row { display:grid; gap:2px; padding:6px 0; min-width:0; }
       .routing-history-row + .routing-history-row,.claim-history-row + .claim-history-row { border-top:1px solid var(--theme-line); }
@@ -15555,7 +15558,7 @@
             <details class="campaign-manager" id="tdh-open-campaigns">
               <summary><span class="campaign-manager-title">Open Campaigns</span><span class="campaign-manager-summary" id="tdh-open-campaign-summary">Loading…</span></summary>
               <div class="mini-row campaign-strategy-row"><span>Campaign Order</span><select class="select-lite" id="tdh-campaign-strategy"><option value="priority">My Priority</option><option value="deadline">Ending Soonest</option><option value="completion">Closest to Completion</option><option value="shortest">Shortest Remaining</option></select></div>
-              <div class="campaign-manager-note" id="tdh-campaign-order-note">Check a game to ignore it until its latest campaign ends. Use ↑ and ↓ to rank games. The selected Campaign Order controls how viable campaigns are chosen.</div>
+              <div class="campaign-manager-note" id="tdh-campaign-order-note">Choose a priority position to move a game directly to that rank. The selected Campaign Order controls how viable campaigns are chosen.</div>
               <div class="campaign-game-list" id="tdh-open-campaign-list"></div>
             </details>
             <details class="eligibility-chip" id="tdh-reward-eligibility" data-tone="muted">
@@ -16337,11 +16340,13 @@
     );
   }
 
-  function refreshOpenCampaignList(now = Date.now()) {
+  function refreshOpenCampaignList(now = Date.now(), force = false) {
     if (!ui) return;
     const list = ui.shadow.getElementById("tdh-open-campaign-list");
     const summary = ui.shadow.getElementById("tdh-open-campaign-summary");
     if (!list || !summary) return;
+    // A background refresh must not remove the native picker while it is in use.
+    if (!force && ui.shadow.activeElement?.matches('.campaign-priority-position')) return;
     refreshUnclaimedRewards(now);
 
     const openGames = listOpenCampaignGames(openCampaignManagementPool(now), now);
@@ -16349,7 +16354,7 @@
     const priorityOrder = reconcileCampaignPriorityOrder(openGames);
     const visiblePriorityOrder = priorityOrder.filter(key => openGames.some(item => normalizeGameName(item.game) === key));
     // The list shows the order Dropper will actually pick in. Under My Priority that is the rank order
-    // you set with the arrows; under any other Campaign Order it is the order that strategy produces.
+    // you set with the position picker; under any other Campaign Order it is the order that strategy produces.
     const strategy = normalizedCampaignStrategy();
     const manualOrder = strategy === 'priority';
     const pickOrder = campaignQueueGameOrder(now);
@@ -16370,8 +16375,8 @@
     const orderNote = ui.shadow.getElementById('tdh-campaign-order-note');
     if (orderNote) {
       orderNote.textContent = manualOrder
-        ? 'Check a game to ignore it until its latest campaign ends. Use ↑ and ↓ to rank games. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.'
-        : `Games are listed in the order Dropper picks them under ${campaignStrategyLabel(strategy)}. Choose My Priority to rank games with ↑ and ↓. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.`;
+        ? 'Choose a priority position to move a game directly to that rank. Ignore a game until its latest campaign ends using its ignore control. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.'
+        : `Games are listed in the order Dropper picks them under ${campaignStrategyLabel(strategy)}. Choose My Priority to rank games by position. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.`;
     }
     const ignoredCount = openGames.filter((item) => (
       Number(ignoredCampaignGames.games?.[item.key]?.expiresAt || 0) > now
@@ -16419,36 +16424,47 @@
       meta.textContent = `${orderLabel}${campaignLabel} · Latest ${formatCampaignEndLabel(item.latestEndAt, item.latestEndMs, now).toLowerCase()}${subscriptionText ? ` · ${subscriptionText}` : ""}`;
       copy.append(title, meta);
       const rank = manualOrder ? visiblePriorityOrder.indexOf(normalizeGameName(item.game)) : openGames.indexOf(item);
-      const priorityControls = document.createElement('div');
+      const priorityControls = document.createElement('label');
       priorityControls.className = 'campaign-priority-controls';
-      const priorityRank = document.createElement('span');
-      priorityRank.className = 'campaign-priority-rank';
-      priorityRank.textContent = rank >= 0 ? `#${rank + 1}` : '—';
-      const up = document.createElement('button');
-      up.type = 'button'; up.className = 'campaign-priority-button'; up.textContent = '↑';
-      up.disabled = !manualOrder || rank <= 0;
-      up.setAttribute('aria-label', `Move ${item.game} higher in game priority`);
-      if (!manualOrder) up.title = 'Choose My Priority as the Campaign Order to rank games by hand';
-      const down = document.createElement('button');
-      down.type = 'button'; down.className = 'campaign-priority-button'; down.textContent = '↓';
-      down.disabled = !manualOrder || rank < 0 || rank >= openGames.length - 1;
-      down.setAttribute('aria-label', `Move ${item.game} lower in game priority`);
-      if (!manualOrder) down.title = 'Choose My Priority as the Campaign Order to rank games by hand';
-      up.addEventListener('click', () => {
-        if (!moveCampaignPriority(item.game, -1, openGames)) return;
+      const priorityLabel = document.createElement('span');
+      priorityLabel.textContent = 'Priority';
+      const priorityPosition = document.createElement('select');
+      priorityPosition.className = 'select-lite campaign-priority-position';
+      const priorityName = `Priority position for ${item.game}`;
+      priorityPosition.setAttribute('aria-label', priorityName);
+      priorityPosition.disabled = !manualOrder || rank < 0 || openGames.length < 2;
+      if (!manualOrder) priorityPosition.title = 'Choose My Priority as the Campaign Order to rank games by hand';
+      const currentPosition = document.createElement('option');
+      currentPosition.value = String(rank + 1); currentPosition.textContent = `#${rank + 1}`;
+      priorityPosition.append(currentPosition);
+      priorityPosition.value = String(rank + 1);
+      function populatePositions() {
+        if (priorityPosition.options.length === openGames.length) return;
+        priorityPosition.replaceChildren();
+        for (let position = 1; position <= openGames.length; position++) {
+          const option = document.createElement('option');
+          option.value = String(position); option.textContent = `#${position}`;
+          priorityPosition.append(option);
+        }
+        priorityPosition.value = String(rank + 1);
+      }
+      // Only the active picker needs the full list of positions.
+      priorityPosition.addEventListener('focus', populatePositions);
+      priorityPosition.addEventListener('pointerdown', populatePositions);
+      priorityPosition.addEventListener('blur', () => {
+        const selected = priorityPosition.selectedOptions[0];
+        if (selected) priorityPosition.replaceChildren(selected);
+      });
+      priorityPosition.addEventListener('change', () => {
+        const position = Number(priorityPosition.value);
+        if (!manualOrder || !setCampaignPriorityPosition(item.game, position, openGames)) return;
         const moved = applyCampaignOrderNow('campaign-priority-changed');
         if (!moved.switched) routingControllerTick(Date.now(), 'campaign-priority-changed');
-        setStatus(`${item.game} moved higher in game priority${moved.switched ? ` · Switching to ${moved.game}` : moved.why ? ` · Current Stream Unchanged (${moved.why})` : ''}`);
-        refreshOpenCampaignList();
+        setStatus(`${item.game} moved to priority #${position}${moved.switched ? ` · Switching to ${moved.game}` : moved.why ? ` · Current Stream Unchanged (${moved.why})` : ''}`);
+        refreshOpenCampaignList(Date.now(), true);
+        [...ui.shadow.querySelectorAll('.campaign-priority-position')].find(select => select.getAttribute('aria-label') === priorityName)?.focus({ preventScroll: true });
       });
-      down.addEventListener('click', () => {
-        if (!moveCampaignPriority(item.game, 1, openGames)) return;
-        const moved = applyCampaignOrderNow('campaign-priority-changed');
-        if (!moved.switched) routingControllerTick(Date.now(), 'campaign-priority-changed');
-        setStatus(`${item.game} moved lower in game priority${moved.switched ? ` · Switching to ${moved.game}` : moved.why ? ` · Current Stream Unchanged (${moved.why})` : ''}`);
-        refreshOpenCampaignList();
-      });
-      priorityControls.append(priorityRank, up, down); copy.append(priorityControls);
+      priorityControls.append(priorityLabel, priorityPosition); copy.append(priorityControls);
 
       const check = document.createElement("button");
       check.type = "button";

@@ -797,20 +797,22 @@
       else localStorage.setItem(entry.key, String(priority));
     } catch (_) {}
   }
-  function moveCampaignPriority(game, direction, openGames = []) {
+  function setCampaignPriorityPosition(game, position, openGames = []) {
+    if (productResetting || !Number.isInteger(position)) return false;
     const order = reconcileCampaignPriorityOrder(openGames);
     const visible = [...new Set((openGames || []).map(item => normalizeGameName(item.game)).filter(Boolean))]
       .filter(key => order.includes(key))
       .sort((left, right) => order.indexOf(left) - order.indexOf(right));
     const key = normalizeGameName(game);
     const visibleIndex = visible.indexOf(key);
-    const targetVisibleIndex = visibleIndex + Number(direction || 0);
-    if (visibleIndex < 0 || targetVisibleIndex < 0 || targetVisibleIndex >= visible.length) return false;
-    const targetKey = visible[targetVisibleIndex];
-    const index = order.indexOf(key);
-    const target = order.indexOf(targetKey);
-    [order[index], order[target]] = [order[target], order[index]];
-    writeCampaignPriorityOrder(order);
+    const targetVisibleIndex = position - 1;
+    if (visibleIndex < 0 || targetVisibleIndex < 0 || targetVisibleIndex >= visible.length || targetVisibleIndex === visibleIndex) return false;
+    const visibleKeys = new Set(visible);
+    visible.splice(visibleIndex, 1);
+    visible.splice(targetVisibleIndex, 0, key);
+    let index = 0;
+    // Keep inactive games in their saved slots while shifting the visible games.
+    writeCampaignPriorityOrder(order.map(entry => visibleKeys.has(entry) ? visible[index++] : entry));
     return true;
   }
   function normalizedCampaignStrategy(value = settings.campaignStrategy) {

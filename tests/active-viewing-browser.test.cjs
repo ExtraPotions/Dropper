@@ -22,7 +22,7 @@ const exposed = source.replace('  startDropper();\n})();', `
     relayout: () => { applyAppearanceSettings(); layoutChrome(); },
     setActiveClaims: value => { settings.claimBonus = value; settings.claimDrops = value; syncClaimWatchers(); },
     queueScan: queueClaimScan, setPriority: setCampaignPriority, priorityEntry: campaignPriorityEntry,
-    priorityRank: campaignPriorityRank, priorityOrder: readCampaignPriorityOrder, movePriority: moveCampaignPriority,
+    priorityRank: campaignPriorityRank, priorityOrder: readCampaignPriorityOrder, setPriorityPosition: setCampaignPriorityPosition,
     rankCandidates: rankStreamCandidatesByEvidence,
     continueClaim: continueAfterConfirmedDropClaim, sweep: sweepClaimReadyInventory, current: () => currentDrop,
     status: () => ({ viewing: viewingIntent.snapshot(), selectors: claimHealth }),
@@ -393,10 +393,10 @@ test('ranked game priority is account-scoped, does not navigate, and single-size
     fs.mkdirSync(path.join(__dirname, '../test-artifacts'), { recursive: true });
     await page.screenshot({ path: path.join(__dirname, `../test-artifacts/active-viewing-${mode}.png`) });
   }
+  await page.getByRole('button', { name: 'Campaigns', exact: true }).click();
+  await page.getByLabel('Priority position for Second game', { exact: true }).focus();
+  await page.getByLabel('Priority position for Second game', { exact: true }).selectOption('1');
   const ranked = await page.evaluate(() => {
-    const root = document.getElementById('tdh-root').shadowRoot;
-    const up = root.querySelector('[aria-label="Move Second game higher in game priority"]');
-    up.click();
     const t = window.__dropperTest;
     return { rank: t.priorityRank('Second game').rank, order: t.priorityOrder(), path: location.pathname };
   });
@@ -1150,7 +1150,7 @@ test('the campaign list follows Campaign Order and matches the campaign Dropper 
       list: [...root.querySelectorAll('.campaign-game-row')].map(row => ({
         game: row.querySelector('.campaign-game-name').textContent,
         label: row.querySelector('.campaign-game-meta').textContent.match(/^(Watching now|Next up)/)?.[1] || '',
-        arrowsOff: row.querySelector('.campaign-priority-button').disabled && row.querySelector('.campaign-priority-button:last-of-type').disabled,
+        pickerOff: row.querySelector('.campaign-priority-position').disabled,
       })),
       picks: pick?.game || '',
       note: root.getElementById('tdh-campaign-order-note').textContent,
@@ -1167,22 +1167,21 @@ test('the campaign list follows Campaign Order and matches the campaign Dropper 
     assert.deepEqual(view.list.map(item => item.game), expected, `${strategy}: the list is in the order Dropper picks`);
     assert.equal(view.list[0].label, 'Next up', `${strategy}: the first game is marked next`);
     assert.equal(view.picks, expected[0], `${strategy}: the router picks the game shown first`);
-    assert.ok(view.list.every(item => item.arrowsOff), `${strategy}: hand-ranking arrows are off outside My Priority`);
+    assert.ok(view.list.every(item => item.pickerOff), `${strategy}: hand-ranking pickers are off outside My Priority`);
     assert.match(view.note, /Choose My Priority to rank games/);
   }
 
-  // My Priority: arrows rank by hand and the list follows them.
+  // My Priority: jump directly to a rank and shift intervening games in order.
   await choose('priority');
   assert.deepEqual((await snapshot()).list.map(item => item.game), ['Alpha', 'Bravo', 'Charlie']);
-  await page.evaluate(() => {
-    const row = [...document.getElementById('tdh-root').shadowRoot.querySelectorAll('.campaign-game-row')].find(item => item.querySelector('.campaign-game-name').textContent === 'Charlie');
-    const up = row.querySelector('.campaign-priority-button[aria-label$="higher in game priority"]');
-    up.click(); up.click();
-  });
+  await page.getByRole('button', { name: 'Campaigns', exact: true }).click();
+  await page.getByLabel('Priority position for Charlie', { exact: true }).focus();
+  await page.getByLabel('Priority position for Charlie', { exact: true }).selectOption('1');
   let view = await snapshot();
-  assert.deepEqual(view.list.map(item => item.game), ['Charlie', 'Alpha', 'Bravo'], 'the arrows reorder the list');
+  assert.deepEqual(view.list.map(item => item.game), ['Charlie', 'Alpha', 'Bravo'], 'one selection reorders the list');
   assert.equal(view.picks, 'Charlie', 'the router follows the hand-ranked order');
-  assert.match(view.note, /Use ↑ and ↓ to rank games/);
+  assert.match(view.note, /Choose a priority position/);
+  await page.getByLabel('Priority position for Charlie', { exact: true }).press('Tab');
 
   // While a reward is being earned, that game is marked and the next game is the top of the rest.
   await page.evaluate(campaigns => window.__dropperTest.configure({ id: 'reward-bravo', campaignId: 'bravo', campaignKey: 'bravo', name: 'Bravo reward', game: 'Bravo', requiredMinutes: 120, currentMinutes: 30, percent: 25, isClaimed: false }, campaigns), campaigns);
@@ -1249,10 +1248,53 @@ test('changing Campaign Order does nothing when the earning campaign is already 
   assert.deepEqual(await routingView(page), { state: 'earning', game: 'Bravo', campaignKey: 'bravo' });
 }));
 
-test('hand-ranking a game with the arrows also moves an earning Dropper right away', async () => orderFixture(async page => {
+test('campaign position picker supports long jumps, keyboard focus and uninterrupted refresh at phone width', async () => fixture(async page => {
+  const startAt = new Date(Date.now() - 86400000).toISOString(), endAt = new Date(Date.now() + 86400000).toISOString();
+  const campaigns = Array.from({ length: 12 }, (_, index) => ({
+    id: `game-${index}`, name: `Campaign ${index}`, status: 'ACTIVE', startAt, endAt,
+    game: { name: `Game ${String(index + 1).padStart(2, '0')}`, displayName: `Game ${String(index + 1).padStart(2, '0')}` },
+    timeBasedDrops: [{ id: `reward-${index}`, name: `Reward ${index}`, requiredMinutesWatched: 60, self: { currentMinutesWatched: 0, isClaimed: false } }],
+  }));
+  await page.setViewportSize({ width: 360, height: 900 });
+  await page.evaluate(campaigns => {
+    const t = window.__dropperTest; t.configure(null, campaigns); t.setStrategy('priority'); t.refresh(); window.dropperShow();
+    const root = document.getElementById('tdh-root').shadowRoot;
+    if (root.getElementById('tdh-drops-body').classList.contains('fl-tool-hidden')) root.querySelector('[data-panel="tdh-drops-body"]').click();
+  }, campaigns);
+  await page.getByRole('button', { name: 'Campaigns', exact: true }).click();
+  const picker = page.getByLabel('Priority position for Game 12', { exact: true });
+  assert.equal(await page.locator('.campaign-priority-position option').count(), 12, 'inactive pickers keep only their current position');
+  await picker.focus();
+  assert.equal(await picker.locator('option').count(), 12);
+  assert.equal(await page.evaluate(() => {
+    const root = document.getElementById('tdh-root').shadowRoot, active = root.activeElement;
+    window.__dropperTest.refresh();
+    return active.isConnected && active === root.activeElement;
+  }), true, 'background refresh preserves the active native picker');
+  await picker.selectOption('1');
+  const names = () => page.locator('.campaign-game-name').allTextContents();
+  assert.deepEqual(await names(), ['Game 12', ...Array.from({ length: 11 }, (_, index) => `Game ${String(index + 1).padStart(2, '0')}`)]);
+  assert.equal(await picker.evaluate(node => node.getRootNode().activeElement === node), true, 'focus follows the moved game');
+  await picker.press('End');
+  assert.equal(await picker.inputValue(), '12');
+  assert.deepEqual(await names(), Array.from({ length: 12 }, (_, index) => `Game ${String(index + 1).padStart(2, '0')}`));
+  await picker.press('Home');
+  assert.equal(await picker.inputValue(), '1');
+  await picker.press('Tab');
+  assert.equal(await picker.evaluate(node => node.getRootNode().activeElement !== node), true, 'Tab leaves the picker normally');
+  assert.equal(await picker.locator('option').count(), 1, 'blur releases unused options');
+  const layout = await page.locator('#tdh-open-campaigns').evaluate(node => {
+    const select = node.querySelector('.campaign-priority-position'), rect = select.getBoundingClientRect();
+    return { overflow: node.scrollWidth - node.clientWidth, height: rect.height, left: rect.left, right: rect.right };
+  });
+  assert.ok(layout.overflow <= 1 && layout.left >= 0 && layout.right <= 360, JSON.stringify(layout));
+  assert.ok(layout.height >= 36, 'position control has a usable target');
+}));
+
+test('choosing a priority position also moves an earning Dropper right away', async () => orderFixture(async page => {
   const moved = await page.evaluate(() => {
     const t = window.__dropperTest, games = window.__campaigns.map(item => ({ game: item.game.name }));
-    t.movePriority('Charlie', -1, games); t.movePriority('Charlie', -1, games); // Alpha, Bravo, Charlie -> Charlie, Alpha, Bravo
+    t.setPriorityPosition('Charlie', 1, games);
     return t.applyOrder('campaign-priority-changed');
   });
   assert.equal(moved.switched, true);

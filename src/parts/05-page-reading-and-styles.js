@@ -1842,11 +1842,11 @@
       .status-check-value[data-tone="warn"] { color:#f2cf75; }
       .status-check-value[data-tone="bad"] { color:#ff9ea6; }
       #tdh-stream-lock[aria-pressed="true"] { border-color:color-mix(in srgb,var(--theme-accent) 72%,var(--theme-line)); background:color-mix(in srgb,var(--theme-panel) 76%,var(--theme-accent) 24%); }
-      .campaign-priority-controls { display:flex; align-items:center; gap:4px; margin-top:4px; }
-      .campaign-priority-rank { min-width:22px; color:var(--theme-accent2); font-size:var(--exp-font-size-small,11px); font-weight:900; }
-      .campaign-priority-button { width:24px; height:22px; padding:0; border:1px solid var(--theme-line); border-radius:5px; background:var(--theme-panel); color:var(--theme-text); cursor:pointer; font-size:var(--exp-font-size-small,11px); }
-      .campaign-priority-button:disabled { opacity:.35; cursor:default; }
-      .campaign-priority-button:not(:disabled):hover,.campaign-priority-button:not(:disabled):focus-visible { border-color:var(--theme-accent); outline:none; }
+      .campaign-priority-controls { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-top:4px; color:var(--theme-text); font-size:var(--exp-font-size-small,11px); }
+      #tdh-open-campaigns .campaign-priority-position { width:auto; min-width:72px; max-width:100%; min-height:36px !important; border-radius:5px; border-color:var(--theme-muted) !important; background:var(--theme-panel) !important; }
+      #tdh-open-campaigns .campaign-priority-position:focus-visible { outline:2px solid var(--theme-focus) !important; outline-offset:2px; }
+      .campaign-priority-position:disabled { opacity:.6; cursor:default; }
+      @media (pointer:coarse) { #tdh-open-campaigns .campaign-priority-position { min-height:44px !important; } }
       .routing-history-list,.claim-history-list { max-height:180px; overflow:auto; padding:3px 8px 7px; }
       .routing-history-row,.claim-history-row { display:grid; gap:2px; padding:6px 0; min-width:0; }
       .routing-history-row + .routing-history-row,.claim-history-row + .claim-history-row { border-top:1px solid var(--theme-line); }

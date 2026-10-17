@@ -65,7 +65,7 @@
             <details class="campaign-manager" id="tdh-open-campaigns">
               <summary><span class="campaign-manager-title">Open Campaigns</span><span class="campaign-manager-summary" id="tdh-open-campaign-summary">Loading…</span></summary>
               <div class="mini-row campaign-strategy-row"><span>Campaign Order</span><select class="select-lite" id="tdh-campaign-strategy"><option value="priority">My Priority</option><option value="deadline">Ending Soonest</option><option value="completion">Closest to Completion</option><option value="shortest">Shortest Remaining</option></select></div>
-              <div class="campaign-manager-note" id="tdh-campaign-order-note">Check a game to ignore it until its latest campaign ends. Use ↑ and ↓ to rank games. The selected Campaign Order controls how viable campaigns are chosen.</div>
+              <div class="campaign-manager-note" id="tdh-campaign-order-note">Choose a priority position to move a game directly to that rank. The selected Campaign Order controls how viable campaigns are chosen.</div>
               <div class="campaign-game-list" id="tdh-open-campaign-list"></div>
             </details>
             <details class="eligibility-chip" id="tdh-reward-eligibility" data-tone="muted">
@@ -847,11 +847,13 @@
     );
   }
 
-  function refreshOpenCampaignList(now = Date.now()) {
+  function refreshOpenCampaignList(now = Date.now(), force = false) {
     if (!ui) return;
     const list = ui.shadow.getElementById("tdh-open-campaign-list");
     const summary = ui.shadow.getElementById("tdh-open-campaign-summary");
     if (!list || !summary) return;
+    // A background refresh must not remove the native picker while it is in use.
+    if (!force && ui.shadow.activeElement?.matches('.campaign-priority-position')) return;
     refreshUnclaimedRewards(now);
 
     const openGames = listOpenCampaignGames(openCampaignManagementPool(now), now);
@@ -859,7 +861,7 @@
     const priorityOrder = reconcileCampaignPriorityOrder(openGames);
     const visiblePriorityOrder = priorityOrder.filter(key => openGames.some(item => normalizeGameName(item.game) === key));
     // The list shows the order Dropper will actually pick in. Under My Priority that is the rank order
-    // you set with the arrows; under any other Campaign Order it is the order that strategy produces.
+    // you set with the position picker; under any other Campaign Order it is the order that strategy produces.
     const strategy = normalizedCampaignStrategy();
     const manualOrder = strategy === 'priority';
     const pickOrder = campaignQueueGameOrder(now);
@@ -880,8 +882,8 @@
     const orderNote = ui.shadow.getElementById('tdh-campaign-order-note');
     if (orderNote) {
       orderNote.textContent = manualOrder
-        ? 'Check a game to ignore it until its latest campaign ends. Use ↑ and ↓ to rank games. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.'
-        : `Games are listed in the order Dropper picks them under ${campaignStrategyLabel(strategy)}. Choose My Priority to rank games with ↑ and ↓. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.`;
+        ? 'Choose a priority position to move a game directly to that rank. Ignore a game until its latest campaign ends using its ignore control. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.'
+        : `Games are listed in the order Dropper picks them under ${campaignStrategyLabel(strategy)}. Choose My Priority to rank games by position. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.`;
     }
     const ignoredCount = openGames.filter((item) => (
       Number(ignoredCampaignGames.games?.[item.key]?.expiresAt || 0) > now
@@ -929,36 +931,47 @@
       meta.textContent = `${orderLabel}${campaignLabel} · Latest ${formatCampaignEndLabel(item.latestEndAt, item.latestEndMs, now).toLowerCase()}${subscriptionText ? ` · ${subscriptionText}` : ""}`;
       copy.append(title, meta);
       const rank = manualOrder ? visiblePriorityOrder.indexOf(normalizeGameName(item.game)) : openGames.indexOf(item);
-      const priorityControls = document.createElement('div');
+      const priorityControls = document.createElement('label');
       priorityControls.className = 'campaign-priority-controls';
-      const priorityRank = document.createElement('span');
-      priorityRank.className = 'campaign-priority-rank';
-      priorityRank.textContent = rank >= 0 ? `#${rank + 1}` : '—';
-      const up = document.createElement('button');
-      up.type = 'button'; up.className = 'campaign-priority-button'; up.textContent = '↑';
-      up.disabled = !manualOrder || rank <= 0;
-      up.setAttribute('aria-label', `Move ${item.game} higher in game priority`);
-      if (!manualOrder) up.title = 'Choose My Priority as the Campaign Order to rank games by hand';
-      const down = document.createElement('button');
-      down.type = 'button'; down.className = 'campaign-priority-button'; down.textContent = '↓';
-      down.disabled = !manualOrder || rank < 0 || rank >= openGames.length - 1;
-      down.setAttribute('aria-label', `Move ${item.game} lower in game priority`);
-      if (!manualOrder) down.title = 'Choose My Priority as the Campaign Order to rank games by hand';
-      up.addEventListener('click', () => {
-        if (!moveCampaignPriority(item.game, -1, openGames)) return;
+      const priorityLabel = document.createElement('span');
+      priorityLabel.textContent = 'Priority';
+      const priorityPosition = document.createElement('select');
+      priorityPosition.className = 'select-lite campaign-priority-position';
+      const priorityName = `Priority position for ${item.game}`;
+      priorityPosition.setAttribute('aria-label', priorityName);
+      priorityPosition.disabled = !manualOrder || rank < 0 || openGames.length < 2;
+      if (!manualOrder) priorityPosition.title = 'Choose My Priority as the Campaign Order to rank games by hand';
+      const currentPosition = document.createElement('option');
+      currentPosition.value = String(rank + 1); currentPosition.textContent = `#${rank + 1}`;
+      priorityPosition.append(currentPosition);
+      priorityPosition.value = String(rank + 1);
+      function populatePositions() {
+        if (priorityPosition.options.length === openGames.length) return;
+        priorityPosition.replaceChildren();
+        for (let position = 1; position <= openGames.length; position++) {
+          const option = document.createElement('option');
+          option.value = String(position); option.textContent = `#${position}`;
+          priorityPosition.append(option);
+        }
+        priorityPosition.value = String(rank + 1);
+      }
+      // Only the active picker needs the full list of positions.
+      priorityPosition.addEventListener('focus', populatePositions);
+      priorityPosition.addEventListener('pointerdown', populatePositions);
+      priorityPosition.addEventListener('blur', () => {
+        const selected = priorityPosition.selectedOptions[0];
+        if (selected) priorityPosition.replaceChildren(selected);
+      });
+      priorityPosition.addEventListener('change', () => {
+        const position = Number(priorityPosition.value);
+        if (!manualOrder || !setCampaignPriorityPosition(item.game, position, openGames)) return;
         const moved = applyCampaignOrderNow('campaign-priority-changed');
         if (!moved.switched) routingControllerTick(Date.now(), 'campaign-priority-changed');
-        setStatus(`${item.game} moved higher in game priority${moved.switched ? ` · Switching to ${moved.game}` : moved.why ? ` · Current Stream Unchanged (${moved.why})` : ''}`);
-        refreshOpenCampaignList();
+        setStatus(`${item.game} moved to priority #${position}${moved.switched ? ` · Switching to ${moved.game}` : moved.why ? ` · Current Stream Unchanged (${moved.why})` : ''}`);
+        refreshOpenCampaignList(Date.now(), true);
+        [...ui.shadow.querySelectorAll('.campaign-priority-position')].find(select => select.getAttribute('aria-label') === priorityName)?.focus({ preventScroll: true });
       });
-      down.addEventListener('click', () => {
-        if (!moveCampaignPriority(item.game, 1, openGames)) return;
-        const moved = applyCampaignOrderNow('campaign-priority-changed');
-        if (!moved.switched) routingControllerTick(Date.now(), 'campaign-priority-changed');
-        setStatus(`${item.game} moved lower in game priority${moved.switched ? ` · Switching to ${moved.game}` : moved.why ? ` · Current Stream Unchanged (${moved.why})` : ''}`);
-        refreshOpenCampaignList();
-      });
-      priorityControls.append(priorityRank, up, down); copy.append(priorityControls);
+      priorityControls.append(priorityLabel, priorityPosition); copy.append(priorityControls);
 
       const check = document.createElement("button");
       check.type = "button";

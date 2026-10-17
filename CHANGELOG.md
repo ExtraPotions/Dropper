@@ -1,3 +1,9 @@
+## 3.4.45 — 2026-10-17
+
+- Choose any campaign priority position directly instead of moving games one step at a time.
+- Keep the position picker open during background refreshes and preserve keyboard focus after reordering.
+- Load position choices only while needed to keep long campaign lists lighter.
+
 ## 3.4.44 — 2026-10-16
 
 - Uses less memory before the menu is first opened, with shared foundation exp-core 3.9.5.
