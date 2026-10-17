@@ -28,6 +28,11 @@ if (!executablePath) {
   process.exit(1);
 }
 
+// Full Chromium fresh profiles can trigger Windows account lockouts.
+if (process.platform === 'win32' && !/chrome-headless-shell\.exe$/i.test(executablePath)) {
+  throw new Error('Windows browser tests require the headless shell. Set EXP_BROWSER_PATH to its installed executable.');
+}
+
 let playwright = null;
 try {
   playwright = require(require.resolve('playwright', { paths: [process.cwd(), path.resolve(__dirname, '..')] }));
