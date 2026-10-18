@@ -49,3 +49,61 @@ test('a recovery-blocked move clears Opening state and pending destination',()=>
   load('routingControllerNavigate',c);assert.equal(c.routingControllerNavigate('https://www.twitch.tv/unlisted'),false);
   assert.equal(session.state,'paused');assert.equal(session.deadlineAt,0);assert.equal(session.navigationTarget,null);assert.equal(session.targetStream,'');
 });
+
+test('cached standby rejects generic tags outside known campaign restrictions',()=>{
+  const c={cleanText:v=>String(v||'').trim(),watchingLogin:()=> 'current',routingControllerFailedSet:()=>new Set(),readRoutingControllerSession:()=>({}),normalizeGameName:v=>v,gameNamesMatch:(a,b)=>a===b,activeCampaignAllowedChannels:()=>[{login:'listed'}],sortStreamCandidates:v=>v,settings:{excludedChannels:[]},pruneStandbyCache:()=>[
+    {login:'unlisted',game:'Game',campaignKey:'campaign-a',dropsTagged:true},
+    {login:'listed',game:'Game',campaignKey:'campaign-a',dropsTagged:true},
+  ]};
+  load('cachedStandbyCandidates',c);
+  assert.deepEqual(Array.from(c.cachedStandbyCandidates('Game','campaign-a'),v=>v.login),['listed']);
+  c.activeCampaignAllowedChannels=()=>[];
+  assert.equal(c.cachedStandbyCandidates('Game','campaign-a').length,2,'unknown restrictions do not block probationary candidates');
+  c.settings.excludedChannels=['unlisted'];
+  assert.deepEqual(Array.from(c.cachedStandbyCandidates('Game','campaign-a'),v=>v.login),['listed']);
+});
+
+test('queue discovery cannot reintroduce an unlisted tagged channel from another candidate source',()=>{
+  const c={URL,cleanText:v=>String(v||'').trim(),watchingLogin:()=> 'current',currentDrop:{},
+    readRoutingControllerSession:()=>({targetGame:'Game',targetCampaignKey:'campaign-a',targetCampaign:'Campaign'}),
+    routingControllerFailedSet:()=>new Set(),activeCampaignAllowedChannels:()=>[{login:'listed'}],resolveCategorySlug:()=> 'game',
+    normalizeGameName:v=>v,gameNamesMatch:(a,b)=>a===b,twitchChannelHref:v=>v,streamViewerCount:Number,
+    STANDBY_LIVE_FRESH_MS:60000,settings:{queueCount:3},isDirectoryCategoryPage:()=>false,
+    document:{querySelectorAll:()=>[]},rankStreamCandidatesByEvidence:v=>v,
+    cachedStandbyCandidates:()=>['unlisted','listed'].map(login=>({login,href:`https://www.twitch.tv/${login}`,game:'Game',campaignKey:'campaign-a',dropsTagged:true,seenAt:1000}))};
+  load('discoverQueueCandidates',c);
+  assert.deepEqual(Array.from(c.discoverQueueCandidates(1000),v=>v.login),['listed']);
+  c.settings.excludedChannels=['listed'];
+  assert.equal(c.discoverQueueCandidates(1000).length,0,'candidate sources cannot reintroduce an excluded channel');
+});
+
+test('locked retry shares standby filtering before opening a cached destination',()=>{
+  const opened=[];
+  const c={Date,cleanText:v=>String(v||'').trim(),currentDrop:{campaignKey:'campaign-a'},sortStreamCandidates:v=>v,gameNamesMatch:(a,b)=>a===b,
+    pruneStandbyCache:()=>[{login:'unlisted',href:'https://www.twitch.tv/unlisted',game:'Game',campaignKey:'campaign-a',dropsTagged:true}],
+    watchingLogin:()=> 'current',routingControllerFailedSet:()=>new Set(),readRoutingControllerSession:()=>({}),normalizeGameName:v=>v,
+    activeCampaignAllowedChannels:()=>[{login:'listed'}],settings:{excludedChannels:[]},
+    pickAutomaticStreamCandidate:pool=>pool[0],HANDOFF_STATES:{SWITCHING:'switching',SELECTING_GAME:'selecting'},
+    transitionHandoff:()=>{},setStatus:()=>{},logActivity:()=>{},getSuggestedStreams:()=>[],resolveCategorySlug:()=> 'game',resolveCategoryDisplayName:()=> 'Game',
+    isDirectoryCategoryPage:()=>false,autoNavigateTwitch:href=>opened.push(href),lastStreamSwitch:0};
+  load('cachedStandbyCandidates',c);load('retryLockedCampaignStream',c);
+  c.retryLockedCampaignStream({targetGame:'Game',targetCampaignKey:'campaign-a',lockActiveCampaign:true,failedStreams:[]},'retry');
+  assert.equal(opened.includes('https://www.twitch.tv/unlisted'),false);
+  assert.equal(opened[0],'https://www.twitch.tv/directory/category/game');
+});
+
+test('fresh known restrictions revoke stale ACL proof without promoting diagnostic matches',()=>{
+  let snapshot={campaignAllowListPresent:true,campaignAllowListMatch:false,campaignAllowListSource:'active-campaign'};
+  const c={Date,cleanText:v=>String(v||'').trim(),activeCampaignAllowListEvidence:()=>snapshot,writeRoutingControllerSession:s=>s};
+  load('syncRoutingCampaignAllowListEvidence',c);
+  let session={candidateEvidence:{...snapshot,campaignAclMatched:true,gqlCampaignSupported:false}};
+  assert.equal(c.syncRoutingCampaignAllowListEvidence(session,'',500).candidateEvidence.campaignAclMatched,true,'an unknown current channel is not a contradiction');
+  session=c.syncRoutingCampaignAllowListEvidence(session,'unlisted',1000);
+  assert.equal(session.candidateEvidence.campaignAclMatched,false,'even unchanged diagnostics must revoke a stale positive');
+  snapshot={...snapshot,campaignAllowListMatch:true};
+  session=c.syncRoutingCampaignAllowListEvidence(session,'listed',2000);
+  assert.equal(session.candidateEvidence.campaignAclMatched,false,'diagnostics alone must not grant proof');
+  snapshot={...snapshot,campaignAllowListPresent:false,campaignAllowListMatch:false};
+  session=c.syncRoutingCampaignAllowListEvidence({candidateEvidence:{campaignAclMatched:true}},'listed',3000);
+  assert.equal(session.candidateEvidence.campaignAclMatched,true,'missing restrictions do not revoke established proof');
+});

@@ -1,3 +1,9 @@
+## 3.4.47 — 2026-10-18
+
+- Keeps campaign details and channel restrictions consistent when Twitch refreshes reward summaries.
+- Adds a compact progress card with one Pause control, colored status text and stable placement during loading.
+- Organizes campaigns and settings in a compact sidebar with inline options and readable diagnostics.
+
 ## 3.4.46 — 2026-10-17
 
 - Pairs dropdown option backgrounds and text colors for readable campaign and settings menus.

@@ -2,8 +2,14 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {chromium}=require('playwright');
 const source=require('./load-source.cjs').loadDropperSource();
-// Opens a shared-menu submenu detail view by its row label; 'Overview' returns to the section's home view.
-async function openSubmenu(scope,label){const title=scope.locator('.exp-submenu-detail:not([hidden])>.exp-submenu-title:visible');if(await title.count()&&(await title.first().textContent())===label)return;const back=scope.locator('.exp-submenu-detail:not([hidden])>.exp-submenu-back:visible');while(await back.count())await back.first().click();if(label!=='Overview')await scope.locator('.exp-submenu-row:visible').filter({hasText:new RegExp('^'+label+'$')}).click();}
+// Opens the current inline settings group without collapsing an already-open disclosure.
+async function openSubmenu(scope,label){
+ const aliases={Style:'Highlight style',Menu:'Menu Preferences',Transfer:'Settings transfer',Effects:'Effects & integrations',Profiles:'Profiles & sites',Page:'Page tools',Retailers:'Retailer modules',Review:'Protection review',Activity:'Page activity',Playback:'Playback options',Alerts:'Notifications',Patterns:'Advanced Amazon',Tools:'Page tools'};
+ if(label==='Overview')return;
+ const shortcut=scope.locator('[data-exp-menu-shortcut="'+label.toLowerCase()+'"]');if(await shortcut.count()){await shortcut.click();return;}
+ const summary=scope.locator('summary:visible').filter({hasText:new RegExp('^'+(aliases[label]||label)+'(?: .*)?'+'$')}).first();
+ await summary.waitFor();if(!await summary.evaluate(n=>n.parentElement.open))await summary.click();
+}
 const start=source.indexOf('  // BEGIN DROPPER CONTENT WARNING MEMORY');
 const end=source.indexOf('  // END DROPPER CONTENT WARNING MEMORY',start);
 assert.ok(start>=0&&end>start,'content warning memory is included in the assembled source');
@@ -122,7 +128,7 @@ test('the minified install learns across channel visits and the menu can forget 
  await page.evaluate(()=>dropperShow());
  const host=page.locator('#tdh-root');
  await host.evaluate(n=>n.shadowRoot.querySelector('[data-panel="tdh-streams-body"]').click());
- await openSubmenu(host,'Playback');
+ await openSubmenu(host,'Viewing');await openSubmenu(host,'Playback');
  const toggle=await host.evaluate(n=>n.shadowRoot.querySelector('#tdh-remember-content-warnings').getAttribute('role'));
  assert.equal(toggle,'switch');
  await host.evaluate(n=>n.shadowRoot.querySelector('#tdh-forget-content-warnings').click());

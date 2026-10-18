@@ -395,5 +395,5 @@ test('refreshes candidate allow-list diagnostics after campaign metadata arrives
   const helperStart = source.indexOf('  function syncRoutingCampaignAllowListEvidence');
   const helperEnd = source.indexOf('\n  function updateRoutingCampaignSupportEvidence', helperStart);
   const helper = source.slice(helperStart, helperEnd);
-  assert.doesNotMatch(helper, /campaignAclMatched\s*:/u);
+  assert.doesNotMatch(helper, /campaignAclMatched\s*:\s*true/u);
 });

@@ -14,7 +14,7 @@ function contrast(foreground, background) {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
-for (const width of [360, 1280]) for (const size of ['standard', 'large', 'extra-large']) {
+for (const width of [360, 1280]) for (const size of ['standard', 'compact', 'mini']) {
   test(`floating progress shares the menu design at ${width}px, ${size}`, async t => {
     const browser = await chromium.launch({ headless: true });
     t.after(() => browser.close());
@@ -52,21 +52,28 @@ for (const width of [360, 1280]) for (const size of ['standard', 'large', 'extra
       };
     });
     assert.equal(facts.background, facts.menuBackground);
-    assert.equal(facts.border, facts.menuBorder);
-    assert.equal(facts.radius, facts.menuRadius);
+    assert.ok(contrast(facts.border,facts.background)>=3,'card outline remains visible');
+    assert.equal(facts.radius,'10px');assert.equal(facts.menuRadius,'7px');
     assert.equal(facts.font, facts.menuFont);
     assert.equal(facts.texture, 'none');
     assert.equal(facts.weight, '600');
     assert.equal(facts.stateShadow, 'none');
     for (const color of [facts.text, facts.muted, facts.stateColor]) assert.ok(contrast(color, facts.background) >= 4.5, `${color} on ${facts.background}`);
     assert.ok(facts.fits, JSON.stringify(facts));
+    const tones = await page.evaluate(() => {
+      const root=document.getElementById('tdh-root').shadowRoot,status=root.getElementById('tdh-drop-state'),original=status.className;
+      const values=['good','warn','bad'].map(tone=>{status.className='state-pill '+tone;return{tone,color:getComputedStyle(status).color,indicator:getComputedStyle(status,'::before').backgroundColor};});
+      status.className=original;return values;
+    });
+    assert.deepEqual(tones.map(t=>t.color),['rgb(143, 215, 160)','rgb(228, 189, 108)','rgb(220, 147, 147)']);
+    for(const tone of tones){assert.equal(tone.indicator,tone.color);assert.ok(contrast(tone.color,facts.background)>=4.5,JSON.stringify(tone));}
     await page.evaluate(() => window.dropperShow());
     if (width === 1280 && size === 'standard') {
       await page.screenshot({ path: path.join(__dirname, '../../local-verification/dropper-menu-reference-20261011.png') });
     }
     await page.locator('#tdh-root').locator('#tdh-rail-close').click();
     await page.waitForTimeout(100);
-    assert.equal(await page.evaluate(() => document.getElementById('tdh-root').shadowRoot.getElementById('tdh-drop-card').dataset.presentation), 'page-card');
+    assert.equal(await page.evaluate(() => document.getElementById('tdh-root').shadowRoot.getElementById('tdh-drop-card').dataset.presentation), 'compact-card');
     await page.keyboard.press('Alt+g');
     await page.keyboard.press('Escape');
     assert.equal(await page.evaluate(() => document.getElementById('tdh-root').shadowRoot.getElementById('tdh-settings-launcher').getAttribute('aria-expanded')), 'false');

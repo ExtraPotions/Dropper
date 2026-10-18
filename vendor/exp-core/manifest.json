@@ -1,8 +1,8 @@
 {
-  "coreVersion": "3.9.6",
+  "coreVersion": "3.9.7",
   "source": {
     "source": "ExtraPotions/exp-core",
-    "sourceVersion": "3.9.6",
+    "sourceVersion": "3.9.7",
     "architecture": "core-native"
   },
   "suiteContract": {
@@ -177,21 +177,22 @@
       "rootId": "exp-prisma-root"
     }
   },
-  "bundleSha256": "70abedab5988716db6127f5bdabdf3e28844452f85b7099c6d255aa4269003b7",
+  "bundleSha256": "92e956af8be22afdbcb77a079ab01fac2e866db49b62908255cb6607880673b5",
   "files": {
     "foundation.js": "983c32545da78bc43c5f2705eecdf25be7ea6e0a83bd2eab59833098e3505bd5",
     "diagnostic-report.js": "563d6314d8866d2655141b6d06cb3ba4dc3f964ee2c0a427dad35d3f1c81a1f6",
     "lifecycle.js": "fc7d4e72f5edc54e5b9edce2578125d8091c207467d606260d4e9204b4c4712d",
-    "product-tools.js": "4dc80acb5b3c91a78b3854f29fb6655cda7ff52784edbabbc9a6f5903e0bb803",
-    "menu-tabs.js": "646719477e72eb1785ab4f0c6deba2297e2034d258d1e499013c8e3600737a3e",
-    "menu-arrangement.js": "0a453265c353e3c6f7e8ef9a0d688fc8caabc623f27710aaec620539d6531810",
+    "product-tools.js": "208fa698040a35c9106603e1178d0ebe5b5c3d64daf88e030a6ef3b516eb3f81",
+    "menu-tabs.js": "569dcbfd37f81058a9157ffa24010891f9d1e95a67145ee4557aa31369e3afb1",
+    "menu-arrangement.js": "19073942264db29e637f3ab40a9ca8533807ebc448f54e8a2fc1a6af28177f9b",
     "health-summary.js": "dccf0a557e5dff4e91199346b53deee65fd4165e4d8fd7bb04a6c5dcd88236eb",
     "recovery-control.js": "c9f1b6383ffda72235ca59bca1a1308bfad5b3fb6552f7ba4305795bfcbdf2af",
-    "lean-menu.js": "8e11eebdf197047ba0bcb7f49ec1733bae2ea6c234e054e481db71eb2a9ac9dd",
-    "menu-typography.js": "18e595bc7e29bb6230b51a9a12a57727938783ad01d8b7a9b7102b892b5cb437",
-    "menu-preferences.js": "6c25d0739857a4a6c1f3549da90c27828ac815693d0c0c58459606df958fa8d6",
+    "lean-menu.js": "34f85042f5ac65b23bc5b76b35ccaf6217ba64e63f045c7e2dd6e83eb3cca47a",
+    "menu-help.js": "f26216228f2c4114d24147767f9ee32444723241af53ff6f9cbb3fc1ee75cc1e",
+    "menu-typography.js": "6995f62198cd48fbf50d7951cad0a5f8c9f96d6d5d773b8edca4a06dc7400ef8",
+    "menu-preferences.js": "2c2abaa9e714f814eb0322366a30a996677ef99869641d0aa6d845f2abf4459e",
     "launcher-flyout.js": "37c6a5eb9eeb49740ad7c996f963a218abadfbd3be995badfe9286bb7cd58655",
-    "runtime.js": "0dbb57af55ecb542c264dbeeddbad89755c6f1f4f32c7ffa63e9c7c57290898a",
+    "runtime.js": "cf72bc17b777bc69e4e3f58a2a446daed3d4ac4030b835b3d4ab3c2154f7979f",
     "suite-contract.json": "1b60485eeb48388692eadbc6a2de2c8916f7a67baadcb9ef277c44360b79b773"
   }
 }

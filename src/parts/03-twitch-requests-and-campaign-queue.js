@@ -199,6 +199,7 @@
     let dashboardCampaigns = null;
     let sessionRow = null;
     let availableCampaigns = null;
+    const detailCampaigns = [];
 
     for (const [index, row] of rows.entries()) {
       if (!row || typeof row !== "object") continue;
@@ -209,6 +210,13 @@
         touched = true;
       }
       if (!data || typeof data !== "object" || (Array.isArray(row.errors) && row.errors.length)) continue;
+      const viewerId = cleanText(data.currentUser?.id);
+      if (/^\d{1,32}$/.test(viewerId)) writeSession('dropper-viewer-id-v1', viewerId);
+      const detailed = data.user?.dropCampaign || data.dropCampaign;
+      if (detailed?.id && Array.isArray(detailed.timeBasedDrops || detailed.drops)) {
+        detailCampaigns.push(detailed);
+        touched = true;
+      }
       const dashboard = data.currentUser?.dropCampaigns;
       if (Array.isArray(dashboard)) {
         dashboardCampaigns = dashboard;
@@ -236,7 +244,7 @@
     // recovered. Only successful read data can clear the network failure state.
     const hasFreshRead = Boolean(
       (inventoryRow && inventoryResponseState(inventoryRow).valid) ||
-      dashboardCampaigns || sessionRow || availableCampaigns
+      dashboardCampaigns || sessionRow || availableCampaigns || detailCampaigns.length
     );
     if (hasFreshRead) {
       lastTwitchGqlAt = Date.now();
@@ -256,6 +264,13 @@
       }
     }
     if (inventoryRow) acceptInventoryResponse(inventoryRow, source);
+    if (detailCampaigns.length) {
+      rememberCampaignCatalog(detailCampaigns, source);
+      for (const detailed of compactCampaignCatalog(detailCampaigns.map(campaign => withKnownCampaignDetails(campaign)))) {
+        campaignDetailsCache.set(campaignKey(detailed), detailed);
+        hydrateCurrentRewardDetails(detailed);
+      }
+    }
 
     const campaignPool = mergeCampaigns(
       lastCampaignCatalog,
@@ -381,7 +396,7 @@
             (Object.hasOwn(row, 'data') && row.data !== null && (typeof row.data !== 'object' || Array.isArray(row.data))) ||
             (Object.hasOwn(row, 'errors') && !Array.isArray(row.errors))) return null;
         const data = pick(row.data, ['currentUser', 'channelDropCampaigns', 'channel', 'user', 'dropCampaign', 'claimDropRewards']);
-        if (data?.currentUser) data.currentUser = pick(data.currentUser, ['inventory', 'dropCampaigns', 'dropCurrentSession', 'dropCurrentSessionContext']);
+        if (data?.currentUser) data.currentUser = pick(data.currentUser, ['id', 'inventory', 'dropCampaigns', 'dropCurrentSession', 'dropCurrentSessionContext']);
         if (data?.channel) data.channel = pick(data.channel, ['viewerDropCampaigns', 'dropCampaigns']);
         if (data?.user) data.user = pick(data.user, ['viewerDropCampaigns', 'dropCampaign', 'id', 'login', 'displayName', 'stream', 'broadcastSettings']);
         if (data?.claimDropRewards) data.claimDropRewards = pick(data.claimDropRewards, ['status']);
@@ -460,7 +475,7 @@
           ops.forEach((op, index) => {
             if (!supported.has(op.name)) return;
             const row = rows[index], data = pick(row?.data, ['currentUser', 'channelDropCampaigns', 'channel', 'user', 'dropCampaign', 'claimDropRewards']);
-            if (data?.currentUser) data.currentUser = pick(data.currentUser, ['inventory', 'dropCampaigns', 'dropCurrentSession', 'dropCurrentSessionContext']);
+            if (data?.currentUser) data.currentUser = pick(data.currentUser, ['id', 'inventory', 'dropCampaigns', 'dropCurrentSession', 'dropCurrentSessionContext']);
             if (data?.channel) data.channel = pick(data.channel, ['viewerDropCampaigns', 'dropCampaigns']);
             if (data?.user) data.user = pick(data.user, ['viewerDropCampaigns', 'dropCampaign', 'id', 'login', 'displayName', 'stream', 'broadcastSettings']);
             if (data?.claimDropRewards) data.claimDropRewards = pick(data.claimDropRewards, ['status']);
@@ -797,6 +812,11 @@
   const GQL_EXPECTED_SHAPES = {
     Inventory: (data) => inventoryResponseState({ data }).valid,
     ViewerDropsDashboard: (data) => Array.isArray(data?.currentUser?.dropCampaigns) || data?.currentUser === null,
+    DropCampaignDetails: (data) => {
+      const campaign = data?.user?.dropCampaign || data?.dropCampaign;
+      return Boolean(campaign?.id && campaign.allow && typeof campaign.allow.isEnabled === 'boolean' &&
+        Array.isArray(campaign.timeBasedDrops || campaign.drops));
+    },
     ChannelDropsCampaigns: (data) => Array.isArray(data?.channelDropCampaigns),
     DropCurrentSessionContext: (data) => sessionResponseState({ data }).valid,
   };
@@ -895,6 +915,8 @@
         confirmed: 0, reason: "inventory-unavailable" };
       return result;
     }
+    const viewerId = cleanText(row?.data?.currentUser?.id);
+    if (/^\d{1,32}$/.test(viewerId)) writeSession('dropper-viewer-id-v1', viewerId);
     const discovered = extractCampaignCatalog(row);
     nativeRewardClaimEvidence(row?.data?.currentUser?.inventory, discovered);
     if (discovered.length) rememberCampaignCatalog(discovered, source);

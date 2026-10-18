@@ -95,6 +95,19 @@ test('a later good inventory recovers from an unavailable state', () => {
   assert.equal(c.inventoryResponseHealth.valid, true);
   assert.equal(c.lastInventoryCampaigns[0].timeBasedDrops[0].self.currentMinutesWatched, 18);
 });
+
+test('only valid inventory captures a numeric viewer ID for campaign detail requests', () => {
+  const { c } = inventoryFixture();
+  const saved = new Map(); c.writeSession = (key, value) => saved.set(key, value);
+  const row = inventory([]); row.data.currentUser.id = '123456';
+  c.acceptInventoryResponse(row);
+  assert.equal(saved.get('dropper-viewer-id-v1'), '123456');
+  row.data.currentUser.id = 'other-viewer'; c.acceptInventoryResponse(row);
+  assert.equal(saved.get('dropper-viewer-id-v1'), '123456');
+  row.data.currentUser.id = '999'; row.errors = [{ message: 'unavailable' }];
+  c.acceptInventoryResponse(row);
+  assert.equal(saved.get('dropper-viewer-id-v1'), '123456');
+});
 test('Inventory diagnostics retain only bounded field names, structural types and counts', () => {
   const { c } = inventoryFixture();
   const row = { data: { currentUser: { login: 'private-viewer', inventory: { token: 'private-token' } } },
@@ -150,6 +163,27 @@ test('null Inventory progress is not a new zero-minute observation', () => {
   assert.equal(c.findActiveDropInCampaigns([campaign([reward('selected', null)])]), null);
   assert.equal(c.findActiveDropInCampaigns([campaign([reward('selected', 0)])]).currentMinutes, 0);
 });
+
+test('compact inventory distinguishes unavailable watch time from confirmed zero', () => {
+  const items = [];
+  const list = { replaceChildren: () => { items.length = 0; } };
+  const c = load(['renderCompactInventory'], {
+    ui: { shadow: { getElementById: id => id === 'tdh-inventory-list' ? list : {} } },
+    currentDrop: { ...target(), requiredMinutes: 30 },
+    authoritativeProgressPercent: () => null, dropProgressComplete: () => false,
+    appendInventoryItem: (list, name, meta, state) => items.push({ name, meta, state }),
+  });
+  for (const value of [null, undefined, '', NaN, Infinity, -1]) {
+    c.currentDrop.currentMinutes = value;
+    c.renderCompactInventory();
+    assert.equal(items[0].meta, 'Progress Pending', `unavailable value ${value}`);
+  }
+  for (const value of [0, 5]) {
+    c.currentDrop.currentMinutes = value;
+    c.renderCompactInventory();
+    assert.equal(items[0].meta, `${value} / 30 Min`);
+  }
+});
 test('session relationship resolution distinguishes prerequisites, other rewards and missing details', () => {
   const c = identityFixture();
   const observed = c.parseSessionDrop(session(), [campaign()]);
@@ -182,7 +216,7 @@ function detailsFixture({ failing = false, stale = false, waiting = false, incom
   Object.assign(c, {
     Date: { now: () => time }, campaignDetailsAttempts: new Map(), campaignDetailsMisses: new Map(),
     campaignDetailsCache: new Map(), CAMPAIGN_DETAILS_RETRY_MS: 60000, CAMPAIGN_DETAILS_MISS_TTL_MS: 900000,
-    getToken: () => 'fixture', cookie: () => 'viewer', logActivity: () => {},
+    getToken: () => 'fixture', cookie: () => 'viewer', readSession: () => '123456', logActivity: () => {},
     pollContext: () => ({}), pollContextIsCurrent: () => !stale, isPageScrapedCampaignKey: () => false,
     ROUTING_STATES: { WAITING: 'waiting' },
     readRoutingControllerSession: () => ({ state: waiting ? 'waiting' : 'earning', waitReason: waiting ? 'campaign-details' : '', targetCampaignKey: 'campaign-1' }),
@@ -270,7 +304,7 @@ test('user-facing earning status requires recent proof for the exact selected re
   assert.match(c.rewardCreditStatus(), /prerequisite: Earlier Reward \(12 min\).*Selected: Selected Reward/);
 });
 
-function pollFixture(row = inventory(), { id = 'session', minutes = 12, requestFails = false, productionTransport = false } = {}) {
+function pollFixture(row = inventory(), { id = 'session', minutes = 12, requestFails = false, productionTransport = false, sessionCampaigns = [campaign()] } = {}) {
   const calls = [];
   const c = identityFixture();
   const observedRow = session(id, minutes);
@@ -290,7 +324,7 @@ function pollFixture(row = inventory(), { id = 'session', minutes = 12, requestF
     enrichRoutingTargetCampaign: async () => { calls.push('details-check'); return false; },
     suppressPageCampaignsWithAuthoritativeMatches: rows => rows, reconcilePageCurrentDropWithAuthoritativeCampaign: () => {},
     routingCampaignPool: () => c.lastCampaignCatalog,
-    fetchSessionDropState: async () => { calls.push('session-fetch'); return { sessionDrop: c.parseSessionDrop(observedRow, [campaign()]), available: [], sessionRow: observedRow }; },
+    fetchSessionDropState: async () => { calls.push('session-fetch'); return { sessionDrop: c.parseSessionDrop(observedRow, sessionCampaigns), available: [], sessionRow: observedRow }; },
     updateRoutingCampaignSupportEvidence: () => {}, applyDrop: drop => { c.currentDrop = drop; },
     reconcileRoutingTargetWithCurrentDrop: () => {}, restoreVerifiedEarningFromSession: () => {},
     setStatus: value => { c.statusText = value; }, dropActivityStatus: () => 'fixture', refreshDropCard: () => {}, logActivity: () => {},
@@ -336,6 +370,44 @@ test('production polling advances exact session credit without treating failed i
   assert.equal(c.currentDrop.currentMinutes, 12);
   assert.equal(c.lastProgressReconcile.inventoryLive, false);
   assert.equal(c.rewardSessionResolution.relation, 'selected-reward');
+});
+
+test('same-game credit for another campaign never advances the locked target', async () => {
+  const other = { ...campaign([reward('other-reward', 12)]), id: 'campaign-2', name: 'Other campaign' };
+  const { c } = pollFixture(inventory([campaign([reward('selected', 5)]), other]), {
+    id: 'other-reward', minutes: 13, sessionCampaigns: [other],
+  });
+  c.lastCampaignCatalog.push(other);
+  await c.pollGqlDrops();
+  assert.equal(c.currentDrop.id, 'selected');
+  assert.equal(c.currentDrop.currentMinutes, 5);
+  assert.equal(c.lastProgressReconcile.sessionEligible, false);
+  assert.equal(c.lastProgressReconcile.sessionRejectedReason, 'different-campaign');
+  assert.equal(c.rewardSessionResolution.sessionMinutes, 13);
+  assert.equal(c.rewardSessionResolution.relation, 'different-or-unresolved-campaign');
+});
+
+test('delayed session credit for a claimed prerequisite cannot complete its successor', async () => {
+  const previous = reward('previous', 480); previous.self.isClaimed = true;
+  const next = reward('selected', 5); next.preconditionDrops = [{ id: 'previous' }];
+  const rows = [campaign([previous, next])];
+  const { c } = pollFixture(inventory(rows), { id: 'previous', minutes: 480, sessionCampaigns: rows });
+  c.lastCampaignCatalog = rows;
+  await c.pollGqlDrops();
+  assert.equal(c.currentDrop.id, 'selected');
+  assert.equal(c.currentDrop.currentMinutes, 5);
+  assert.equal(c.currentDrop.isClaimed, false);
+  assert.equal(c.lastProgressReconcile.sessionEligible, false);
+  assert.equal(c.rewardSessionResolution.relation, 'prerequisite');
+});
+
+test('repeated unchanged session polls cannot accumulate estimated watch minutes', async () => {
+  const { c } = pollFixture(inventory([campaign([reward('selected', 5)])]), { id: 'selected', minutes: 5 });
+  for (let i = 0; i < 4; i++) {
+    await c.pollGqlDrops();
+    assert.equal(c.currentDrop.currentMinutes, 5);
+    assert.equal(c.lastProgressReconcile.chosenMinutes, 5);
+  }
 });
 test('a failed inventory request marks availability unknown but keeps the last good snapshot', async () => {
   const { c } = pollFixture(undefined, { requestFails: true });

@@ -23,6 +23,7 @@ function loadOperations(stored = {}) {
       inventory: { name: "Inventory", hash: BUILT_IN, variables: { fetchRewardCampaigns: true } },
       availableDrops: { name: "ChannelDropsCampaigns", hash: BUILT_IN, variables: { channelID: "" } },
       currentDrop: { name: "DropCurrentSessionContext", hash: BUILT_IN, variables: {} },
+      dropCampaignDetails: { name: "DropCampaignDetails", hash: BUILT_IN, variables: { channelLogin: "", dropID: "" } },
     },
     localStorage: {
       getItem: (key) => (storage.has(key) ? storage.get(key) : null),
@@ -40,6 +41,21 @@ function loadOperations(stored = {}) {
 }
 
 const okRow = { data: { currentUser: { inventory: { dropCampaignsInProgress: [] } } } };
+
+test('campaign detail hashes require actual reward and channel restriction fields', () => {
+  const ops = loadOperations();
+  const partial = { data: { user: { dropCampaign: { id: 'campaign', timeBasedDrops: [] } } } };
+  ops.check([{ op: 'dropCampaignDetails' }], [partial], 200);
+  assert.equal(ops.snapshot().DropCampaignDetails.lastResult, 'shape-changed');
+  ops.learn([{ name: 'DropCampaignDetails', hash: TWITCH_NEW, variableKeys: ['channelLogin', 'dropID'] }], [partial]);
+  assert.equal(ops.snapshot().DropCampaignDetails.source, 'built-in');
+  const complete = { data: { user: { dropCampaign: { id: 'campaign',
+    allow: { isEnabled: true, channels: [{ name: 'dnd' }] }, timeBasedDrops: [{ id: 'reward', name: 'd20', requiredMinutesWatched: 30 }] } } } };
+  ops.learn([{ name: 'DropCampaignDetails', hash: TWITCH_NEW, variableKeys: ['channelLogin', 'dropID'] }], [complete]);
+  ops.check([{ op: 'dropCampaignDetails' }], [complete], 200);
+  assert.equal(ops.snapshot().DropCampaignDetails.source, 'learned-from-twitch');
+  assert.equal(ops.snapshot().DropCampaignDetails.lastResult, 'ok');
+});
 
 test('session operation reports absence separately and cannot learn a hash from an unrecognized envelope', () => {
   const ops = loadOperations();

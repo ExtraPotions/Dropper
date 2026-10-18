@@ -24,6 +24,9 @@ test('valid Drops reads survive while unrelated headers and fields are discarded
   const p=payload();p.headers.authorization='OAuth private';p.headers.cookie='private';p.json[0].data.chat='private';
   const result=validator()(p);assert.ok(result);assert.equal(result.headers.authorization,undefined);
   assert.equal(result.headers.cookie,undefined);assert.equal(result.json[0].data.chat,undefined);
+  p.json[0].data.currentUser.id='123456';p.json[0].data.currentUser.email='private';
+  const viewer=validator()(p).json[0].data.currentUser;
+  assert.equal(viewer.id,'123456');assert.equal(viewer.email,undefined);
 });
 test('rejects wrong endpoints, stale scope, invalid credentials and mismatched batches',()=>{
   const validate=validator();

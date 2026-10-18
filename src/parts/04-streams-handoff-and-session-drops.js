@@ -1255,15 +1255,8 @@
     ].filter(Boolean))];
     const failedSet = new Set(failedStreams.map((login) => cleanText(login).toLowerCase()));
     const targetCampaignKey = cleanText(pending.targetCampaignKey || currentDrop?.campaignKey || "");
-    const cached = sortStreamCandidates(
-      pruneStandbyCache().filter((item) => {
-        const login = cleanText(item?.login).toLowerCase();
-        if (!login || failedSet.has(login)) return false;
-        if (pending.targetGame && (!item.game || !gameNamesMatch(pending.targetGame, item.game))) return false;
-        if (targetCampaignKey && item.campaignKey && item.campaignKey !== targetCampaignKey) return false;
-        return true;
-      }),
-      (left, right) => Number(right.seenAt || 0) - Number(left.seenAt || 0),
+    const cached = cachedStandbyCandidates(pending.targetGame, targetCampaignKey).filter(
+      (item) => !failedSet.has(cleanText(item.login).toLowerCase()),
     );
     const cachedNext = pickAutomaticStreamCandidate(cached, pending);
 

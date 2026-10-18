@@ -19,7 +19,7 @@
               <div class="header-copy">
                 <div class="header-title-row">
                   <h2 id="tdh-rail-title">Dropper</h2>
-                  <button type="button" id="tdh-header-version" aria-label="View Dropper v${APP_VERSION} Changelog" title="View Changelog">v${APP_VERSION}</button>
+                  <button type="button" id="tdh-header-version" aria-label="View Dropper v${APP_VERSION} Changelog">v${APP_VERSION}</button>
                 </div>
                 <div id="tdh-rail-subtitle">Twitch Drops: Track and Redeem</div>
               </div>
@@ -168,7 +168,7 @@
             ${switchHtml("tdh-progress-title", "Show Progress In Tab", "", settings.progressInTitle)}
             ${switchHtml("tdh-keep-tab", "Keep Screen Awake", "Requests A Screen Wake Lock During Actual Playback. Does Not Override Visibility Or Pauses.", settings.keepTabActive)}
             ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "", settings.hideTwitchSubscriptionPromos)}
-            ${switchHtml("tdh-badge-only", "Badge Only", "Keeps Only The Dropper Badge On The Page And Shows Progress At The Top Of The Menu.", settings.badgeOnly)}
+            ${switchHtml("tdh-badge-only", "Badge Only", "Collapses the page card to a small button. Open that button for progress and Pause; progress is never duplicated in the menu.", settings.badgeOnly)}
             ${switchHtml("tdh-reduce-motion", "Reduce motion", "", settings.reduceMotion)}
             <hr class="appearance-separator">
             ${switchHtml("tdh-custom-opacity", "Custom Opacity", "Makes Dropper panels translucent while keeping the launcher fully visible.", settings.customOpacity)}
@@ -220,6 +220,7 @@
                 </div>
               </div>
             </div>
+            <div class="compact-card-actions"><button type="button" id="tdh-card-pause">Pause</button><button type="button" id="tdh-card-menu">Open menu</button></div>
           </section>
           <button type="button" id="tdh-settings-launcher" data-exp-part="launcher" aria-controls="tdh-tools-dock" aria-expanded="false" aria-label="Open Dropper Settings" data-userscript-launcher="userscript-launcher-v1" data-launcher-id="dropper" data-launcher-preferred-position="right-bottom">
             <svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><path class="track" d="M18 3H24A9 9 0 0 1 33 12V24A9 9 0 0 1 24 33H12A9 9 0 0 1 3 24V12A9 9 0 0 1 12 3H18Z"></path><path class="fill" id="tdh-ring" d="M18 3H24A9 9 0 0 1 33 12V24A9 9 0 0 1 24 33H12A9 9 0 0 1 3 24V12A9 9 0 0 1 12 3H18Z" pathLength="100" stroke-dasharray="0 100"></path></svg>
@@ -249,6 +250,7 @@
     chromeResizeObserver.observe(ui.dock);
     chromeResizeObserver.observe(shadow.querySelector(".badge-row"));
     const updateNotice = shadow.getElementById("tdh-update-notice");
+    updateNotice?.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();hideUpdateNotice();}});
     if (updateNotice) {
       updateNotice.dataset.placement = "menu";
       delete updateNotice.dataset.expFloatingNotice;
@@ -258,6 +260,8 @@
     }
     bindDrag();
     bindSwitches();
+    mountCompactDropperNavigation();
+    mountProductTools();
     bindPanels();
     ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { ExtraPotionsCore.resetLauncherGrid("dropper"); requestAnimationFrame(layoutChrome); } });
     ExtraPotionsCore.setMenuStatus("dropper", systemHealthSnapshot);
@@ -283,7 +287,15 @@
     // A reward image that fails to load falls back to the gift icon until the reward changes.
     const stripArtImage = shadow.querySelector("#tdh-strip-art img");
     stripArtImage?.addEventListener("error", () => { stripArtImage.dataset.failed = stripArtImage.getAttribute("src") || ""; stripArtImage.hidden = true; });
+    shadow.getElementById('tdh-card-pause')?.addEventListener('click',()=>{
+      syncViewingContext();
+      if(viewingIntent.snapshot().paused)ensureStreamPlaying(true);
+      else {viewingIntent.pause(true);const video=streamVideoElement();if(video&&!video.paused){try{video.pause();}catch{}}}
+      refreshViewingControls();syncCompactState();
+    });
+    shadow.getElementById('tdh-card-menu')?.addEventListener('click',()=>setRailOpen(!railOpen,true));
     bindDropperControls();
+    ui.pageActions=ExtraPotionsCore.createPageActions({host,shadow,label:'Dropper',preferVideo:true,visible:()=>Boolean(streamVideoElement()),actions:[{label:'Show Drops Inventory',run:()=>{setRailOpen(true,true);shadow.querySelector('[data-exp-section-tab=tdh-drops-body]')?.click();shadow.getElementById('tdh-toggle-inventory')?.click();}},{label:'Stay On This Stream',text:()=>manualStreamLockSnapshot()?'Release Stream Lock':'Stay On This Stream',run:()=>{shadow.getElementById('tdh-stream-lock')?.click();}},{label:'Menu',run:()=>setRailOpen(!railOpen,true)}]});
     renderSwitches();
     applyMotionSetting();
     applyAppearanceSettings();
@@ -293,7 +305,7 @@
     syncMenuSizing();
     layoutChrome();
     ui.launcher.addEventListener("click", () => setRailOpen(!railOpen));
-    // The strip opens from its own button laid over the card; Skip sits above it as a sibling, not inside it.
+    // Badge Only opens the same compact card, keeping progress out of the menu.
     const stripToggle = shadow.getElementById("tdh-strip-toggle");
     const setStripOpen = (open) => {
       progressCard.classList.toggle("is-expanded", open);
@@ -301,7 +313,7 @@
       requestAnimationFrame(layoutChrome);
     };
     stripToggle.addEventListener("click", () => {
-      if (progressCard.dataset.presentation === "strip") setStripOpen(!progressCard.classList.contains("is-expanded"));
+      if(settings.badgeOnly){progressCard.dataset.expanded="1";syncProgressPanelPlacement();layoutChrome();}
     });
     document.addEventListener("pointerdown", (event) => {
       if (!progressCard.classList.contains("is-expanded") || event.composedPath().includes(progressCard)) return;
@@ -587,9 +599,10 @@
     const items = pruneStandbyCache().filter((item) => {
       const login = cleanText(item?.login).toLowerCase();
       if (!login || login === active || failed.has(login)) return false;
+      if ((settings.excludedChannels || []).includes(login)) return false;
       if (wantedGame && (!item.game || !gameNamesMatch(wantedGame, item.game))) return false;
       if (wantedCampaign && item.campaignKey !== wantedCampaign) return false;
-      if (allowListPresent && !allowedLogins.has(login) && item.dropsTagged !== true) return false;
+      if (allowListPresent && !allowedLogins.has(login)) return false;
       return true;
     }).map((item) => ({
       ...item,
@@ -658,6 +671,7 @@
           seen.has(login) ||
           login === active ||
           failed.has(login) ||
+          (settings.excludedChannels || []).includes(login) ||
           metadata.routable === false
         ) return;
 
@@ -665,8 +679,7 @@
         const candidateGame = cleanText(metadata.game || "");
         const candidateCampaignKey = cleanText(metadata.campaignKey || "");
         const allowListMatch = Boolean(login && allowedLogins.has(login));
-        const dropsTagged = metadata.dropsTagged === true;
-        if (allowListPresent && !allowListMatch && !dropsTagged) return;
+        if (allowListPresent && !allowListMatch) return;
         if (targetGame && (!candidateGame || !gameNamesMatch(targetGame, candidateGame))) return;
         if (targetCampaignKey && candidateCampaignKey && candidateCampaignKey !== targetCampaignKey) return;
 
@@ -829,7 +842,8 @@
       appendInventoryItem(list, "No Active Drop", "Waiting For Twitch", "Idle");
       return;
     }
-    const current = Number(currentDrop.currentMinutes) || 0;
+    const observed = currentDrop.currentMinutes;
+    const current = observed == null || observed === "" ? null : Number(observed);
     const required = Number(currentDrop.requiredMinutes) || 0;
     const authoritativePercent = authoritativeProgressPercent();
     const state = currentDrop.needsDropDetails
@@ -842,7 +856,7 @@
     appendInventoryItem(
       list,
       currentDrop.name || "Current Drop",
-      currentDrop.needsDropDetails ? "Twitch Details Pending" : required ? `${current} / ${required} Min` : "Progress Pending",
+      currentDrop.needsDropDetails ? "Twitch Details Pending" : required && Number.isFinite(current) && current >= 0 ? `${current} / ${required} Min` : "Progress Pending",
       state,
     );
   }
@@ -885,6 +899,7 @@
         ? 'Choose a priority position to move a game directly to that rank. Ignore a game until its latest campaign ends using its ignore control. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.'
         : `Games are listed in the order Dropper picks them under ${campaignStrategyLabel(strategy)}. Choose My Priority to rank games by position. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.`;
     }
+    if(orderNote)ExtraPotionsCore.setMenuHelp(ui.shadow.getElementById('tdh-campaign-strategy')?.previousElementSibling,orderNote.textContent);
     const ignoredCount = openGames.filter((item) => (
       Number(ignoredCampaignGames.games?.[item.key]?.expiresAt || 0) > now
     )).length;
@@ -976,13 +991,13 @@
       const check = document.createElement("button");
       check.type = "button";
       check.className = "campaign-ignore-check";
-      check.setAttribute("role", "checkbox");
+      check.setAttribute("role", "switch");
       check.setAttribute("aria-checked", String(ignored));
       check.setAttribute(
         "aria-label",
         `${ignored ? "Stop ignoring" : "Ignore"} ${item.game} until ${new Date(item.latestEndMs).toLocaleString()}`,
       );
-      check.title = ignored ? "Stop Ignoring This Game" : "Ignore This Game";
+
       check.addEventListener("click", () => {
         const nextIgnored = check.getAttribute("aria-checked") !== "true";
         if (!setCampaignGameIgnored(item.game, item.latestEndMs, nextIgnored)) return;
@@ -1013,6 +1028,7 @@
       row.append(copy, check);
       list.appendChild(row);
     }
+    filterCampaignRows();
   }
 
   function appendInventoryItem(list, name, meta, state) {
@@ -1412,6 +1428,9 @@
 
   function syncCompactState() {
     if (!ui) return;
+    ui.pageActions?.refresh();
+    const pause=ui.shadow.getElementById('tdh-card-pause');if(pause){pause.textContent=viewingIntent.snapshot().paused?'Resume':'Pause';pause.disabled=!watchingLogin();}
+    const menu=ui.shadow.getElementById('tdh-card-menu');if(menu)menu.textContent=railOpen?'Close menu':'Open menu';
     const reward = ui.shadow.getElementById("tdh-compact-reward");
     const extra = ui.shadow.getElementById("tdh-compact-extra");
     const state = ui.shadow.getElementById("tdh-compact-state");
@@ -1543,7 +1562,7 @@
     const card = ui?.shadow.getElementById("tdh-drop-card");
     if (!card) return;
     card.style.removeProperty('position');
-    if (settings.badgeOnly || railOpen || card.dataset.presentation !== 'page-card') return;
+    if (!['page-card','compact-card'].includes(card.dataset.presentation)) return;
     const box = card.getBoundingClientRect();
     if (!box.width || !box.height) return;
     const launcherNodes = [...document.querySelectorAll('[data-exp-product-launcher="1"]')]
@@ -1584,25 +1603,14 @@
     const menuSlot = ui.shadow.getElementById("tdh-badge-only-progress-slot");
     const badgeRow = ui.shadow.querySelector(".badge-row");
     if (!card || !menuSlot || !badgeRow || !ui.launcher) return;
-    // Badge Only alone decides where progress lives: off keeps the card beside the launcher even while the menu is open.
-    if (settings.badgeOnly) {
-      menuSlot.hidden = false;
-      if (card.parentElement !== menuSlot) menuSlot.append(card);
-      card.dataset.presentation = "menu-card";
-      card.classList.remove("is-expanded");
-    } else if (sharedLauncher()) {
-      menuSlot.hidden = true;
-      if (card.parentElement !== ui.cluster) ui.cluster.append(card);
-      if (card.dataset.presentation !== "strip") card.classList.remove("is-expanded");
-      card.dataset.presentation = "strip";
-    } else {
-      menuSlot.hidden = true;
-      if (card.parentElement !== badgeRow) badgeRow.insertBefore(card, ui.launcher);
-      card.dataset.presentation = "page-card";
-      card.classList.remove("is-expanded");
-    }
-    // As a strip, its toggle button opens the full card; elsewhere the toggle is not shown.
-    ui.shadow.getElementById("tdh-strip-toggle")?.setAttribute("aria-expanded", String(card.classList.contains("is-expanded")));
+    menuSlot.hidden=true;
+    if(card.parentElement!==ui.cluster)ui.cluster.append(card);
+    card.dataset.presentation='compact-card';card.dataset.expReserved='1';
+    if(!settings.badgeOnly)delete card.dataset.expanded;
+    card.dataset.collapsed=String(Boolean(settings.badgeOnly&&!card.dataset.expanded));
+    const toggle=ui.shadow.getElementById('tdh-strip-toggle');toggle.textContent='Show progress card';toggle.setAttribute('aria-label','Show progress card');
+    // Badge Only keeps the complete card one tap away.
+    ui.shadow.getElementById("tdh-strip-toggle")?.setAttribute("aria-expanded", String(card.dataset.collapsed !== "true"));
   }
   // The strip sits over the Stream Chat title bar. Without one (directory pages, collapsed chat) it lines up with
   // the launcher like an update card. Clicking it opens the full card in place.
@@ -1738,6 +1746,31 @@
       location.reload();
     } catch(error) {productResetting=false;throw error;}
   }
+  function mountCompactDropperNavigation(){
+    const shadow=ui.shadow,drops=shadow.getElementById('tdh-drops-body'),settingsBody=shadow.getElementById('tdh-streams-body');
+    const section=body=>body.closest('.fl-tool-panel');
+    section(drops).querySelector('.fl-tool-title').textContent='Campaigns';
+    const campaigns=shadow.getElementById('tdh-open-campaigns');if(campaigns)campaigns.open=true;
+    section(settingsBody).querySelector('.fl-tool-title').textContent='Settings';
+    const viewing=ExtraPotionsCore.createDisclosure('Viewing',...settingsBody.childNodes);
+    const skip=shadow.getElementById('tdh-skip-streamer');if(skip)viewing.append(skip);
+    const lookBody=shadow.getElementById('tdh-progress-body'),systemBody=shadow.getElementById('tdh-diagnostics-body');
+    const lookSection=section(lookBody),systemSection=section(systemBody);
+    lookBody.classList.remove('fl-tool-hidden');systemBody.classList.remove('fl-tool-hidden');
+    const look=ExtraPotionsCore.createDisclosure('Look',lookBody),claims=ExtraPotionsCore.createDisclosure('Claiming');
+    for(const id of ['tdh-claim-drops','tdh-claim-bonus']){const row=shadow.getElementById(id)?.closest('.fl-switch');if(row)claims.append(row);}
+    const primary=['tdh-find-next','tdh-mute-next'].map(id=>viewing.querySelector('#'+id)?.closest('.fl-switch')).filter(Boolean);
+    settingsBody.replaceChildren(...primary,look,viewing,claims,systemBody);
+    lookSection.remove();systemSection.remove();
+    const search=document.createElement('input');search.type='search';search.id='tdh-campaign-search';search.placeholder='Find a game';search.setAttribute('aria-label','Search campaigns');search.addEventListener('input',filterCampaignRows);drops.prepend(search);
+    const empty=document.createElement('p');empty.id='tdh-campaign-filter-empty';empty.hidden=true;empty.textContent='No matching campaigns.';drops.append(empty);
+  }
+  function filterCampaignRows(){
+    const query=ui.shadow.getElementById('tdh-campaign-search')?.value.trim().toLowerCase()||'';
+    const rows=[...ui.shadow.querySelectorAll('#tdh-open-campaign-list .campaign-game-row')];
+    for(const row of rows)row.hidden=Boolean(query&&!row.querySelector('.campaign-game-name')?.textContent.toLowerCase().includes(query));
+    const empty=ui.shadow.getElementById('tdh-campaign-filter-empty');if(empty)empty.hidden=!query||!rows.length||rows.some(row=>!row.hidden);
+  }
   function mountProductTools() {
     const target=ui.shadow.getElementById('tdh-diagnostics-body');
     if(!target||target.querySelector('[data-exp-product-system]'))return;
@@ -1754,8 +1787,9 @@
     diagnostics.append(target.querySelector('.action-pair'),target.querySelector('#tdh-diagnostics'));
     // Menu size is a display choice, so it lives at the end of Appearance.
     const appearance=ui.shadow.getElementById('tdh-progress-body');
-    if(appearance&&!appearance.querySelector('[data-dropper-menu-preferences]')){const preferences=ExtraPotionsCore.createDisclosure('Menu Preferences',ExtraPotionsCore.createMenuSizeControls());preferences.dataset.dropperMenuPreferences='1';appearance.append(preferences);}
+    if(appearance&&!appearance.querySelector('[data-dropper-menu-preferences]')){const preferences=ExtraPotionsCore.createMenuSizeControls();preferences.dataset.dropperMenuPreferences='1';appearance.prepend(preferences);}
     const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,onReset:resetAllDropperData,notify:setStatus,layout:'grouped',issueSettings:()=>({current:settings,defaults:DEFAULTS})});
+    system.prepend(...[...ui.shadow.getElementById('tdh-streams-body').children].filter(node=>node!==target));
     target.replaceChildren(system);
   }
 
@@ -1988,3 +2022,4 @@
     });
     s.getElementById("tdh-update-dismiss")?.addEventListener("click", hideUpdateNotice);
   }
+

@@ -1480,6 +1480,38 @@ function createProductLifecycle(shared) {
 // Shared, local-only compatibility controls.
 const ExtraPotionsTools = (() => {
   const PRODUCT_ROOT_IDS = {"dropper":"tdh-root","shift":"exp-shift-root","ward":"exp-ward-root","prisma":"exp-prisma-root"};
+  function createPageActions({host,shadow,label,actions,visible=()=>true,preferVideo=false}){
+    const bar=document.createElement('div');bar.dataset.expPageActions='1';bar.setAttribute('role','group');bar.setAttribute('aria-label',label+' page actions');
+    const style=document.createElement('style');style.textContent=`[data-exp-page-actions]{pointer-events:auto;position:fixed;z-index:2147483500;display:flex;align-items:center;flex-wrap:wrap;gap:5px;max-width:calc(100vw - 24px);padding:5px;border:1px solid var(--theme-muted,#848494);border-radius:5px;background:var(--theme-bg,#18181b);color:var(--theme-text,#efeff1);font:12px/1.4 "Segoe UI",sans-serif;box-sizing:border-box}[data-exp-page-actions][hidden]{display:none!important}[data-exp-page-actions]>strong{font-size:11px;font-weight:600}[data-exp-page-actions]>button{min-height:30px;min-width:0;padding:4px 7px;border:1px solid var(--theme-muted,#848494);border-radius:5px;background:var(--theme-panel,#1f1f23);color:var(--theme-text,#efeff1);font:12px/1.4 "Segoe UI",sans-serif;white-space:normal;cursor:pointer}[data-exp-page-actions]>button:disabled{opacity:.6;cursor:default}[data-exp-page-actions]>button:focus-visible{outline:2px solid var(--theme-accent2,#bf94ff);outline-offset:2px}@media(pointer:coarse){[data-exp-page-actions]>button{min-height:36px}}`;
+    const title=document.createElement('strong');title.textContent=label;bar.append(title);
+    const buttons=actions.map(action=>{
+      const button=document.createElement('button');button.type='button';button.textContent=action.label;bar.append(button);
+      button.addEventListener('click',()=>{try{action.run?.();}finally{refresh();}});
+      if(action.hold){const release=()=>action.hold(false);button.addEventListener('pointerdown',()=>action.hold(true));for(const event of ['pointerup','pointercancel','pointerleave','blur'])button.addEventListener(event,release);button.addEventListener('keydown',event=>{if([' ','Enter'].includes(event.key)){event.preventDefault();action.hold(true);}});button.addEventListener('keyup',release);}
+      return button;
+    });
+    shadow.append(style);(shadow.querySelector('.exp-core-theme,.cluster')||shadow).append(bar);
+    let frame=0,disposed=false;
+    const releaseHeld=()=>actions.forEach(action=>action.hold?.(false));
+    const visibilityChanged=()=>{if(document.hidden)releaseHeld();};
+    addEventListener('blur',releaseHeld);document.addEventListener('visibilitychange',visibilityChanged);
+    function refresh(){if(!frame&&!disposed)frame=requestAnimationFrame(layout);}
+    function layout(){
+      frame=0;if(disposed)return;
+      let shown=false;try{shown=host.isConnected&&visible();}catch{}
+      if(bar.hidden===shown){if(!shown)actions.forEach(action=>action.hold?.(false));bar.hidden=!shown;document.dispatchEvent(new Event('exp-core:page-actions'));}
+      if(!shown)return;
+      actions.forEach((action,i)=>{buttons[i].disabled=action.enabled?!action.enabled():false;buttons[i].textContent=action.text?.()||action.label;});
+      const bars=Object.values(PRODUCT_ROOT_IDS).map(id=>document.getElementById(id)?.shadowRoot?.querySelector('[data-exp-page-actions]')).filter(node=>node&&!node.hidden);
+      const index=Math.max(0,bars.indexOf(bar)),previous=bars.slice(0,index).reduce((sum,node)=>sum+node.getBoundingClientRect().height+5,0);
+      const video=preferVideo?[...document.querySelectorAll('video')].map(node=>node.getBoundingClientRect()).find(r=>r.width>100&&r.height>80&&r.bottom>0&&r.bottom<innerHeight-90):null;
+      bar.style.left=(video?Math.max(12,Math.min(video.left,innerWidth-bar.getBoundingClientRect().width-12)):12)+'px';
+      bar.style.top=(video?Math.min(innerHeight-bar.getBoundingClientRect().height-12,video.bottom+5+previous):Math.max(12,innerHeight-bar.getBoundingClientRect().height-12-previous))+'px';
+    }
+    for(const event of ['resize','scroll'])addEventListener(event,refresh,{passive:true,capture:event==='scroll'});
+    document.addEventListener('exp-core:page-actions',refresh);document.addEventListener('exp-core:coordination',refresh);refresh();document.dispatchEvent(new Event('exp-core:page-actions'));
+    return Object.freeze({element:bar,refresh,destroy(){disposed=true;releaseHeld();removeEventListener('blur',releaseHeld);document.removeEventListener('visibilitychange',visibilityChanged);cancelAnimationFrame(frame);for(const event of ['resize','scroll'])removeEventListener(event,refresh,event==='scroll');document.removeEventListener('exp-core:page-actions',refresh);document.removeEventListener('exp-core:coordination',refresh);bar.remove();style.remove();document.dispatchEvent(new Event('exp-core:page-actions'));}});
+  }
   function placeDonationPanel(panel, trigger){
     trigger.closest('.menu-head,header')?.after(panel);
     panel.style.cssText='position:static!important;width:100%!important;max-width:100%!important;margin:7px 0;box-shadow:none';
@@ -1593,7 +1625,7 @@ const ExtraPotionsTools = (() => {
       if(last&&last.key===k){last.count++;last.at=Math.max(last.at,Number(entry.at)||0);}else groups.push({...entry,key:k,count:1,at:Number(entry.at)||0});}
     return groups;
   }
-  function createProductTimeline(id,getHealth,notify=()=>{},{layout='classic'}={}) {
+  function createProductTimeline(id,getHealth,notify=()=>{},{layout='classic',showActivity=true}={}) {
     if(!Object.hasOwn(productRepositories,id))throw new Error('Unknown product');
     const rows=document.createElement('div');rows.dataset.expProductTimeline='1';
     let disposed=false;
@@ -1601,7 +1633,7 @@ const ExtraPotionsTools = (() => {
       const line=document.createElement('p');line.textContent=new Date(entry.at).toLocaleTimeString()+' · '+entry.state+' · '+entry.reason;
       line.style.cssText='margin:6px 0;overflow-wrap:anywhere';rows.append(line);
     }}
-    async function observedHealth(){const value=await getHealth();if(!disposed){
+    async function observedHealth(){const value=await getHealth();if(!disposed&&showActivity){
       const history=productTimelines.get(id)||[];
       const state=String(value?.state||'waiting').slice(0,30),reason=String(value?.reason||'Status unavailable.').replace(/https?:\/\/\S+/gi,'[page]').slice(0,500),last=history.at(-1);
       if(!last||last.state!==state||last.reason!==reason){history.push({at:Date.now(),state,reason});if(history.length>30)history.shift();productTimelines.set(id,history);}
@@ -1609,6 +1641,11 @@ const ExtraPotionsTools = (() => {
     }return value;}
     const health=ExtraPotionsCore.createHealthControls(observedHealth,notify);
     if(layout==='grouped'){
+      if(!showActivity){
+        const status=ExtraPotionsCore.createDisclosure('Status',health.element);status.open=true;
+        status.addEventListener('toggle',()=>{if(status.open)health.refresh();});
+        return {element:status,dispose(){disposed=true;health.dispose();},refresh:health.refresh};
+      }
       // Status stays open so its recovery action is visible; history is one tap away.
       const activity=document.createElement('div');activity.dataset.expProductActivity='1';
       const log=ExtraPotionsCore.createDisclosure('Recent activity',activity,rows);log.dataset.expSystemActivity='1';
@@ -1631,7 +1668,7 @@ const ExtraPotionsTools = (() => {
     // Support: Copy is the everyday action; Show stays available for review.
     const pair=diagnostics.querySelector?.('.action-pair'),buttons=pair?[...pair.querySelectorAll(':scope > button')]:[];
     const copy=buttons.find(b=>/^Copy/.test(b.textContent)),show=buttons.find(b=>/^(Show|Hide)/.test(b.textContent));
-    if(copy&&show&&show.compareDocumentPosition(copy)&Node.DOCUMENT_POSITION_FOLLOWING)pair.insertBefore(copy,show);
+    if(copy&&show){pair.insertBefore(show,copy);pair.style.cssText='display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px';ExpMenuHelp.setMenuHelp(copy,'Copy a fresh diagnostic snapshot for troubleshooting. Review it for private data before sharing.');ExpMenuHelp.setMenuHelp(show,'Show or hide the diagnostic snapshot used for troubleshooting.');}
     const output=diagnostics.querySelector?.('pre');if(output)output.style.cssText+=';max-height:240px;overflow:auto';
     const health=()=>({label:timeline.querySelector?.('[data-exp-health-state]')?.textContent||'',reason:timeline.querySelector?.('[data-exp-health-reason]')?.textContent||''});
     // Each report takes a fresh diagnostics report, copies it, and attaches it to the issue when it fits.
@@ -1648,7 +1685,8 @@ const ExtraPotionsTools = (() => {
       finally{report.disabled=false;}
     }));
     report.dataset.expSystemReport='1';
-    const support=ExtraPotionsCore.createDisclosure('Support',diagnostics,report,note('Report a Problem attaches diagnostics from that moment. GitHub issues are public, so remove anything private before submitting.'));
+    ExpMenuHelp.setMenuHelp(report,'Attaches fresh diagnostics to a GitHub issue. GitHub issues are public; remove private data before submitting.');
+    const support=ExtraPotionsCore.createDisclosure('Support',diagnostics,report);
     // Reset: one tap arms, a second tap within a few seconds confirms. No browser dialogs.
     const resetStatus=note('');resetStatus.setAttribute('role','status');resetStatus.setAttribute('aria-live','polite');
     let armedUntil=0,armTimer=0;
@@ -1665,7 +1703,8 @@ const ExtraPotionsTools = (() => {
     reset.dataset.expDestructive='1';
     function disarm(){clearTimeout(armTimer);armedUntil=0;reset.textContent='Reset All Settings';delete reset.dataset.expResetArmed;resetStatus.textContent='';}
     reset.style.cssText+=';border:1px solid #ff2438;background:#e11428;color:#fff;font-weight:700';
-    const resetCard=ExtraPotionsCore.createDisclosure('Reset',note(`Clears ${product} settings and stored data on this browser. This cannot be undone.`),reset,resetStatus);
+    ExpMenuHelp.setMenuHelp(reset,`Clears ${product} settings and stored data on this browser. This cannot be undone. Tap twice within 4 seconds to confirm.`);
+    const resetCard=ExtraPotionsCore.createDisclosure('Reset',reset,resetStatus);
     resetCard.addEventListener('toggle',()=>{if(!resetCard.open)disarm();});
     for(const [key,node] of [['status',timeline],['support',support],['preferences',preferences],['reset',resetCard]]){
       if(!node)continue;node.dataset.expSystemItem=key;node.style.minWidth='0';node.style.maxWidth='100%';
@@ -1690,7 +1729,7 @@ const ExtraPotionsTools = (() => {
     for(const [key,node] of [['timeline',timeline],['diagnostics',diagnostics],['issue',issue],['preferences',preferences],['reset',reset]]){node.dataset.expSystemItem=key;node.style.minWidth='0';node.style.maxWidth='100%';const summary=node.tagName==='DETAILS'?node.querySelector(':scope > summary'):null;if(summary)summary.style.cssText+=';min-height:28px;padding:4px 0;box-sizing:border-box;cursor:pointer';system.append(node);}
     return system;
   }
-  return Object.freeze({issueSummary,productIssueUrl,productDataResetting,clearProductData,groupTimelineEntries,createProductTimeline,createProductSystem,placeDonationPanel,createBitcoinDonation,compatibilitySnapshot,createCompatibilityControls,createSuiteSiteControls});
+  return Object.freeze({createPageActions,issueSummary,productIssueUrl,productDataResetting,clearProductData,groupTimelineEntries,createProductTimeline,createProductSystem,placeDonationPanel,createBitcoinDonation,compatibilitySnapshot,createCompatibilityControls,createSuiteSiteControls});
 })();
 
 /* Product sections as one row of tabs. Core opens a section by clicking the product's own
@@ -1700,7 +1739,7 @@ const ExpMenuTabs = (() => {
   const icons = Object.freeze({ drops: 'gift', streams: 'screen', appearance: 'brush', advanced: 'sliders', system: 'system', highlights: 'sparkle', protection: 'shield', amazon: 'bag' });
   // Disclosures that are inline controls, not groups, stay collapsible.
   // Products use data-exp-collapsible for groups that build expensive content when opened.
-  const KEEP_COLLAPSIBLE = '.eligibility-chip,[data-shift-appearance-explanation],[data-exp-tab-item],[data-exp-collapsible]';
+  const KEEP_COLLAPSIBLE = 'details';
   // Setting rows for the cards. Rows with the hidden attribute are skipped when finding where a run
   // starts and ends; selectors cannot skip an unbounded number, so up to three hidden rows in a row are bridged.
   const P = '[data-exp-section-tabs][data-exp-section-tabs]', R = ':is(.row,.mini-row,.fl-switch,.setting-row)';
@@ -1765,7 +1804,7 @@ const ExpMenuTabs = (() => {
       const tab = document.createElement('button');
       tab.type = 'button'; tab.id = 'exp-section-tab-' + index; tab.dataset.expSectionTab = entry.key;
       // The accessible name is the word on the tab, so voice control and screen readers match what is seen.
-      const name = shortLabels[slug] || entry.label;
+      const name = id==='shift'&&slug==='appearance'&&entries.some(item=>item.label==='Look')?'Appearance':shortLabels[slug] || entry.label;
       tab.setAttribute('role', 'tab'); tab.setAttribute('aria-label', name);
       if (!entry.body.id) entry.body.id = 'exp-section-panel-' + index;
       tab.setAttribute('aria-controls', entry.body.id);
@@ -1782,10 +1821,28 @@ const ExpMenuTabs = (() => {
     let syncing = false, disposed = false, queued = false;
     const visible = () => !panel.hidden && panel.getClientRects().length > 0;
 
+    const workspace=document.createElement('div'),rail=document.createElement('div'),content=document.createElement('div');
+    workspace.className='exp-menu-workspace';rail.className='exp-menu-rail';content.className='exp-menu-content';
+    list.setAttribute('aria-orientation','vertical');
+    const shortcuts=document.createElement('div');shortcuts.className='exp-menu-shortcuts';
+    function reveal(label){
+      const find=()=>[...panel.querySelectorAll('details')].find(node=>node.querySelector(':scope>summary')?.textContent.trim()===label);
+      let target=find();
+      if(!target){const source=entries.findIndex(entry=>/system/i.test(entry.label))>=0?entries.findIndex(entry=>/system/i.test(entry.label)):entries.findIndex(entry=>entry.label==='Settings');if(source>=0)select(source);target=find();}
+      if(!target)return;
+      const owner=entries.findIndex(entry=>entry.section.contains(target));if(owner>=0)select(owner);
+      // Keep each existing disclosure and its handlers; the sidebar is a direct route to it.
+      for(let node=target;node&&node!==panel;node=node.parentElement)if(node.tagName==='DETAILS')node.open=true;
+      target.scrollIntoView({block:'nearest'});target.querySelector(':scope>summary')?.focus();
+    }
+    for(const label of ['Look','Support','Reset']){
+      if(entries.some(entry=>(shortLabels[entry.label.toLowerCase()]||entry.label)===label))continue;
+      const button=document.createElement('button');button.type='button';button.textContent=label;button.dataset.expMenuShortcut=label.toLowerCase();button.addEventListener('click',()=>reveal(label));shortcuts.append(button);
+    }
     function place() {
-      const parent = entries[0].section.parentElement; if (!parent) return;
-      const first = [...parent.children].find(node => entries.some(entry => entry.section === node));
-      if (first && list.nextElementSibling !== first) parent.insertBefore(list, first);
+      if(workspace.parentNode)return;
+      const parent=entries[0].section.parentElement;if(!parent)return;
+      parent.insertBefore(workspace,entries[0].section);rail.append(list,shortcuts);content.append(...entries.map(entry=>entry.section));workspace.append(rail,content);
     }
     function flatten() {
       for (const entry of entries) for (const details of entry.body.querySelectorAll('details')) {
@@ -1841,7 +1898,7 @@ const ExpMenuTabs = (() => {
     const keydown = event => {
       const current = tabs.indexOf(event.target); if (current < 0) return;
       const last = tabs.length - 1;
-      const index = event.key === 'ArrowRight' ? (current + 1) % tabs.length : event.key === 'ArrowLeft' ? (current + last) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? last : -1;
+      const index = ['ArrowRight','ArrowDown'].includes(event.key) ? (current + 1) % tabs.length : ['ArrowLeft','ArrowUp'].includes(event.key) ? (current + last) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? last : -1;
       if (index < 0) return;
       event.preventDefault(); select(index, true);
     };
@@ -1855,7 +1912,7 @@ const ExpMenuTabs = (() => {
       select: key => select(entries.findIndex(entry => entry.key === key)),
       destroy() {
         disposed = true; observer.disconnect(); resize.disconnect();
-        list.removeEventListener('click', click); list.removeEventListener('keydown', keydown); panel.removeEventListener('click', guard, true); list.remove(); style.remove();
+        list.removeEventListener('click', click); list.removeEventListener('keydown', keydown); panel.removeEventListener('click', guard, true);for(const entry of entries)workspace.before(entry.section);workspace.remove();list.remove();style.remove();
         for (const [node] of tabStops) retab(node);
         delete panel.dataset.expSectionTabs;
         for (const [entry, before] of saved) {
@@ -2012,9 +2069,10 @@ const ExpMenuArrangement = (() => {
         if(node.matches('style,script,[data-exp-submenu-tabs],.badge-only-progress-slot'))continue;
         // Everyday controls stay on the home view; each submenu disclosure becomes
         // a row that opens its own detail view.
+        if(drops&&node.id==='tdh-open-campaigns'){home.push(node);continue;}
         let label=tabLabel(node);
         // System status stays open on the home view so recovery actions remain in sight.
-        if(!label||node.matches('[data-exp-system-item="status"]')){home.push(node);continue;}
+        if(!label||(id!=='dropper'&&node.matches('[data-exp-system-item="status"]'))){home.push(node);continue;}
         if(stream){
           const key=slug(node.querySelector(':scope>summary')?.textContent);
           label=key==='playback-options'?'Playback':key==='notifications'?'Alerts':node.id==='tdh-routing-history-panel'||['routing-and-backup','interruption-rules','why-did-it-switch'].includes(key)?'Routing':label;
@@ -2112,7 +2170,8 @@ const ExpMenuArrangement = (() => {
       const key = header.dataset.route || header.dataset.section || header.dataset.panel || body.id;
       return { section, header, body, label, key };
     }).filter(entry => entry?.key);
-    const tabs=mountTabs({panel,id,onChange});
+    // Compact menus retain the product's native inline disclosures and lazy toggle handlers.
+    const tabs={update(){},destroy(){}};
     const none = { update() { collapseSubmenus(panel);tabs.update(); }, select() {}, describe: () => [], destroy() {tabs.destroy();} };
     if (entries.length < 2) return none;
     const parent = entries[0].section.parentElement;
@@ -2220,115 +2279,72 @@ const ExpRecoveryControl = (() => {
 
 // Layout and surfaces from the approved Lean menu, with product-specific colors.
 const ExpLeanMenu = (() => {
-  // Neutral surfaces shared by every product; only the accent identifies the product.
-  const neutral = Object.freeze({bg:'#09090b',panel:'#0c0c0e',line:'#27272a',text:'#fafafa',muted:'#a1a1aa',hover:'#18181b'});
-  const accents = Object.freeze({dropper:'#bc94f5',prisma:'#91bfff',shift:'#80d7d2',ward:'#e7bb75'});
-  const palettes = Object.freeze(Object.fromEntries(Object.entries(accents).map(([id,accent])=>[id,{...neutral,accent}])));
-  const sectionIcons = Object.freeze({drops:'gift',streams:'screen',appearance:'brush',advanced:'sliders',system:'system',highlights:'sparkle',protection:'shield',amazon:'bag'});
+  const twitch=Object.freeze({bg:'#18181b',panel:'#1f1f23',raised:'#3a3a3d',inset:'#0e0e10',line:'#848494',text:'#efeff1',muted:'#adadb8',hover:'#53535f',accent:'#9146ff',accent2:'#bf94ff',link:'#bf94ff',focus:'#bf94ff',onAccent:'#ffffff'});
+  const palettes=Object.freeze({dropper:twitch});
+  const sectionIcons = Object.freeze({campaigns:'gift',settings:'system',drops:'gift',streams:'screen',appearance:'brush',advanced:'sliders',system:'system',highlights:'sparkle',protection:'shield',amazon:'bag'});
+  // Scoped switches outrank the older product gradient rules.
+  const SWITCH='[data-exp-menu-layout="lean"][data-exp-menu-layout="lean"][data-exp-menu-layout="lean"] .toggleSwitch[role="switch"]';
   const css = `
-    [data-exp-menu-layout="lean"]{--exp-menu-soft:#1c1c1f;--exp-menu-track:#18181b;box-sizing:border-box!important;padding:0 14px 14px!important;border:1px solid var(--theme-line)!important;border-radius:16px!important;background:var(--theme-bg)!important;background-image:none!important;box-shadow:0 16px 44px #0006!important;color:var(--theme-text)!important;font:400 calc(var(--exp-font-size-body,14px) - 1px)/1.45 Inter,"Segoe UI",system-ui,sans-serif!important;text-align:start;letter-spacing:-.1px;transition:none!important}
+    [data-exp-menu-layout="lean"]{box-sizing:border-box!important;padding:0!important;border:1px solid var(--theme-muted)!important;border-radius:7px!important;background:var(--theme-bg)!important;background-image:none!important;box-shadow:0 4px 10px #0003!important;color:var(--theme-text)!important;font:400 13px/1.4 "Segoe UI",system-ui,sans-serif!important;text-align:start;letter-spacing:0!important;transition:none!important}
     [data-exp-menu-layout="lean"] *{box-sizing:border-box}
-    [data-exp-menu-layout="lean"] .menu-head{display:flex!important;align-items:center!important;gap:10px!important;width:calc(100% + 28px)!important;margin:0 -14px 2px!important;padding:14px 14px 12px!important;border:0!important;background:transparent!important}
-    [data-exp-menu-layout="lean"] .header-brand{display:flex!important;align-items:center!important;gap:10px!important;flex:1;min-width:0}
-    [data-exp-menu-layout="lean"] .header-icon{flex:0 0 30px;width:30px!important;height:30px!important;border:0!important;border-radius:8px!important;background:transparent!important;overflow:hidden}
-    [data-exp-menu-layout="lean"] .header-icon .menu-icon{width:30px!important;height:30px!important;object-fit:contain}
+    [data-exp-menu-layout="lean"] .menu-head{display:flex!important;align-items:center!important;gap:6px!important;width:100%!important;margin:0!important;padding:8px!important;border:0!important;border-bottom:1px solid var(--theme-line)!important;background:transparent!important}
+    [data-exp-menu-layout="lean"] .header-brand{display:flex!important;align-items:center!important;gap:6px!important;flex:1;min-width:0}
+    [data-exp-menu-layout="lean"] .header-icon{flex:0 0 28px;width:28px!important;height:30px!important;border:0!important;background:transparent!important;overflow:hidden}
+    [data-exp-menu-layout="lean"] .header-icon .menu-icon{width:28px!important;height:30px!important;object-fit:contain}
     [data-exp-menu-layout="lean"] .header-copy{flex:1;min-width:0;overflow:visible!important}
-    [data-exp-menu-layout="lean"] .header-title-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-    [data-exp-menu-layout="lean"] :is(.header-title-row h2,[data-exp-part="title"],#tdh-rail-title){margin:0!important;font-size:var(--exp-font-size-body,14px)!important;font-weight:600!important;line-height:1.3!important;letter-spacing:0!important}
-    [data-exp-menu-layout="lean"] :is([data-exp-part="subtitle"],#tdh-rail-subtitle){display:block!important;margin-top:1px!important;color:var(--theme-muted)!important;font-size:calc(var(--exp-font-size-small,12px) - .5px)!important;line-height:1.35!important}
-    [data-exp-menu-layout="lean"] :is([data-exp-part="version"],#tdh-header-version){padding:0!important;min-height:0!important;border:0!important;background:transparent!important;color:var(--theme-muted)!important;font-size:calc(var(--exp-font-size-small,12px) - 1px)!important;font-weight:400!important}
-    [data-exp-menu-layout="lean"] .header-actions{display:flex!important;align-items:center!important;gap:6px!important;flex:none}
-    [data-exp-menu-layout="lean"] :is(.support-button,[data-exp-part="close"],#tdh-rail-close){display:grid!important;place-items:center!important;flex:none;width:26px!important;height:26px!important;min-width:26px!important;min-height:26px!important;margin:0!important;padding:0!important;border:1px solid var(--theme-line)!important;border-radius:7px!important;background:transparent!important;background-image:none!important;color:var(--theme-muted)!important;box-shadow:none!important}
-    [data-exp-menu-layout="lean"] :is(.support-button,[data-exp-part="close"],#tdh-rail-close):hover{color:var(--theme-text)!important;background:var(--exp-menu-hover)!important}
-    [data-exp-menu-layout="lean"] .header-divider{display:none!important}
+    [data-exp-menu-layout="lean"] .header-title-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+    [data-exp-menu-layout="lean"] :is(.header-title-row h2,[data-exp-part="title"],#tdh-rail-title){margin:0!important;font-size:14px!important;font-weight:600!important;line-height:1.3!important}
+    [data-exp-menu-layout="lean"] :is([data-exp-part="subtitle"],#tdh-rail-subtitle){display:block!important;margin-top:1px!important;color:var(--theme-muted)!important;font-size:11px!important;line-height:1.35!important}
+    [data-exp-menu-layout="lean"] :is([data-exp-part="version"],#tdh-header-version){padding:1px 4px!important;min-height:23px!important;border:1px solid var(--theme-muted)!important;border-radius:4px!important;background:var(--theme-panel)!important;color:var(--theme-text)!important;font-size:11px!important;font-weight:400!important}
+    [data-exp-menu-layout="lean"] .header-actions{display:flex!important;align-items:center!important;gap:5px!important;flex:none}
+    [data-exp-menu-layout="lean"] :is(.support-button,[data-exp-part="close"],#tdh-rail-close){display:grid!important;place-items:center!important;flex:none;width:28px!important;height:28px!important;min-width:28px!important;min-height:28px!important;padding:2px!important;border:1px solid var(--theme-muted)!important;border-radius:5px!important;background:var(--theme-panel)!important;color:var(--theme-text)!important;box-shadow:none!important}
+    [data-exp-menu-layout="lean"] :is(.header-divider,.exp-menu-tagline,[data-exp-part="status"]){display:none!important}
     [data-exp-menu-layout="lean"]>nav{padding:0!important;margin:0!important}
-    [data-exp-menu-layout="lean"] .fl-tool-panel{margin:3px 0 0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
-    [data-exp-menu-layout="lean"] .fl-tool-header{min-height:38px!important;display:flex!important;align-items:center!important;gap:9px!important;padding:9px 10px!important;border:0!important;border-bottom:1px solid var(--theme-line)!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;color:var(--theme-text)!important}
-    [data-exp-menu-layout="lean"] .fl-tool-header::before{display:none!important}
-    [data-exp-menu-layout="lean"] :is(.label,.fl-switch-text,.copy>strong,.row-copy>strong,.row>select,.mini-row>select,.setting-row>select,.fl-switch>select){font-size:calc(var(--exp-font-size-body,14px) - 1px)!important}
-    [data-exp-menu-layout="lean"] .fl-tool-title{flex:1;min-width:0;font-size:calc(var(--exp-font-size-body,14px) - 1px)!important;font-weight:500!important;line-height:1.35!important;letter-spacing:-.1px!important;color:inherit!important}
-    [data-exp-menu-layout="lean"] .fl-tool-header:is([aria-expanded=true],:has(.fl-tool-chevron[aria-expanded=true])){color:var(--theme-accent)!important}
-    [data-exp-menu-layout="lean"] .fl-tool-header:hover{background:var(--exp-menu-hover)!important}
-    [data-exp-menu-layout="lean"] .fl-tool-header:focus-visible{outline:2px solid var(--theme-accent)!important;outline-offset:-2px}
-    [data-exp-menu-layout="lean"] .fl-tool-chevron{position:relative;flex:none;width:14px;min-width:14px;height:14px;align-self:center;padding:0!important;font-size:14px!important;color:transparent!important;background:none!important;border:0!important}
-    [data-exp-menu-layout="lean"] .fl-tool-chevron::after{content:'';position:absolute;top:1px;left:1px;display:block;width:6px;height:6px;border-top:1.5px solid var(--theme-muted);border-right:1.5px solid var(--theme-muted);transform:rotate(45deg);margin:3px}
-    [data-exp-menu-layout="lean"] .fl-tool-header:is([aria-expanded=true],:has(.fl-tool-chevron[aria-expanded=true])) .fl-tool-chevron::after{transform:rotate(135deg)}
-    [data-exp-menu-layout="lean"] .fl-tool-body{padding:12px 9px 10px!important}
-    [data-exp-menu-layout="lean"] :is(.exp-submenu-row,.exp-submenu-back){font-family:Inter,"Segoe UI",system-ui,sans-serif!important;font-size:calc(var(--exp-font-size-body,14px) - 1px)!important;font-weight:500!important}
-    [data-exp-menu-layout="lean"] .exp-submenu-title{font-family:Inter,"Segoe UI",system-ui,sans-serif}
-    [data-exp-menu-layout="lean"] :is(.row,.mini-row,.fl-switch,.setting-row){gap:12px!important;padding:8px 0!important;line-height:1.35!important}
-    [data-exp-menu-layout="lean"] :is(.row,.mini-row,.fl-switch,.setting-row)+:is(.row,.mini-row,.fl-switch,.setting-row){border-top:1px solid var(--theme-line)!important}
-    [data-exp-menu-layout="lean"] :is(.label,.setting-label,.fl-switch-text,.copy>strong,.row-copy>strong,.mini-row>span){font-weight:500!important;line-height:1.35!important}
-    [data-exp-menu-layout="lean"] :is(.copy>.help,.row-copy>small,.help,.row-help,.note,.empty,.meta){line-height:1.4!important;color:var(--theme-muted)!important}
-    [data-exp-menu-layout="lean"] :is(.row,.mini-row,.setting-row):has(>select){grid-template-columns:minmax(0,1fr) minmax(104px,.8fr)!important;gap:14px!important}
-    [data-exp-menu-layout="lean"] select{min-height:28px!important;padding:3px 9px!important;border:1px solid var(--theme-line)!important;border-radius:7px!important;background:transparent!important;color:var(--theme-text)!important;font-size:var(--exp-font-size-small,12px)!important}
-    [data-exp-menu-layout="lean"] :is(.group>h3,.section>h3,.section>h2,.stream-subsection-label){margin:10px 0 4px!important;font-weight:600!important;line-height:1.45!important;color:var(--theme-muted)!important}
-    [data-exp-menu-layout="lean"] :is(.group,.section):first-child>h3{margin-top:0!important}
-    /* Core's own header and chrome buttons carry data-exp-part and keep their styling. */
-    [data-exp-menu-layout="lean"] :is(.life-btn,.action,.secondary,.primary,.compact):not([data-exp-part]){min-height:32px!important;padding:6px 10px!important;border:1px solid var(--theme-line)!important;border-radius:8px!important;background:transparent!important;color:var(--theme-text)!important;font:500 var(--exp-font-size-small,12px)/1.3 Inter,"Segoe UI",system-ui,sans-serif!important}
-    [data-exp-menu-layout="lean"] [data-exp-primary="1"]:not([data-exp-part]){border-color:var(--theme-accent)!important;background:var(--theme-accent)!important;color:#09090b!important;font-weight:600!important}
-    [data-exp-menu-layout="lean"] [data-exp-destructive="1"]:not([data-exp-part]){border-color:#f87171!important;color:#fca5a5!important;background:transparent!important}
-    [data-exp-menu-layout="lean"] :is(.button-grid,.actions,.profile-actions,.menu-footer,.diagnostics-controls>div,.rules-transfer){gap:7px!important}
-    [data-exp-menu-layout="lean"] .toggleSwitch{width:30px!important;min-width:30px!important;max-width:30px!important;height:17px!important;min-height:17px!important;max-height:17px!important;padding:0!important;border:0!important;border-radius:999px!important;background:var(--theme-line)!important}
-    [data-exp-menu-layout="lean"] .toggleSwitch::after{top:2px!important;left:2px!important;width:13px!important;height:13px!important;border:0!important;background:var(--theme-muted)!important;transform:none!important}
-    [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true],
-    :is(.exp-core-theme,.cluster)[data-theme-skin]:not([data-ui-theme="contrast"]) [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]{background:var(--theme-accent)!important}
-    [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]::after{background:#09090b!important;transform:translateX(13px)!important}
-    [data-exp-menu-layout="lean"] .diagnostics-controls{margin:10px 0 16px!important}
-    [data-exp-menu-layout="lean"] [data-exp-product-system] [data-exp-system-item="reset"] button, [data-exp-menu-layout="lean"] [data-exp-product-system] button[data-exp-system-item="reset"]{margin-top:14px!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot{margin:0 0 16px!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card::before,[data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card::after{display:none!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card{border:0!important;background:transparent!important;background-image:none!important;box-shadow:none!important;padding:0!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot .expanded-content{padding:0!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card .stream-info{padding:0!important;min-height:0!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card .progress-copy{grid-template-columns:minmax(0,1fr) fit-content(55%)!important;grid-template-areas:"status percent" "channel category" "bar bar" "reward skip"!important;row-gap:6px!important;align-items:center}
-    /* The channel and its game share one line so the panel stays compact. */
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card .progress-category{grid-area:category!important;justify-self:end;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card .stream-channel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card :is(.progress-head,.drop-status-row){display:contents!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card .stream-channel{grid-area:channel!important;margin-top:1px}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card .drop-percent{grid-area:percent!important;font-size:calc(var(--exp-font-size-body,14px) + 7px)!important;font-weight:650!important;line-height:1.1!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card .status-meta-chip{grid-area:status!important;border:0!important;background:transparent!important;box-shadow:none!important;padding:0!important;height:auto!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card .skip-streamer-chip{grid-area:skip!important;justify-self:end;border-radius:6px!important;background:transparent!important;font-weight:500!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-card .progress-reward-row{line-height:1.35!important}
+    [data-exp-menu-layout="lean"] .exp-menu-workspace{display:grid!important;grid-template-columns:88px minmax(0,1fr)!important;min-width:0;align-items:start}
+    [data-exp-menu-layout="lean"] .exp-menu-rail{padding:5px;border-right:1px solid var(--theme-line);min-width:0;align-self:stretch;background:var(--exp-menu-navigation,transparent)}
+    [data-exp-menu-layout="lean"] .exp-menu-content{padding:var(--exp-menu-padding,8px)!important;min-width:0;overflow:auto;max-height:calc(100dvh - 180px);overscroll-behavior:contain}
+    [data-exp-menu-layout="lean"] .exp-section-tabs{display:flex!important;flex-direction:column!important;gap:4px!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important}
+    [data-exp-menu-layout="lean"] .exp-menu-shortcuts{display:flex;flex-direction:column;gap:4px;border-top:1px solid var(--theme-line);padding-top:8px;margin-top:8px}
+    [data-exp-menu-layout="lean"] :is(.exp-section-tabs>[role=tab],.exp-menu-shortcuts>button){width:100%!important;min-width:0!important;min-height:30px!important;justify-content:flex-start!important;padding:5px 3px!important;text-align:left!important;font:400 12px/1.35 "Segoe UI",sans-serif!important;white-space:normal!important;overflow-wrap:anywhere!important;border:1px solid var(--theme-muted)!important;border-radius:5px!important;background:var(--theme-panel)!important;color:var(--theme-text)!important;box-shadow:none!important}
+    [data-exp-menu-layout="lean"] .exp-section-tabs>[aria-selected=true]{border-color:var(--theme-focus,var(--theme-accent2))!important;background:color-mix(in srgb,var(--theme-accent2) 13%,var(--theme-panel))!important}
+    [data-exp-menu-layout="lean"] .exp-section-tabs .exp-section-icon{display:none!important}
+    [data-exp-menu-layout="lean"] .exp-section-tabs .exp-section-tab-label{display:inline!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
+    [data-exp-menu-layout="lean"] .exp-menu-content>.fl-tool-panel>.fl-tool-header{position:absolute!important;width:1px!important;height:1px!important;min-height:0!important;margin:-1px!important;padding:0!important;border:0!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important}
+    [data-exp-menu-layout="lean"] :is(.fl-tool-panel,.exp-system-card){margin:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
+    [data-exp-menu-layout="lean"] .fl-tool-body{padding:0!important}
+    [data-exp-menu-layout="lean"] :is(.row,.mini-row,.fl-switch,.setting-row){min-width:0!important;min-height:32px;gap:6px!important;padding:var(--exp-menu-row,6px) 0!important;margin:0!important;border:0!important;border-bottom:1px solid var(--theme-line)!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;line-height:1.4!important}
+    [data-exp-menu-layout="lean"] :is(.label,.setting-label,.fl-switch-text,.copy>strong,.row-copy>strong,.mini-row>span,.row>span){font-size:12px!important;font-weight:400!important;line-height:1.4!important;white-space:normal!important;overflow-wrap:anywhere!important;min-width:0!important}
+    [data-exp-menu-layout="lean"] :is(.row,.mini-row,.setting-row):has(>select){grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;gap:6px!important}
+    [data-exp-menu-layout="lean"] :is(button,input,select,textarea){max-width:100%;color:var(--theme-text);font-family:"Segoe UI",system-ui,sans-serif}
+    [data-exp-menu-layout="lean"][data-exp-menu-layout="lean"] .fl-tool-body button{font-size:12px!important;font-weight:400!important;line-height:1.35!important}
+    [data-exp-menu-layout="lean"] :is(.life-btn,.action,.secondary,.primary,.compact,select,input:not([type=range]),textarea){min-width:0!important;min-height:var(--exp-menu-control,30px)!important;padding:4px 7px!important;font-size:12px!important;line-height:1.35!important;border:1px solid var(--theme-muted)!important;border-radius:5px!important;background:var(--theme-panel)!important;color:var(--theme-text)!important;white-space:normal!important;box-shadow:none!important}
+    [data-exp-menu-layout="lean"] option{background:var(--theme-panel)!important;color:var(--theme-text)!important}
+    ${SWITCH}{flex:none!important;width:34px!important;min-width:34px!important;max-width:34px!important;height:24px!important;min-height:24px!important;max-height:24px!important;border:1px solid var(--theme-muted)!important;border-radius:5px!important;background:var(--theme-panel)!important;padding:0!important;box-shadow:none!important}
+    ${SWITCH}::after{width:12px!important;height:16px!important;top:3px!important;left:3px!important;border-radius:2px!important;background:var(--theme-muted)!important}
+    ${SWITCH}>span{display:none!important}
+    ${SWITCH}[aria-checked=true]{background:var(--theme-accent)!important}
+    ${SWITCH}[aria-checked=true]::after{transform:translateX(14px)!important;background:var(--theme-bg)!important}
+    [data-exp-menu-layout="lean"] :is(button,select,input,textarea,summary):focus-visible{outline:2px solid var(--theme-focus,var(--theme-accent2))!important;outline-offset:2px}
+    [data-exp-menu-layout="lean"] details{border:0!important;border-bottom:1px solid var(--theme-line)!important;background:transparent!important;padding:0!important;margin:0!important;min-width:0}
+    [data-exp-menu-layout="lean"] details>summary{min-height:32px!important;padding:7px 0!important;font-size:12px!important;font-weight:600!important;color:var(--theme-text)!important;cursor:pointer}
+    [data-exp-menu-layout="lean"] details>:not(summary){min-width:0;margin-inline:0!important}
+    [data-exp-menu-layout="lean"] :is(.note,.help,.empty,.meta){color:var(--theme-muted)!important;font-size:11px!important;line-height:1.5!important}
+    [data-exp-menu-layout="lean"] .action-pair{display:flex!important;gap:5px!important;margin:6px 0!important;min-width:0}
+    [data-exp-menu-layout="lean"] .action-pair>*{flex:1!important;min-width:0!important;white-space:normal!important}
+    [data-exp-menu-layout="lean"] .diagnostics-controls .action-pair>button{font-size:11px!important;line-height:1.25!important;padding:4px!important;min-height:28px!important;overflow-wrap:normal!important;word-break:normal!important;white-space:normal!important}
+    [data-exp-menu-layout="lean"] [data-exp-system-report]{text-align:center!important;justify-content:center!important;width:100%}
+    [data-exp-menu-layout="lean"] :is([data-exp-destructive],[data-exp-system-item=reset]>button,button[data-exp-system-item=reset]){color:light-dark(#9f1239,#fca5a5)!important;border-color:light-dark(#be123c,#f87171)!important;background:transparent!important}
+    .exp-floating-update,.update-notice[data-placement="menu"]{max-height:calc(100dvh - 16px)!important;overflow:auto;overscroll-behavior:contain;background:var(--exp-notice-top,var(--theme-bg))!important;background-image:none!important;border-color:var(--exp-notice-border,var(--theme-muted))!important;border-radius:7px!important;box-shadow:0 4px 10px #0003!important;font-size:12px!important}
+    .update-notice :is(.update-text,.update-list){overflow-wrap:anywhere;line-height:1.5}
+    @media(pointer:coarse){[data-exp-menu-layout="lean"] :is(.life-btn,.action,.secondary,.primary,.exp-menu-shortcuts>button,.exp-section-tabs>[role=tab],select,summary){min-height:36px!important}}
 
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot .drop-percent{font-size:calc(var(--exp-font-size-body,14px) + 7px)!important;color:var(--theme-accent)!important;font-weight:650!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot .stream-channel{font-size:calc(var(--exp-font-size-body,14px) - 1px)!important;font-weight:600!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot :is(.stream-game,.drop-meta,.drop-name,.state-pill,#tdh-updated-ago){font-size:var(--exp-font-size-small,12px)!important;line-height:1.35!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot .drop-bar{height:6px!important;margin:4px 0 2px!important;border-radius:3px!important;background:#ffffff12!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot #tdh-drop-fill{background:var(--theme-accent)!important;border-radius:3px!important}
-    [data-exp-menu-layout="lean"] .badge-only-progress-slot .progress-reward-row{white-space:normal!important;flex-wrap:wrap!important;overflow:visible!important}
-    [data-exp-menu-layout="lean"] .exp-menu-footer{display:flex;justify-content:space-between;gap:8px;margin:8px -10px -10px;padding:8px 12px;border-top:1px solid var(--theme-line);color:var(--theme-muted);font-size:var(--exp-font-size-small,12px);line-height:1.45}
-    [data-exp-menu-layout="lean"] .exp-section-icon{position:relative;display:block;flex:0 0 16px;width:16px;height:16px;color:currentColor}
-    [data-exp-menu-layout="lean"] .exp-section-icon::before,[data-exp-menu-layout="lean"] .exp-section-icon::after{content:'';position:absolute;box-sizing:border-box}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=gift]{width:12px;height:11px;flex-basis:12px;margin:3px 2px 0;border:1.5px solid currentColor;border-top:0;border-radius:1px}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=gift]::before{left:-3px;top:-3px;width:16px;height:4px;border:1.5px solid currentColor;border-radius:1px}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=gift]::after{top:-4px;left:4px;width:2px;height:14px;background:currentColor}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=screen]::before{inset:1px 0 4px;border:1.5px solid currentColor;border-radius:2px}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=screen]::after{left:4px;bottom:1px;width:8px;border-top:1.5px solid currentColor}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=sliders]::before{left:0;top:4px;width:16px;height:7px;border-top:1.5px solid currentColor;border-bottom:1.5px solid currentColor}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=sliders]::after{left:4px;top:2px;width:3px;height:5px;border:1.5px solid currentColor;background:var(--theme-bg);box-shadow:5px 6px 0 -1px var(--theme-bg),5px 6px 0 0 currentColor}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=system]::before{inset:1px;border:1.5px dashed currentColor;border-radius:4px}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=system]::after{inset:5px;border:1.5px solid currentColor;border-radius:2px}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=brush]::before{left:7px;top:0;width:5px;height:11px;border:1.5px solid currentColor;border-radius:1px;transform:rotate(40deg)}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=brush]::after{left:1px;bottom:0;width:6px;height:5px;border:1.5px solid currentColor;border-radius:3px 1px 3px 1px}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=sparkle]::before{inset:0;background:currentColor;clip-path:polygon(50% 0,63% 37%,100% 50%,63% 63%,50% 100%,37% 63%,0 50%,37% 37%)}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=shield]::before{inset:0 1px 1px;border:1.5px solid currentColor;border-radius:2px 2px 7px 7px}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=shield]::after{left:5px;top:4px;width:6px;height:4px;border-left:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg)}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=bag]::before{inset:4px 1px 0;border:1.5px solid currentColor;border-radius:2px}
-    [data-exp-menu-layout="lean"] .exp-section-icon[data-icon=bag]::after{left:5px;top:0;width:6px;height:7px;border:1.5px solid currentColor;border-bottom:0;border-radius:3px 3px 0 0}
-    [data-exp-menu-layout="lean"][data-exp-menu-status] :is([data-exp-part="subtitle"],#tdh-rail-subtitle){display:none!important}
-    [data-exp-menu-layout="lean"] [data-exp-part="status"]{display:flex;align-items:center;gap:6px;margin-top:1px;color:var(--theme-muted);font-size:calc(var(--exp-font-size-small,12px) - .5px);line-height:1.35}
-    [data-exp-menu-layout="lean"] .exp-status-dot{flex:none;width:6px;height:6px;border-radius:50%;background:#a1a1aa}
-    [data-exp-menu-layout="lean"] .exp-status-dot[data-state=working]{background:#4ade80}
-    [data-exp-menu-layout="lean"] .exp-status-dot:is([data-state=waiting],[data-state=paused]){background:#fbbf24}
-    [data-exp-menu-layout="lean"] .exp-status-dot[data-state=attention]{background:#f87171}
-    [data-ui-theme="contrast"] [data-exp-menu-layout="lean"] .toggleSwitch{background:#000!important;border:1px solid #fff!important}
-    [data-ui-theme="contrast"] [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]{background:#fff!important}
-    [data-ui-theme="contrast"] [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]::after{background:#000!important}
-    [data-exp-menu-layout="lean"] .exp-menu-tagline{margin:14px 0 0;padding-top:10px;border-top:1px solid var(--theme-line);color:var(--theme-muted);font-size:var(--exp-font-size-small,12px);line-height:1.45;text-align:center;overflow-wrap:anywhere}
-    @media(max-height:400px){[data-exp-menu-layout="lean"] .exp-menu-footer{padding-block:6px;margin-top:4px}[data-exp-menu-layout="lean"] .exp-menu-tagline{display:none}[data-exp-menu-layout="lean"] .fl-tool-body{padding-bottom:4px!important}}
-    @media(forced-colors:active){[data-exp-menu-layout="lean"] .toggleSwitch{border:1px solid ButtonText!important;background:Canvas!important}[data-exp-menu-layout="lean"] .toggleSwitch::after{background:ButtonText!important}[data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true],:is(.exp-core-theme,.cluster)[data-theme-skin][data-ui-theme] [data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]{background:Highlight!important}[data-exp-menu-layout="lean"] .toggleSwitch[aria-checked=true]::after{background:HighlightText!important}[data-exp-menu-layout="lean"] .exp-submenu-row:hover>span{color:Highlight!important}}
+    @media(forced-colors:active){
+      [data-exp-menu-layout="lean"] :is(button,select,input,textarea){forced-color-adjust:auto!important;border-color:ButtonText!important}
+      ${SWITCH}[aria-checked=true]{background:Highlight!important;forced-color-adjust:none!important}
+      ${SWITCH}[aria-checked=true]::after{background:HighlightText!important}
+      [data-exp-menu-layout="lean"] .exp-section-tabs>[aria-selected=true]{border-color:Highlight!important}
+    }
+
   `;
   // Products register how to read their health; the header shows it and the tagline moves to the menu footer.
   const statusSources=new Map(),statusPanels=new Map();
@@ -2349,9 +2365,9 @@ const ExpLeanMenu = (() => {
       for(const[key,[value,priority]]of saved){if(value)panel.style.setProperty(key,value,priority);else panel.style.removeProperty(key);}
       panel.style.setProperty('background-image','none','important');
       panel.style.setProperty('--exp-menu-hover','color-mix(in srgb,var(--theme-accent) 12%,var(--theme-panel))');
-      if(palette&&(!selected||selected===id)){
-        for(const[key,value]of Object.entries(palette))panel.style.setProperty(key==='hover'?'--exp-menu-hover':'--theme-'+key,value);
-        for(const key of ['accent2','link','focus'])panel.style.setProperty('--theme-'+key,palette.accent);
+      if(palette&&selected!=='contrast'){
+        for(const[key,value]of Object.entries(palette)){const property=key==='hover'?'--exp-menu-hover':'--theme-'+key;panel.style.setProperty(property,value);themeRoot?.style.setProperty(property,value);}
+        if(themeRoot)themeRoot.dataset.themeSkin='flat';
       }
     }
     applyPalette();
@@ -2413,6 +2429,57 @@ const ExpLeanMenu = (() => {
   return Object.freeze({mount,setMenuStatus});
 })();
 
+// Descriptions belong to settings and consequential actions, not ordinary navigation.
+const ExpMenuHelp = (() => {
+  let serial=0;
+  function setMenuHelp(node,text){
+    if(!node||!String(text||'').trim())return node;
+    node.dataset.expHelp=String(text).trim();
+    node.setAttribute('aria-description',node.dataset.expHelp);
+    if(!node.matches('button,input,select,a[href]')){node.tabIndex=0;node.setAttribute('role','button');}
+    return node;
+  }
+  function mount({shadow,panel}){
+    const doc=panel.ownerDocument,view=doc.defaultView;
+    const tip=doc.createElement('div');tip.id='exp-menu-help-'+(++serial);tip.className='exp-menu-help';tip.role='tooltip';tip.hidden=true;
+    const style=doc.createElement('style');style.dataset.expMenuHelp='1';
+    style.textContent='.exp-menu-help{position:fixed;z-index:2147483647;box-sizing:border-box;max-width:260px;padding:8px 10px;border:1px solid var(--theme-line,#938f99);border-radius:7px;background:var(--theme-panel,#211f26);color:var(--theme-text,#e6e0e9);font:400 12px/1.5 "Segoe UI",system-ui,sans-serif;overflow:auto;overflow-wrap:anywhere;pointer-events:none}.exp-menu-help[hidden]{display:none!important}.exp-menu-help[data-scrollable=true]{pointer-events:auto}[data-exp-help]:not(button):not(input):not(select){cursor:help;text-decoration:underline dotted;text-underline-offset:3px}.has-tooltip::after{display:none!important}';
+    shadow.append(style,tip);
+    let target=null,timer=0,frame=0,pointer={x:-1,y:-1};
+    const inside=()=>{if(tip.hidden)return false;const r=tip.getBoundingClientRect();return pointer.x>=r.left&&pointer.x<=r.right&&pointer.y>=r.top&&pointer.y<=r.bottom;};
+    function hide(){clearTimeout(timer);if(target?.getAttribute('aria-describedby')===tip.id)target.removeAttribute('aria-describedby');target=null;tip.hidden=true;}
+    function show(node){
+      if(!node?.isConnected)return hide();
+      const text=node.dataset.expHelp||node.dataset.tip;if(!text)return;
+      const owner=node.closest('[data-exp-part="dock"],[data-exp-part="progress-card"]')||panel;
+      const b=owner.getBoundingClientRect(),left=Math.max(8,b.left+6),right=Math.min(view.innerWidth-8,b.right-6),top=Math.max(8,b.top+6),bottom=Math.min(view.innerHeight-8,b.bottom-6);
+      if(right<=left||bottom<=top)return hide();
+      clearTimeout(timer);if(target&&target!==node)target.removeAttribute('aria-describedby');target=node;target.setAttribute('aria-describedby',tip.id);
+      const colors=view.getComputedStyle(owner);for(const key of ['panel','line','text'])tip.style.setProperty('--theme-'+key,colors.getPropertyValue('--theme-'+key));
+      tip.textContent=text;tip.style.maxWidth=(right-left)+'px';tip.style.maxHeight=(bottom-top)+'px';tip.hidden=false;
+      const r=node.getBoundingClientRect(),t=tip.getBoundingClientRect();
+      tip.style.left=Math.max(left,Math.min(r.left,right-t.width))+'px';
+      tip.style.top=Math.max(top,Math.min(r.bottom+t.height+6<=bottom?r.bottom+6:r.top-t.height-6,bottom-t.height))+'px';
+      tip.dataset.scrollable=String(tip.scrollHeight>tip.clientHeight);
+    }
+    const help=node=>node?.closest?.('[data-exp-help],[data-tip]');
+    const defer=()=>{clearTimeout(timer);timer=setTimeout(()=>{if(shadow.activeElement!==target&&!inside())hide();},150);};
+    const over=e=>{pointer={x:e.clientX,y:e.clientY};const node=help(e.target);if(node&&e.pointerType!=='touch'&&(!inside()||node===target))show(node);};
+    const move=e=>{pointer={x:e.clientX,y:e.clientY};if(target&&!inside()&&!target.contains(e.target))defer();};
+    const out=e=>{if(help(e.target))defer();};
+    const focus=e=>{const node=help(e.target);if(node)show(node);else hide();};
+    const click=e=>{const node=help(e.target);if(node){show(node);if(node.matches('[role=button]:not(button)'))e.preventDefault();}else if(!tip.contains(e.target))hide();};
+    const key=e=>{if(e.key==='Escape'&&!tip.hidden){hide();e.preventDefault();e.stopImmediatePropagation();return;}const node=help(e.target);if(node?.matches('[role=button]:not(button)')&&['Enter',' '].includes(e.key)){e.preventDefault();show(node);}};
+    const layout=e=>{if(target&&!tip.contains(e?.target))show(target);};
+    // Menu positioning settles on the next frame after a submenu changes its height.
+    const resize=new ResizeObserver(()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>layout());});resize.observe(panel);
+    for(const [name,fn,capture] of [['pointerover',over],['pointermove',move],['pointerout',out],['focusin',focus],['click',click],['keydown',key,true],['scroll',layout,true]])shadow.addEventListener(name,fn,capture);
+    view.addEventListener('resize',layout);view.addEventListener('scroll',layout,true);
+    return ()=>{hide();resize.disconnect();cancelAnimationFrame(frame);for(const [name,fn,capture] of [['pointerover',over],['pointermove',move],['pointerout',out],['focusin',focus],['click',click],['keydown',key,true],['scroll',layout,true]])shadow.removeEventListener(name,fn,capture);view.removeEventListener('resize',layout);view.removeEventListener('scroll',layout,true);tip.remove();style.remove();};
+  }
+  return Object.freeze({setMenuHelp,mount});
+})();
+
 // Shared type and alignment for product menus, including custom shells.
 const ExpMenuTypography = (() => {
   const css = `
@@ -2448,7 +2515,8 @@ const ExpMenuTypography = (() => {
     panel.dataset.expMenuTypography='1';
     const style=document.createElement('style');style.dataset.expMenuTypography='1';style.textContent=css;shadow.append(style);
     const disposeLean=ExpLeanMenu.mount({shadow,panel});
-    return ()=>{disposeLean();style.remove();delete panel.dataset.expMenuTypography;};
+    const disposeHelp=ExpMenuHelp.mount({shadow,panel});
+    return ()=>{disposeHelp();disposeLean();style.remove();delete panel.dataset.expMenuTypography;};
   }
   return Object.freeze({mount});
 })();
@@ -2456,15 +2524,16 @@ const ExpMenuTypography = (() => {
 /* Same-origin preferences for product-owned menu surfaces only. */
 const ExpMenuPreferences = (() => {
   const key='exp:suite:menu-size',eventName='exp-core:menu-size';
-  const sizes=Object.freeze({standard:{body:14,small:12,width:320},large:{body:16,small:14,width:368},'extra-large':{body:18,small:16,width:416}});
-  let memory='standard';
-  const valid=value=>Object.hasOwn(sizes,value)?value:'standard';
+  const sizes=Object.freeze({standard:{body:14,small:12,width:324,cardWidth:272,padding:10,row:8,control:32},compact:{body:14,small:12,width:304,cardWidth:252,padding:8,row:6,control:30},mini:{body:14,small:12,width:280,cardWidth:232,padding:6,row:4,control:28}});
+  let memory='compact';
+  const valid=value=>Object.hasOwn(sizes,value)?value:'compact';
   function menuSizePreference(){try {const stored=localStorage.getItem(key);memory=valid(stored);}catch {}return memory;}
   function setMenuSizePreference(size){memory=valid(size);try{localStorage.setItem(key,memory);}catch{}document.dispatchEvent(new CustomEvent(eventName,{detail:memory}));return memory;}
   function bindMenuSize({host,shadow,panel,onLayout=()=>{}}){
     const disposeTypography=ExpMenuTypography.mount({shadow,panel});
     function apply(size){
       memory=valid(size);const value=sizes[memory];host.dataset.expMenuSize=memory;
+      for(const token of ['padding','row','control'])host.style.setProperty('--exp-menu-'+token,value[token]+'px');
       host.style.setProperty('--exp-font-size-body',value.body+'px');host.style.setProperty('--exp-font-size-small',value.small+'px');host.style.setProperty('--exp-menu-width',value.width+'px');
       for(const select of shadow.querySelectorAll('[data-exp-menu-size-select]'))select.value=memory;
       onLayout();
@@ -2475,9 +2544,9 @@ const ExpMenuPreferences = (() => {
   }
   function createMenuSizeControls(){
     const row=document.createElement('label');row.className='row exp-menu-size';const copy=document.createElement('span');copy.className='copy';
-    const title=document.createElement('strong');title.textContent='Menu size';const help=document.createElement('small');help.className='help';help.textContent='Text and controls for ExtraPotions menus on this site.';copy.append(title,help);
+    const title=document.createElement('strong');title.textContent='Menu Size';ExpMenuHelp.setMenuHelp(title,'Standard, Compact and Mini resize menus and cards with tighter spacing and controls. All settings stay available. This preference is shared by ExtraPotions menus on this site.');copy.append(title);
     const select=document.createElement('select');select.setAttribute('aria-label','Menu size');select.dataset.expMenuSizeSelect='1';
-    for(const [value,label] of [['standard','Standard'],['large','Large'],['extra-large','Extra Large']]){const option=document.createElement('option');option.value=value;option.textContent=label;select.append(option);}
+    for(const [value,label] of [['standard','Standard'],['compact','Compact'],['mini','Mini']]){const option=document.createElement('option');option.value=value;option.textContent=label;select.append(option);}
     select.value=menuSizePreference();select.addEventListener('change',()=>setMenuSizePreference(select.value));row.append(copy,select);return row;
   }
   return Object.freeze({menuSizePreference,setMenuSizePreference,bindMenuSize,createMenuSizeControls,menuSizeTokens:()=>sizes[menuSizePreference()]});
@@ -2513,7 +2582,7 @@ const ExpLauncherFlyout = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.9.6';
+  const version = '3.9.7';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -3790,7 +3859,7 @@ const ExtraPotionsCore = (() => {
   // Restores the default launcher order and group position for every product.
   // Shared geometry for menus and notices: the launcher that owns them, the left edge of the launcher grid,
   // and any visible surface a product marks with data-exp-reserved (Dropper's progress card).
-  function surfaceGeometry(host) {
+  function surfaceGeometry(host, ignoredSurface = null) {
     const launcherOf = node => node?.shadowRoot?.querySelector('[data-exp-part="launcher"],.launcher');
     const own = launcherOf(host)?.getBoundingClientRect();
     if (!own || !own.width) return null;
@@ -3799,7 +3868,7 @@ const ExtraPotionsCore = (() => {
     // A reserved surface never reaches into the launcher column: a product that marks a whole row holding
     // its launcher gets the same geometry as one that marks only the card beside it.
     const columnLeft = Math.min(...launchers.map(box => box.left));
-    const reservedBoxes = hosts.flatMap(node => [...(node.shadowRoot?.querySelectorAll('[data-exp-reserved]') || [])])
+    const reservedBoxes = hosts.flatMap(node => [...(node.shadowRoot?.querySelectorAll('[data-exp-reserved]') || [])]).filter(node=>node!==ignoredSurface)
       .map(node => node.getBoundingClientRect()).filter(box => box.width && box.height)
       .map(box => ({ top:box.top, bottom:box.bottom, left:box.left, right:box.left < columnLeft ? Math.min(box.right, columnLeft - 8) : box.right }))
       .filter(box => box.right > box.left);
@@ -3830,11 +3899,15 @@ const ExtraPotionsCore = (() => {
     const slot = slotBand();
     if (slot) {
       // From the flyout or a site slot: right-aligned 8px from the window edge, beyond the launcher and its open flyout.
-      const room = slot.down ? innerHeight - slot.bottom - 16 : slot.top - 16;
+      const blocks=reserved&&reserved.left<innerWidth-8&&reserved.right>innerWidth-8-width;
+      const edge=blocks?(slot.down?Math.max(slot.bottom,reserved.bottom):Math.min(slot.top,reserved.top)):(slot.down?slot.bottom:slot.top);
+      const room = slot.down ? innerHeight - edge - 16 : edge - 16;
+      // In very short windows the open menu takes the viewport; Close/Escape restores the card and flyout.
+      if(room<160){panel.style.maxHeight=Math.max(0,innerHeight-16)+'px';return finish('viewport',8,8,panel.offsetHeight);}
       panel.style.maxHeight = Math.max(0, room) + 'px';
       const h = panel.offsetHeight;
       host.dataset.openDirection = slot.down ? 'down' : 'up';
-      return finish('flyout', 8, slot.down ? slot.bottom + 8 : slot.top - 8 - h, h);
+      return finish('flyout', 8, slot.down ? edge + 8 : edge - 8 - h, h);
     }
     if (reserved) {
       const blockers=geometry.launchers.filter(box=>box.left<reserved.right&&box.right>reserved.right-width);
@@ -3868,7 +3941,7 @@ const ExtraPotionsCore = (() => {
   // window is too short for that, it sits beside the menu, on its left, instead of overlapping it. With no
   // menu open it takes the menu's place: above a reserved surface, or beside the launcher grid.
   function placeNotice(host, notice, panel = null) {
-    const geometry = surfaceGeometry(host);
+    const geometry = surfaceGeometry(host, notice);
     if (!geometry) return null;
     const { own, reserved, gridLeft, anchorTop } = geometry;
     const width = notice.offsetWidth || 260;
@@ -3893,7 +3966,7 @@ const ExtraPotionsCore = (() => {
     } else if (slotBand()) {
       const band = slotBand();
       right = viewWidth() - 8;
-      top = clearReserved(band.down ? band.bottom + 8 : band.top - height - 8, height, right - width, right, band.down);
+      top = clearReserved(band.down ? band.bottom + 8 : band.top - height - 8, height, right - width, right, band.down, notice);
     } else if (reserved && reserved.right - 8 >= width) {
       right = reserved.right;
       top = anchorTop ? reserved.bottom + 8 : reserved.top - height - 8;
@@ -3952,10 +4025,10 @@ const ExtraPotionsCore = (() => {
   }
   // Visible surfaces a product marks reserved (Dropper's progress strip under the top bar): a notice in the
   // slot's column moves past them instead of covering them. A hidden strip takes no room.
-  function clearReserved(top, height, left, right, down) {
+  function clearReserved(top, height, left, right, down, ignoredSurface = null) {
     const boxes = [...document.querySelectorAll('[data-exp-product-launcher="1"]')]
       .flatMap(host => [...(host.shadowRoot?.querySelectorAll('[data-exp-reserved]') || [])])
-      .filter(node => getComputedStyle(node).visibility !== 'hidden')
+      .filter(node => node !== ignoredSurface && getComputedStyle(node).visibility !== 'hidden')
       .map(node => node.getBoundingClientRect()).filter(box => box.width && box.height && box.left < right && box.right > left)
       .sort((a, b) => down ? a.top - b.top : b.bottom - a.bottom);
     for (const box of boxes) if (box.top < top + height && box.bottom > top) top = down ? box.bottom + 8 : box.top - height - 8;
@@ -4322,7 +4395,7 @@ const ExtraPotionsCore = (() => {
       const height = notice.offsetHeight || notice.scrollHeight || 72;
       const left = Math.max(8, Math.min(innerWidth - width - 8, gridRight - width));
       let top = anchor === 'top' ? cursor : cursor - height;
-      if (band) top = clearReserved(top, height, left, left + width, anchor === 'top');
+      if (band) top = clearReserved(top, height, left, left + width, anchor === 'top', notice);
       notice.style.setProperty('width', `${width}px`, 'important');
       notice.style.setProperty('left', `${left}px`, 'important');
       notice.style.setProperty('right', 'auto', 'important');
@@ -4484,6 +4557,7 @@ const ExtraPotionsCore = (() => {
     }
 
     const themeSource = options.themeSource instanceof Element ? options.themeSource : panel;
+    const returnFocus=options.returnFocus||versionButton;
     const syncTheme = () => syncNoticeTheme(notice, themeSource);
     function clearTimer() { clearTimeout(timer); timer = 0; }
     function queueLayout() {
@@ -4503,15 +4577,16 @@ const ExtraPotionsCore = (() => {
     function hide() {
       clearTimer();
       waiting = false;
-      notice.hidden = true;
-      versionButton?.setAttribute('aria-expanded', 'false');
+      const focused=notice.contains(shadow.activeElement);notice.hidden = true;
+      returnFocus?.setAttribute('aria-expanded', 'false');
+      if(focused)returnFocus?.focus({preventScroll:true});
       release();
     }
     function show() {
       if (!menuOpen && !takeNoticeTurn(token)) { waiting = true; return; }
       waiting = false;
       notice.hidden = false;
-      versionButton?.setAttribute('aria-expanded', 'true');
+      returnFocus?.setAttribute('aria-expanded', 'true');
       clearTimer();
       if (durationMs) timer = setTimeout(hide, durationMs);
       queueLayout();
@@ -4526,6 +4601,7 @@ const ExtraPotionsCore = (() => {
     const mutation = new MutationObserver(queueLayout);
     mutation.observe(notice, { attributes:true, attributeFilter:['hidden'], childList:true, subtree:true });
     const coordination = () => queueLayout();
+    const escape=event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();hide();}};notice.addEventListener('keydown',escape);
     dismiss.addEventListener('click', hide);
     versionButton?.addEventListener('click', versionClick);
     addEventListener('resize', queueLayout, { passive:true });
@@ -4540,7 +4616,7 @@ const ExtraPotionsCore = (() => {
         clearTimer();
         resize.disconnect();
         mutation.disconnect();
-        dismiss.removeEventListener('click', hide);
+        notice.removeEventListener('keydown',escape);dismiss.removeEventListener('click', hide);
         versionButton?.removeEventListener('click', versionClick);
         removeEventListener('resize', queueLayout);
         document.removeEventListener('exp-core:coordination', coordination);
@@ -5041,7 +5117,7 @@ const ExtraPotionsCore = (() => {
       shadow,
       panel,
       notice,
-      versionButton: null,
+      versionButton: null,returnFocus:options.returnFocus||versionButton,
       manageVersion: false,
       durationMs: options.durationMs ?? 30000,
     });
@@ -5193,7 +5269,7 @@ const ExtraPotionsCore = (() => {
   const { createRecoveryGuard } = ExpRecoveryControl;
   function createProduct({id,name,version:productVersion,subtitle='',artwork,theme,sections=[],getSettings,onSettings=()=>{},priority,supportUrl=SUPPORT_URL,keepOpen}) {
     const host=document.createElement('div');host.id='exp-'+id+'-root';host.dataset.expOwned='1';const shadow=host.attachShadow({mode:'open'});const panel=document.createElement('aside');panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label',name+' settings');
-    const header=document.createElement('header');header.className='menu-head';const brand=document.createElement('div');brand.className='header-brand';const image=document.createElement('img');image.src=artwork;image.alt='';const copy=document.createElement('div');const titleRow=document.createElement('div');const title=document.createElement('strong');title.textContent=name;const v=document.createElement('button');v.type='button';v.className='version';v.textContent='v'+productVersion;titleRow.append(title,v);const sub=document.createElement('small');sub.textContent=subtitle;copy.append(titleRow,sub);brand.append(image,copy);const close=document.createElement('button');close.className='close';close.textContent='×';close.setAttribute('aria-label','Close '+name);const actions=document.createElement('div');actions.className='header-actions';const support=createSupportControl({url:supportUrl,label:'Support '+name});if(support)actions.append(support.element);actions.append(close);header.append(brand,actions);const divider=document.createElement('div');divider.className='header-divider';const nav=document.createElement('nav');
+    const header=document.createElement('header');header.className='menu-head';const brand=document.createElement('div');brand.className='header-brand';const image=document.createElement('img');image.src=artwork;image.alt='';const copy=document.createElement('div');const titleRow=document.createElement('div');const title=document.createElement('strong');title.textContent=name;const v=document.createElement('button');v.type='button';v.className='version';v.textContent='v'+productVersion;v.setAttribute('aria-label','View '+name+' v'+productVersion+' Changelog');titleRow.append(title,v);const sub=document.createElement('small');sub.textContent=subtitle;copy.append(titleRow,sub);brand.append(image,copy);const close=document.createElement('button');close.className='close';close.textContent='×';close.setAttribute('aria-label','Close '+name);const actions=document.createElement('div');actions.className='header-actions';const support=createSupportControl({url:supportUrl,label:'Support '+name});if(support)actions.append(support.element);actions.append(close);header.append(brand,actions);const divider=document.createElement('div');divider.className='header-divider';const nav=document.createElement('nav');
     let isOpen=false, activeId='';let chrome;
     const sectionMap=new Map();
     function renderSection(section,body){const content=section.render({core:api,onSettings});replaceMenuContent(body,content);chrome?.update();}
@@ -5248,6 +5324,6 @@ const ExtraPotionsCore = (() => {
     return Object.freeze({ lifecycle, diagnostics, updates });
   }
 
-  const api = Object.freeze({...ExtraPotionsTools,...ExpMenuPreferences,normalizeHealth,createHealthControls,createRecoveryGuard,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createMenuController,createProduct,setMenuStatus:ExpLeanMenu.setMenuStatus,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,setLauncherUpdate,setLauncherProgress,bindLauncherDrag,launcherPlacement,placeMenu,placeNotice,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidth,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,takeNoticeTurn,releaseNoticeTurn,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,isQuietUpgrade,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,suiteSitePaused,setSuiteSitePaused,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,mountSubmenuTabs:ExpMenuArrangement.mountTabs,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
+  const api = Object.freeze({...ExtraPotionsTools,setMenuHelp:ExpMenuHelp.setMenuHelp,...ExpMenuPreferences,normalizeHealth,createHealthControls,createRecoveryGuard,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createMenuController,createProduct,setMenuStatus:ExpLeanMenu.setMenuStatus,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,setLauncherUpdate,setLauncherProgress,bindLauncherDrag,launcherPlacement,placeMenu,placeNotice,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidth,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,takeNoticeTurn,releaseNoticeTurn,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,isQuietUpgrade,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,suiteSitePaused,setSuiteSitePaused,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,mountSubmenuTabs:ExpMenuArrangement.mountTabs,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
   return api;
 })();

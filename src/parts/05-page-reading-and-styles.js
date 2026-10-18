@@ -1309,7 +1309,7 @@
   function switchHtml(id, label, description, on) {
     const tip = String(description || "").trim().replace(/&/g, "&amp;").replace(/"/g, "&quot;");
     const labelClass = tip ? "fl-switch-text has-tooltip" : "fl-switch-text";
-    const tipAttr = tip ? ` data-tip="${tip}"` : "";
+    const tipAttr = tip ? ` data-tip="${tip}" role="button" tabindex="0" aria-description="${tip}"` : "";
     return `
       <div class="fl-switch">
         <span class="${labelClass}"${tipAttr} id="${id}-label">${label}</span>
@@ -2136,5 +2136,33 @@
         .badge-row { width:100%; }
         #tdh-drop-card { flex:1 1 auto; width:auto; min-width:0; max-width:none; }
       }
+
+      .cluster #tdh-drop-card[data-presentation="compact-card"]{position:fixed!important;display:block!important;box-sizing:border-box!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;border:1px solid var(--theme-line,#848494)!important;border-radius:10px!important;background:var(--theme-bg,#18181b)!important;background-image:none!important;box-shadow:0 4px 10px #0003!important;color:var(--theme-text,#efeff1)!important;font-family:"Segoe UI",system-ui,sans-serif!important;overflow:hidden!important;container-type:normal!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"]:is(::before,::after){display:none!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .stream-info{padding:var(--exp-menu-padding,10px)!important;min-height:0!important;background:transparent!important;border:0!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .progress-copy{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;grid-template-areas:"game percent" "name name" "bar bar" "status meta"!important;gap:4px 6px!important;width:100%!important;padding:0!important;min-width:0!important;align-items:center!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] :is(.progress-head,.progress-category,.progress-reward-row,.drop-status-row,.status-meta-chip){display:contents!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] :is(.stream-channel,.strip-art,.strip-meta,.progress-dot,.status-chip-divider,.status-clock-icon,#tdh-updated-ago){display:none!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .stream-game{grid-area:game!important;font:600 12px/1.35 "Segoe UI",sans-serif!important;color:var(--theme-muted)!important;min-width:0!important;white-space:normal!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-name{grid-area:name!important;font:700 13px/1.3 "Segoe UI",sans-serif!important;color:var(--theme-text)!important;white-space:normal!important;overflow-wrap:anywhere!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-percent{grid-area:percent!important;font:400 10px/1.3 "Segoe UI",sans-serif!important;color:var(--theme-muted)!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-meta{grid-area:meta!important;font:600 10px/1.3 "Segoe UI",sans-serif!important;color:var(--theme-text)!important;white-space:normal!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-bar{grid-area:bar!important;height:3px!important;min-height:3px!important;margin:2px 0!important;background:#0e0e10!important;border-radius:2px!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] #tdh-drop-fill{height:100%!important;background:#9146ff!important;border-radius:2px!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .state-pill{grid-area:status!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;font:500 10px/1.35 "Segoe UI",sans-serif!important;white-space:normal!important}
+      .compact-card-actions{display:flex;gap:6px;padding:0 var(--exp-menu-padding,10px) var(--exp-menu-padding,10px)}
+      .compact-card-actions button{flex:1;min-width:0;min-height:var(--exp-menu-control,30px);padding:4px 6px;border:1px solid var(--theme-line);border-radius:7px;background:var(--theme-raised,#3a3a3d);color:var(--theme-text);font:600 12px/1.3 "Segoe UI",sans-serif;cursor:pointer}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .strip-toggle{display:none!important}
+      .cluster #tdh-drop-card[data-collapsed="true"] :is(.expanded-content,.compact-card-actions){display:none!important}
+      .cluster #tdh-drop-card[data-collapsed="true"] .strip-toggle{display:block!important;position:static!important;width:100%!important;height:auto!important;min-height:30px!important;padding:6px!important;color:var(--theme-text)!important;background:var(--theme-bg)!important;opacity:1!important;transform:none!important;font:600 12px "Segoe UI",sans-serif!important}
+      #tdh-campaign-order-note{display:none!important}
+      #tdh-campaign-search{box-sizing:border-box;width:100%;min-width:0;padding:7px 8px;margin:6px 0;border:1px solid var(--theme-line);border-radius:7px;background:var(--theme-inset,#0e0e10);color:var(--theme-text);font:12px "Segoe UI",sans-serif;min-height:34px}
+      .campaign-game-row[hidden]{display:none!important}
+      .campaign-ignore-check[role="switch"]{width:34px!important;min-width:34px!important;height:24px!important;min-height:24px!important;border:1px solid var(--theme-line)!important;border-radius:6px!important;background:var(--theme-raised)!important;padding:3px!important}
+      .campaign-ignore-check[role="switch"]::after{content:''!important;display:block!important;width:12px!important;height:16px!important;border-radius:3px!important;background:var(--theme-text)!important;transform:none!important}
+      .campaign-ignore-check[role="switch"][aria-checked=true]{background:var(--theme-accent)!important}
+      .campaign-ignore-check[role="switch"][aria-checked=true]::after{transform:translateX(12px)!important;background:var(--theme-onAccent)!important}
+      @media(pointer:coarse){.compact-card-actions button{min-height:34px}}
     `;
   }
+

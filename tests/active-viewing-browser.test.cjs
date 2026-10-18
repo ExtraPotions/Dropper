@@ -120,7 +120,7 @@ test('opening System refreshes health after viewing is paused', async () => fixt
   await page.evaluate(()=>{
     window.__dropperTest.pauseIntent();
     window.dropperShow();
-    document.querySelector('#tdh-root').shadowRoot.querySelector('[data-panel="tdh-diagnostics-body"]').click();
+    document.querySelector('#tdh-root').shadowRoot.querySelector('[data-exp-menu-shortcut="support"]').click();
   });
   await page.waitForFunction(()=>document.querySelector('#tdh-root').shadowRoot.querySelector('[data-exp-health-state]').textContent==='Paused',null,{timeout:1500});
   assert.match(await page.locator('#tdh-root').evaluate(n=>n.shadowRoot.querySelector('[data-exp-health-reason]').textContent),/paused/i);
@@ -393,7 +393,7 @@ test('ranked game priority is account-scoped, does not navigate, and single-size
     fs.mkdirSync(path.join(__dirname, '../test-artifacts'), { recursive: true });
     await page.screenshot({ path: path.join(__dirname, `../test-artifacts/active-viewing-${mode}.png`) });
   }
-  await page.getByRole('button', { name: 'Campaigns', exact: true }).click();
+  await page.getByRole('tab', { name: 'Campaigns', exact: true }).click();
   await page.getByLabel('Priority position for Second game', { exact: true }).focus();
   await page.getByLabel('Priority position for Second game', { exact: true }).selectOption('1');
   const ranked = await page.evaluate(() => {
@@ -1190,7 +1190,7 @@ test('the campaign list follows Campaign Order and matches the campaign Dropper 
   // My Priority: jump directly to a rank and shift intervening games in order.
   await choose('priority');
   assert.deepEqual((await snapshot()).list.map(item => item.game), ['Alpha', 'Bravo', 'Charlie']);
-  await page.getByRole('button', { name: 'Campaigns', exact: true }).click();
+  await page.getByRole('tab', { name: 'Campaigns', exact: true }).click();
   await page.getByLabel('Priority position for Charlie', { exact: true }).focus();
   await page.getByLabel('Priority position for Charlie', { exact: true }).selectOption('1');
   let view = await snapshot();
@@ -1277,7 +1277,7 @@ test('campaign position picker supports long jumps, keyboard focus and uninterru
     const root = document.getElementById('tdh-root').shadowRoot;
     if (root.getElementById('tdh-drops-body').classList.contains('fl-tool-hidden')) root.querySelector('[data-panel="tdh-drops-body"]').click();
   }, campaigns);
-  await page.getByRole('button', { name: 'Campaigns', exact: true }).click();
+  await page.getByRole('tab', { name: 'Campaigns', exact: true }).click();
   const picker = page.getByLabel('Priority position for Game 12', { exact: true });
   assert.equal(await page.locator('.campaign-priority-position option').count(), 12, 'inactive pickers keep only their current position');
   await picker.focus();
@@ -1522,7 +1522,7 @@ test('repositioned progress clears every suite launcher in either injection orde
           const launchers = [...document.querySelectorAll('[data-exp-product-launcher="1"]')].map(host => ({product:host.dataset.productId, ...box(host.shadowRoot.querySelector('[data-exp-part="launcher"]'))}));
           return { card:r, presentation:card.dataset.presentation, launchers, overlaps:launchers.filter(b=>b.left<r.right&&b.right>r.left&&b.top<r.bottom&&b.bottom>r.top), contained:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight };
         });
-        assert.equal(facts.presentation, 'page-card');
+        assert.equal(facts.presentation, 'compact-card');
         assert.ok(facts.card.width && facts.card.height && facts.contained, JSON.stringify(facts));
         assert.deepEqual(facts.overlaps, [], `companionsFirst=${companionsFirst}, delta=${delta}: ${JSON.stringify(facts)}`);
         if (viewport.width === 561 && delta === 0) {
@@ -1541,7 +1541,7 @@ test('repositioned progress clears every suite launcher in either injection orde
 test('the closed progress card stays visible without covering Twitch player controls', async () => fixture(async page => {
   await page.waitForTimeout(100);
   const state = await cardState(page);
-  assert.deepEqual(state, { presentation: 'page-card', badgeOnly: false }, 'the card stays on the page without changing the saved preference');
+  assert.deepEqual(state, { presentation: 'compact-card', badgeOnly: false }, 'the card stays on the page without changing the saved preference');
   const covered = await page.evaluate(() => {
     const card = document.getElementById('tdh-root').shadowRoot.getElementById('tdh-drop-card').getBoundingClientRect();
     return [...document.querySelectorAll('[data-a-target="player-controls"],#live-channel-stream-information')].some(node => { const r = node.getBoundingClientRect(); return card.width && r.left < card.right && r.right > card.left && r.top < card.bottom && r.bottom > card.top; });
@@ -1550,14 +1550,14 @@ test('the closed progress card stays visible without covering Twitch player cont
 }, '/whithblade', { viewport: { width: 1394, height: 295 }, extra: SHORT_PLAYER }));
 test('the closed progress card stays beside the launcher when it covers nothing', async () => fixture(async page => {
   await page.waitForTimeout(100);
-  assert.deepEqual(await cardState(page), { presentation: 'page-card', badgeOnly: false });
+  assert.deepEqual(await cardState(page), { presentation: 'compact-card', badgeOnly: false });
 }, '/whithblade'));
 
 test('with Badge Only off progress stays on the page through menu open and dismissal on the reported narrow viewport', async () => fixture(async page => {
   await page.evaluate(() => window.__dropperTest.setMenuOpen(true));
-  assert.equal((await cardState(page)).presentation, 'page-card');
+  assert.equal((await cardState(page)).presentation, 'compact-card');
   await page.evaluate(() => { const t = window.__dropperTest; t.enforceMenuAt(t.menuState().dismissAt + 1); });
-  assert.deepEqual(await cardState(page), { presentation: 'page-card', badgeOnly: false });
+  assert.deepEqual(await cardState(page), { presentation: 'compact-card', badgeOnly: false });
   const facts = await page.evaluate(() => {
     const card = document.getElementById('tdh-root').shadowRoot.getElementById('tdh-drop-card');
     const r = card.getBoundingClientRect();
@@ -1565,7 +1565,7 @@ test('with Badge Only off progress stays on the page through menu open and dismi
   });
   assert.ok(facts.visible && facts.width > 0 && facts.height > 0 && facts.contained, JSON.stringify(facts));
   await page.setViewportSize({ width: 390, height: 650 });
-  assert.equal((await cardState(page)).presentation, 'page-card');
+  assert.equal((await cardState(page)).presentation, 'compact-card');
 }, '/whithblade', { viewport: { width: 561, height: 810 }, extra: '<div class="player-controls" style="position:fixed;left:0;top:650px;width:561px;height:50px"></div>' }));
 // Measured in the 2026-10 review at 909 x 295: the progress header pushed the section subtabs below the menu's edge.
 test('in a short window the open menu keeps its section tabs in view and shows Badge Only progress as one row', async () => fixture(async page => {
@@ -1580,7 +1580,7 @@ test('in a short window the open menu keeps its section tabs in view and shows B
     return { layout, tabsBottom: tabs.bottom, panelBottom: panel.bottom, reward: getComputedStyle(card.querySelector('.progress-reward-row')).display, percent: getComputedStyle(card.querySelector('.drop-percent')).display };
   });
   assert.ok(facts.tabsBottom <= facts.panelBottom, 'section and subsection tabs are inside the menu: ' + JSON.stringify(facts));
-  assert.equal(facts.reward, 'none', 'detail rows give way: ' + JSON.stringify(facts));
+  assert.ok(facts.layout.card[1]-facts.layout.card[0]<=40,'Badge Only remains a compact button: '+JSON.stringify(facts));
   assert.notEqual(facts.percent, 'none', 'the percentage stays: ' + JSON.stringify(facts));
 }, '/directory/category/albion-online', { viewport: { width: 909, height: 295 } }));
 
@@ -1627,11 +1627,11 @@ test('a tab opened from a switching tab is not adopted after the update', async 
 
 test('the progress card returns beside the launcher when the window grows again', async () => fixture(async page => {
   await page.waitForTimeout(100);
-  assert.equal((await cardState(page)).presentation, 'page-card');
-  assert.equal(await page.evaluate(() => document.getElementById('tdh-root').shadowRoot.getElementById('tdh-drop-card').style.position), 'fixed');
+  assert.equal((await cardState(page)).presentation, 'compact-card');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('tdh-root').shadowRoot.getElementById('tdh-drop-card')).position), 'fixed');
   // Only the page's own resize handling runs here, as when the viewer enlarges the window.
   await page.setViewportSize({ width: 1879, height: 885 });
   await page.waitForTimeout(150);
-  assert.equal(await page.evaluate(() => document.getElementById('tdh-root').shadowRoot.getElementById('tdh-drop-card').dataset.presentation), 'page-card');
-  assert.equal(await page.evaluate(() => document.getElementById('tdh-root').shadowRoot.getElementById('tdh-drop-card').style.position), '');
+  assert.equal(await page.evaluate(() => document.getElementById('tdh-root').shadowRoot.getElementById('tdh-drop-card').dataset.presentation), 'compact-card');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('tdh-root').shadowRoot.getElementById('tdh-drop-card')).position), 'fixed');
 }, '/whithblade', { viewport: { width: 1394, height: 295 }, extra: SHORT_PLAYER }));

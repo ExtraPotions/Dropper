@@ -2491,10 +2491,12 @@
     const current = session.candidateEvidence;
     const snapshot = activeCampaignAllowListEvidence(channelLogin);
     if (!snapshot) return session;
+    const aclRejected = Boolean(cleanText(channelLogin)) && current.campaignAclMatched === true &&
+      snapshot.campaignAllowListPresent && !snapshot.campaignAllowListMatch;
     if (
       current.campaignAllowListPresent === snapshot.campaignAllowListPresent &&
       current.campaignAllowListMatch === snapshot.campaignAllowListMatch &&
-      current.campaignAllowListSource === snapshot.campaignAllowListSource
+      current.campaignAllowListSource === snapshot.campaignAllowListSource && !aclRejected
     ) return session;
 
     return writeRoutingControllerSession({
@@ -2502,6 +2504,7 @@
       candidateEvidence: {
         ...current,
         ...snapshot,
+        ...(aclRejected ? { campaignAclMatched: false } : {}),
         campaignAllowListUpdatedAt: now,
       },
     });

@@ -47,7 +47,11 @@ module.exports = {
   // Let Dropper finish starting up before the first capture.
   setup: page => page.waitForTimeout(1600),
   shots: [
-    { file: 'drops-menu.png', section: 'Drops', before: paintSampleProgress },
-    { file: 'streams-menu.png', section: 'Streams', tab: 'Playback', before: paintSampleProgress },
+    { file: 'drops-menu.png', section: 'Campaigns', before: paintSampleProgress },
+    { file: 'streams-menu.png', section: 'Settings', before: async(page,host)=>{
+      await host.locator('summary').filter({hasText:/^Viewing$/}).click();
+      await host.locator('summary').filter({hasText:/^Playback options$/}).click();
+      await paintSampleProgress(page,host);
+    } },
   ],
 };

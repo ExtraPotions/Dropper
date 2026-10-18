@@ -1,7 +1,13 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{chromium}=require('playwright');
-// Opens a shared-menu submenu detail view by its row label; 'Overview' returns to the section's home view.
-async function openSubmenu(scope,label){const title=scope.locator('.exp-submenu-detail:not([hidden])>.exp-submenu-title:visible');if(await title.count()&&(await title.first().textContent())===label)return;const back=scope.locator('.exp-submenu-detail:not([hidden])>.exp-submenu-back:visible');while(await back.count())await back.first().click();if(label!=='Overview')await scope.locator('.exp-submenu-row:visible').filter({hasText:new RegExp('^'+label+'$')}).click();}
+// Opens the current inline settings group without collapsing an already-open disclosure.
+async function openSubmenu(scope,label){
+ const aliases={Style:'Highlight style',Menu:'Menu Preferences',Transfer:'Settings transfer',Effects:'Effects & integrations',Profiles:'Profiles & sites',Page:'Page tools',Retailers:'Retailer modules',Review:'Protection review',Activity:'Page activity',Playback:'Playback options',Alerts:'Notifications',Patterns:'Advanced Amazon',Tools:'Page tools'};
+ if(label==='Overview')return;
+ const shortcut=scope.locator('[data-exp-menu-shortcut="'+label.toLowerCase()+'"]');if(await shortcut.count()){await shortcut.click();return;}
+ const summary=scope.locator('summary:visible').filter({hasText:new RegExp('^'+(aliases[label]||label)+'(?: .*)?'+'$')}).first();
+ await summary.waitFor();if(!await summary.evaluate(n=>n.parentElement.open))await summary.click();
+}
 test('installed Dropper migrates preferences, keeps the page bridge working, and resets manager data',async t=>{
  const browser=await chromium.launch();t.after(()=>browser.close());const context=await browser.newContext();
  await context.addCookies([{name:'login',value:'fixture',domain:'.twitch.tv',path:'/'}]);
@@ -31,8 +37,8 @@ test('installed Dropper migrates preferences, keeps the page bridge working, and
  const event=await page.evaluate(()=>fixtureEvents.at(-1));assert.equal(event.operations.length,1);assert.equal(event.operations[0].name,'Inventory');
  assert.equal(event.headers.authorization,undefined);assert.equal(event.json[0].data.currentUser.email,undefined);
  assert.equal(await page.evaluate(()=>fixtureResponse[0].data.chat),'private','Twitch still receives its original response');
- await page.evaluate(()=>dropperShow());await host.locator('[data-exp-section-tab="tdh-diagnostics-body"]').click();
- await openSubmenu(host,'Reset');
+ await page.evaluate(()=>dropperShow());await host.locator('[data-exp-menu-shortcut="support"]').click();
+ await host.locator('[data-exp-menu-shortcut="reset"]').click();
  await host.getByRole('button',{name:'Reset All Settings',exact:true}).click();
  assert.equal(await page.evaluate(()=>fixtureManager.has('exp:v3:dropper:settings')),true,'first tap only arms reset');
  // Cancel the navigation while inspecting the state immediately after reset.

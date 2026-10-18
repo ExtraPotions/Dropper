@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.46
+// @version      3.4.47
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.46";
+  const APP_VERSION = "3.4.47";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.47": ["Keeps campaign details and channel restrictions consistent when Twitch refreshes reward summaries.","Adds a compact progress card with one Pause control, colored status text and stable placement during loading.","Organizes campaigns and settings in a compact sidebar with inline options and readable diagnostics."],
     "3.4.46": ["Pairs dropdown option backgrounds and text colors for readable campaign and settings menus.","Includes Core 3.9.6 with reduced duplicate stylesheet parsing."],
     "3.4.45": ["Choose any campaign priority position directly instead of moving games one step at a time.","Keep the position picker open during background refreshes and preserve keyboard focus after reordering.","Load position choices only while needed to keep long campaign lists lighter."],
     "3.4.44": ["Uses less memory before the menu is first opened, with shared foundation exp-core 3.9.5.","Keeps the launcher and update notices working when the page denies local storage."],
@@ -703,7 +704,7 @@
     },
     dropCampaignDetails: {
       name: "DropCampaignDetails",
-      hash: "039277bf98f3130929262cc7c6efd9c141ca3749cb6dca442fc8ead9a53f77c1",
+      hash: "1f4903ecfff5d0ba12820e28288d3c524606b28916084214a8c0bb9a2043727a",
       variables: { channelLogin: "", dropID: "" },
     },
   };
@@ -4119,10 +4120,12 @@
     const current = session.candidateEvidence;
     const snapshot = activeCampaignAllowListEvidence(channelLogin);
     if (!snapshot) return session;
+    const aclRejected = Boolean(cleanText(channelLogin)) && current.campaignAclMatched === true &&
+      snapshot.campaignAllowListPresent && !snapshot.campaignAllowListMatch;
     if (
       current.campaignAllowListPresent === snapshot.campaignAllowListPresent &&
       current.campaignAllowListMatch === snapshot.campaignAllowListMatch &&
-      current.campaignAllowListSource === snapshot.campaignAllowListSource
+      current.campaignAllowListSource === snapshot.campaignAllowListSource && !aclRejected
     ) return session;
 
     return writeRoutingControllerSession({
@@ -4130,6 +4133,7 @@
       candidateEvidence: {
         ...current,
         ...snapshot,
+        ...(aclRejected ? { campaignAclMatched: false } : {}),
         campaignAllowListUpdatedAt: now,
       },
     });
@@ -6951,17 +6955,11 @@
     return (catalog || []).filter((campaign) => isPageScrapedCampaignKey(campaignKey(campaign)));
   }
 
-  // ViewerDropsDashboard rows carry no rewards or allow list. Keep what an
-  // earlier DropCampaignDetails request supplied instead of erasing it on every poll.
+  // Dashboard reward summaries can omit names and restrictions even when the
+  // reward array is nonempty. Overlay them without erasing authoritative details.
   function withKnownCampaignDetails(campaign, key = campaignKey(campaign)) {
-    if ((campaign?.timeBasedDrops || campaign?.drops || []).length) return campaign;
     const prior = lastCampaignCatalog.find((item) => campaignKey(item) === key);
-    if (!(prior?.timeBasedDrops || []).length) return campaign;
-    return {
-      ...campaign,
-      timeBasedDrops: prior.timeBasedDrops,
-      allow: campaign?.allow?.channels?.length ? campaign.allow : prior.allow,
-    };
+    return prior ? mergeCampaigns([prior], [campaign])[0] : campaign;
   }
 
   // A full campaign list from Twitch is authoritative for what is open. Close
@@ -7096,14 +7094,13 @@
   async function enrichCampaignsWithDropDetails(campaigns, source = "drop-campaign-details", { force = false } = {}) {
     const list = Array.isArray(campaigns) ? campaigns.filter(Boolean) : [];
     if (!list.length || !getToken()) return list;
-    const login = cleanText(
-      cookie("login") ||
-      cookie("name") ||
-      ""
-    ).toLowerCase() || watchingLogin();
+    // Twitch's channelLogin parameter is the viewer's numeric ID, not a login.
+    const viewerId = cleanText(readSession('dropper-viewer-id-v1', ''));
+    if (!/^\d{1,32}$/.test(viewerId)) return list;
     const needsDetails = list.filter((campaign) => {
       const drops = campaign?.timeBasedDrops || campaign?.drops || [];
-      return Boolean(campaign?.id) && (force || drops.length === 0);
+      return Boolean(campaign?.id) && (force || drops.length === 0 ||
+        drops.some(drop => !cleanText(drop?.name || drop?.benefitEdges?.[0]?.benefit?.name)));
     }).slice(0, 40);
     if (!needsDetails.length) return list;
     const byId = new Map(list.map((campaign) => [String(campaign.id || ""), campaign]));
@@ -7114,7 +7111,7 @@
           op: "dropCampaignDetails",
           variables: {
             dropID: String(campaign.id),
-            channelLogin: login || "",
+            channelLogin: viewerId,
           },
         })));
         for (const row of rows || []) {
@@ -7553,6 +7550,7 @@
     let dashboardCampaigns = null;
     let sessionRow = null;
     let availableCampaigns = null;
+    const detailCampaigns = [];
 
     for (const [index, row] of rows.entries()) {
       if (!row || typeof row !== "object") continue;
@@ -7563,6 +7561,13 @@
         touched = true;
       }
       if (!data || typeof data !== "object" || (Array.isArray(row.errors) && row.errors.length)) continue;
+      const viewerId = cleanText(data.currentUser?.id);
+      if (/^\d{1,32}$/.test(viewerId)) writeSession('dropper-viewer-id-v1', viewerId);
+      const detailed = data.user?.dropCampaign || data.dropCampaign;
+      if (detailed?.id && Array.isArray(detailed.timeBasedDrops || detailed.drops)) {
+        detailCampaigns.push(detailed);
+        touched = true;
+      }
       const dashboard = data.currentUser?.dropCampaigns;
       if (Array.isArray(dashboard)) {
         dashboardCampaigns = dashboard;
@@ -7590,7 +7595,7 @@
     // recovered. Only successful read data can clear the network failure state.
     const hasFreshRead = Boolean(
       (inventoryRow && inventoryResponseState(inventoryRow).valid) ||
-      dashboardCampaigns || sessionRow || availableCampaigns
+      dashboardCampaigns || sessionRow || availableCampaigns || detailCampaigns.length
     );
     if (hasFreshRead) {
       lastTwitchGqlAt = Date.now();
@@ -7610,6 +7615,13 @@
       }
     }
     if (inventoryRow) acceptInventoryResponse(inventoryRow, source);
+    if (detailCampaigns.length) {
+      rememberCampaignCatalog(detailCampaigns, source);
+      for (const detailed of compactCampaignCatalog(detailCampaigns.map(campaign => withKnownCampaignDetails(campaign)))) {
+        campaignDetailsCache.set(campaignKey(detailed), detailed);
+        hydrateCurrentRewardDetails(detailed);
+      }
+    }
 
     const campaignPool = mergeCampaigns(
       lastCampaignCatalog,
@@ -7735,7 +7747,7 @@
             (Object.hasOwn(row, 'data') && row.data !== null && (typeof row.data !== 'object' || Array.isArray(row.data))) ||
             (Object.hasOwn(row, 'errors') && !Array.isArray(row.errors))) return null;
         const data = pick(row.data, ['currentUser', 'channelDropCampaigns', 'channel', 'user', 'dropCampaign', 'claimDropRewards']);
-        if (data?.currentUser) data.currentUser = pick(data.currentUser, ['inventory', 'dropCampaigns', 'dropCurrentSession', 'dropCurrentSessionContext']);
+        if (data?.currentUser) data.currentUser = pick(data.currentUser, ['id', 'inventory', 'dropCampaigns', 'dropCurrentSession', 'dropCurrentSessionContext']);
         if (data?.channel) data.channel = pick(data.channel, ['viewerDropCampaigns', 'dropCampaigns']);
         if (data?.user) data.user = pick(data.user, ['viewerDropCampaigns', 'dropCampaign', 'id', 'login', 'displayName', 'stream', 'broadcastSettings']);
         if (data?.claimDropRewards) data.claimDropRewards = pick(data.claimDropRewards, ['status']);
@@ -7814,7 +7826,7 @@
           ops.forEach((op, index) => {
             if (!supported.has(op.name)) return;
             const row = rows[index], data = pick(row?.data, ['currentUser', 'channelDropCampaigns', 'channel', 'user', 'dropCampaign', 'claimDropRewards']);
-            if (data?.currentUser) data.currentUser = pick(data.currentUser, ['inventory', 'dropCampaigns', 'dropCurrentSession', 'dropCurrentSessionContext']);
+            if (data?.currentUser) data.currentUser = pick(data.currentUser, ['id', 'inventory', 'dropCampaigns', 'dropCurrentSession', 'dropCurrentSessionContext']);
             if (data?.channel) data.channel = pick(data.channel, ['viewerDropCampaigns', 'dropCampaigns']);
             if (data?.user) data.user = pick(data.user, ['viewerDropCampaigns', 'dropCampaign', 'id', 'login', 'displayName', 'stream', 'broadcastSettings']);
             if (data?.claimDropRewards) data.claimDropRewards = pick(data.claimDropRewards, ['status']);
@@ -8151,6 +8163,11 @@
   const GQL_EXPECTED_SHAPES = {
     Inventory: (data) => inventoryResponseState({ data }).valid,
     ViewerDropsDashboard: (data) => Array.isArray(data?.currentUser?.dropCampaigns) || data?.currentUser === null,
+    DropCampaignDetails: (data) => {
+      const campaign = data?.user?.dropCampaign || data?.dropCampaign;
+      return Boolean(campaign?.id && campaign.allow && typeof campaign.allow.isEnabled === 'boolean' &&
+        Array.isArray(campaign.timeBasedDrops || campaign.drops));
+    },
     ChannelDropsCampaigns: (data) => Array.isArray(data?.channelDropCampaigns),
     DropCurrentSessionContext: (data) => sessionResponseState({ data }).valid,
   };
@@ -8249,6 +8266,8 @@
         confirmed: 0, reason: "inventory-unavailable" };
       return result;
     }
+    const viewerId = cleanText(row?.data?.currentUser?.id);
+    if (/^\d{1,32}$/.test(viewerId)) writeSession('dropper-viewer-id-v1', viewerId);
     const discovered = extractCampaignCatalog(row);
     nativeRewardClaimEvidence(row?.data?.currentUser?.inventory, discovered);
     if (discovered.length) rememberCampaignCatalog(discovered, source);
@@ -11201,15 +11220,8 @@
     ].filter(Boolean))];
     const failedSet = new Set(failedStreams.map((login) => cleanText(login).toLowerCase()));
     const targetCampaignKey = cleanText(pending.targetCampaignKey || currentDrop?.campaignKey || "");
-    const cached = sortStreamCandidates(
-      pruneStandbyCache().filter((item) => {
-        const login = cleanText(item?.login).toLowerCase();
-        if (!login || failedSet.has(login)) return false;
-        if (pending.targetGame && (!item.game || !gameNamesMatch(pending.targetGame, item.game))) return false;
-        if (targetCampaignKey && item.campaignKey && item.campaignKey !== targetCampaignKey) return false;
-        return true;
-      }),
-      (left, right) => Number(right.seenAt || 0) - Number(left.seenAt || 0),
+    const cached = cachedStandbyCandidates(pending.targetGame, targetCampaignKey).filter(
+      (item) => !failedSet.has(cleanText(item.login).toLowerCase()),
     );
     const cachedNext = pickAutomaticStreamCandidate(cached, pending);
 
@@ -14470,7 +14482,7 @@
   function switchHtml(id, label, description, on) {
     const tip = String(description || "").trim().replace(/&/g, "&amp;").replace(/"/g, "&quot;");
     const labelClass = tip ? "fl-switch-text has-tooltip" : "fl-switch-text";
-    const tipAttr = tip ? ` data-tip="${tip}"` : "";
+    const tipAttr = tip ? ` data-tip="${tip}" role="button" tabindex="0" aria-description="${tip}"` : "";
     return `
       <div class="fl-switch">
         <span class="${labelClass}"${tipAttr} id="${id}-label">${label}</span>
@@ -15297,8 +15309,36 @@
         .badge-row { width:100%; }
         #tdh-drop-card { flex:1 1 auto; width:auto; min-width:0; max-width:none; }
       }
+
+      .cluster #tdh-drop-card[data-presentation="compact-card"]{position:fixed!important;display:block!important;box-sizing:border-box!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;border:1px solid var(--theme-line,#848494)!important;border-radius:10px!important;background:var(--theme-bg,#18181b)!important;background-image:none!important;box-shadow:0 4px 10px #0003!important;color:var(--theme-text,#efeff1)!important;font-family:"Segoe UI",system-ui,sans-serif!important;overflow:hidden!important;container-type:normal!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"]:is(::before,::after){display:none!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .stream-info{padding:var(--exp-menu-padding,10px)!important;min-height:0!important;background:transparent!important;border:0!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .progress-copy{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;grid-template-areas:"game percent" "name name" "bar bar" "status meta"!important;gap:4px 6px!important;width:100%!important;padding:0!important;min-width:0!important;align-items:center!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] :is(.progress-head,.progress-category,.progress-reward-row,.drop-status-row,.status-meta-chip){display:contents!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] :is(.stream-channel,.strip-art,.strip-meta,.progress-dot,.status-chip-divider,.status-clock-icon,#tdh-updated-ago){display:none!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .stream-game{grid-area:game!important;font:600 12px/1.35 "Segoe UI",sans-serif!important;color:var(--theme-muted)!important;min-width:0!important;white-space:normal!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-name{grid-area:name!important;font:700 13px/1.3 "Segoe UI",sans-serif!important;color:var(--theme-text)!important;white-space:normal!important;overflow-wrap:anywhere!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-percent{grid-area:percent!important;font:400 10px/1.3 "Segoe UI",sans-serif!important;color:var(--theme-muted)!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-meta{grid-area:meta!important;font:600 10px/1.3 "Segoe UI",sans-serif!important;color:var(--theme-text)!important;white-space:normal!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-bar{grid-area:bar!important;height:3px!important;min-height:3px!important;margin:2px 0!important;background:#0e0e10!important;border-radius:2px!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] #tdh-drop-fill{height:100%!important;background:#9146ff!important;border-radius:2px!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .state-pill{grid-area:status!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;font:500 10px/1.35 "Segoe UI",sans-serif!important;white-space:normal!important}
+      .compact-card-actions{display:flex;gap:6px;padding:0 var(--exp-menu-padding,10px) var(--exp-menu-padding,10px)}
+      .compact-card-actions button{flex:1;min-width:0;min-height:var(--exp-menu-control,30px);padding:4px 6px;border:1px solid var(--theme-line);border-radius:7px;background:var(--theme-raised,#3a3a3d);color:var(--theme-text);font:600 12px/1.3 "Segoe UI",sans-serif;cursor:pointer}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .strip-toggle{display:none!important}
+      .cluster #tdh-drop-card[data-collapsed="true"] :is(.expanded-content,.compact-card-actions){display:none!important}
+      .cluster #tdh-drop-card[data-collapsed="true"] .strip-toggle{display:block!important;position:static!important;width:100%!important;height:auto!important;min-height:30px!important;padding:6px!important;color:var(--theme-text)!important;background:var(--theme-bg)!important;opacity:1!important;transform:none!important;font:600 12px "Segoe UI",sans-serif!important}
+      #tdh-campaign-order-note{display:none!important}
+      #tdh-campaign-search{box-sizing:border-box;width:100%;min-width:0;padding:7px 8px;margin:6px 0;border:1px solid var(--theme-line);border-radius:7px;background:var(--theme-inset,#0e0e10);color:var(--theme-text);font:12px "Segoe UI",sans-serif;min-height:34px}
+      .campaign-game-row[hidden]{display:none!important}
+      .campaign-ignore-check[role="switch"]{width:34px!important;min-width:34px!important;height:24px!important;min-height:24px!important;border:1px solid var(--theme-line)!important;border-radius:6px!important;background:var(--theme-raised)!important;padding:3px!important}
+      .campaign-ignore-check[role="switch"]::after{content:''!important;display:block!important;width:12px!important;height:16px!important;border-radius:3px!important;background:var(--theme-text)!important;transform:none!important}
+      .campaign-ignore-check[role="switch"][aria-checked=true]{background:var(--theme-accent)!important}
+      .campaign-ignore-check[role="switch"][aria-checked=true]::after{transform:translateX(12px)!important;background:var(--theme-onAccent)!important}
+      @media(pointer:coarse){.compact-card-actions button{min-height:34px}}
     `;
   }
+
   // ---------------------------------------------------------------------------
   // Campaign insights: read-only summaries built from campaign and inventory data
   // Dropper already holds. Nothing here changes routing, claiming, or settings, and
@@ -15514,7 +15554,7 @@
               <div class="header-copy">
                 <div class="header-title-row">
                   <h2 id="tdh-rail-title">Dropper</h2>
-                  <button type="button" id="tdh-header-version" aria-label="View Dropper v${APP_VERSION} Changelog" title="View Changelog">v${APP_VERSION}</button>
+                  <button type="button" id="tdh-header-version" aria-label="View Dropper v${APP_VERSION} Changelog">v${APP_VERSION}</button>
                 </div>
                 <div id="tdh-rail-subtitle">Twitch Drops: Track and Redeem</div>
               </div>
@@ -15663,7 +15703,7 @@
             ${switchHtml("tdh-progress-title", "Show Progress In Tab", "", settings.progressInTitle)}
             ${switchHtml("tdh-keep-tab", "Keep Screen Awake", "Requests A Screen Wake Lock During Actual Playback. Does Not Override Visibility Or Pauses.", settings.keepTabActive)}
             ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "", settings.hideTwitchSubscriptionPromos)}
-            ${switchHtml("tdh-badge-only", "Badge Only", "Keeps Only The Dropper Badge On The Page And Shows Progress At The Top Of The Menu.", settings.badgeOnly)}
+            ${switchHtml("tdh-badge-only", "Badge Only", "Collapses the page card to a small button. Open that button for progress and Pause; progress is never duplicated in the menu.", settings.badgeOnly)}
             ${switchHtml("tdh-reduce-motion", "Reduce motion", "", settings.reduceMotion)}
             <hr class="appearance-separator">
             ${switchHtml("tdh-custom-opacity", "Custom Opacity", "Makes Dropper panels translucent while keeping the launcher fully visible.", settings.customOpacity)}
@@ -15715,6 +15755,7 @@
                 </div>
               </div>
             </div>
+            <div class="compact-card-actions"><button type="button" id="tdh-card-pause">Pause</button><button type="button" id="tdh-card-menu">Open menu</button></div>
           </section>
           <button type="button" id="tdh-settings-launcher" data-exp-part="launcher" aria-controls="tdh-tools-dock" aria-expanded="false" aria-label="Open Dropper Settings" data-userscript-launcher="userscript-launcher-v1" data-launcher-id="dropper" data-launcher-preferred-position="right-bottom">
             <svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><path class="track" d="M18 3H24A9 9 0 0 1 33 12V24A9 9 0 0 1 24 33H12A9 9 0 0 1 3 24V12A9 9 0 0 1 12 3H18Z"></path><path class="fill" id="tdh-ring" d="M18 3H24A9 9 0 0 1 33 12V24A9 9 0 0 1 24 33H12A9 9 0 0 1 3 24V12A9 9 0 0 1 12 3H18Z" pathLength="100" stroke-dasharray="0 100"></path></svg>
@@ -15744,6 +15785,7 @@
     chromeResizeObserver.observe(ui.dock);
     chromeResizeObserver.observe(shadow.querySelector(".badge-row"));
     const updateNotice = shadow.getElementById("tdh-update-notice");
+    updateNotice?.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();hideUpdateNotice();}});
     if (updateNotice) {
       updateNotice.dataset.placement = "menu";
       delete updateNotice.dataset.expFloatingNotice;
@@ -15753,6 +15795,8 @@
     }
     bindDrag();
     bindSwitches();
+    mountCompactDropperNavigation();
+    mountProductTools();
     bindPanels();
     ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { ExtraPotionsCore.resetLauncherGrid("dropper"); requestAnimationFrame(layoutChrome); } });
     ExtraPotionsCore.setMenuStatus("dropper", systemHealthSnapshot);
@@ -15778,7 +15822,15 @@
     // A reward image that fails to load falls back to the gift icon until the reward changes.
     const stripArtImage = shadow.querySelector("#tdh-strip-art img");
     stripArtImage?.addEventListener("error", () => { stripArtImage.dataset.failed = stripArtImage.getAttribute("src") || ""; stripArtImage.hidden = true; });
+    shadow.getElementById('tdh-card-pause')?.addEventListener('click',()=>{
+      syncViewingContext();
+      if(viewingIntent.snapshot().paused)ensureStreamPlaying(true);
+      else {viewingIntent.pause(true);const video=streamVideoElement();if(video&&!video.paused){try{video.pause();}catch{}}}
+      refreshViewingControls();syncCompactState();
+    });
+    shadow.getElementById('tdh-card-menu')?.addEventListener('click',()=>setRailOpen(!railOpen,true));
     bindDropperControls();
+    ui.pageActions=ExtraPotionsCore.createPageActions({host,shadow,label:'Dropper',preferVideo:true,visible:()=>Boolean(streamVideoElement()),actions:[{label:'Show Drops Inventory',run:()=>{setRailOpen(true,true);shadow.querySelector('[data-exp-section-tab=tdh-drops-body]')?.click();shadow.getElementById('tdh-toggle-inventory')?.click();}},{label:'Stay On This Stream',text:()=>manualStreamLockSnapshot()?'Release Stream Lock':'Stay On This Stream',run:()=>{shadow.getElementById('tdh-stream-lock')?.click();}},{label:'Menu',run:()=>setRailOpen(!railOpen,true)}]});
     renderSwitches();
     applyMotionSetting();
     applyAppearanceSettings();
@@ -15788,7 +15840,7 @@
     syncMenuSizing();
     layoutChrome();
     ui.launcher.addEventListener("click", () => setRailOpen(!railOpen));
-    // The strip opens from its own button laid over the card; Skip sits above it as a sibling, not inside it.
+    // Badge Only opens the same compact card, keeping progress out of the menu.
     const stripToggle = shadow.getElementById("tdh-strip-toggle");
     const setStripOpen = (open) => {
       progressCard.classList.toggle("is-expanded", open);
@@ -15796,7 +15848,7 @@
       requestAnimationFrame(layoutChrome);
     };
     stripToggle.addEventListener("click", () => {
-      if (progressCard.dataset.presentation === "strip") setStripOpen(!progressCard.classList.contains("is-expanded"));
+      if(settings.badgeOnly){progressCard.dataset.expanded="1";syncProgressPanelPlacement();layoutChrome();}
     });
     document.addEventListener("pointerdown", (event) => {
       if (!progressCard.classList.contains("is-expanded") || event.composedPath().includes(progressCard)) return;
@@ -16082,9 +16134,10 @@
     const items = pruneStandbyCache().filter((item) => {
       const login = cleanText(item?.login).toLowerCase();
       if (!login || login === active || failed.has(login)) return false;
+      if ((settings.excludedChannels || []).includes(login)) return false;
       if (wantedGame && (!item.game || !gameNamesMatch(wantedGame, item.game))) return false;
       if (wantedCampaign && item.campaignKey !== wantedCampaign) return false;
-      if (allowListPresent && !allowedLogins.has(login) && item.dropsTagged !== true) return false;
+      if (allowListPresent && !allowedLogins.has(login)) return false;
       return true;
     }).map((item) => ({
       ...item,
@@ -16153,6 +16206,7 @@
           seen.has(login) ||
           login === active ||
           failed.has(login) ||
+          (settings.excludedChannels || []).includes(login) ||
           metadata.routable === false
         ) return;
 
@@ -16160,8 +16214,7 @@
         const candidateGame = cleanText(metadata.game || "");
         const candidateCampaignKey = cleanText(metadata.campaignKey || "");
         const allowListMatch = Boolean(login && allowedLogins.has(login));
-        const dropsTagged = metadata.dropsTagged === true;
-        if (allowListPresent && !allowListMatch && !dropsTagged) return;
+        if (allowListPresent && !allowListMatch) return;
         if (targetGame && (!candidateGame || !gameNamesMatch(targetGame, candidateGame))) return;
         if (targetCampaignKey && candidateCampaignKey && candidateCampaignKey !== targetCampaignKey) return;
 
@@ -16324,7 +16377,8 @@
       appendInventoryItem(list, "No Active Drop", "Waiting For Twitch", "Idle");
       return;
     }
-    const current = Number(currentDrop.currentMinutes) || 0;
+    const observed = currentDrop.currentMinutes;
+    const current = observed == null || observed === "" ? null : Number(observed);
     const required = Number(currentDrop.requiredMinutes) || 0;
     const authoritativePercent = authoritativeProgressPercent();
     const state = currentDrop.needsDropDetails
@@ -16337,7 +16391,7 @@
     appendInventoryItem(
       list,
       currentDrop.name || "Current Drop",
-      currentDrop.needsDropDetails ? "Twitch Details Pending" : required ? `${current} / ${required} Min` : "Progress Pending",
+      currentDrop.needsDropDetails ? "Twitch Details Pending" : required && Number.isFinite(current) && current >= 0 ? `${current} / ${required} Min` : "Progress Pending",
       state,
     );
   }
@@ -16380,6 +16434,7 @@
         ? 'Choose a priority position to move a game directly to that rank. Ignore a game until its latest campaign ends using its ignore control. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.'
         : `Games are listed in the order Dropper picks them under ${campaignStrategyLabel(strategy)}. Choose My Priority to rank games by position. With automatic switching on, Dropper moves to the top game right away unless playback is paused or you locked the stream.`;
     }
+    if(orderNote)ExtraPotionsCore.setMenuHelp(ui.shadow.getElementById('tdh-campaign-strategy')?.previousElementSibling,orderNote.textContent);
     const ignoredCount = openGames.filter((item) => (
       Number(ignoredCampaignGames.games?.[item.key]?.expiresAt || 0) > now
     )).length;
@@ -16471,13 +16526,13 @@
       const check = document.createElement("button");
       check.type = "button";
       check.className = "campaign-ignore-check";
-      check.setAttribute("role", "checkbox");
+      check.setAttribute("role", "switch");
       check.setAttribute("aria-checked", String(ignored));
       check.setAttribute(
         "aria-label",
         `${ignored ? "Stop ignoring" : "Ignore"} ${item.game} until ${new Date(item.latestEndMs).toLocaleString()}`,
       );
-      check.title = ignored ? "Stop Ignoring This Game" : "Ignore This Game";
+
       check.addEventListener("click", () => {
         const nextIgnored = check.getAttribute("aria-checked") !== "true";
         if (!setCampaignGameIgnored(item.game, item.latestEndMs, nextIgnored)) return;
@@ -16508,6 +16563,7 @@
       row.append(copy, check);
       list.appendChild(row);
     }
+    filterCampaignRows();
   }
 
   function appendInventoryItem(list, name, meta, state) {
@@ -16907,6 +16963,9 @@
 
   function syncCompactState() {
     if (!ui) return;
+    ui.pageActions?.refresh();
+    const pause=ui.shadow.getElementById('tdh-card-pause');if(pause){pause.textContent=viewingIntent.snapshot().paused?'Resume':'Pause';pause.disabled=!watchingLogin();}
+    const menu=ui.shadow.getElementById('tdh-card-menu');if(menu)menu.textContent=railOpen?'Close menu':'Open menu';
     const reward = ui.shadow.getElementById("tdh-compact-reward");
     const extra = ui.shadow.getElementById("tdh-compact-extra");
     const state = ui.shadow.getElementById("tdh-compact-state");
@@ -17038,7 +17097,7 @@
     const card = ui?.shadow.getElementById("tdh-drop-card");
     if (!card) return;
     card.style.removeProperty('position');
-    if (settings.badgeOnly || railOpen || card.dataset.presentation !== 'page-card') return;
+    if (!['page-card','compact-card'].includes(card.dataset.presentation)) return;
     const box = card.getBoundingClientRect();
     if (!box.width || !box.height) return;
     const launcherNodes = [...document.querySelectorAll('[data-exp-product-launcher="1"]')]
@@ -17079,25 +17138,14 @@
     const menuSlot = ui.shadow.getElementById("tdh-badge-only-progress-slot");
     const badgeRow = ui.shadow.querySelector(".badge-row");
     if (!card || !menuSlot || !badgeRow || !ui.launcher) return;
-    // Badge Only alone decides where progress lives: off keeps the card beside the launcher even while the menu is open.
-    if (settings.badgeOnly) {
-      menuSlot.hidden = false;
-      if (card.parentElement !== menuSlot) menuSlot.append(card);
-      card.dataset.presentation = "menu-card";
-      card.classList.remove("is-expanded");
-    } else if (sharedLauncher()) {
-      menuSlot.hidden = true;
-      if (card.parentElement !== ui.cluster) ui.cluster.append(card);
-      if (card.dataset.presentation !== "strip") card.classList.remove("is-expanded");
-      card.dataset.presentation = "strip";
-    } else {
-      menuSlot.hidden = true;
-      if (card.parentElement !== badgeRow) badgeRow.insertBefore(card, ui.launcher);
-      card.dataset.presentation = "page-card";
-      card.classList.remove("is-expanded");
-    }
-    // As a strip, its toggle button opens the full card; elsewhere the toggle is not shown.
-    ui.shadow.getElementById("tdh-strip-toggle")?.setAttribute("aria-expanded", String(card.classList.contains("is-expanded")));
+    menuSlot.hidden=true;
+    if(card.parentElement!==ui.cluster)ui.cluster.append(card);
+    card.dataset.presentation='compact-card';card.dataset.expReserved='1';
+    if(!settings.badgeOnly)delete card.dataset.expanded;
+    card.dataset.collapsed=String(Boolean(settings.badgeOnly&&!card.dataset.expanded));
+    const toggle=ui.shadow.getElementById('tdh-strip-toggle');toggle.textContent='Show progress card';toggle.setAttribute('aria-label','Show progress card');
+    // Badge Only keeps the complete card one tap away.
+    ui.shadow.getElementById("tdh-strip-toggle")?.setAttribute("aria-expanded", String(card.dataset.collapsed !== "true"));
   }
   // The strip sits over the Stream Chat title bar. Without one (directory pages, collapsed chat) it lines up with
   // the launcher like an update card. Clicking it opens the full card in place.
@@ -17233,6 +17281,31 @@
       location.reload();
     } catch(error) {productResetting=false;throw error;}
   }
+  function mountCompactDropperNavigation(){
+    const shadow=ui.shadow,drops=shadow.getElementById('tdh-drops-body'),settingsBody=shadow.getElementById('tdh-streams-body');
+    const section=body=>body.closest('.fl-tool-panel');
+    section(drops).querySelector('.fl-tool-title').textContent='Campaigns';
+    const campaigns=shadow.getElementById('tdh-open-campaigns');if(campaigns)campaigns.open=true;
+    section(settingsBody).querySelector('.fl-tool-title').textContent='Settings';
+    const viewing=ExtraPotionsCore.createDisclosure('Viewing',...settingsBody.childNodes);
+    const skip=shadow.getElementById('tdh-skip-streamer');if(skip)viewing.append(skip);
+    const lookBody=shadow.getElementById('tdh-progress-body'),systemBody=shadow.getElementById('tdh-diagnostics-body');
+    const lookSection=section(lookBody),systemSection=section(systemBody);
+    lookBody.classList.remove('fl-tool-hidden');systemBody.classList.remove('fl-tool-hidden');
+    const look=ExtraPotionsCore.createDisclosure('Look',lookBody),claims=ExtraPotionsCore.createDisclosure('Claiming');
+    for(const id of ['tdh-claim-drops','tdh-claim-bonus']){const row=shadow.getElementById(id)?.closest('.fl-switch');if(row)claims.append(row);}
+    const primary=['tdh-find-next','tdh-mute-next'].map(id=>viewing.querySelector('#'+id)?.closest('.fl-switch')).filter(Boolean);
+    settingsBody.replaceChildren(...primary,look,viewing,claims,systemBody);
+    lookSection.remove();systemSection.remove();
+    const search=document.createElement('input');search.type='search';search.id='tdh-campaign-search';search.placeholder='Find a game';search.setAttribute('aria-label','Search campaigns');search.addEventListener('input',filterCampaignRows);drops.prepend(search);
+    const empty=document.createElement('p');empty.id='tdh-campaign-filter-empty';empty.hidden=true;empty.textContent='No matching campaigns.';drops.append(empty);
+  }
+  function filterCampaignRows(){
+    const query=ui.shadow.getElementById('tdh-campaign-search')?.value.trim().toLowerCase()||'';
+    const rows=[...ui.shadow.querySelectorAll('#tdh-open-campaign-list .campaign-game-row')];
+    for(const row of rows)row.hidden=Boolean(query&&!row.querySelector('.campaign-game-name')?.textContent.toLowerCase().includes(query));
+    const empty=ui.shadow.getElementById('tdh-campaign-filter-empty');if(empty)empty.hidden=!query||!rows.length||rows.some(row=>!row.hidden);
+  }
   function mountProductTools() {
     const target=ui.shadow.getElementById('tdh-diagnostics-body');
     if(!target||target.querySelector('[data-exp-product-system]'))return;
@@ -17249,8 +17322,9 @@
     diagnostics.append(target.querySelector('.action-pair'),target.querySelector('#tdh-diagnostics'));
     // Menu size is a display choice, so it lives at the end of Appearance.
     const appearance=ui.shadow.getElementById('tdh-progress-body');
-    if(appearance&&!appearance.querySelector('[data-dropper-menu-preferences]')){const preferences=ExtraPotionsCore.createDisclosure('Menu Preferences',ExtraPotionsCore.createMenuSizeControls());preferences.dataset.dropperMenuPreferences='1';appearance.append(preferences);}
+    if(appearance&&!appearance.querySelector('[data-dropper-menu-preferences]')){const preferences=ExtraPotionsCore.createMenuSizeControls();preferences.dataset.dropperMenuPreferences='1';appearance.prepend(preferences);}
     const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,onReset:resetAllDropperData,notify:setStatus,layout:'grouped',issueSettings:()=>({current:settings,defaults:DEFAULTS})});
+    system.prepend(...[...ui.shadow.getElementById('tdh-streams-body').children].filter(node=>node!==target));
     target.replaceChildren(system);
   }
 
@@ -17483,6 +17557,7 @@
     });
     s.getElementById("tdh-update-dismiss")?.addEventListener("click", hideUpdateNotice);
   }
+
   function notifyUser(text) {
     if (!ui) return;
     const toast = ui.shadow.getElementById("tdh-toast");
@@ -17916,7 +17991,7 @@
     clearTimeout(updateNoticeTimer);
     updateNoticeTimer = null;
     const notice = ui?.shadow?.getElementById("tdh-update-notice");
-    if (notice) notice.hidden = true;
+    if (notice) {const focused=notice.contains(ui.shadow.activeElement);notice.hidden = true;if(focused)ui.shadow.getElementById("tdh-header-version")?.focus({preventScroll:true});}
     updateNoticeState = null;
     ExtraPotionsCore.releaseNoticeTurn?.(UPDATE_NOTICE_TURN);
     requestAnimationFrame(() => { layoutChrome(); });
@@ -18237,7 +18312,7 @@
       report: "Dropper Diagnostics",
       progressTimeline:progressTimelineSnapshot(),
       recoveryNavigation:recoveryNavigationState(),
-      build: "reward-data-r2",
+      build: "campaign-details-r4",
       version: APP_VERSION,
       accountScope: {
         login: twitchSessionLogin() || null,
@@ -18820,7 +18895,7 @@
     // instead of over it. In Badge Only the card lives in the menu and reserves nothing.
     if (progressCard) {
       // The strip under the top bar is reserved too, so update cards and changelogs open below it.
-      if (progressCard.dataset.presentation === "page-card" || progressCard.dataset.presentation === "strip") progressCard.dataset.expReserved = "1";
+      if (["page-card", "strip", "compact-card"].includes(progressCard.dataset.presentation)) progressCard.dataset.expReserved = "1";
       else delete progressCard.dataset.expReserved;
     }
     if (progressCard?.dataset.presentation === "page-card") {
@@ -18838,6 +18913,12 @@
       for (const property of ["left", "right", "top", "bottom"]) progressCard.style.removeProperty(property);
     }
 
+    if(progressCard?.dataset.presentation==='compact-card'){
+      progressCard.style.setProperty('width',ExtraPotionsCore.menuSizeTokens().cardWidth+'px','important');progressCard.style.setProperty('max-width','calc(100vw - 24px)','important');
+      ExtraPotionsCore.placeNotice(ui.host,progressCard);
+    }
+    updateProgressCardAside();
+    positionProgressStrip();
     if (railOpen) {
       // exp-core owns menu placement: beside the launcher grid, lined up with this launcher.
       ui.dock.style.overflowY = "auto";
@@ -18854,9 +18935,6 @@
       ui.dock.style.overflowY = "";
       for (const property of ["top", "bottom", "left", "right", "width", "max-height"]) ui.dock.style.removeProperty(property);
     }
-    // Reposition the page card around Twitch controls after its normal placement.
-    updateProgressCardAside();
-    positionProgressStrip();
 
     ui.cluster.classList.remove("open-up");
     ui.cluster.style.top = "0px";
@@ -18900,6 +18978,7 @@
     }
     ui.menuController.state(open);
     ui.launcher.setAttribute("aria-expanded", String(open));
+    const cardMenu=ui.shadow.getElementById("tdh-card-menu");if(cardMenu)cardMenu.textContent=open?"Close menu":"Open menu";
 
     if (open) {
       document.documentElement.dataset.expDropperMenuOpen = "1";
@@ -19086,3 +19165,4 @@
   // Start only after every binding in this IIFE is initialized (avoids SPA TDZ GQL crashes).
   startDropper();
 })();
+

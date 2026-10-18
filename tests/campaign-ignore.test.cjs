@@ -161,7 +161,7 @@ test('routing treats an ignored game as ineligible while campaign management can
 test('Drops menu exposes an automatically refreshed ignored-game checklist', () => {
   assert.match(source, /id="tdh-open-campaigns"/u);
   assert.match(source, /id="tdh-open-campaign-list"/u);
-  assert.match(source, /role", "checkbox"/u);
+  assert.match(source, /role", "switch"/u);
   assert.match(source, /queueGqlPollSoon\("open-campaign-list", 0\)/u);
   assert.match(source, /refreshOpenCampaignList\(\);/u);
   assert.match(source, /campaignGameIsIgnored\(currentDrop, now\)/u);

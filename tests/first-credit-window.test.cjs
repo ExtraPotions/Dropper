@@ -78,6 +78,19 @@ test('a stream Twitch confirms for the campaign waits for first credit instead o
   assert.equal((context.read().failedStreams || []).length, 0);
 });
 
+test('a newly rejected channel cannot keep the longer credit window through stale ACL proof', () => {
+  const { context, tick } = harness({ campaignSupported: false });
+  const snapshot = {campaignAllowListPresent:true,campaignAllowListMatch:false,campaignAllowListSource:'active-campaign'};
+  context.activeCampaignAllowListEvidence = () => snapshot;
+  vm.runInNewContext(block('  function syncRoutingCampaignAllowListEvidence', '\n  function updateRoutingCampaignSupportEvidence'), context);
+  context.write({...context.read(),candidateEvidence:{...snapshot,dropsTagged:true,campaignAclMatched:true}});
+  tick(20 * 1000);
+  assert.equal(context.read().candidateEvidence.campaignAclMatched,false);
+  assert.equal(context.read().firstCreditWindow,false);
+  tick(91 * 1000);
+  assert.equal(context.read().state,'find-stream');
+});
+
 test('first credit inside the window verifies earning', () => {
   const { context, tick } = harness();
   tick(20 * 1000);

@@ -27,18 +27,18 @@ async function openPage(t, remembered) {
 const host = (page) => page.locator('#tdh-root');
 const toggleMenu = async (page) => { await host(page).locator('[data-exp-part="launcher"]').click(); await page.waitForTimeout(150); };
 const selected = (page) => host(page).evaluate((n) => n.shadowRoot.querySelector('[data-exp-section-tabs][role=tablist] [aria-selected="true"]')?.dataset.expSectionTab || null);
-const openBodies = (page) => host(page).evaluate((n) => [...n.shadowRoot.querySelectorAll('.fl-tool-body')].filter((b) => !b.classList.contains('fl-tool-hidden') && !b.hidden).map((b) => b.id));
+const openBodies = (page) => host(page).evaluate((n) => [...n.shadowRoot.querySelectorAll('.fl-tool-body')].filter((b) => b.parentElement.parentElement.classList.contains('exp-menu-content') && b.getClientRects().length>0 && !b.classList.contains('fl-tool-hidden') && !b.hidden).map((b) => b.id));
 
 test('Dropper reopens on the tab the user chose last', async (t) => {
   const page = await openPage(t);
   await toggleMenu(page);
   assert.equal(await selected(page), 'tdh-drops-body');
-  await host(page).locator('[data-exp-section-tab="tdh-diagnostics-body"]').click();
-  assert.equal(await selected(page), 'tdh-diagnostics-body');
+  await host(page).locator('[data-exp-section-tab="tdh-streams-body"]').click();
+  assert.equal(await selected(page), 'tdh-streams-body');
   await toggleMenu(page);
   await toggleMenu(page);
-  assert.equal(await selected(page), 'tdh-diagnostics-body');
-  assert.deepEqual(await openBodies(page), ['tdh-diagnostics-body']);
+  assert.equal(await selected(page), 'tdh-streams-body');
+  assert.deepEqual(await openBodies(page), ['tdh-streams-body']);
 });
 
 test('Dropper opens Drops when no tab is remembered or the remembered value is not a section', async (t) => {

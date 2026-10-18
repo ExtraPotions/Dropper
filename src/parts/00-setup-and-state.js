@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.46
+// @version      3.4.47
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.46";
+  const APP_VERSION = "3.4.47";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.47": ["Keeps campaign details and channel restrictions consistent when Twitch refreshes reward summaries.","Adds a compact progress card with one Pause control, colored status text and stable placement during loading.","Organizes campaigns and settings in a compact sidebar with inline options and readable diagnostics."],
     "3.4.46": ["Pairs dropdown option backgrounds and text colors for readable campaign and settings menus.","Includes Core 3.9.6 with reduced duplicate stylesheet parsing."],
     "3.4.45": ["Choose any campaign priority position directly instead of moving games one step at a time.","Keep the position picker open during background refreshes and preserve keyboard focus after reordering.","Load position choices only while needed to keep long campaign lists lighter."],
     "3.4.44": ["Uses less memory before the menu is first opened, with shared foundation exp-core 3.9.5.","Keeps the launcher and update notices working when the page denies local storage."],
@@ -703,7 +704,7 @@
     },
     dropCampaignDetails: {
       name: "DropCampaignDetails",
-      hash: "039277bf98f3130929262cc7c6efd9c141ca3749cb6dca442fc8ead9a53f77c1",
+      hash: "1f4903ecfff5d0ba12820e28288d3c524606b28916084214a8c0bb9a2043727a",
       variables: { channelLogin: "", dropID: "" },
     },
   };

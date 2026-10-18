@@ -131,29 +131,7 @@ test('launcher host is protected from hostile site CSS', () => {
   assert.match(source, /protectionStyle\.dataset\.expHostProtection/u);
 });
 
-test('progress visibility preserves the badge-only controls', () => {
-  assert.match(source, /const reservedRows = pageCardShown \? 1 : 0;/u);
-  assert.match(source, /const rowHeight = pageCardShown \? Math\.max\(112, progressCard\.offsetHeight \|\| 112\) : launcherWidth;/u);
-  assert.match(source, /const rowGap = pageCardShown \? 8 : 0;/u);
-  assert.match(source, /const rowWidth = pageCardShown \? panelWidth \+ rowGap \+ launcherWidth : launcherWidth;/u);
-  assert.match(source, /\.progress-stack\.badge-only \.badge-row \{ justify-content:flex-end; min-height:48px!important; \}/u);
-  assert.match(source, /id="tdh-badge-only-progress-slot"[^>]*hidden/u);
-  // The menu card sits under the header, outside every section.
-  assert.match(source, /<div class="header-divider"><\/div>\s*<div class="badge-only-progress-slot"/u);
-  assert.doesNotMatch(source, /id="tdh-drops-body">\s*<div class="badge-only-progress-slot"/u);
-  assert.match(source, /function syncProgressPanelPlacement\(\)/u);
-  assert.match(source, /menuSlot\.append\(card\)/u);
-  assert.match(source, /badgeRow\.insertBefore\(card, ui\.launcher\)/u);
-  assert.match(source, /const menuPanelWidth = Math\.min\(panelWidth, Math\.max\(0, window\.innerWidth - 24\)\);/u);
-  assert.match(source, /badgeOnlySlot\.style\.setProperty\("width", "100%", "important"\);/u);
-  assert.match(source, /badgeOnlySlot\.style\.setProperty\("margin-left", "0", "important"\);/u);
-  assert.match(source, /badgeOnlySlot\.style\.setProperty\("margin-right", "0", "important"\);/u);
-  assert.match(source, /progressCard\.style\.setProperty\("width", "100%", "important"\);/u);
-  assert.match(source, /ExtraPotionsCore\.placeMenu\(ui\.host, ui\.dock, menuPanelWidth\)/u);
-  assert.doesNotMatch(source, /badgeOnlySlot\.style\.setProperty\("margin-left", "-9px"/u);
-  assert.doesNotMatch(source, /badgeOnlySlot\.style\.setProperty\("margin-right", "-9px"/u);
-  assert.doesNotMatch(source, /const firstProductSlot = dropper \? columns \* reservedRows : 0;/u);
-});
+test('Badge Only uses the single compact card without moving it into the menu',()=>{assert.match(source,/card\.dataset\.presentation='compact-card'/u);assert.match(source,/card\.dataset\.collapsed=String/u);assert.match(source,/ui\.cluster\.append\(card\)/u);assert.doesNotMatch(source,/menuSlot\.append\(card\)/u);});
 
 test('the fixed Dropper row leaves neighboring product launchers clickable', () => {
   assert.match(source, /\.cluster\{pointer-events:none!important\}/u);

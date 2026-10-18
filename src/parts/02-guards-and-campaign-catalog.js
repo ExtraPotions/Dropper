@@ -1901,17 +1901,11 @@
     return (catalog || []).filter((campaign) => isPageScrapedCampaignKey(campaignKey(campaign)));
   }
 
-  // ViewerDropsDashboard rows carry no rewards or allow list. Keep what an
-  // earlier DropCampaignDetails request supplied instead of erasing it on every poll.
+  // Dashboard reward summaries can omit names and restrictions even when the
+  // reward array is nonempty. Overlay them without erasing authoritative details.
   function withKnownCampaignDetails(campaign, key = campaignKey(campaign)) {
-    if ((campaign?.timeBasedDrops || campaign?.drops || []).length) return campaign;
     const prior = lastCampaignCatalog.find((item) => campaignKey(item) === key);
-    if (!(prior?.timeBasedDrops || []).length) return campaign;
-    return {
-      ...campaign,
-      timeBasedDrops: prior.timeBasedDrops,
-      allow: campaign?.allow?.channels?.length ? campaign.allow : prior.allow,
-    };
+    return prior ? mergeCampaigns([prior], [campaign])[0] : campaign;
   }
 
   // A full campaign list from Twitch is authoritative for what is open. Close
@@ -2046,14 +2040,13 @@
   async function enrichCampaignsWithDropDetails(campaigns, source = "drop-campaign-details", { force = false } = {}) {
     const list = Array.isArray(campaigns) ? campaigns.filter(Boolean) : [];
     if (!list.length || !getToken()) return list;
-    const login = cleanText(
-      cookie("login") ||
-      cookie("name") ||
-      ""
-    ).toLowerCase() || watchingLogin();
+    // Twitch's channelLogin parameter is the viewer's numeric ID, not a login.
+    const viewerId = cleanText(readSession('dropper-viewer-id-v1', ''));
+    if (!/^\d{1,32}$/.test(viewerId)) return list;
     const needsDetails = list.filter((campaign) => {
       const drops = campaign?.timeBasedDrops || campaign?.drops || [];
-      return Boolean(campaign?.id) && (force || drops.length === 0);
+      return Boolean(campaign?.id) && (force || drops.length === 0 ||
+        drops.some(drop => !cleanText(drop?.name || drop?.benefitEdges?.[0]?.benefit?.name)));
     }).slice(0, 40);
     if (!needsDetails.length) return list;
     const byId = new Map(list.map((campaign) => [String(campaign.id || ""), campaign]));
@@ -2064,7 +2057,7 @@
           op: "dropCampaignDetails",
           variables: {
             dropID: String(campaign.id),
-            channelLogin: login || "",
+            channelLogin: viewerId,
           },
         })));
         for (const row of rows || []) {

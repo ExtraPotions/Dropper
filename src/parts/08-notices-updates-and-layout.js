@@ -431,7 +431,7 @@
     clearTimeout(updateNoticeTimer);
     updateNoticeTimer = null;
     const notice = ui?.shadow?.getElementById("tdh-update-notice");
-    if (notice) notice.hidden = true;
+    if (notice) {const focused=notice.contains(ui.shadow.activeElement);notice.hidden = true;if(focused)ui.shadow.getElementById("tdh-header-version")?.focus({preventScroll:true});}
     updateNoticeState = null;
     ExtraPotionsCore.releaseNoticeTurn?.(UPDATE_NOTICE_TURN);
     requestAnimationFrame(() => { layoutChrome(); });
@@ -752,7 +752,7 @@
       report: "Dropper Diagnostics",
       progressTimeline:progressTimelineSnapshot(),
       recoveryNavigation:recoveryNavigationState(),
-      build: "reward-data-r2",
+      build: "campaign-details-r4",
       version: APP_VERSION,
       accountScope: {
         login: twitchSessionLogin() || null,
@@ -1335,7 +1335,7 @@
     // instead of over it. In Badge Only the card lives in the menu and reserves nothing.
     if (progressCard) {
       // The strip under the top bar is reserved too, so update cards and changelogs open below it.
-      if (progressCard.dataset.presentation === "page-card" || progressCard.dataset.presentation === "strip") progressCard.dataset.expReserved = "1";
+      if (["page-card", "strip", "compact-card"].includes(progressCard.dataset.presentation)) progressCard.dataset.expReserved = "1";
       else delete progressCard.dataset.expReserved;
     }
     if (progressCard?.dataset.presentation === "page-card") {
@@ -1353,6 +1353,12 @@
       for (const property of ["left", "right", "top", "bottom"]) progressCard.style.removeProperty(property);
     }
 
+    if(progressCard?.dataset.presentation==='compact-card'){
+      progressCard.style.setProperty('width',ExtraPotionsCore.menuSizeTokens().cardWidth+'px','important');progressCard.style.setProperty('max-width','calc(100vw - 24px)','important');
+      ExtraPotionsCore.placeNotice(ui.host,progressCard);
+    }
+    updateProgressCardAside();
+    positionProgressStrip();
     if (railOpen) {
       // exp-core owns menu placement: beside the launcher grid, lined up with this launcher.
       ui.dock.style.overflowY = "auto";
@@ -1369,9 +1375,6 @@
       ui.dock.style.overflowY = "";
       for (const property of ["top", "bottom", "left", "right", "width", "max-height"]) ui.dock.style.removeProperty(property);
     }
-    // Reposition the page card around Twitch controls after its normal placement.
-    updateProgressCardAside();
-    positionProgressStrip();
 
     ui.cluster.classList.remove("open-up");
     ui.cluster.style.top = "0px";
@@ -1415,6 +1418,7 @@
     }
     ui.menuController.state(open);
     ui.launcher.setAttribute("aria-expanded", String(open));
+    const cardMenu=ui.shadow.getElementById("tdh-card-menu");if(cardMenu)cardMenu.textContent=open?"Close menu":"Open menu";
 
     if (open) {
       document.documentElement.dataset.expDropperMenuOpen = "1";
@@ -1601,3 +1605,4 @@
   // Start only after every binding in this IIFE is initialized (avoids SPA TDZ GQL crashes).
   startDropper();
 })();
+
