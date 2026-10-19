@@ -1,3 +1,8 @@
+## 3.4.48 — 2026-10-19
+
+- Shows the expanded progress card across the chat leaderboard space without covering messages.
+- Restores the native leaderboard when the card is hidden, with floating placement when chat is unavailable.
+
 ## 3.4.47 — 2026-10-18
 
 - Keeps campaign details and channel restrictions consistent when Twitch refreshes reward summaries.

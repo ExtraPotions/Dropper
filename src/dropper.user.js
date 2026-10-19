@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.47
+// @version      3.4.48
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.47";
+  const APP_VERSION = "3.4.48";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.48": ["Shows the expanded progress card across the chat leaderboard space without covering messages.","Restores the native leaderboard when the card is hidden, with floating placement when chat is unavailable."],
     "3.4.47": ["Keeps campaign details and channel restrictions consistent when Twitch refreshes reward summaries.","Adds a compact progress card with one Pause control, colored status text and stable placement during loading.","Organizes campaigns and settings in a compact sidebar with inline options and readable diagnostics."],
     "3.4.46": ["Pairs dropdown option backgrounds and text colors for readable campaign and settings menus.","Includes Core 3.9.6 with reduced duplicate stylesheet parsing."],
     "3.4.45": ["Choose any campaign priority position directly instead of moving games one step at a time.","Keep the position picker open during background refreshes and preserve keyboard focus after reordering.","Load position choices only while needed to keep long campaign lists lighter."],
@@ -15328,6 +15329,7 @@
       .cluster #tdh-drop-card[data-presentation="compact-card"] .strip-toggle{display:none!important}
       .cluster #tdh-drop-card[data-collapsed="true"] :is(.expanded-content,.compact-card-actions){display:none!important}
       .cluster #tdh-drop-card[data-collapsed="true"] .strip-toggle{display:block!important;position:static!important;width:100%!important;height:auto!important;min-height:30px!important;padding:6px!important;color:var(--theme-text)!important;background:var(--theme-bg)!important;opacity:1!important;transform:none!important;font:600 12px "Segoe UI",sans-serif!important}
+      .cluster #tdh-drop-card[data-chat-docked="true"] .strip-toggle{display:block!important;position:static!important;width:100%!important;min-height:26px!important;padding:4px 6px!important;border:0!important;border-bottom:1px solid var(--theme-line)!important;background:var(--theme-bg)!important;color:var(--theme-text)!important;font:600 12px "Segoe UI",sans-serif!important;cursor:pointer!important}
       #tdh-campaign-order-note{display:none!important}
       #tdh-campaign-search{box-sizing:border-box;width:100%;min-width:0;padding:7px 8px;margin:6px 0;border:1px solid var(--theme-line);border-radius:7px;background:var(--theme-inset,#0e0e10);color:var(--theme-text);font:12px "Segoe UI",sans-serif;min-height:34px}
       .campaign-game-row[hidden]{display:none!important}
@@ -15784,6 +15786,17 @@
     });
     chromeResizeObserver.observe(ui.dock);
     chromeResizeObserver.observe(shadow.querySelector(".badge-row"));
+    chromeResizeObserver.observe(shadow.getElementById("tdh-drop-card"));
+    const chatTargets='.stream-chat,.chat-room__content,button[aria-label="Previous leaderboard set"]';
+    const chatObserver = new MutationObserver(records => {
+      if (!host.isConnected) { restoreChatProgressSlot(); ui.chatResizeObserver?.disconnect(); chatObserver.disconnect(); removeEventListener('pagehide',restoreChatProgressSlot); return; }
+      if (records.some(record => [...record.addedNodes, ...record.removedNodes].some(node =>
+        node.nodeType === 1 && (node === ui.chatProgressSlot?.node || node.contains(ui.chatProgressSlot?.node) ||
+          node.matches(chatTargets) || node.querySelector(chatTargets))))) requestAnimationFrame(layoutChrome);
+    });
+    chatObserver.observe(document.documentElement, {childList:true, subtree:true});
+    ui.chatResizeObserver = new ResizeObserver(() => requestAnimationFrame(layoutChrome));
+    addEventListener('pagehide', restoreChatProgressSlot);
     const updateNotice = shadow.getElementById("tdh-update-notice");
     updateNotice?.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();hideUpdateNotice();}});
     if (updateNotice) {
@@ -15848,7 +15861,10 @@
       requestAnimationFrame(layoutChrome);
     };
     stripToggle.addEventListener("click", () => {
-      if(settings.badgeOnly){progressCard.dataset.expanded="1";syncProgressPanelPlacement();layoutChrome();}
+      if(progressCard.dataset.chatDocked==='true' && progressCard.dataset.collapsed!=='true') {
+        progressCard.dataset.chatCollapsed='true'; delete progressCard.dataset.expanded;
+      } else { delete progressCard.dataset.chatCollapsed; if(settings.badgeOnly)progressCard.dataset.expanded="1"; }
+      syncProgressPanelPlacement();layoutChrome();
     });
     document.addEventListener("pointerdown", (event) => {
       if (!progressCard.classList.contains("is-expanded") || event.composedPath().includes(progressCard)) return;
@@ -17142,10 +17158,62 @@
     if(card.parentElement!==ui.cluster)ui.cluster.append(card);
     card.dataset.presentation='compact-card';card.dataset.expReserved='1';
     if(!settings.badgeOnly)delete card.dataset.expanded;
-    card.dataset.collapsed=String(Boolean(settings.badgeOnly&&!card.dataset.expanded));
+    card.dataset.collapsed=String(Boolean(card.dataset.chatCollapsed==='true'||settings.badgeOnly&&!card.dataset.expanded));
     const toggle=ui.shadow.getElementById('tdh-strip-toggle');toggle.textContent='Show progress card';toggle.setAttribute('aria-label','Show progress card');
     // Badge Only keeps the complete card one tap away.
     ui.shadow.getElementById("tdh-strip-toggle")?.setAttribute("aria-expanded", String(card.dataset.collapsed !== "true"));
+  }
+  function restoreChatProgressSlot() {
+    const slot=ui?.chatProgressSlot;
+    if(!slot)return;
+    ui.chatResizeObserver?.unobserve(slot.node);
+    for(const [property,value,priority] of slot.styles) {
+      if(value)slot.node.style.setProperty(property,value,priority);else slot.node.style.removeProperty(property);
+    }
+    for(const [name,value] of slot.attributes) {
+      if(value===null)slot.node.removeAttribute(name);else slot.node.setAttribute(name,value);
+    }
+    ui.chatProgressSlot=null;
+  }
+  function positionChatProgressCard() {
+    const card=ui?.shadow.getElementById('tdh-drop-card');
+    if(!card)return false;
+    const content=document.querySelector('.stream-chat .chat-room__content');
+    const leaderboard=content?.querySelector('button[aria-label="Previous leaderboard set"]');
+    let panel=leaderboard;
+    while(panel && panel.parentElement!==content)panel=panel.parentElement;
+    const box=panel?.getBoundingClientRect();
+    const available=box && box.width>=160 && box.height>0 && box.left>=0 && box.right<=innerWidth && box.top>=0 && box.bottom<innerHeight &&
+      getComputedStyle(content).visibility!=='hidden' && getComputedStyle(content).display!=='none';
+    if(ui.chatProgressSlot?.node!==panel || !available || card.dataset.collapsed==='true')restoreChatProgressSlot();
+    delete card.dataset.chatDocked;
+    if(!available)return false;
+    card.dataset.chatDocked='true';
+    const toggle=ui.shadow.getElementById('tdh-strip-toggle');
+    toggle.textContent=card.dataset.collapsed==='true'?'Show progress card':'Hide progress card';
+    toggle.setAttribute('aria-label',toggle.textContent);
+    card.style.setProperty('width',box.width+'px','important');
+    card.style.setProperty('max-width','100vw','important');
+    if(card.dataset.collapsed!=='true' && box.top+card.offsetHeight>innerHeight-8) {
+      restoreChatProgressSlot();delete card.dataset.chatDocked;return false;
+    }
+    // Keep React's leaderboard mounted; reserve the card's height without covering chat messages.
+    if(card.dataset.collapsed!=='true' && !ui.chatProgressSlot) {
+      const properties=['height','min-height','max-height','visibility','overflow','flex-shrink'];
+      ui.chatProgressSlot={node:panel,styles:properties.map(p=>[p,panel.style.getPropertyValue(p),panel.style.getPropertyPriority(p)]),attributes:['inert','aria-hidden'].map(n=>[n,panel.getAttribute(n)])};
+      panel.setAttribute('inert','');panel.setAttribute('aria-hidden','true');
+      ui.chatResizeObserver?.observe(panel);
+    }
+    card.style.setProperty('left',box.left+'px','important');
+    card.style.setProperty('top',(card.dataset.collapsed==='true'?Math.max(0,box.top-card.offsetHeight):box.top)+'px','important');
+    card.style.setProperty('right','auto','important');card.style.setProperty('bottom','auto','important');
+    if(ui.chatProgressSlot) {
+      const height=Math.ceil(card.getBoundingClientRect().height)+'px';
+      for(const [property,value] of [['height',height],['min-height',height],['max-height',height],['visibility','hidden'],['overflow','hidden'],['flex-shrink','0']]) {
+        if(panel.style.getPropertyValue(property)!==value)panel.style.setProperty(property,value,'important');
+      }
+    }
+    return true;
   }
   // The strip sits over the Stream Chat title bar. Without one (directory pages, collapsed chat) it lines up with
   // the launcher like an update card. Clicking it opens the full card in place.
@@ -18840,7 +18908,7 @@
   }
 
   function layoutChrome() {
-    if (!ui?.cluster) return;
+    if (!ui?.cluster?.isConnected) { restoreChatProgressSlot(); return; }
     syncMenuSizing();
 
     syncProgressPanelPlacement();
@@ -18915,9 +18983,11 @@
 
     if(progressCard?.dataset.presentation==='compact-card'){
       progressCard.style.setProperty('width',ExtraPotionsCore.menuSizeTokens().cardWidth+'px','important');progressCard.style.setProperty('max-width','calc(100vw - 24px)','important');
-      ExtraPotionsCore.placeNotice(ui.host,progressCard);
-    }
-    updateProgressCardAside();
+      if(!positionChatProgressCard()){
+        progressCard.style.setProperty('width',ExtraPotionsCore.menuSizeTokens().cardWidth+'px','important');progressCard.style.setProperty('max-width','calc(100vw - 24px)','important');
+        ExtraPotionsCore.placeNotice(ui.host,progressCard);updateProgressCardAside();
+      }
+    } else updateProgressCardAside();
     positionProgressStrip();
     if (railOpen) {
       // exp-core owns menu placement: beside the launcher grid, lined up with this launcher.

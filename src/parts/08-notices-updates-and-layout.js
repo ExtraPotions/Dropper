@@ -1280,7 +1280,7 @@
   }
 
   function layoutChrome() {
-    if (!ui?.cluster) return;
+    if (!ui?.cluster?.isConnected) { restoreChatProgressSlot(); return; }
     syncMenuSizing();
 
     syncProgressPanelPlacement();
@@ -1355,9 +1355,11 @@
 
     if(progressCard?.dataset.presentation==='compact-card'){
       progressCard.style.setProperty('width',ExtraPotionsCore.menuSizeTokens().cardWidth+'px','important');progressCard.style.setProperty('max-width','calc(100vw - 24px)','important');
-      ExtraPotionsCore.placeNotice(ui.host,progressCard);
-    }
-    updateProgressCardAside();
+      if(!positionChatProgressCard()){
+        progressCard.style.setProperty('width',ExtraPotionsCore.menuSizeTokens().cardWidth+'px','important');progressCard.style.setProperty('max-width','calc(100vw - 24px)','important');
+        ExtraPotionsCore.placeNotice(ui.host,progressCard);updateProgressCardAside();
+      }
+    } else updateProgressCardAside();
     positionProgressStrip();
     if (railOpen) {
       // exp-core owns menu placement: beside the launcher grid, lined up with this launcher.

@@ -2155,6 +2155,7 @@
       .cluster #tdh-drop-card[data-presentation="compact-card"] .strip-toggle{display:none!important}
       .cluster #tdh-drop-card[data-collapsed="true"] :is(.expanded-content,.compact-card-actions){display:none!important}
       .cluster #tdh-drop-card[data-collapsed="true"] .strip-toggle{display:block!important;position:static!important;width:100%!important;height:auto!important;min-height:30px!important;padding:6px!important;color:var(--theme-text)!important;background:var(--theme-bg)!important;opacity:1!important;transform:none!important;font:600 12px "Segoe UI",sans-serif!important}
+      .cluster #tdh-drop-card[data-chat-docked="true"] .strip-toggle{display:block!important;position:static!important;width:100%!important;min-height:26px!important;padding:4px 6px!important;border:0!important;border-bottom:1px solid var(--theme-line)!important;background:var(--theme-bg)!important;color:var(--theme-text)!important;font:600 12px "Segoe UI",sans-serif!important;cursor:pointer!important}
       #tdh-campaign-order-note{display:none!important}
       #tdh-campaign-search{box-sizing:border-box;width:100%;min-width:0;padding:7px 8px;margin:6px 0;border:1px solid var(--theme-line);border-radius:7px;background:var(--theme-inset,#0e0e10);color:var(--theme-text);font:12px "Segoe UI",sans-serif;min-height:34px}
       .campaign-game-row[hidden]{display:none!important}

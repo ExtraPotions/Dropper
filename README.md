@@ -16,7 +16,7 @@
 
 ## What you can do
 
-- **Track progress:** see credited watch time for the current reward on a compact card. Badge Only collapses it until you open it. Twitch decides eligibility and credit.
+- **Track progress:** see credited watch time for the current reward on a compact card. When chat's leaderboard is available, the expanded card replaces that space; Hide progress card restores the leaderboard. Badge Only collapses the card until you open it. Twitch decides eligibility and credit.
 - **Check eligibility:** see whether the stream you are watching matches the campaign: account, campaign, reward, game, and stream.
 - **Keep rewards in reach:** browse campaigns, review your history, and open your Drops inventory from the menu.
 - **Choose your games:** follow the games you care about and ignore the rest.

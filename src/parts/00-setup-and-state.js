@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.47
+// @version      3.4.48
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.47";
+  const APP_VERSION = "3.4.48";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.48": ["Shows the expanded progress card across the chat leaderboard space without covering messages.","Restores the native leaderboard when the card is hidden, with floating placement when chat is unavailable."],
     "3.4.47": ["Keeps campaign details and channel restrictions consistent when Twitch refreshes reward summaries.","Adds a compact progress card with one Pause control, colored status text and stable placement during loading.","Organizes campaigns and settings in a compact sidebar with inline options and readable diagnostics."],
     "3.4.46": ["Pairs dropdown option backgrounds and text colors for readable campaign and settings menus.","Includes Core 3.9.6 with reduced duplicate stylesheet parsing."],
     "3.4.45": ["Choose any campaign priority position directly instead of moving games one step at a time.","Keep the position picker open during background refreshes and preserve keyboard focus after reordering.","Load position choices only while needed to keep long campaign lists lighter."],
