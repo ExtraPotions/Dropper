@@ -14,4 +14,4 @@ This includes, unless otherwise noted:
 
 You must provide appropriate attribution, may not use the licensed material for commercial purposes, and must license adapted material under the same license. Refer to the official Creative Commons license for the legally controlling terms.
 
-Copyright 2026 ExtraPotions.
+Copyright 2026 expDARE.

@@ -124,8 +124,8 @@ test('the changelog notice stays fixed inside the viewport', async () => {
 });
 
 
-test('with Badge Only off progress stays beside the launcher while the menu is open',async()=>{
+test('with Badge Only off the same progress card moves into the menu and returns on close',async()=>{
  const browser=await chromium.launch();try{const page=await browser.newPage();await page.route('https://www.twitch.tv/**',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><body></body>'}));await page.goto('https://www.twitch.tv/menu-progress');await page.evaluate(()=>window.GM_xmlhttpRequest=()=>{});await page.addScriptTag({content:fs.readFileSync(installPath,'utf8')});
- const facts=await page.evaluate(()=>{const shadow=document.getElementById('tdh-root').shadowRoot,card=shadow.getElementById('tdh-drop-card');const before=card.parentElement.className;window.dropperShow();const inside=card.parentElement.className,visible=card.getBoundingClientRect().height>0,expanded=shadow.querySelector('[data-panel="tdh-drops-body"]').getAttribute('aria-expanded');shadow.getElementById('tdh-rail-close').click();return{before,inside,visible,expanded,after:card.parentElement.className,badgeOnly:shadow.getElementById('tdh-badge-only').getAttribute('aria-checked')};});assert.deepEqual(facts,{before:'cluster',inside:'cluster',visible:true,expanded:'true',after:'cluster',badgeOnly:'false'});
+ const facts=await page.evaluate(()=>{const shadow=document.getElementById('tdh-root').shadowRoot,card=shadow.getElementById('tdh-drop-card');const before=card.parentElement.className;window.dropperShow();const inside=card.parentElement.className,visible=card.getBoundingClientRect().height>0,expanded=shadow.querySelector('[data-panel="tdh-drops-body"]').getAttribute('aria-expanded');shadow.getElementById('tdh-rail-close').click();return{before,inside,visible,expanded,after:card.parentElement.className,badgeOnly:shadow.getElementById('tdh-badge-only').getAttribute('aria-checked')};});assert.deepEqual(facts,{before:'cluster',inside:'badge-only-progress-slot',visible:true,expanded:'true',after:'cluster',badgeOnly:'false'});
  }finally{await browser.close();}
 });

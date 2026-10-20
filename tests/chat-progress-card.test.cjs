@@ -13,8 +13,7 @@ test('chat card replaces only the leaderboard, restores it and survives resizing
  const geometry=async()=>({card:await card.boundingBox(),panel:await panel.boundingBox(),messages:await page.locator('.messages').boundingBox()});
  let g=await geometry();assert.equal(g.card.x,g.panel.x);assert.equal(g.card.width,340);assert.equal(g.card.y,g.panel.y);assert.ok(g.messages.y>=g.card.y+g.card.height);assert.equal(await panel.getAttribute('inert'),'');
  await host.getByRole('button',{name:'Hide progress card',exact:true}).focus();
- await page.keyboard.press('Tab');assert.equal(await host.locator('#tdh-card-pause').evaluate(n=>n===n.getRootNode().activeElement),true);
- await page.keyboard.press('Tab');assert.equal(await host.locator('#tdh-card-menu').evaluate(n=>n===n.getRootNode().activeElement),true);
+  await page.keyboard.press('Tab');assert.equal(await host.locator('#tdh-card-menu').evaluate(n=>n===n.getRootNode().activeElement),true);
  await page.keyboard.press('Enter');assert.equal(await host.locator('#tdh-settings-launcher').getAttribute('aria-expanded'),'true');
  await page.keyboard.press('Escape');assert.equal(await host.locator('#tdh-settings-launcher').getAttribute('aria-expanded'),'false');
  const evidence=process.env.EXP_CHAT_EVIDENCE;if(evidence){fs.mkdirSync(evidence,{recursive:true});await page.screenshot({path:path.join(evidence,'chat-card-desktop.png')});}
@@ -38,7 +37,7 @@ test('chat card replaces only the leaderboard, restores it and survives resizing
  await page.setViewportSize({width:360,height:800});await page.waitForTimeout(100);
  g=await geometry();assert.ok(g.card.x>=0 && g.card.x+g.card.width<=360);assert.ok(g.messages.y>=g.card.y+g.card.height);
  if(evidence)await page.screenshot({path:path.join(evidence,'chat-card-narrow.png')});
- await page.setViewportSize({width:360,height:220});await page.waitForTimeout(100);
+ await page.setViewportSize({width:360,height:180});await page.waitForTimeout(100);
  assert.equal(await panel.getAttribute('inert'),null);assert.equal(await card.getAttribute('data-chat-docked'),null);
  await page.setViewportSize({width:360,height:800});await page.waitForTimeout(100);
  await page.evaluate(()=>{window.savedLeaderboard=document.querySelector('.leaderboard');savedLeaderboard.remove();});

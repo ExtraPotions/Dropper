@@ -120,7 +120,7 @@ test('opening System refreshes health after viewing is paused', async () => fixt
   await page.evaluate(()=>{
     window.__dropperTest.pauseIntent();
     window.dropperShow();
-    document.querySelector('#tdh-root').shadowRoot.querySelector('[data-exp-menu-shortcut="support"]').click();
+    document.querySelector('#tdh-root').shadowRoot.querySelector('[data-exp-section-tab="tdh-diagnostics-body"]').click();
   });
   await page.waitForFunction(()=>document.querySelector('#tdh-root').shadowRoot.querySelector('[data-exp-health-state]').textContent==='Paused',null,{timeout:1500});
   assert.match(await page.locator('#tdh-root').evaluate(n=>n.shadowRoot.querySelector('[data-exp-health-reason]').textContent),/paused/i);
@@ -162,7 +162,7 @@ test('screen/fullscreen/PiP observations do not grant navigation or install dupl
 test('Stay On This Stream visibly locks automatic routing and can be released', async () => fixture(async page => {
   const result = await page.evaluate(() => {
     const t = window.__dropperTest;
-    document.getElementById('tdh-root').shadowRoot.getElementById('tdh-allow-switching').click();
+    (()=>{const control=document.getElementById('tdh-root').shadowRoot.getElementById('tdh-switch-policy');control.value='normal';control.dispatchEvent(new Event('change',{bubbles:true}));})();
     const before = t.navigation('automatic-routing');
     t.lockStream(true);
     t.refreshHealth();
@@ -1474,7 +1474,7 @@ test('a newly opened Twitch tab is left where it is until the viewer chooses it 
     const t = window.__dropperTest; t.setFindNext(true); t.sync();
     const allowed = t.navigation('automatic-routing'); t.refreshHealth();
     const root = document.getElementById('tdh-root').shadowRoot;
-    return { allowed, automationTab: t.automationTab(), offer: !root.getElementById('tdh-allow-switching').hidden, status: root.getElementById('tdh-viewing-status').textContent };
+    return { allowed, automationTab: t.automationTab(), offer: !!root.getElementById('tdh-switch-policy').querySelector('option[value=normal]'), status: root.getElementById('tdh-viewing-status').textContent };
   });
   assert.equal(before.allowed, false, 'a browsing tab is not navigated: ' + JSON.stringify(before));
   assert.equal(before.automationTab, false);
@@ -1482,7 +1482,7 @@ test('a newly opened Twitch tab is left where it is until the viewer chooses it 
   assert.match(before.status, /this tab/i);
   const after = await page.evaluate(() => {
     const t = window.__dropperTest;
-    document.getElementById('tdh-root').shadowRoot.getElementById('tdh-allow-switching').click();
+    (()=>{const control=document.getElementById('tdh-root').shadowRoot.getElementById('tdh-switch-policy');control.value='normal';control.dispatchEvent(new Event('change',{bubbles:true}));})();
     return { allowed: t.navigation('automatic-routing'), automationTab: t.automationTab() };
   });
   assert.deepEqual(after, { allowed: true, automationTab: true });
@@ -1568,19 +1568,20 @@ test('with Badge Only off progress stays on the page through menu open and dismi
   assert.equal((await cardState(page)).presentation, 'compact-card');
 }, '/whithblade', { viewport: { width: 561, height: 810 }, extra: '<div class="player-controls" style="position:fixed;left:0;top:650px;width:561px;height:50px"></div>' }));
 // Measured in the 2026-10 review at 909 x 295: the progress header pushed the section subtabs below the menu's edge.
-test('in a short window the open menu keeps its section tabs in view and shows Badge Only progress as one row', async () => fixture(async page => {
+test('in a short window the menu keeps its navigation reachable and the full in-menu progress card contained', async () => fixture(async page => {
   await page.evaluate(() => { document.getElementById('tdh-root').shadowRoot.getElementById('tdh-badge-only').click(); window.__dropperTest.setMenuOpen(true); });
   await page.waitForTimeout(150);
   const facts = await page.evaluate(() => {
     const root = document.getElementById('tdh-root').shadowRoot, dock = root.querySelector('[data-exp-part="dock"],#mb-dock,.dock') || root.getElementById('tdh-rail');
-    const panel = dock.getBoundingClientRect(), visibleSub = [...root.querySelectorAll('.exp-submenu-tablist')].find(node => node.getClientRects().length), tabs = (visibleSub || root.querySelector('.exp-section-tabs')).getBoundingClientRect();
+    const panel = dock.getBoundingClientRect(), visibleSub = [...root.querySelectorAll('.exp-submenu-tablist')].find(node => node.getClientRects().length), tabs = root.querySelector('.exp-menu-rail').getBoundingClientRect();
     const card = root.getElementById('tdh-drop-card');
     const box = n => { const r = n?.getBoundingClientRect(); return r ? [Math.round(r.top), Math.round(r.bottom)] : null; };
     const layout = { panel: box(dock), header: box(root.querySelector('.rail-header,.header,[data-exp-part="header"]')), card: box(card), section: box(root.querySelector('.exp-section-tabs')), sub: box(visibleSub), scrollTop: dock.scrollTop, scrollHeight: dock.scrollHeight, dockTag: dock.id || dock.className };
     return { layout, tabsBottom: tabs.bottom, panelBottom: panel.bottom, reward: getComputedStyle(card.querySelector('.progress-reward-row')).display, percent: getComputedStyle(card.querySelector('.drop-percent')).display };
   });
   assert.ok(facts.tabsBottom <= facts.panelBottom, 'section and subsection tabs are inside the menu: ' + JSON.stringify(facts));
-  assert.ok(facts.layout.card[1]-facts.layout.card[0]<=40,'Badge Only remains a compact button: '+JSON.stringify(facts));
+  assert.ok(facts.layout.card[1]<=facts.panelBottom,'in-menu progress stays contained: '+JSON.stringify(facts));
+  const last=page.locator('#tdh-root').getByRole('tab',{name:'System',exact:true});await last.focus();await page.keyboard.press('Enter');assert.equal(await last.isVisible(),true);assert.equal(await last.getAttribute('aria-selected'),'true');
   assert.notEqual(facts.percent, 'none', 'the percentage stays: ' + JSON.stringify(facts));
 }, '/directory/category/albion-online', { viewport: { width: 909, height: 295 } }));
 
@@ -1590,7 +1591,7 @@ test('a newer tab chosen for automatic switching takes over from an older browsi
   await second.goto('https://www.twitch.tv/chosen_channel');
   await second.addScriptTag({ content: exposed });
   await second.waitForFunction(() => !!window.__dropperTest && !!document.getElementById('tdh-root')?.shadowRoot);
-  await second.evaluate(() => { const t = window.__dropperTest; t.setGql(async () => []); t.setFindNext(true); document.getElementById('tdh-root').shadowRoot.getElementById('tdh-allow-switching').click(); t.publish(); });
+  await second.evaluate(() => { const t = window.__dropperTest; t.setGql(async () => []); t.setFindNext(true); (()=>{const control=document.getElementById('tdh-root').shadowRoot.getElementById('tdh-switch-policy');control.value='normal';control.dispatchEvent(new Event('change',{bubbles:true}));})(); t.publish(); });
   await page.evaluate(() => window.__dropperTest.publish());
   // Navigation itself is covered above; this page has no stubbed video, so only the controller role is compared.
   const roles = { older: await page.evaluate(() => window.__dropperTest.controller()), chosen: await second.evaluate(() => window.__dropperTest.automationTab() && window.__dropperTest.controller()) };
@@ -1608,7 +1609,7 @@ test('after the update, a tab that was already switching streams keeps doing so'
 test('choosing a tab that already has a window name still turns automatic switching on', async () => fixture(async page => {
   const after = await page.evaluate(() => {
     const t = window.__dropperTest; window.name = 'viewer-window'; t.setFindNext(true); t.sync();
-    document.getElementById('tdh-root').shadowRoot.getElementById('tdh-allow-switching').click();
+    (()=>{const control=document.getElementById('tdh-root').shadowRoot.getElementById('tdh-switch-policy');control.value='normal';control.dispatchEvent(new Event('change',{bubbles:true}));})();
     return { allowed: t.navigation('automatic-routing'), automationTab: t.automationTab() };
   });
   assert.deepEqual(after, { allowed: true, automationTab: true });

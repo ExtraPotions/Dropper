@@ -1,11 +1,51 @@
 {
-  "coreVersion": "3.9.7",
+  "coreVersion": "3.9.8",
   "source": {
     "source": "ExtraPotions/exp-core",
-    "sourceVersion": "3.9.7",
+    "sourceVersion": "3.9.8",
     "architecture": "core-native"
   },
   "suiteContract": {
+    "thread": {
+      "role": "product",
+      "priority": 0,
+      "launcherPriority": 90,
+      "themePriority": 0,
+      "capabilities": [
+        "reddit.reading",
+        "reddit.local-context",
+        "reddit.local-filtering"
+      ],
+      "presentationPhases": [
+        "visibility",
+        "annotate"
+      ],
+      "state": {
+        "type": "thread.state-changed",
+        "fields": {
+          "active": "boolean",
+          "loaded": "count"
+        }
+      },
+      "menuSections": {
+        "main": [
+          "feed",
+          "read"
+        ],
+        "appearance": [
+          "look"
+        ],
+        "advanced": [
+          "filters",
+          "people"
+        ],
+        "system": [
+          "system"
+        ]
+      },
+      "repository": "THREAD",
+      "rootId": "exp-thread-root"
+    },
     "dropper": {
       "role": "flagship",
       "priority": 4,
@@ -30,7 +70,9 @@
       "menuSections": {
         "main": [
           "drops",
-          "streams"
+          "streams",
+          "campaigns",
+          "settings"
         ],
         "appearance": [
           "appearance"
@@ -177,22 +219,22 @@
       "rootId": "exp-prisma-root"
     }
   },
-  "bundleSha256": "92e956af8be22afdbcb77a079ab01fac2e866db49b62908255cb6607880673b5",
+  "bundleSha256": "8010b87ea04c29c4d4fd1af2e031d2b00d1fbf0bb3b22dc5d4bc6596250e4158",
   "files": {
     "foundation.js": "983c32545da78bc43c5f2705eecdf25be7ea6e0a83bd2eab59833098e3505bd5",
     "diagnostic-report.js": "563d6314d8866d2655141b6d06cb3ba4dc3f964ee2c0a427dad35d3f1c81a1f6",
     "lifecycle.js": "fc7d4e72f5edc54e5b9edce2578125d8091c207467d606260d4e9204b4c4712d",
-    "product-tools.js": "208fa698040a35c9106603e1178d0ebe5b5c3d64daf88e030a6ef3b516eb3f81",
-    "menu-tabs.js": "569dcbfd37f81058a9157ffa24010891f9d1e95a67145ee4557aa31369e3afb1",
+    "product-tools.js": "c824103fb77a6680d75b1a63d483cf7f9909dbc98e3ba2c9b6664017d8c2f34c",
+    "menu-tabs.js": "e2968d6b3b22a7da762120f89f70121cabed266717f0adc3dd893b05e7412170",
     "menu-arrangement.js": "19073942264db29e637f3ab40a9ca8533807ebc448f54e8a2fc1a6af28177f9b",
     "health-summary.js": "dccf0a557e5dff4e91199346b53deee65fd4165e4d8fd7bb04a6c5dcd88236eb",
     "recovery-control.js": "c9f1b6383ffda72235ca59bca1a1308bfad5b3fb6552f7ba4305795bfcbdf2af",
-    "lean-menu.js": "34f85042f5ac65b23bc5b76b35ccaf6217ba64e63f045c7e2dd6e83eb3cca47a",
-    "menu-help.js": "f26216228f2c4114d24147767f9ee32444723241af53ff6f9cbb3fc1ee75cc1e",
+    "lean-menu.js": "9b2372864c9ef823ec466b55ef1e742a975ea6d99f3187b12f73d41f25e7190d",
+    "menu-help.js": "28660a64360efe74955f4a2e2d8f138c97c0cba31a999c371aee87513c2bda9a",
     "menu-typography.js": "6995f62198cd48fbf50d7951cad0a5f8c9f96d6d5d773b8edca4a06dc7400ef8",
-    "menu-preferences.js": "2c2abaa9e714f814eb0322366a30a996677ef99869641d0aa6d845f2abf4459e",
-    "launcher-flyout.js": "37c6a5eb9eeb49740ad7c996f963a218abadfbd3be995badfe9286bb7cd58655",
-    "runtime.js": "cf72bc17b777bc69e4e3f58a2a446daed3d4ac4030b835b3d4ab3c2154f7979f",
-    "suite-contract.json": "1b60485eeb48388692eadbc6a2de2c8916f7a67baadcb9ef277c44360b79b773"
+    "menu-preferences.js": "dc3ea4dc10043357da26de3a7a5710cea5c36fb0f30b4d82a7efc3f42566ab03",
+    "launcher-flyout.js": "3918f47a2a0eb51f36ad33d38b6f3a2eac4a1e6d543b2e90dea1129712064061",
+    "runtime.js": "20195ee4e8e41e99428cdd13480beac70f033022a9de40037bf6ebc43d4dd98e",
+    "suite-contract.json": "186077450ba1b1095ed19761652897e8b32eec2c8f282bc9c994e6f9d5b1c4d4"
   }
 }

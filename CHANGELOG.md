@@ -1,3 +1,9 @@
+## 3.4.49 — 2026-10-20
+
+- Refreshes the split purple and graphite gem with a broad angular cut.
+- Uses the approved compact campaign menu and revised progress panel, with Skip and state-aware Pause or Resume.
+- Groups diagnostics, support and reset inside System while keeping donations in the header.
+
 ## 3.4.48 — 2026-10-19
 
 - Shows the expanded progress card across the chat leaderboard space without covering messages.

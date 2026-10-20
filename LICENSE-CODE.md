@@ -6,7 +6,7 @@ Official license terms:
 
 https://polyformproject.org/licenses/noncommercial/1.0.0/
 
-Required Notice: Copyright 2026 ExtraPotions.
+Required Notice: Copyright 2026 expDARE.
 
 This notice applies to the software source code in this repository unless a file explicitly states otherwise.
 

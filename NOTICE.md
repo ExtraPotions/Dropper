@@ -7,4 +7,4 @@ Dropper is distributed under a split-license model:
 
 The embedded Dropper icon remains a creative asset licensed under CC BY-NC-SA 4.0 even when distributed inside the userscript source.
 
-Copyright 2026 ExtraPotions.
+Copyright 2026 expDARE.

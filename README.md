@@ -2,7 +2,7 @@
 
 # Dropper
 
-**Follow your Twitch Drops from watch time to reward.**
+**Your Drops at a glance**
 
 [![Install Dropper](docs/badges/install.svg)](https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js)
 [![Code: PolyForm Noncommercial 1.0.0](docs/badges/code.svg)](LICENSE-CODE.md)
@@ -16,7 +16,7 @@
 
 ## What you can do
 
-- **Track progress:** see credited watch time for the current reward on a compact card. When chat's leaderboard is available, the expanded card replaces that space; Hide progress card restores the leaderboard. Badge Only collapses the card until you open it. Twitch decides eligibility and credit.
+- **Track progress:** see credited watch time for the current reward on a compact card. Opening the menu moves the same card inside it. When the menu is closed and chat's leaderboard is available, the expanded card replaces that space; Hide progress card restores the leaderboard. Badge Only collapses the card until you open it. Pause or Resume reflects your viewing intent; Skip asks for confirmation. Twitch decides eligibility and credit.
 - **Check eligibility:** see whether the stream you are watching matches the campaign: account, campaign, reward, game, and stream.
 - **Keep rewards in reach:** browse campaigns, review your history, and open your Drops inventory from the menu.
 - **Choose your games:** follow the games you care about and ignore the rest.
@@ -26,11 +26,13 @@
 <table>
   <tr>
     <td width="50%" valign="top" align="center"><a href="docs/screenshots/drops-menu.png"><img src="docs/screenshots/drops-menu.png" width="220" alt="Dropper: Campaigns and inventory"></a><br><strong>Campaigns and inventory</strong></td>
-    <td width="50%" valign="top" align="center"><a href="docs/screenshots/streams-menu.png"><img src="docs/screenshots/streams-menu.png" width="220" alt="Dropper: stream playback settings"></a><br><strong>Settings: Viewing and playback</strong></td>
+    <td width="50%" valign="top" align="center"><a href="docs/screenshots/streams-menu.png"><img src="docs/screenshots/streams-menu.png" width="220" alt="Dropper: stream playback settings"></a><br><strong>Settings: Advanced and playback</strong></td>
   </tr>
 </table>
 
 Screenshots use sample content.
+
+All ExtraPotions menus share the same Core template. Open **System** for status, diagnostics, troubleshooting and Reset. Donations remain in the header heart.
 
 ## Support
 

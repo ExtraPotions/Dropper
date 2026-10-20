@@ -128,7 +128,7 @@ test('the minified install learns across channel visits and the menu can forget 
  await page.evaluate(()=>dropperShow());
  const host=page.locator('#tdh-root');
  await host.evaluate(n=>n.shadowRoot.querySelector('[data-panel="tdh-streams-body"]').click());
- await openSubmenu(host,'Viewing');await openSubmenu(host,'Playback');
+ await openSubmenu(host,'Advanced');await openSubmenu(host,'Playback');
  const toggle=await host.evaluate(n=>n.shadowRoot.querySelector('#tdh-remember-content-warnings').getAttribute('role'));
  assert.equal(toggle,'switch');
  await host.evaluate(n=>n.shadowRoot.querySelector('#tdh-forget-content-warnings').click());

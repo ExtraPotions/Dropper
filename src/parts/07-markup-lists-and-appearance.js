@@ -1,5 +1,5 @@
   function dropperGemSvg(className) {
-    return `<svg class="${className}" viewBox="0 0 1024 1024" aria-hidden="true"><polygon points="494,210 285,500 430,590" fill="#D9B5FF"/><polygon points="494,210 430,590 494,470" fill="#9B5AF9"/><polygon points="285,500 285,685 430,590" fill="#8C39F2"/><polygon points="285,685 494,842 430,590" fill="#5417B3"/><polygon points="430,590 494,470 494,842" fill="#7428E8"/><polygon points="530,210 739,500 594,590" fill="#AEB0C2"/><polygon points="530,210 594,590 530,470" fill="#6A6E87"/><polygon points="739,500 739,685 594,590" fill="#4E5268"/><polygon points="739,685 530,842 594,590" fill="#242633"/><polygon points="594,590 530,470 530,842" fill="#3F4254"/><rect x="502" y="205" width="20" height="650" rx="10" fill="#101017"/></svg>`;
+    return `<svg class="${className}" viewBox="0 0 128 128" aria-hidden="true"><polygon points="29.00,24.00 62.00,24.00 62.00,40.20 47.90,40.20" fill="#D9B5FF"/><polygon points="66.00,24.00 99.00,24.00 80.10,40.20 66.00,40.20" fill="#AEB0C2"/><polygon points="47.90,40.20 62.00,40.20 62.00,52.29" fill="#8C39F2"/><polygon points="66.00,40.20 80.10,40.20 66.00,52.29" fill="#4E5268"/><polygon points="99.00,24.00 119.00,53.00 89.30,53.54 80.10,40.20" fill="#6A6E87"/><polygon points="80.10,40.20 89.30,53.54 66.00,53.96 66.00,52.29" fill="#3F4254"/><polygon points="119.00,53.00 66.00,111.78 66.00,79.38 89.30,53.54" fill="#4E5268"/><polygon points="89.30,53.54 66.00,79.38 66.00,53.96" fill="#242633"/><polygon points="62.00,111.78 9.00,53.00 38.70,53.54 62.00,79.38" fill="#7428E8"/><polygon points="62.00,79.38 38.70,53.54 62.00,53.96" fill="#7428E8"/><polygon points="9.00,53.00 29.00,24.00 47.90,40.20 38.70,53.54" fill="#5417B3"/><polygon points="38.70,53.54 47.90,40.20 62.00,52.29 62.00,53.96" fill="#9B5AF9"/></svg>`;
   }
 
   function mountUi() {
@@ -21,7 +21,7 @@
                   <h2 id="tdh-rail-title">Dropper</h2>
                   <button type="button" id="tdh-header-version" aria-label="View Dropper v${APP_VERSION} Changelog">v${APP_VERSION}</button>
                 </div>
-                <div id="tdh-rail-subtitle">Twitch Drops: Track and Redeem</div>
+                <div id="tdh-rail-subtitle">Your Drops at a glance</div>
               </div>
             </div>
             <div class="header-actions">
@@ -198,10 +198,8 @@
                     <div class="drop-percent" id="tdh-drop-percent">0%</div>
                   </div>
                   <div class="progress-category"><span class="stream-game" id="tdh-stream-game">Waiting For Category</span></div>
-                  <div class="drop-bar"><span id="tdh-drop-fill"></span></div>
+                  <div class="drop-bar" role="progressbar" aria-label="Twitch credited Drop progress" aria-valuemin="0" aria-valuemax="100"><span id="tdh-drop-fill"></span></div>
                   <div class="progress-reward-row">
-                    <span class="drop-meta" id="tdh-drop-meta">0 / 0 min</span>
-                    <span class="progress-dot">•</span>
                     <span class="drop-name" id="tdh-drop-name">Waiting For Drop</span>
                   </div>
                   <div class="drop-status-row">
@@ -211,16 +209,16 @@
                       <svg class="status-clock-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"></circle><path d="M8 4.5v3.8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                       <span id="tdh-updated-ago">Checked —</span>
                     </div>
-                    <button type="button" class="skip-streamer-chip" id="tdh-skip-streamer" aria-label="No active streamer to skip">
-                      <svg class="skip-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.25 2.5 7.4 8l-5.15 5.5V2.5Zm6.1 0L13.5 8l-5.15 5.5V2.5Z"></path></svg>
-                      <span class="skip-label">Skip</span>
-                      <span class="skip-countdown" hidden></span>
-                    </button>
                   </div>
                 </div>
               </div>
             </div>
-            <div class="compact-card-actions"><button type="button" id="tdh-card-pause">Pause</button><button type="button" id="tdh-card-menu">Open menu</button></div>
+            <div class="compact-card-actions">
+              <span class="drop-meta" id="tdh-drop-meta">— / — min</span>
+              <button type="button" id="tdh-card-pause">Resume</button>
+              <button type="button" class="skip-streamer-chip" id="tdh-skip-streamer" aria-label="No active streamer to skip"><span class="skip-label">Skip</span><span class="skip-countdown" hidden></span></button>
+              <button type="button" id="tdh-card-menu" aria-label="Open Dropper menu" aria-expanded="false">Menu</button>
+            </div>
           </section>
           <button type="button" id="tdh-settings-launcher" data-exp-part="launcher" aria-controls="tdh-tools-dock" aria-expanded="false" aria-label="Open Dropper Settings" data-userscript-launcher="userscript-launcher-v1" data-launcher-id="dropper" data-launcher-preferred-position="right-bottom">
             <svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><path class="track" d="M18 3H24A9 9 0 0 1 33 12V24A9 9 0 0 1 24 33H12A9 9 0 0 1 3 24V12A9 9 0 0 1 12 3H18Z"></path><path class="fill" id="tdh-ring" d="M18 3H24A9 9 0 0 1 33 12V24A9 9 0 0 1 24 33H12A9 9 0 0 1 3 24V12A9 9 0 0 1 12 3H18Z" pathLength="100" stroke-dasharray="0 100"></path></svg>
@@ -351,6 +349,7 @@
     document.addEventListener("keydown", (event) => {
       if (event.altKey && (event.key === "g" || event.key === "G") && !event.repeat) { event.preventDefault(); setRailOpen(!railOpen, true); }
       if (event.key === "Escape" && supportPopover?.hidden === false) { closeSupportPopover(); return; }
+      if (event.key === "Escape" && skipStreamerArmSnapshot()) { clearSkipStreamerArm('escape'); event.preventDefault(); return; }
       if (event.key === "Escape" && railOpen) setRailOpen(false, true);
       if (!event.altKey && (event.key === "r" || event.key === "R") && railOpen) requestGqlPoll("keyboard-refresh", true);
     });
@@ -498,7 +497,8 @@
   }
 
   function skipCurrentStreamer() {
-    explicitViewingNavigationUntil = Date.now() + 15000;
+    const paused = viewingIntent.snapshot().paused;
+    explicitViewingNavigationUntil = paused ? 0 : Date.now() + 15000;
     clearSkipStreamerArm();
     if (!isAutoRoutingController()) {
       noteDeferredAutoRouting("manual-stream-skip");
@@ -535,7 +535,9 @@
       campaign: currentDrop.campaign || null,
     });
     setStatus(`Skipping ${active} · Returning To ${currentDrop.game || "Target"} Category`);
-    routingControllerTick(Date.now(), "manual-stream-skip");
+    // Selecting the next streamer must not silently resume a manually paused session.
+    if (paused) setStatus(`Skipped ${active} · Resume to find the next eligible stream`);
+    else routingControllerTick(Date.now(), "manual-stream-skip");
     return true;
   }
 
@@ -1443,8 +1445,8 @@
   function syncCompactState() {
     if (!ui) return;
     ui.pageActions?.refresh();
-    const pause=ui.shadow.getElementById('tdh-card-pause');if(pause){pause.textContent=viewingIntent.snapshot().paused?'Resume':'Pause';pause.disabled=!watchingLogin();}
-    const menu=ui.shadow.getElementById('tdh-card-menu');if(menu)menu.textContent=railOpen?'Close menu':'Open menu';
+    const pause=ui.shadow.getElementById('tdh-card-pause');if(pause){pause.textContent=viewingIntent.snapshot().paused||!currentDrop?'Resume':'Pause';pause.disabled=!currentDrop||!watchingLogin()||!getToken();}
+    const menu=ui.shadow.getElementById('tdh-card-menu');if(menu){menu.textContent='Menu';menu.setAttribute('aria-expanded',String(railOpen));menu.setAttribute('aria-label',railOpen?'Close Dropper menu':'Open Dropper menu');}
     const reward = ui.shadow.getElementById("tdh-compact-reward");
     const extra = ui.shadow.getElementById("tdh-compact-extra");
     const state = ui.shadow.getElementById("tdh-compact-state");
@@ -1617,11 +1619,15 @@
     const menuSlot = ui.shadow.getElementById("tdh-badge-only-progress-slot");
     const badgeRow = ui.shadow.querySelector(".badge-row");
     if (!card || !menuSlot || !badgeRow || !ui.launcher) return;
-    menuSlot.hidden=true;
-    if(card.parentElement!==ui.cluster)ui.cluster.append(card);
+    const inMenu=Boolean(railOpen);
+    if(inMenu)restoreChatProgressSlot();
+    menuSlot.hidden=!inMenu;
+    const target=inMenu?menuSlot:ui.cluster;
+    if(card.parentElement!==target)target.append(card);
+    card.dataset.progressPlacement=inMenu?'menu':'outside';
     card.dataset.presentation='compact-card';card.dataset.expReserved='1';
     if(!settings.badgeOnly)delete card.dataset.expanded;
-    card.dataset.collapsed=String(Boolean(card.dataset.chatCollapsed==='true'||settings.badgeOnly&&!card.dataset.expanded));
+    card.dataset.collapsed=String(!inMenu&&Boolean(card.dataset.chatCollapsed==='true'||settings.badgeOnly&&!card.dataset.expanded));
     const toggle=ui.shadow.getElementById('tdh-strip-toggle');toggle.textContent='Show progress card';toggle.setAttribute('aria-label','Show progress card');
     // Badge Only keeps the complete card one tap away.
     ui.shadow.getElementById("tdh-strip-toggle")?.setAttribute("aria-expanded", String(card.dataset.collapsed !== "true"));
@@ -1640,13 +1646,15 @@
   }
   function positionChatProgressCard() {
     const card=ui?.shadow.getElementById('tdh-drop-card');
-    if(!card)return false;
+    if(!card||card.dataset.progressPlacement==='menu')return false;
     const content=document.querySelector('.stream-chat .chat-room__content');
     const leaderboard=content?.querySelector('button[aria-label="Previous leaderboard set"]');
     let panel=leaderboard;
     while(panel && panel.parentElement!==content)panel=panel.parentElement;
     const box=panel?.getBoundingClientRect();
-    const available=box && box.width>=160 && box.height>0 && box.left>=0 && box.right<=innerWidth && box.top>=0 && box.bottom<innerHeight &&
+    // Twitch's slot can extend a fractional pixel past the layout viewport at zoomed sizes.
+    const left=box?Math.max(0,box.left):0,right=box?Math.min(innerWidth,box.right):0;
+    const available=box && right-left>=160 && box.height>0 && box.top>=0 && box.bottom<=innerHeight &&
       getComputedStyle(content).visibility!=='hidden' && getComputedStyle(content).display!=='none';
     if(ui.chatProgressSlot?.node!==panel || !available || card.dataset.collapsed==='true')restoreChatProgressSlot();
     delete card.dataset.chatDocked;
@@ -1655,7 +1663,7 @@
     const toggle=ui.shadow.getElementById('tdh-strip-toggle');
     toggle.textContent=card.dataset.collapsed==='true'?'Show progress card':'Hide progress card';
     toggle.setAttribute('aria-label',toggle.textContent);
-    card.style.setProperty('width',box.width+'px','important');
+    card.style.setProperty('width',(right-left)+'px','important');
     card.style.setProperty('max-width','100vw','important');
     if(card.dataset.collapsed!=='true' && box.top+card.offsetHeight>innerHeight-8) {
       restoreChatProgressSlot();delete card.dataset.chatDocked;return false;
@@ -1667,7 +1675,7 @@
       panel.setAttribute('inert','');panel.setAttribute('aria-hidden','true');
       ui.chatResizeObserver?.observe(panel);
     }
-    card.style.setProperty('left',box.left+'px','important');
+    card.style.setProperty('left',left+'px','important');
     card.style.setProperty('top',(card.dataset.collapsed==='true'?Math.max(0,box.top-card.offsetHeight):box.top)+'px','important');
     card.style.setProperty('right','auto','important');card.style.setProperty('bottom','auto','important');
     if(ui.chatProgressSlot) {
@@ -1818,18 +1826,46 @@
     section(drops).querySelector('.fl-tool-title').textContent='Campaigns';
     const campaigns=shadow.getElementById('tdh-open-campaigns');if(campaigns)campaigns.open=true;
     section(settingsBody).querySelector('.fl-tool-title').textContent='Settings';
-    const viewing=ExtraPotionsCore.createDisclosure('Viewing',...settingsBody.childNodes);
-    const skip=shadow.getElementById('tdh-skip-streamer');if(skip)viewing.append(skip);
-    const lookBody=shadow.getElementById('tdh-progress-body'),systemBody=shadow.getElementById('tdh-diagnostics-body');
-    const lookSection=section(lookBody),systemSection=section(systemBody);
-    lookBody.classList.remove('fl-tool-hidden');systemBody.classList.remove('fl-tool-hidden');
-    const look=ExtraPotionsCore.createDisclosure('Look',lookBody),claims=ExtraPotionsCore.createDisclosure('Claiming');
-    for(const id of ['tdh-claim-drops','tdh-claim-bonus']){const row=shadow.getElementById(id)?.closest('.fl-switch');if(row)claims.append(row);}
-    const primary=['tdh-find-next','tdh-mute-next'].map(id=>viewing.querySelector('#'+id)?.closest('.fl-switch')).filter(Boolean);
-    settingsBody.replaceChildren(...primary,look,viewing,claims,systemBody);
-    lookSection.remove();systemSection.remove();
+    const advanced=ExtraPotionsCore.createDisclosure('Advanced',...settingsBody.childNodes);
+    advanced.id='tdh-settings-advanced';
+    const lookBody=shadow.getElementById('tdh-progress-body');
+    const lookSection=section(lookBody);
+    lookSection.querySelector('.fl-tool-title').textContent='Look';
+    const claim=shadow.getElementById('tdh-claim-drops')?.closest('.fl-switch');
+    const claimLabel=claim?.querySelector('.fl-switch-text');if(claimLabel)claimLabel.textContent='Claim completed Drops';
+    const bonus=shadow.getElementById('tdh-claim-bonus')?.closest('.fl-switch');if(bonus)advanced.append(bonus);
+    advanced.querySelector('#tdh-find-next')?.closest('.fl-switch')?.remove();
+    advanced.querySelector('#tdh-allow-switching')?.remove();
+    const policy=advanced.querySelector('#tdh-switch-policy');
+    policy.setAttribute('aria-label','Stream switching');
+    const option=(value,text,disabled=false)=>{const node=document.createElement('option');node.value=value;node.textContent=text;node.disabled=disabled;return node;};
+    policy.replaceChildren(option('normal','Follow campaign order'),option('stopped-earning','Keep an earning stream'),option('off','Stay on this stream'),option('held','Manual stream protected',true));
+    const policyRow=policy.closest('.mini-row');policyRow.querySelector('label').textContent='Stream switching';
+    const mute=advanced.querySelector('#tdh-mute-next')?.closest('.fl-switch');
+    const notifications=[...advanced.querySelectorAll('details')].find(d=>d.querySelector(':scope>summary')?.textContent==='Notifications');
+    const interruptions=[...advanced.querySelectorAll('details')].find(d=>d.querySelector(':scope>summary')?.textContent==='Interruption Rules');
+    const pause=advanced.querySelector('#tdh-pause-switch')?.closest('.mini-row');if(pause&&interruptions)interruptions.append(pause);
+    settingsBody.replaceChildren(...[claim,policyRow,mute,notifications,advanced].filter(Boolean));
+    refreshStreamPolicyControl();
     const search=document.createElement('input');search.type='search';search.id='tdh-campaign-search';search.placeholder='Find a game';search.setAttribute('aria-label','Search campaigns');search.addEventListener('input',filterCampaignRows);drops.prepend(search);
     const empty=document.createElement('p');empty.id='tdh-campaign-filter-empty';empty.hidden=true;empty.textContent='No matching campaigns.';drops.append(empty);
+  }
+  function refreshStreamPolicyControl(){
+    const select=ui?.shadow?.getElementById('tdh-switch-policy');if(!select)return;
+    const held=select.querySelector('[value=held]'),intent=viewingIntent.snapshot();
+    const locked=Boolean(manualStreamLockSnapshot()),unchosen=!isAutomationTab();
+    if(held)held.textContent=locked?'Stream locked':isAutoSwitchPaused()?'Switching temporarily paused':unchosen?'Not enabled in this tab':'Manual stream protected';
+    select.value=!settings.findNextStream?'off':locked||isAutoSwitchPaused()||intent.manualStream||unchosen?'held':settings.switchPolicy==='stopped-earning'?'stopped-earning':'normal';
+  }
+  function applyStreamSwitchingPolicy(value){
+    if(!['off','normal','stopped-earning'].includes(value))return;
+    settings.findNextStream=value!=='off';
+    if(settings.findNextStream){
+      settings.switchPolicy=value;settings.pauseAutoSwitchMinutes=0;settings.pauseAutoSwitchUntil=0;pauseAutoSwitchUntil=0;
+      const pause=ui.shadow.getElementById('tdh-pause-switch');if(pause)pause.value='0';
+      claimAutomationTab();setManualStreamLock(false,'stream-policy');syncViewingContext();viewingIntent.allowSwitching();
+    }
+    saveSettings();refreshViewingControls();
   }
   function filterCampaignRows(){
     const query=ui.shadow.getElementById('tdh-campaign-search')?.value.trim().toLowerCase()||'';
@@ -1855,7 +1891,6 @@
     const appearance=ui.shadow.getElementById('tdh-progress-body');
     if(appearance&&!appearance.querySelector('[data-dropper-menu-preferences]')){const preferences=ExtraPotionsCore.createMenuSizeControls();preferences.dataset.dropperMenuPreferences='1';appearance.prepend(preferences);}
     const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,onReset:resetAllDropperData,notify:setStatus,layout:'grouped',issueSettings:()=>({current:settings,defaults:DEFAULTS})});
-    system.prepend(...[...ui.shadow.getElementById('tdh-streams-body').children].filter(node=>node!==target));
     target.replaceChildren(system);
   }
 
@@ -1869,12 +1904,7 @@
     s.getElementById('tdh-resume-playback')?.addEventListener('click', () => {
       ensureStreamPlaying(true); refreshViewingControls();
     });
-    s.getElementById('tdh-allow-switching')?.addEventListener('click', () => {
-      claimAutomationTab();
-      setManualStreamLock(false, 'automatic-switching-enabled');
-      syncViewingContext(); viewingIntent.allowSwitching();
-      settings.findNextStream = true; saveSettings(); refreshViewingControls();
-    });
+    s.getElementById('tdh-switch-policy')?.addEventListener('change',event=>applyStreamSwitchingPolicy(event.target.value));
     s.getElementById('tdh-stream-lock')?.addEventListener('click', () => {
       const locked = Boolean(manualStreamLockSnapshot());
       setManualStreamLock(!locked, locked ? 'viewer-release' : 'viewer-lock');
@@ -2036,7 +2066,7 @@
       setTimeout(() => { event.currentTarget.textContent = "Reset Session State"; }, 1600);
     });
     const strategy = s.getElementById("tdh-campaign-strategy");
-    for(const [id,key] of [['tdh-quiet-start','quietHoursStart'],['tdh-quiet-end','quietHoursEnd'],['tdh-switch-policy','switchPolicy']]){const input=s.getElementById(id);input.value=settings[key];input.addEventListener('change',()=>{settings[key]=input.value;saveSettings();refreshViewingControls();});}
+    for(const [id,key] of [['tdh-quiet-start','quietHoursStart'],['tdh-quiet-end','quietHoursEnd']]){const input=s.getElementById(id);input.value=settings[key];input.addEventListener('change',()=>{settings[key]=input.value;saveSettings();refreshViewingControls();});}
     for(const [id,key] of [['tdh-protected-channels','protectedChannels'],['tdh-excluded-channels','excludedChannels']]){const input=s.getElementById(id);input.value=(settings[key]||[]).join(', ');input.addEventListener('change',()=>{settings[key]=[...new Set(input.value.toLowerCase().split(/[\s,]+/).filter(value=>/^[a-z0-9_]{1,25}$/.test(value)))].slice(0,100);input.value=settings[key].join(', ');saveSettings();refreshQueueList();refreshViewingControls();});}
     strategy.value = normalizedCampaignStrategy();
     strategy.addEventListener("change", () => {
@@ -2071,7 +2101,7 @@
         ? Date.now() + settings.pauseAutoSwitchMinutes * 60000
         : 0;
       settings.pauseAutoSwitchUntil = pauseAutoSwitchUntil;
-      saveSettings();
+      saveSettings();refreshStreamPolicyControl();
     });
     const opacityRange = s.getElementById("tdh-opacity-range");
     opacityRange.value = String(normalizedOpacityPercent());

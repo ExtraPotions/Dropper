@@ -147,7 +147,7 @@
     if (state.paused) return state.pauseReason === 'viewer'
       ? { label: 'Playback Paused', detail: 'Dropper will not resume playback or switch streams while your pause is active.' }
       : { label: 'Playback Needs Attention', detail: 'Playback is paused. Resume it yourself or choose Resume Playback; Dropper will not guess why it stopped.' };
-    if (lastViewingNavigationBlock === 'Automatic Switching Is Off In This Tab' && !isAutomationTab()) return { label: 'Automatic Switching Is Off In This Tab', detail: 'This tab was opened for browsing, so Dropper leaves it where it is. Choose Use Automatic Switching to let Dropper switch streams in this tab.' };
+    if (lastViewingNavigationBlock === 'Automatic Switching Is Off In This Tab' && !isAutomationTab()) return { label: 'Automatic Switching Is Off In This Tab', detail: 'This tab was opened for browsing, so Dropper leaves it where it is. Choose a Stream switching policy in Settings to let Dropper switch streams in this tab.' };
     if (lock) return { label: 'Staying On This Stream', detail: `Automatic routing is held on ${lock.login}. Dropper will still monitor Twitch credit and release the lock if the stream becomes unusable.` };
     if (lastViewingNavigationBlock && state.manualStream && state.arrivalSource === 'unclassified-arrival') return { label: 'Automatic Switching Needs Approval', detail: 'Dropper could not verify how this channel was opened. Your saved campaign is retained; enable automatic switching to resume routing.' };
     if (lastViewingNavigationBlock && state.manualStream) return { label: 'Your Stream Is Selected', detail: 'Campaign recommendations will not change this stream. Use Skip Streamer or enable automatic switching when ready.' };
@@ -251,8 +251,7 @@
     if (status) status.textContent = message?.detail || (state.manualStream ? 'Your selected stream is protected from automatic navigation.' : 'Automatic navigation follows your stream settings.');
     const resume = ui.shadow.getElementById('tdh-resume-playback');
     if (resume) resume.hidden = !state.paused && state.playback === 'playing';
-    const automatic = ui.shadow.getElementById('tdh-allow-switching');
-    if (automatic) automatic.hidden = Boolean(lock) || (isAutomationTab() && !state.manualStream && settings.findNextStream);
+    refreshStreamPolicyControl();
     const streamLock = ui.shadow.getElementById('tdh-stream-lock');
     if (streamLock) {
       streamLock.hidden = !watchingLogin();

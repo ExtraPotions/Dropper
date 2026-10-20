@@ -1353,7 +1353,10 @@
       for (const property of ["left", "right", "top", "bottom"]) progressCard.style.removeProperty(property);
     }
 
-    if(progressCard?.dataset.presentation==='compact-card'){
+    if(progressCard?.dataset.progressPlacement==='menu'){
+      progressCard.style.setProperty('width','100%','important');progressCard.style.setProperty('max-width','100%','important');
+      for(const property of ['left','right','top','bottom'])progressCard.style.removeProperty(property);
+    } else if(progressCard?.dataset.presentation==='compact-card'){
       progressCard.style.setProperty('width',ExtraPotionsCore.menuSizeTokens().cardWidth+'px','important');progressCard.style.setProperty('max-width','calc(100vw - 24px)','important');
       if(!positionChatProgressCard()){
         progressCard.style.setProperty('width',ExtraPotionsCore.menuSizeTokens().cardWidth+'px','important');progressCard.style.setProperty('max-width','calc(100vw - 24px)','important');
@@ -1420,7 +1423,7 @@
     }
     ui.menuController.state(open);
     ui.launcher.setAttribute("aria-expanded", String(open));
-    const cardMenu=ui.shadow.getElementById("tdh-card-menu");if(cardMenu)cardMenu.textContent=open?"Close menu":"Open menu";
+    const cardMenu=ui.shadow.getElementById("tdh-card-menu");if(cardMenu){cardMenu.textContent='Menu';cardMenu.setAttribute('aria-expanded',String(open));cardMenu.setAttribute('aria-label',open?'Close Dropper menu':'Open Dropper menu');}
 
     if (open) {
       document.documentElement.dataset.expDropperMenuOpen = "1";
@@ -1556,6 +1559,7 @@
 
   function renderSwitches() {
     if (!ui) return;
+    refreshStreamPolicyControl();
     const map = {
       "tdh-quiet-hours": settings.quietHoursEnabled,
       "tdh-claim-bonus": settings.claimBonus, "tdh-keep-tab": settings.keepTabActive, "tdh-claim-drops": settings.claimDrops,

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.48
+// @version      3.4.49
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.48";
+  const APP_VERSION = "3.4.49";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.49": ["Refreshes the split purple and graphite gem with a broad angular cut.","Uses the approved compact campaign menu and revised progress panel, with Skip and state-aware Pause or Resume.","Groups diagnostics, support and reset inside System while keeping donations in the header."],
     "3.4.48": ["Shows the expanded progress card across the chat leaderboard space without covering messages.","Restores the native leaderboard when the card is hidden, with floating placement when chat is unavailable."],
     "3.4.47": ["Keeps campaign details and channel restrictions consistent when Twitch refreshes reward summaries.","Adds a compact progress card with one Pause control, colored status text and stable placement during loading.","Organizes campaigns and settings in a compact sidebar with inline options and readable diagnostics."],
     "3.4.46": ["Pairs dropdown option backgrounds and text colors for readable campaign and settings menus.","Includes Core 3.9.6 with reduced duplicate stylesheet parsing."],
@@ -1777,7 +1778,7 @@
     if (state.paused) return state.pauseReason === 'viewer'
       ? { label: 'Playback Paused', detail: 'Dropper will not resume playback or switch streams while your pause is active.' }
       : { label: 'Playback Needs Attention', detail: 'Playback is paused. Resume it yourself or choose Resume Playback; Dropper will not guess why it stopped.' };
-    if (lastViewingNavigationBlock === 'Automatic Switching Is Off In This Tab' && !isAutomationTab()) return { label: 'Automatic Switching Is Off In This Tab', detail: 'This tab was opened for browsing, so Dropper leaves it where it is. Choose Use Automatic Switching to let Dropper switch streams in this tab.' };
+    if (lastViewingNavigationBlock === 'Automatic Switching Is Off In This Tab' && !isAutomationTab()) return { label: 'Automatic Switching Is Off In This Tab', detail: 'This tab was opened for browsing, so Dropper leaves it where it is. Choose a Stream switching policy in Settings to let Dropper switch streams in this tab.' };
     if (lock) return { label: 'Staying On This Stream', detail: `Automatic routing is held on ${lock.login}. Dropper will still monitor Twitch credit and release the lock if the stream becomes unusable.` };
     if (lastViewingNavigationBlock && state.manualStream && state.arrivalSource === 'unclassified-arrival') return { label: 'Automatic Switching Needs Approval', detail: 'Dropper could not verify how this channel was opened. Your saved campaign is retained; enable automatic switching to resume routing.' };
     if (lastViewingNavigationBlock && state.manualStream) return { label: 'Your Stream Is Selected', detail: 'Campaign recommendations will not change this stream. Use Skip Streamer or enable automatic switching when ready.' };
@@ -1881,8 +1882,7 @@
     if (status) status.textContent = message?.detail || (state.manualStream ? 'Your selected stream is protected from automatic navigation.' : 'Automatic navigation follows your stream settings.');
     const resume = ui.shadow.getElementById('tdh-resume-playback');
     if (resume) resume.hidden = !state.paused && state.playback === 'playing';
-    const automatic = ui.shadow.getElementById('tdh-allow-switching');
-    if (automatic) automatic.hidden = Boolean(lock) || (isAutomationTab() && !state.manualStream && settings.findNextStream);
+    refreshStreamPolicyControl();
     const streamLock = ui.shadow.getElementById('tdh-stream-lock');
     if (streamLock) {
       streamLock.hidden = !watchingLogin();
@@ -13888,7 +13888,8 @@
     if (!box || !channel || !game) return;
     box.classList.remove("stream-info-hidden");
     channel.textContent = info.channelName || watchingLogin() || "Finding Stream…";
-    game.textContent = info.game || currentDrop?.game || "Waiting For Category";
+    // Credit and reward identity belong together, even while another category is playing.
+    game.textContent = currentDrop?.game || info.game || "Waiting For Category";
   }
 
   function authoritativeProgressPercent() {
@@ -13974,7 +13975,9 @@
 
     if (!currentDrop) {
       name.textContent = "Waiting For Twitch To Start A Drop Session";
-      meta.textContent = "0 / 0 min";
+      meta.textContent = "— / — min";
+      meta.setAttribute('aria-label','Twitch credited progress unknown');
+      fill?.closest('[role=progressbar]')?.removeAttribute('aria-valuenow');
       if (fill) fill.style.width = "0%";
       if (ring) ring.setAttribute("stroke-dasharray", "0 100");
       if (percentNode) percentNode.textContent = "—";
@@ -14003,9 +14006,15 @@
       : currentDrop.requiredMinutes
         ? `${currentDrop.currentMinutes == null ? "Pending" : currentDrop.currentMinutes} / ${currentDrop.requiredMinutes} min`
         : "Waiting For First Credited Minute";
-    meta.textContent = minutes;
+    const credited=progressUnknown||currentDrop.currentMinutes==null?'—':currentDrop.currentMinutes;
+    const required=progressUnknown||!currentDrop.requiredMinutes?'—':currentDrop.requiredMinutes;
+    meta.textContent = `${credited} / ${required} min`;
+    meta.setAttribute('aria-label',`${credited} of ${required} minutes credited by Twitch`);
+    meta.title=minutes;
 
     const renderedPercent = progressUnknown || percent == null ? null : percent;
+    const progress=fill?.closest('[role=progressbar]');
+    if(progress){if(renderedPercent==null)progress.removeAttribute('aria-valuenow');else progress.setAttribute('aria-valuenow',String(renderedPercent));}
     if (fill) fill.style.width = renderedPercent == null ? "0%" : `${renderedPercent}%`;
     if (ring) ring.setAttribute("stroke-dasharray", renderedPercent == null ? "0 100" : `${renderedPercent} 100`);
     // The shared flyout launcher draws Dropper's progress as its ring.
@@ -15311,25 +15320,30 @@
         #tdh-drop-card { flex:1 1 auto; width:auto; min-width:0; max-width:none; }
       }
 
-      .cluster #tdh-drop-card[data-presentation="compact-card"]{position:fixed!important;display:block!important;box-sizing:border-box!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;border:1px solid var(--theme-line,#848494)!important;border-radius:10px!important;background:var(--theme-bg,#18181b)!important;background-image:none!important;box-shadow:0 4px 10px #0003!important;color:var(--theme-text,#efeff1)!important;font-family:"Segoe UI",system-ui,sans-serif!important;overflow:hidden!important;container-type:normal!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"]{position:fixed!important;display:block!important;box-sizing:border-box!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;border:1px solid var(--theme-line,#848494)!important;border-radius:7px!important;background:var(--theme-bg,#18181b)!important;background-image:none!important;box-shadow:0 4px 10px #0003!important;color:var(--theme-text,#efeff1)!important;font-family:"Segoe UI",system-ui,sans-serif!important;overflow:hidden!important;container-type:normal!important}
       .cluster #tdh-drop-card[data-presentation="compact-card"]:is(::before,::after){display:none!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .stream-info{padding:var(--exp-menu-padding,10px)!important;min-height:0!important;background:transparent!important;border:0!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .progress-copy{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;grid-template-areas:"game percent" "name name" "bar bar" "status meta"!important;gap:4px 6px!important;width:100%!important;padding:0!important;min-width:0!important;align-items:center!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .stream-info{padding:7px 7px 0!important;min-height:0!important;background:transparent!important;border:0!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .progress-copy{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;grid-template-areas:"game status" "name percent" "bar bar"!important;gap:4px 6px!important;width:100%!important;padding:0!important;min-width:0!important;align-items:center!important}
       .cluster #tdh-drop-card[data-presentation="compact-card"] :is(.progress-head,.progress-category,.progress-reward-row,.drop-status-row,.status-meta-chip){display:contents!important}
       .cluster #tdh-drop-card[data-presentation="compact-card"] :is(.stream-channel,.strip-art,.strip-meta,.progress-dot,.status-chip-divider,.status-clock-icon,#tdh-updated-ago){display:none!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .stream-game{grid-area:game!important;font:600 12px/1.35 "Segoe UI",sans-serif!important;color:var(--theme-muted)!important;min-width:0!important;white-space:normal!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-name{grid-area:name!important;font:700 13px/1.3 "Segoe UI",sans-serif!important;color:var(--theme-text)!important;white-space:normal!important;overflow-wrap:anywhere!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-percent{grid-area:percent!important;font:400 10px/1.3 "Segoe UI",sans-serif!important;color:var(--theme-muted)!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-meta{grid-area:meta!important;font:600 10px/1.3 "Segoe UI",sans-serif!important;color:var(--theme-text)!important;white-space:normal!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-bar{grid-area:bar!important;height:3px!important;min-height:3px!important;margin:2px 0!important;background:#0e0e10!important;border-radius:2px!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] #tdh-drop-fill{height:100%!important;background:#9146ff!important;border-radius:2px!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .state-pill{grid-area:status!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;font:500 10px/1.35 "Segoe UI",sans-serif!important;white-space:normal!important}
-      .compact-card-actions{display:flex;gap:6px;padding:0 var(--exp-menu-padding,10px) var(--exp-menu-padding,10px)}
-      .compact-card-actions button{flex:1;min-width:0;min-height:var(--exp-menu-control,30px);padding:4px 6px;border:1px solid var(--theme-line);border-radius:7px;background:var(--theme-raised,#3a3a3d);color:var(--theme-text);font:600 12px/1.3 "Segoe UI",sans-serif;cursor:pointer}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .stream-game{grid-area:game!important;font:600 12px/1.35 "Segoe UI",sans-serif!important;color:var(--theme-text)!important;min-width:0!important;white-space:normal!important;overflow-wrap:anywhere!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-name{grid-area:name!important;font:400 12px/1.35 "Segoe UI",sans-serif!important;color:var(--theme-text)!important;white-space:normal!important;overflow-wrap:anywhere!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-percent{grid-area:percent!important;font:400 11px/1.35 "Segoe UI",sans-serif!important;color:var(--theme-text)!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-bar{grid-area:bar!important;height:5px!important;min-height:5px!important;margin:2px 0 0!important;background:var(--theme-raised,#3a3a3d)!important;border-radius:2px!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] #tdh-drop-fill{height:100%!important;background:var(--theme-accent2,#bf94ff)!important;border-radius:2px!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .state-pill{grid-area:status!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;font:500 11px/1.35 "Segoe UI",sans-serif!important;white-space:normal!important;text-align:right!important}
+      .cluster #tdh-drop-card .compact-card-actions{display:flex;align-items:center;gap:4px;padding:6px 7px 7px;min-width:0}
+      .cluster #tdh-drop-card .compact-card-actions .drop-meta{flex:1;min-width:0;margin-right:auto;font:400 11px/1.35 "Segoe UI",sans-serif!important;color:var(--theme-text)!important;white-space:normal!important;overflow-wrap:anywhere!important}
+      .cluster #tdh-drop-card .compact-card-actions button{flex:none;box-sizing:border-box;min-width:0;min-height:28px;padding:3px 5px;border:1px solid var(--theme-muted,#adadb8);border-radius:5px;background:var(--theme-panel,#1f1f23);color:var(--theme-text);font:400 11px/1.35 "Segoe UI",sans-serif;cursor:pointer;white-space:nowrap}
+      .cluster #tdh-drop-card .compact-card-actions .skip-countdown{display:none!important}
+      .cluster #tdh-drop-card .compact-card-actions button:disabled{cursor:default;opacity:.6}
+      .cluster #tdh-drop-card .compact-card-actions button:focus-visible{outline:2px solid var(--theme-focus,#bf94ff);outline-offset:1px}
       .cluster #tdh-drop-card[data-presentation="compact-card"] .strip-toggle{display:none!important}
       .cluster #tdh-drop-card[data-collapsed="true"] :is(.expanded-content,.compact-card-actions){display:none!important}
       .cluster #tdh-drop-card[data-collapsed="true"] .strip-toggle{display:block!important;position:static!important;width:100%!important;height:auto!important;min-height:30px!important;padding:6px!important;color:var(--theme-text)!important;background:var(--theme-bg)!important;opacity:1!important;transform:none!important;font:600 12px "Segoe UI",sans-serif!important}
       .cluster #tdh-drop-card[data-chat-docked="true"] .strip-toggle{display:block!important;position:static!important;width:100%!important;min-height:26px!important;padding:4px 6px!important;border:0!important;border-bottom:1px solid var(--theme-line)!important;background:var(--theme-bg)!important;color:var(--theme-text)!important;font:600 12px "Segoe UI",sans-serif!important;cursor:pointer!important}
+      .cluster #tdh-drop-card[data-progress-placement="menu"]{position:static!important;width:100%!important;max-width:100%!important;border:0!important;border-bottom:1px solid var(--theme-line)!important;border-radius:0!important;box-shadow:none!important}
+      .cluster #tdh-drop-card[data-progress-placement="menu"] #tdh-card-menu{display:none!important}
       #tdh-campaign-order-note{display:none!important}
       #tdh-campaign-search{box-sizing:border-box;width:100%;min-width:0;padding:7px 8px;margin:6px 0;border:1px solid var(--theme-line);border-radius:7px;background:var(--theme-inset,#0e0e10);color:var(--theme-text);font:12px "Segoe UI",sans-serif;min-height:34px}
       .campaign-game-row[hidden]{display:none!important}
@@ -15337,7 +15351,7 @@
       .campaign-ignore-check[role="switch"]::after{content:''!important;display:block!important;width:12px!important;height:16px!important;border-radius:3px!important;background:var(--theme-text)!important;transform:none!important}
       .campaign-ignore-check[role="switch"][aria-checked=true]{background:var(--theme-accent)!important}
       .campaign-ignore-check[role="switch"][aria-checked=true]::after{transform:translateX(12px)!important;background:var(--theme-onAccent)!important}
-      @media(pointer:coarse){.compact-card-actions button{min-height:34px}}
+      @media(pointer:coarse){.cluster #tdh-drop-card .compact-card-actions button{min-height:36px}}
     `;
   }
 
@@ -15536,7 +15550,7 @@
   }
 
   function dropperGemSvg(className) {
-    return `<svg class="${className}" viewBox="0 0 1024 1024" aria-hidden="true"><polygon points="494,210 285,500 430,590" fill="#D9B5FF"/><polygon points="494,210 430,590 494,470" fill="#9B5AF9"/><polygon points="285,500 285,685 430,590" fill="#8C39F2"/><polygon points="285,685 494,842 430,590" fill="#5417B3"/><polygon points="430,590 494,470 494,842" fill="#7428E8"/><polygon points="530,210 739,500 594,590" fill="#AEB0C2"/><polygon points="530,210 594,590 530,470" fill="#6A6E87"/><polygon points="739,500 739,685 594,590" fill="#4E5268"/><polygon points="739,685 530,842 594,590" fill="#242633"/><polygon points="594,590 530,470 530,842" fill="#3F4254"/><rect x="502" y="205" width="20" height="650" rx="10" fill="#101017"/></svg>`;
+    return `<svg class="${className}" viewBox="0 0 128 128" aria-hidden="true"><polygon points="29.00,24.00 62.00,24.00 62.00,40.20 47.90,40.20" fill="#D9B5FF"/><polygon points="66.00,24.00 99.00,24.00 80.10,40.20 66.00,40.20" fill="#AEB0C2"/><polygon points="47.90,40.20 62.00,40.20 62.00,52.29" fill="#8C39F2"/><polygon points="66.00,40.20 80.10,40.20 66.00,52.29" fill="#4E5268"/><polygon points="99.00,24.00 119.00,53.00 89.30,53.54 80.10,40.20" fill="#6A6E87"/><polygon points="80.10,40.20 89.30,53.54 66.00,53.96 66.00,52.29" fill="#3F4254"/><polygon points="119.00,53.00 66.00,111.78 66.00,79.38 89.30,53.54" fill="#4E5268"/><polygon points="89.30,53.54 66.00,79.38 66.00,53.96" fill="#242633"/><polygon points="62.00,111.78 9.00,53.00 38.70,53.54 62.00,79.38" fill="#7428E8"/><polygon points="62.00,79.38 38.70,53.54 62.00,53.96" fill="#7428E8"/><polygon points="9.00,53.00 29.00,24.00 47.90,40.20 38.70,53.54" fill="#5417B3"/><polygon points="38.70,53.54 47.90,40.20 62.00,52.29 62.00,53.96" fill="#9B5AF9"/></svg>`;
   }
 
   function mountUi() {
@@ -15558,7 +15572,7 @@
                   <h2 id="tdh-rail-title">Dropper</h2>
                   <button type="button" id="tdh-header-version" aria-label="View Dropper v${APP_VERSION} Changelog">v${APP_VERSION}</button>
                 </div>
-                <div id="tdh-rail-subtitle">Twitch Drops: Track and Redeem</div>
+                <div id="tdh-rail-subtitle">Your Drops at a glance</div>
               </div>
             </div>
             <div class="header-actions">
@@ -15735,10 +15749,8 @@
                     <div class="drop-percent" id="tdh-drop-percent">0%</div>
                   </div>
                   <div class="progress-category"><span class="stream-game" id="tdh-stream-game">Waiting For Category</span></div>
-                  <div class="drop-bar"><span id="tdh-drop-fill"></span></div>
+                  <div class="drop-bar" role="progressbar" aria-label="Twitch credited Drop progress" aria-valuemin="0" aria-valuemax="100"><span id="tdh-drop-fill"></span></div>
                   <div class="progress-reward-row">
-                    <span class="drop-meta" id="tdh-drop-meta">0 / 0 min</span>
-                    <span class="progress-dot">•</span>
                     <span class="drop-name" id="tdh-drop-name">Waiting For Drop</span>
                   </div>
                   <div class="drop-status-row">
@@ -15748,16 +15760,16 @@
                       <svg class="status-clock-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"></circle><path d="M8 4.5v3.8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                       <span id="tdh-updated-ago">Checked —</span>
                     </div>
-                    <button type="button" class="skip-streamer-chip" id="tdh-skip-streamer" aria-label="No active streamer to skip">
-                      <svg class="skip-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.25 2.5 7.4 8l-5.15 5.5V2.5Zm6.1 0L13.5 8l-5.15 5.5V2.5Z"></path></svg>
-                      <span class="skip-label">Skip</span>
-                      <span class="skip-countdown" hidden></span>
-                    </button>
                   </div>
                 </div>
               </div>
             </div>
-            <div class="compact-card-actions"><button type="button" id="tdh-card-pause">Pause</button><button type="button" id="tdh-card-menu">Open menu</button></div>
+            <div class="compact-card-actions">
+              <span class="drop-meta" id="tdh-drop-meta">— / — min</span>
+              <button type="button" id="tdh-card-pause">Resume</button>
+              <button type="button" class="skip-streamer-chip" id="tdh-skip-streamer" aria-label="No active streamer to skip"><span class="skip-label">Skip</span><span class="skip-countdown" hidden></span></button>
+              <button type="button" id="tdh-card-menu" aria-label="Open Dropper menu" aria-expanded="false">Menu</button>
+            </div>
           </section>
           <button type="button" id="tdh-settings-launcher" data-exp-part="launcher" aria-controls="tdh-tools-dock" aria-expanded="false" aria-label="Open Dropper Settings" data-userscript-launcher="userscript-launcher-v1" data-launcher-id="dropper" data-launcher-preferred-position="right-bottom">
             <svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><path class="track" d="M18 3H24A9 9 0 0 1 33 12V24A9 9 0 0 1 24 33H12A9 9 0 0 1 3 24V12A9 9 0 0 1 12 3H18Z"></path><path class="fill" id="tdh-ring" d="M18 3H24A9 9 0 0 1 33 12V24A9 9 0 0 1 24 33H12A9 9 0 0 1 3 24V12A9 9 0 0 1 12 3H18Z" pathLength="100" stroke-dasharray="0 100"></path></svg>
@@ -15888,6 +15900,7 @@
     document.addEventListener("keydown", (event) => {
       if (event.altKey && (event.key === "g" || event.key === "G") && !event.repeat) { event.preventDefault(); setRailOpen(!railOpen, true); }
       if (event.key === "Escape" && supportPopover?.hidden === false) { closeSupportPopover(); return; }
+      if (event.key === "Escape" && skipStreamerArmSnapshot()) { clearSkipStreamerArm('escape'); event.preventDefault(); return; }
       if (event.key === "Escape" && railOpen) setRailOpen(false, true);
       if (!event.altKey && (event.key === "r" || event.key === "R") && railOpen) requestGqlPoll("keyboard-refresh", true);
     });
@@ -16035,7 +16048,8 @@
   }
 
   function skipCurrentStreamer() {
-    explicitViewingNavigationUntil = Date.now() + 15000;
+    const paused = viewingIntent.snapshot().paused;
+    explicitViewingNavigationUntil = paused ? 0 : Date.now() + 15000;
     clearSkipStreamerArm();
     if (!isAutoRoutingController()) {
       noteDeferredAutoRouting("manual-stream-skip");
@@ -16072,7 +16086,9 @@
       campaign: currentDrop.campaign || null,
     });
     setStatus(`Skipping ${active} · Returning To ${currentDrop.game || "Target"} Category`);
-    routingControllerTick(Date.now(), "manual-stream-skip");
+    // Selecting the next streamer must not silently resume a manually paused session.
+    if (paused) setStatus(`Skipped ${active} · Resume to find the next eligible stream`);
+    else routingControllerTick(Date.now(), "manual-stream-skip");
     return true;
   }
 
@@ -16980,8 +16996,8 @@
   function syncCompactState() {
     if (!ui) return;
     ui.pageActions?.refresh();
-    const pause=ui.shadow.getElementById('tdh-card-pause');if(pause){pause.textContent=viewingIntent.snapshot().paused?'Resume':'Pause';pause.disabled=!watchingLogin();}
-    const menu=ui.shadow.getElementById('tdh-card-menu');if(menu)menu.textContent=railOpen?'Close menu':'Open menu';
+    const pause=ui.shadow.getElementById('tdh-card-pause');if(pause){pause.textContent=viewingIntent.snapshot().paused||!currentDrop?'Resume':'Pause';pause.disabled=!currentDrop||!watchingLogin()||!getToken();}
+    const menu=ui.shadow.getElementById('tdh-card-menu');if(menu){menu.textContent='Menu';menu.setAttribute('aria-expanded',String(railOpen));menu.setAttribute('aria-label',railOpen?'Close Dropper menu':'Open Dropper menu');}
     const reward = ui.shadow.getElementById("tdh-compact-reward");
     const extra = ui.shadow.getElementById("tdh-compact-extra");
     const state = ui.shadow.getElementById("tdh-compact-state");
@@ -17154,11 +17170,15 @@
     const menuSlot = ui.shadow.getElementById("tdh-badge-only-progress-slot");
     const badgeRow = ui.shadow.querySelector(".badge-row");
     if (!card || !menuSlot || !badgeRow || !ui.launcher) return;
-    menuSlot.hidden=true;
-    if(card.parentElement!==ui.cluster)ui.cluster.append(card);
+    const inMenu=Boolean(railOpen);
+    if(inMenu)restoreChatProgressSlot();
+    menuSlot.hidden=!inMenu;
+    const target=inMenu?menuSlot:ui.cluster;
+    if(card.parentElement!==target)target.append(card);
+    card.dataset.progressPlacement=inMenu?'menu':'outside';
     card.dataset.presentation='compact-card';card.dataset.expReserved='1';
     if(!settings.badgeOnly)delete card.dataset.expanded;
-    card.dataset.collapsed=String(Boolean(card.dataset.chatCollapsed==='true'||settings.badgeOnly&&!card.dataset.expanded));
+    card.dataset.collapsed=String(!inMenu&&Boolean(card.dataset.chatCollapsed==='true'||settings.badgeOnly&&!card.dataset.expanded));
     const toggle=ui.shadow.getElementById('tdh-strip-toggle');toggle.textContent='Show progress card';toggle.setAttribute('aria-label','Show progress card');
     // Badge Only keeps the complete card one tap away.
     ui.shadow.getElementById("tdh-strip-toggle")?.setAttribute("aria-expanded", String(card.dataset.collapsed !== "true"));
@@ -17177,13 +17197,15 @@
   }
   function positionChatProgressCard() {
     const card=ui?.shadow.getElementById('tdh-drop-card');
-    if(!card)return false;
+    if(!card||card.dataset.progressPlacement==='menu')return false;
     const content=document.querySelector('.stream-chat .chat-room__content');
     const leaderboard=content?.querySelector('button[aria-label="Previous leaderboard set"]');
     let panel=leaderboard;
     while(panel && panel.parentElement!==content)panel=panel.parentElement;
     const box=panel?.getBoundingClientRect();
-    const available=box && box.width>=160 && box.height>0 && box.left>=0 && box.right<=innerWidth && box.top>=0 && box.bottom<innerHeight &&
+    // Twitch's slot can extend a fractional pixel past the layout viewport at zoomed sizes.
+    const left=box?Math.max(0,box.left):0,right=box?Math.min(innerWidth,box.right):0;
+    const available=box && right-left>=160 && box.height>0 && box.top>=0 && box.bottom<=innerHeight &&
       getComputedStyle(content).visibility!=='hidden' && getComputedStyle(content).display!=='none';
     if(ui.chatProgressSlot?.node!==panel || !available || card.dataset.collapsed==='true')restoreChatProgressSlot();
     delete card.dataset.chatDocked;
@@ -17192,7 +17214,7 @@
     const toggle=ui.shadow.getElementById('tdh-strip-toggle');
     toggle.textContent=card.dataset.collapsed==='true'?'Show progress card':'Hide progress card';
     toggle.setAttribute('aria-label',toggle.textContent);
-    card.style.setProperty('width',box.width+'px','important');
+    card.style.setProperty('width',(right-left)+'px','important');
     card.style.setProperty('max-width','100vw','important');
     if(card.dataset.collapsed!=='true' && box.top+card.offsetHeight>innerHeight-8) {
       restoreChatProgressSlot();delete card.dataset.chatDocked;return false;
@@ -17204,7 +17226,7 @@
       panel.setAttribute('inert','');panel.setAttribute('aria-hidden','true');
       ui.chatResizeObserver?.observe(panel);
     }
-    card.style.setProperty('left',box.left+'px','important');
+    card.style.setProperty('left',left+'px','important');
     card.style.setProperty('top',(card.dataset.collapsed==='true'?Math.max(0,box.top-card.offsetHeight):box.top)+'px','important');
     card.style.setProperty('right','auto','important');card.style.setProperty('bottom','auto','important');
     if(ui.chatProgressSlot) {
@@ -17355,18 +17377,46 @@
     section(drops).querySelector('.fl-tool-title').textContent='Campaigns';
     const campaigns=shadow.getElementById('tdh-open-campaigns');if(campaigns)campaigns.open=true;
     section(settingsBody).querySelector('.fl-tool-title').textContent='Settings';
-    const viewing=ExtraPotionsCore.createDisclosure('Viewing',...settingsBody.childNodes);
-    const skip=shadow.getElementById('tdh-skip-streamer');if(skip)viewing.append(skip);
-    const lookBody=shadow.getElementById('tdh-progress-body'),systemBody=shadow.getElementById('tdh-diagnostics-body');
-    const lookSection=section(lookBody),systemSection=section(systemBody);
-    lookBody.classList.remove('fl-tool-hidden');systemBody.classList.remove('fl-tool-hidden');
-    const look=ExtraPotionsCore.createDisclosure('Look',lookBody),claims=ExtraPotionsCore.createDisclosure('Claiming');
-    for(const id of ['tdh-claim-drops','tdh-claim-bonus']){const row=shadow.getElementById(id)?.closest('.fl-switch');if(row)claims.append(row);}
-    const primary=['tdh-find-next','tdh-mute-next'].map(id=>viewing.querySelector('#'+id)?.closest('.fl-switch')).filter(Boolean);
-    settingsBody.replaceChildren(...primary,look,viewing,claims,systemBody);
-    lookSection.remove();systemSection.remove();
+    const advanced=ExtraPotionsCore.createDisclosure('Advanced',...settingsBody.childNodes);
+    advanced.id='tdh-settings-advanced';
+    const lookBody=shadow.getElementById('tdh-progress-body');
+    const lookSection=section(lookBody);
+    lookSection.querySelector('.fl-tool-title').textContent='Look';
+    const claim=shadow.getElementById('tdh-claim-drops')?.closest('.fl-switch');
+    const claimLabel=claim?.querySelector('.fl-switch-text');if(claimLabel)claimLabel.textContent='Claim completed Drops';
+    const bonus=shadow.getElementById('tdh-claim-bonus')?.closest('.fl-switch');if(bonus)advanced.append(bonus);
+    advanced.querySelector('#tdh-find-next')?.closest('.fl-switch')?.remove();
+    advanced.querySelector('#tdh-allow-switching')?.remove();
+    const policy=advanced.querySelector('#tdh-switch-policy');
+    policy.setAttribute('aria-label','Stream switching');
+    const option=(value,text,disabled=false)=>{const node=document.createElement('option');node.value=value;node.textContent=text;node.disabled=disabled;return node;};
+    policy.replaceChildren(option('normal','Follow campaign order'),option('stopped-earning','Keep an earning stream'),option('off','Stay on this stream'),option('held','Manual stream protected',true));
+    const policyRow=policy.closest('.mini-row');policyRow.querySelector('label').textContent='Stream switching';
+    const mute=advanced.querySelector('#tdh-mute-next')?.closest('.fl-switch');
+    const notifications=[...advanced.querySelectorAll('details')].find(d=>d.querySelector(':scope>summary')?.textContent==='Notifications');
+    const interruptions=[...advanced.querySelectorAll('details')].find(d=>d.querySelector(':scope>summary')?.textContent==='Interruption Rules');
+    const pause=advanced.querySelector('#tdh-pause-switch')?.closest('.mini-row');if(pause&&interruptions)interruptions.append(pause);
+    settingsBody.replaceChildren(...[claim,policyRow,mute,notifications,advanced].filter(Boolean));
+    refreshStreamPolicyControl();
     const search=document.createElement('input');search.type='search';search.id='tdh-campaign-search';search.placeholder='Find a game';search.setAttribute('aria-label','Search campaigns');search.addEventListener('input',filterCampaignRows);drops.prepend(search);
     const empty=document.createElement('p');empty.id='tdh-campaign-filter-empty';empty.hidden=true;empty.textContent='No matching campaigns.';drops.append(empty);
+  }
+  function refreshStreamPolicyControl(){
+    const select=ui?.shadow?.getElementById('tdh-switch-policy');if(!select)return;
+    const held=select.querySelector('[value=held]'),intent=viewingIntent.snapshot();
+    const locked=Boolean(manualStreamLockSnapshot()),unchosen=!isAutomationTab();
+    if(held)held.textContent=locked?'Stream locked':isAutoSwitchPaused()?'Switching temporarily paused':unchosen?'Not enabled in this tab':'Manual stream protected';
+    select.value=!settings.findNextStream?'off':locked||isAutoSwitchPaused()||intent.manualStream||unchosen?'held':settings.switchPolicy==='stopped-earning'?'stopped-earning':'normal';
+  }
+  function applyStreamSwitchingPolicy(value){
+    if(!['off','normal','stopped-earning'].includes(value))return;
+    settings.findNextStream=value!=='off';
+    if(settings.findNextStream){
+      settings.switchPolicy=value;settings.pauseAutoSwitchMinutes=0;settings.pauseAutoSwitchUntil=0;pauseAutoSwitchUntil=0;
+      const pause=ui.shadow.getElementById('tdh-pause-switch');if(pause)pause.value='0';
+      claimAutomationTab();setManualStreamLock(false,'stream-policy');syncViewingContext();viewingIntent.allowSwitching();
+    }
+    saveSettings();refreshViewingControls();
   }
   function filterCampaignRows(){
     const query=ui.shadow.getElementById('tdh-campaign-search')?.value.trim().toLowerCase()||'';
@@ -17392,7 +17442,6 @@
     const appearance=ui.shadow.getElementById('tdh-progress-body');
     if(appearance&&!appearance.querySelector('[data-dropper-menu-preferences]')){const preferences=ExtraPotionsCore.createMenuSizeControls();preferences.dataset.dropperMenuPreferences='1';appearance.prepend(preferences);}
     const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,onReset:resetAllDropperData,notify:setStatus,layout:'grouped',issueSettings:()=>({current:settings,defaults:DEFAULTS})});
-    system.prepend(...[...ui.shadow.getElementById('tdh-streams-body').children].filter(node=>node!==target));
     target.replaceChildren(system);
   }
 
@@ -17406,12 +17455,7 @@
     s.getElementById('tdh-resume-playback')?.addEventListener('click', () => {
       ensureStreamPlaying(true); refreshViewingControls();
     });
-    s.getElementById('tdh-allow-switching')?.addEventListener('click', () => {
-      claimAutomationTab();
-      setManualStreamLock(false, 'automatic-switching-enabled');
-      syncViewingContext(); viewingIntent.allowSwitching();
-      settings.findNextStream = true; saveSettings(); refreshViewingControls();
-    });
+    s.getElementById('tdh-switch-policy')?.addEventListener('change',event=>applyStreamSwitchingPolicy(event.target.value));
     s.getElementById('tdh-stream-lock')?.addEventListener('click', () => {
       const locked = Boolean(manualStreamLockSnapshot());
       setManualStreamLock(!locked, locked ? 'viewer-release' : 'viewer-lock');
@@ -17573,7 +17617,7 @@
       setTimeout(() => { event.currentTarget.textContent = "Reset Session State"; }, 1600);
     });
     const strategy = s.getElementById("tdh-campaign-strategy");
-    for(const [id,key] of [['tdh-quiet-start','quietHoursStart'],['tdh-quiet-end','quietHoursEnd'],['tdh-switch-policy','switchPolicy']]){const input=s.getElementById(id);input.value=settings[key];input.addEventListener('change',()=>{settings[key]=input.value;saveSettings();refreshViewingControls();});}
+    for(const [id,key] of [['tdh-quiet-start','quietHoursStart'],['tdh-quiet-end','quietHoursEnd']]){const input=s.getElementById(id);input.value=settings[key];input.addEventListener('change',()=>{settings[key]=input.value;saveSettings();refreshViewingControls();});}
     for(const [id,key] of [['tdh-protected-channels','protectedChannels'],['tdh-excluded-channels','excludedChannels']]){const input=s.getElementById(id);input.value=(settings[key]||[]).join(', ');input.addEventListener('change',()=>{settings[key]=[...new Set(input.value.toLowerCase().split(/[\s,]+/).filter(value=>/^[a-z0-9_]{1,25}$/.test(value)))].slice(0,100);input.value=settings[key].join(', ');saveSettings();refreshQueueList();refreshViewingControls();});}
     strategy.value = normalizedCampaignStrategy();
     strategy.addEventListener("change", () => {
@@ -17608,7 +17652,7 @@
         ? Date.now() + settings.pauseAutoSwitchMinutes * 60000
         : 0;
       settings.pauseAutoSwitchUntil = pauseAutoSwitchUntil;
-      saveSettings();
+      saveSettings();refreshStreamPolicyControl();
     });
     const opacityRange = s.getElementById("tdh-opacity-range");
     opacityRange.value = String(normalizedOpacityPercent());
@@ -18981,7 +19025,10 @@
       for (const property of ["left", "right", "top", "bottom"]) progressCard.style.removeProperty(property);
     }
 
-    if(progressCard?.dataset.presentation==='compact-card'){
+    if(progressCard?.dataset.progressPlacement==='menu'){
+      progressCard.style.setProperty('width','100%','important');progressCard.style.setProperty('max-width','100%','important');
+      for(const property of ['left','right','top','bottom'])progressCard.style.removeProperty(property);
+    } else if(progressCard?.dataset.presentation==='compact-card'){
       progressCard.style.setProperty('width',ExtraPotionsCore.menuSizeTokens().cardWidth+'px','important');progressCard.style.setProperty('max-width','calc(100vw - 24px)','important');
       if(!positionChatProgressCard()){
         progressCard.style.setProperty('width',ExtraPotionsCore.menuSizeTokens().cardWidth+'px','important');progressCard.style.setProperty('max-width','calc(100vw - 24px)','important');
@@ -19048,7 +19095,7 @@
     }
     ui.menuController.state(open);
     ui.launcher.setAttribute("aria-expanded", String(open));
-    const cardMenu=ui.shadow.getElementById("tdh-card-menu");if(cardMenu)cardMenu.textContent=open?"Close menu":"Open menu";
+    const cardMenu=ui.shadow.getElementById("tdh-card-menu");if(cardMenu){cardMenu.textContent='Menu';cardMenu.setAttribute('aria-expanded',String(open));cardMenu.setAttribute('aria-label',open?'Close Dropper menu':'Open Dropper menu');}
 
     if (open) {
       document.documentElement.dataset.expDropperMenuOpen = "1";
@@ -19184,6 +19231,7 @@
 
   function renderSwitches() {
     if (!ui) return;
+    refreshStreamPolicyControl();
     const map = {
       "tdh-quiet-hours": settings.quietHoursEnabled,
       "tdh-claim-bonus": settings.claimBonus, "tdh-keep-tab": settings.keepTabActive, "tdh-claim-drops": settings.claimDrops,

@@ -17,6 +17,7 @@ async function paintValues(host) {
     set('tdh-stream-game', 'Sample Game');
     set('tdh-drop-meta', '28 / 60 min');
     set('tdh-drop-name', 'Sample Reward');
+    set('tdh-drop-percent', '47%');
     set('tdh-drop-state', 'Earning', 'state-pill good');
     set('tdh-updated-ago', 'Checked 12s ago');
     set('tdh-eligibility-summary', '✓ Eligible · 32 min remaining');
@@ -49,7 +50,7 @@ module.exports = {
   shots: [
     { file: 'drops-menu.png', section: 'Campaigns', before: paintSampleProgress },
     { file: 'streams-menu.png', section: 'Settings', before: async(page,host)=>{
-      await host.locator('summary').filter({hasText:/^Viewing$/}).click();
+      await host.locator('summary').filter({hasText:/^Advanced$/}).click();
       await host.locator('summary').filter({hasText:/^Playback options$/}).click();
       await paintSampleProgress(page,host);
     } },

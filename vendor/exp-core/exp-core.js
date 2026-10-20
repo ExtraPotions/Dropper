@@ -623,7 +623,7 @@ return Object.freeze({ PRIDE_RAINBOW, PRIDE_RAINBOW_VERTICAL, CRIMSON_THEME, UI_
 /* Local diagnostic capture shared at build time by ExtraPotions products. */
 const ExtraPotionsDiagnostics = (() => {
   const LIMIT = 100;
-  const supportedProducts = ["dropper","shift","ward","prisma"];
+  const supportedProducts = ["thread","dropper","shift","ward","prisma"];
   const protocol = 'exp-core-coordination-v1';
   const entries = [], hooks = [], registrations = new Map();
   const startedAt = new Date().toISOString();
@@ -1479,7 +1479,7 @@ function createProductLifecycle(shared) {
 
 // Shared, local-only compatibility controls.
 const ExtraPotionsTools = (() => {
-  const PRODUCT_ROOT_IDS = {"dropper":"tdh-root","shift":"exp-shift-root","ward":"exp-ward-root","prisma":"exp-prisma-root"};
+  const PRODUCT_ROOT_IDS = {"thread":"exp-thread-root","dropper":"tdh-root","shift":"exp-shift-root","ward":"exp-ward-root","prisma":"exp-prisma-root"};
   function createPageActions({host,shadow,label,actions,visible=()=>true,preferVideo=false}){
     const bar=document.createElement('div');bar.dataset.expPageActions='1';bar.setAttribute('role','group');bar.setAttribute('aria-label',label+' page actions');
     const style=document.createElement('style');style.textContent=`[data-exp-page-actions]{pointer-events:auto;position:fixed;z-index:2147483500;display:flex;align-items:center;flex-wrap:wrap;gap:5px;max-width:calc(100vw - 24px);padding:5px;border:1px solid var(--theme-muted,#848494);border-radius:5px;background:var(--theme-bg,#18181b);color:var(--theme-text,#efeff1);font:12px/1.4 "Segoe UI",sans-serif;box-sizing:border-box}[data-exp-page-actions][hidden]{display:none!important}[data-exp-page-actions]>strong{font-size:11px;font-weight:600}[data-exp-page-actions]>button{min-height:30px;min-width:0;padding:4px 7px;border:1px solid var(--theme-muted,#848494);border-radius:5px;background:var(--theme-panel,#1f1f23);color:var(--theme-text,#efeff1);font:12px/1.4 "Segoe UI",sans-serif;white-space:normal;cursor:pointer}[data-exp-page-actions]>button:disabled{opacity:.6;cursor:default}[data-exp-page-actions]>button:focus-visible{outline:2px solid var(--theme-accent2,#bf94ff);outline-offset:2px}@media(pointer:coarse){[data-exp-page-actions]>button{min-height:36px}}`;
@@ -1552,7 +1552,7 @@ const ExtraPotionsTools = (() => {
     const duration=document.createElement('select');duration.setAttribute('aria-label','Temporary suite pause duration');for(const [value,label] of [['15','15 minutes'],['60','1 hour'],['240','4 hours']]){const option=document.createElement('option');option.value=value;option.textContent=label;duration.append(option);}const temporary=button('Pause temporarily',()=>{ExtraPotionsCore.setSuiteSitePaused(true,location.hostname,Number(duration.value));refresh();});
     d.addEventListener('toggle',()=>{if(d.open)refresh();});d.append(row,duration,temporary,out);refresh();return d;
   }
-  const productRepositories = Object.freeze({dropper:'Dropper',shift:'SHIFT',prisma:'PRISMA',ward:'WARD'});
+  const productRepositories = Object.freeze({dropper:'Dropper',shift:'SHIFT',prisma:'PRISMA',ward:'WARD',thread:'THREAD'});
   // GitHub prefills an issue from the link; longer links fail, so a large report goes by clipboard.
   const ISSUE_URL_LIMIT=8000;
   const plain=(value,limit=200)=>String(value||'').replace(/https?:\/\/\S+/gi,'[link]').replace(/\S+@\S+/g,'[address]').replace(/\s+/g,' ').trim().slice(0,limit);
@@ -1712,7 +1712,7 @@ const ExtraPotionsTools = (() => {
     }
     return system;
   }
-  function createProductSystem({id,version,timeline,diagnostics,preferences,onReset,notify=()=>{},layout='classic',issueSettings}) {
+  function createProductSystem({id,version,timeline,diagnostics,preferences,onReset,notify=()=>{},layout='grouped',issueSettings}) {
     if(!Object.hasOwn(productRepositories,id))throw new Error('Unknown product');
     if(layout==='grouped')return groupedProductSystem({id,version,timeline,diagnostics,preferences,onReset,notify,issueSettings});
     const system=document.createElement('div');system.dataset.expProductSystem=id;
@@ -1824,25 +1824,10 @@ const ExpMenuTabs = (() => {
     const workspace=document.createElement('div'),rail=document.createElement('div'),content=document.createElement('div');
     workspace.className='exp-menu-workspace';rail.className='exp-menu-rail';content.className='exp-menu-content';
     list.setAttribute('aria-orientation','vertical');
-    const shortcuts=document.createElement('div');shortcuts.className='exp-menu-shortcuts';
-    function reveal(label){
-      const find=()=>[...panel.querySelectorAll('details')].find(node=>node.querySelector(':scope>summary')?.textContent.trim()===label);
-      let target=find();
-      if(!target){const source=entries.findIndex(entry=>/system/i.test(entry.label))>=0?entries.findIndex(entry=>/system/i.test(entry.label)):entries.findIndex(entry=>entry.label==='Settings');if(source>=0)select(source);target=find();}
-      if(!target)return;
-      const owner=entries.findIndex(entry=>entry.section.contains(target));if(owner>=0)select(owner);
-      // Keep each existing disclosure and its handlers; the sidebar is a direct route to it.
-      for(let node=target;node&&node!==panel;node=node.parentElement)if(node.tagName==='DETAILS')node.open=true;
-      target.scrollIntoView({block:'nearest'});target.querySelector(':scope>summary')?.focus();
-    }
-    for(const label of ['Look','Support','Reset']){
-      if(entries.some(entry=>(shortLabels[entry.label.toLowerCase()]||entry.label)===label))continue;
-      const button=document.createElement('button');button.type='button';button.textContent=label;button.dataset.expMenuShortcut=label.toLowerCase();button.addEventListener('click',()=>reveal(label));shortcuts.append(button);
-    }
     function place() {
       if(workspace.parentNode)return;
       const parent=entries[0].section.parentElement;if(!parent)return;
-      parent.insertBefore(workspace,entries[0].section);rail.append(list,shortcuts);content.append(...entries.map(entry=>entry.section));workspace.append(rail,content);
+      parent.insertBefore(workspace,entries[0].section);rail.append(list);content.append(...entries.map(entry=>entry.section));workspace.append(rail,content);
     }
     function flatten() {
       for (const entry of entries) for (const details of entry.body.querySelectorAll('details')) {
@@ -1936,7 +1921,7 @@ const ExpMenuArrangement = (() => {
     advanced: Object.freeze({ id: 'advanced', label: 'Advanced', order: 2 }),
     system: Object.freeze({ id: 'system', label: 'System', order: 3 }),
   });
-  const PRODUCT_SECTIONS = {"dropper":{"main":["drops","streams"],"appearance":["appearance"],"advanced":["advanced"],"system":["system"]},"shift":{"appearance":["appearance","readability"],"advanced":["effects","effects-integrations","profiles","profiles-sites"],"system":["system"]},"ward":{"main":["protection","amazon","tools"],"appearance":["appearance"],"advanced":["advanced","patterns","advanced-amazon"],"system":["system"]},"prisma":{"main":["page","highlights"],"appearance":["style","highlight-style","look","appearance"],"advanced":["tools","language","sites"],"system":["system"]}};
+  const PRODUCT_SECTIONS = {"thread":{"main":["feed","read"],"appearance":["look"],"advanced":["filters","people"],"system":["system"]},"dropper":{"main":["drops","streams","campaigns","settings"],"appearance":["appearance"],"advanced":["advanced"],"system":["system"]},"shift":{"appearance":["appearance","readability"],"advanced":["effects","effects-integrations","profiles","profiles-sites"],"system":["system"]},"ward":{"main":["protection","amazon","tools"],"appearance":["appearance"],"advanced":["advanced","patterns","advanced-amazon"],"system":["system"]},"prisma":{"main":["page","highlights"],"appearance":["style","highlight-style","look","appearance"],"advanced":["tools","language","sites"],"system":["system"]}};
   const GENERIC_SECTIONS = Object.freeze({
     appearance: Object.freeze(['appearance', 'readability', 'style', 'highlight-style', 'look', 'theme', 'themes']),
     advanced: Object.freeze(['advanced', 'effects', 'integrations', 'profiles', 'sites', 'language', 'patterns', 'routing', 'playback']),
@@ -2279,7 +2264,10 @@ const ExpRecoveryControl = (() => {
 
 // Layout and surfaces from the approved Lean menu, with product-specific colors.
 const ExpLeanMenu = (() => {
+  // The shell is shared by existing products and new createProduct/createMenuController consumers.
+  const template=Object.freeze({id:'extrapotions-menu',version:1,layout:'sidebar',systemLayout:'grouped',supportNavigation:'system',resetNavigation:'system',donations:'header-heart'});
   const twitch=Object.freeze({bg:'#18181b',panel:'#1f1f23',raised:'#3a3a3d',inset:'#0e0e10',line:'#848494',text:'#efeff1',muted:'#adadb8',hover:'#53535f',accent:'#9146ff',accent2:'#bf94ff',link:'#bf94ff',focus:'#bf94ff',onAccent:'#ffffff'});
+  // THREAD supplies its native/default and opt-in gem palette through Core.applyTheme.
   const palettes=Object.freeze({dropper:twitch});
   const sectionIcons = Object.freeze({campaigns:'gift',settings:'system',drops:'gift',streams:'screen',appearance:'brush',advanced:'sliders',system:'system',highlights:'sparkle',protection:'shield',amazon:'bag'});
   // Scoped switches outrank the older product gradient rules.
@@ -2287,7 +2275,10 @@ const ExpLeanMenu = (() => {
   const css = `
     [data-exp-menu-layout="lean"]{box-sizing:border-box!important;padding:0!important;border:1px solid var(--theme-muted)!important;border-radius:7px!important;background:var(--theme-bg)!important;background-image:none!important;box-shadow:0 4px 10px #0003!important;color:var(--theme-text)!important;font:400 13px/1.4 "Segoe UI",system-ui,sans-serif!important;text-align:start;letter-spacing:0!important;transition:none!important}
     [data-exp-menu-layout="lean"] *{box-sizing:border-box}
-    [data-exp-menu-layout="lean"] .menu-head{display:flex!important;align-items:center!important;gap:6px!important;width:100%!important;margin:0!important;padding:8px!important;border:0!important;border-bottom:1px solid var(--theme-line)!important;background:transparent!important}
+    /* One shell must outrank legacy product-ID rules, including Dropper's sibling card. */
+    :host :is(#tdh-tools-dock,[data-exp-menu-layout="lean"])[data-exp-menu-template]{position:fixed!important;z-index:2147483647!important;overflow:hidden!important;flex-direction:column;max-height:calc(100dvh - 16px)}
+    :host :is(#tdh-tools-dock,[data-exp-menu-layout="lean"])[data-exp-menu-template].fl-rail-open:not([hidden]){display:flex!important}
+    [data-exp-menu-layout="lean"] .menu-head{display:flex!important;align-items:center!important;gap:5px!important;width:100%!important;margin:0!important;padding:7px!important;border:0!important;border-bottom:1px solid var(--theme-line)!important;background:transparent!important}
     [data-exp-menu-layout="lean"] .header-brand{display:flex!important;align-items:center!important;gap:6px!important;flex:1;min-width:0}
     [data-exp-menu-layout="lean"] .header-icon{flex:0 0 28px;width:28px!important;height:30px!important;border:0!important;background:transparent!important;overflow:hidden}
     [data-exp-menu-layout="lean"] .header-icon .menu-icon{width:28px!important;height:30px!important;object-fit:contain}
@@ -2300,9 +2291,9 @@ const ExpLeanMenu = (() => {
     [data-exp-menu-layout="lean"] :is(.support-button,[data-exp-part="close"],#tdh-rail-close){display:grid!important;place-items:center!important;flex:none;width:28px!important;height:28px!important;min-width:28px!important;min-height:28px!important;padding:2px!important;border:1px solid var(--theme-muted)!important;border-radius:5px!important;background:var(--theme-panel)!important;color:var(--theme-text)!important;box-shadow:none!important}
     [data-exp-menu-layout="lean"] :is(.header-divider,.exp-menu-tagline,[data-exp-part="status"]){display:none!important}
     [data-exp-menu-layout="lean"]>nav{padding:0!important;margin:0!important}
-    [data-exp-menu-layout="lean"] .exp-menu-workspace{display:grid!important;grid-template-columns:88px minmax(0,1fr)!important;min-width:0;align-items:start}
-    [data-exp-menu-layout="lean"] .exp-menu-rail{padding:5px;border-right:1px solid var(--theme-line);min-width:0;align-self:stretch;background:var(--exp-menu-navigation,transparent)}
-    [data-exp-menu-layout="lean"] .exp-menu-content{padding:var(--exp-menu-padding,8px)!important;min-width:0;overflow:auto;max-height:calc(100dvh - 180px);overscroll-behavior:contain}
+    [data-exp-menu-layout="lean"] .exp-menu-workspace{display:grid!important;grid-template-columns:84px minmax(0,1fr)!important;min-width:0;min-height:0;overflow:hidden;align-items:stretch;flex:1 1 auto}
+    [data-exp-menu-layout="lean"] .exp-menu-rail{padding:5px;border-right:1px solid var(--theme-line);min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain;align-self:stretch;background:var(--exp-menu-navigation,transparent)}
+    [data-exp-menu-layout="lean"] .exp-menu-content{padding:var(--exp-menu-padding,8px)!important;min-width:0;min-height:0;overflow:auto;max-height:calc(100dvh - 116px);overscroll-behavior:contain}
     [data-exp-menu-layout="lean"] .exp-section-tabs{display:flex!important;flex-direction:column!important;gap:4px!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important}
     [data-exp-menu-layout="lean"] .exp-menu-shortcuts{display:flex;flex-direction:column;gap:4px;border-top:1px solid var(--theme-line);padding-top:8px;margin-top:8px}
     [data-exp-menu-layout="lean"] :is(.exp-section-tabs>[role=tab],.exp-menu-shortcuts>button){width:100%!important;min-width:0!important;min-height:30px!important;justify-content:flex-start!important;padding:5px 3px!important;text-align:left!important;font:400 12px/1.35 "Segoe UI",sans-serif!important;white-space:normal!important;overflow-wrap:anywhere!important;border:1px solid var(--theme-muted)!important;border-radius:5px!important;background:var(--theme-panel)!important;color:var(--theme-text)!important;box-shadow:none!important}
@@ -2319,8 +2310,8 @@ const ExpLeanMenu = (() => {
     [data-exp-menu-layout="lean"][data-exp-menu-layout="lean"] .fl-tool-body button{font-size:12px!important;font-weight:400!important;line-height:1.35!important}
     [data-exp-menu-layout="lean"] :is(.life-btn,.action,.secondary,.primary,.compact,select,input:not([type=range]),textarea){min-width:0!important;min-height:var(--exp-menu-control,30px)!important;padding:4px 7px!important;font-size:12px!important;line-height:1.35!important;border:1px solid var(--theme-muted)!important;border-radius:5px!important;background:var(--theme-panel)!important;color:var(--theme-text)!important;white-space:normal!important;box-shadow:none!important}
     [data-exp-menu-layout="lean"] option{background:var(--theme-panel)!important;color:var(--theme-text)!important}
-    ${SWITCH}{flex:none!important;width:34px!important;min-width:34px!important;max-width:34px!important;height:24px!important;min-height:24px!important;max-height:24px!important;border:1px solid var(--theme-muted)!important;border-radius:5px!important;background:var(--theme-panel)!important;padding:0!important;box-shadow:none!important}
-    ${SWITCH}::after{width:12px!important;height:16px!important;top:3px!important;left:3px!important;border-radius:2px!important;background:var(--theme-muted)!important}
+    ${SWITCH}{flex:none!important;width:32px!important;min-width:32px!important;max-width:32px!important;height:22px!important;min-height:22px!important;max-height:22px!important;border:1px solid var(--theme-muted)!important;border-radius:4px!important;background:var(--theme-panel)!important;padding:0!important;box-shadow:none!important}
+    ${SWITCH}::after{width:12px!important;height:16px!important;top:2px!important;left:2px!important;border-radius:2px!important;background:var(--theme-muted)!important}
     ${SWITCH}>span{display:none!important}
     ${SWITCH}[aria-checked=true]{background:var(--theme-accent)!important}
     ${SWITCH}[aria-checked=true]::after{transform:translateX(14px)!important;background:var(--theme-bg)!important}
@@ -2331,11 +2322,12 @@ const ExpLeanMenu = (() => {
     [data-exp-menu-layout="lean"] :is(.note,.help,.empty,.meta){color:var(--theme-muted)!important;font-size:11px!important;line-height:1.5!important}
     [data-exp-menu-layout="lean"] .action-pair{display:flex!important;gap:5px!important;margin:6px 0!important;min-width:0}
     [data-exp-menu-layout="lean"] .action-pair>*{flex:1!important;min-width:0!important;white-space:normal!important}
-    [data-exp-menu-layout="lean"] .diagnostics-controls .action-pair>button{font-size:11px!important;line-height:1.25!important;padding:4px!important;min-height:28px!important;overflow-wrap:normal!important;word-break:normal!important;white-space:normal!important}
+    [data-exp-menu-layout="lean"][data-exp-menu-layout="lean"] .fl-tool-body .diagnostics-controls .action-pair>button{font-size:11px!important;line-height:1.25!important;padding:3px!important;min-height:28px!important;overflow-wrap:normal!important;word-break:normal!important;white-space:normal!important}
     [data-exp-menu-layout="lean"] [data-exp-system-report]{text-align:center!important;justify-content:center!important;width:100%}
     [data-exp-menu-layout="lean"] :is([data-exp-destructive],[data-exp-system-item=reset]>button,button[data-exp-system-item=reset]){color:light-dark(#9f1239,#fca5a5)!important;border-color:light-dark(#be123c,#f87171)!important;background:transparent!important}
     .exp-floating-update,.update-notice[data-placement="menu"]{max-height:calc(100dvh - 16px)!important;overflow:auto;overscroll-behavior:contain;background:var(--exp-notice-top,var(--theme-bg))!important;background-image:none!important;border-color:var(--exp-notice-border,var(--theme-muted))!important;border-radius:7px!important;box-shadow:0 4px 10px #0003!important;font-size:12px!important}
     .update-notice :is(.update-text,.update-list){overflow-wrap:anywhere;line-height:1.5}
+    @media(max-width:300px){[data-exp-menu-layout="lean"][data-exp-menu-layout="lean"] .fl-tool-body .diagnostics-controls .action-pair>button{white-space:normal!important}}
     @media(pointer:coarse){[data-exp-menu-layout="lean"] :is(.life-btn,.action,.secondary,.primary,.exp-menu-shortcuts>button,.exp-section-tabs>[role=tab],select,summary){min-height:36px!important}}
 
     @media(forced-colors:active){
@@ -2356,7 +2348,7 @@ const ExpLeanMenu = (() => {
   function mount({shadow,panel}) {
     const document=panel.ownerDocument,host=shadow.host;
     const id=host?.dataset.productId||host?.id.replace(/^(exp-)|(\-root)$/g,'').replace(/^tdh$/,'dropper');
-    const palette=palettes[id],saved=new Map();panel.dataset.expMenuLayout='lean';
+    const palette=palettes[id],saved=new Map();panel.dataset.expMenuLayout='lean';panel.dataset.expMenuTemplate=template.id+'-v'+template.version;
     const themeRoot=shadow.querySelector('.exp-core-theme,.cluster');
     const properties=['bg','panel','line','text','muted','accent','accent2','link','focus'].map(key=>'--theme-'+key).concat('--exp-menu-hover','background-image');
     for(const property of properties)saved.set(property,[panel.style.getPropertyValue(property),panel.style.getPropertyPriority(property)]);
@@ -2424,9 +2416,9 @@ const ExpLeanMenu = (() => {
       }
     }
     decorate();const observer=new MutationObserver(decorate);observer.observe(panel,{childList:true,subtree:true});
-    return ()=>{visibility.disconnect();visibilityResize.disconnect();clearInterval(statusTimer);statusPanels.get(id)?.delete(refreshStatus);status.remove();tagline.remove();delete panel.dataset.expMenuStatus;themeObserver.disconnect();observer.disconnect();icons.forEach(icon=>icon.remove());style.remove();for(const[key,[value,priority]]of saved){if(value)panel.style.setProperty(key,value,priority);else panel.style.removeProperty(key);}delete panel.dataset.expMenuLayout;};
+    return ()=>{visibility.disconnect();visibilityResize.disconnect();clearInterval(statusTimer);statusPanels.get(id)?.delete(refreshStatus);status.remove();tagline.remove();delete panel.dataset.expMenuStatus;themeObserver.disconnect();observer.disconnect();icons.forEach(icon=>icon.remove());style.remove();for(const[key,[value,priority]]of saved){if(value)panel.style.setProperty(key,value,priority);else panel.style.removeProperty(key);}delete panel.dataset.expMenuLayout;delete panel.dataset.expMenuTemplate;};
   }
-  return Object.freeze({mount,setMenuStatus});
+  return Object.freeze({mount,setMenuStatus,template});
 })();
 
 // Descriptions belong to settings and consequential actions, not ordinary navigation.
@@ -2436,7 +2428,7 @@ const ExpMenuHelp = (() => {
     if(!node||!String(text||'').trim())return node;
     node.dataset.expHelp=String(text).trim();
     node.setAttribute('aria-description',node.dataset.expHelp);
-    if(!node.matches('button,input,select,a[href]')){node.tabIndex=0;node.setAttribute('role','button');}
+    if(!node.matches('button,input,select,a[href],summary')){node.tabIndex=0;node.setAttribute('role','button');}
     return node;
   }
   function mount({shadow,panel}){
@@ -2456,7 +2448,9 @@ const ExpMenuHelp = (() => {
       if(right<=left||bottom<=top)return hide();
       clearTimeout(timer);if(target&&target!==node)target.removeAttribute('aria-describedby');target=node;target.setAttribute('aria-describedby',tip.id);
       const colors=view.getComputedStyle(owner);for(const key of ['panel','line','text'])tip.style.setProperty('--theme-'+key,colors.getPropertyValue('--theme-'+key));
-      tip.textContent=text;tip.style.maxWidth=(right-left)+'px';tip.style.maxHeight=(bottom-top)+'px';tip.hidden=false;
+      // Fixed auto width depends on the previous left offset after resize. Measure
+      // intrinsic width first, bounded by the owner, so the final position cannot grow it.
+      tip.textContent=text;tip.style.width='max-content';tip.style.maxWidth=(right-left)+'px';tip.style.maxHeight=(bottom-top)+'px';tip.hidden=false;
       const r=node.getBoundingClientRect(),t=tip.getBoundingClientRect();
       tip.style.left=Math.max(left,Math.min(r.left,right-t.width))+'px';
       tip.style.top=Math.max(top,Math.min(r.bottom+t.height+6<=bottom?r.bottom+6:r.top-t.height-6,bottom-t.height))+'px';
@@ -2470,7 +2464,7 @@ const ExpMenuHelp = (() => {
     const focus=e=>{const node=help(e.target);if(node)show(node);else hide();};
     const click=e=>{const node=help(e.target);if(node){show(node);if(node.matches('[role=button]:not(button)'))e.preventDefault();}else if(!tip.contains(e.target))hide();};
     const key=e=>{if(e.key==='Escape'&&!tip.hidden){hide();e.preventDefault();e.stopImmediatePropagation();return;}const node=help(e.target);if(node?.matches('[role=button]:not(button)')&&['Enter',' '].includes(e.key)){e.preventDefault();show(node);}};
-    const layout=e=>{if(target&&!tip.contains(e?.target))show(target);};
+    const layout=e=>{if(target&&!(e?.target instanceof view.Node&&tip.contains(e.target)))show(target);};
     // Menu positioning settles on the next frame after a submenu changes its height.
     const resize=new ResizeObserver(()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>layout());});resize.observe(panel);
     for(const [name,fn,capture] of [['pointerover',over],['pointermove',move],['pointerout',out],['focusin',focus],['click',click],['keydown',key,true],['scroll',layout,true]])shadow.addEventListener(name,fn,capture);
@@ -2524,7 +2518,7 @@ const ExpMenuTypography = (() => {
 /* Same-origin preferences for product-owned menu surfaces only. */
 const ExpMenuPreferences = (() => {
   const key='exp:suite:menu-size',eventName='exp-core:menu-size';
-  const sizes=Object.freeze({standard:{body:14,small:12,width:324,cardWidth:272,padding:10,row:8,control:32},compact:{body:14,small:12,width:304,cardWidth:252,padding:8,row:6,control:30},mini:{body:14,small:12,width:280,cardWidth:232,padding:6,row:4,control:28}});
+  const sizes=Object.freeze({standard:{body:14,small:12,width:324,cardWidth:272,padding:8,row:7,control:32},compact:{body:14,small:12,width:304,cardWidth:252,padding:7,row:6,control:30},mini:{body:14,small:12,width:280,cardWidth:232,padding:6,row:4,control:28}});
   let memory='compact';
   const valid=value=>Object.hasOwn(sizes,value)?value:'compact';
   function menuSizePreference(){try {const stored=localStorage.getItem(key);memory=valid(stored);}catch {}return memory;}
@@ -2556,9 +2550,9 @@ const ExpMenuPreferences = (() => {
 // launcher hosts' attributes alone, so products agree on one launcher without messaging each other.
 const ExpLauncherFlyout = (() => {
   const PROTOCOL = '1';
-  const SUITE_ORDER = Object.freeze(['dropper','shift','prisma','ward']);
+  const SUITE_ORDER = Object.freeze(['dropper','shift','prisma','ward','thread']);
   // Products that only run on their own sites (Dropper on Twitch, WARD on retailers) lead there.
-  const SITE_PRODUCTS = Object.freeze(['dropper','ward']);
+  const SITE_PRODUCTS = Object.freeze(['dropper','ward','thread']);
   const idOf = host => String(host?.dataset?.productId || '');
   const rank = id => { const index = SUITE_ORDER.indexOf(id); return index < 0 ? SUITE_ORDER.length : index; };
   function isSiteProduct(productId) { return SITE_PRODUCTS.includes(String(productId || '')); }
@@ -2582,7 +2576,7 @@ const ExpLauncherFlyout = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.9.7';
+  const version = '3.9.8';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -2610,7 +2604,7 @@ const ExtraPotionsCore = (() => {
       }) : null,
     })])
   ));
-  const SUITE_PRODUCTS = freezeSuiteContract({"dropper":{"role":"flagship","priority":4,"launcherPriority":110,"themePriority":4,"capabilities":["twitch.drops","twitch.campaigns","twitch.progress","twitch.claims","twitch.stream-management"],"presentationPhases":[],"state":{"type":"dropper.state-changed","fields":{"activeReward":"boolean","progressPercent":"percent-nullable","routingState":"token"}},"menuSections":{"main":["drops","streams"],"appearance":["appearance"],"advanced":["advanced"],"system":["system"]},"repository":"Dropper","rootId":"tdh-root"},"shift":{"role":"product","priority":3,"launcherPriority":100,"themePriority":3,"capabilities":["appearance.theme","appearance.readability","appearance.site-profile"],"presentationPhases":["theme"],"state":{"type":"shift.state-changed","fields":{"active":"boolean","theme":"token","safeMode":"boolean","excluded":"boolean"}},"menuSections":{"appearance":["appearance","readability"],"advanced":["effects","effects-integrations","profiles","profiles-sites"],"system":["system"]},"repository":"SHIFT","rootId":"exp-shift-root"},"ward":{"role":"product","priority":2,"launcherPriority":60,"themePriority":1,"capabilities":["retail.classification","retail.cleanup","retail.coupons"],"presentationPhases":["classify","visibility"],"state":{"type":"ward.state-changed","fields":{"active":"boolean","pageType":"token","interventions":"count","hide":"count","dim":"count","collapse":"count","annotate":"count"}},"menuSections":{"main":["protection","amazon","tools"],"appearance":["appearance"],"advanced":["advanced","patterns","advanced-amazon"],"system":["system"]},"repository":"WARD","rootId":"exp-ward-root"},"prisma":{"role":"product","priority":1,"launcherPriority":40,"themePriority":2,"capabilities":["text.identity-detection","text.identity-highlighting","identity.catalog"],"presentationPhases":["annotate"],"state":{"type":"prisma.state-changed","fields":{"status":"token","total":"count","temporarilyHidden":"boolean"}},"menuSections":{"main":["page","highlights"],"appearance":["style","highlight-style","look","appearance"],"advanced":["tools","language","sites"],"system":["system"]},"repository":"PRISMA","rootId":"exp-prisma-root"}});
+  const SUITE_PRODUCTS = freezeSuiteContract({"thread":{"role":"product","priority":0,"launcherPriority":90,"themePriority":0,"capabilities":["reddit.reading","reddit.local-context","reddit.local-filtering"],"presentationPhases":["visibility","annotate"],"state":{"type":"thread.state-changed","fields":{"active":"boolean","loaded":"count"}},"menuSections":{"main":["feed","read"],"appearance":["look"],"advanced":["filters","people"],"system":["system"]},"repository":"THREAD","rootId":"exp-thread-root"},"dropper":{"role":"flagship","priority":4,"launcherPriority":110,"themePriority":4,"capabilities":["twitch.drops","twitch.campaigns","twitch.progress","twitch.claims","twitch.stream-management"],"presentationPhases":[],"state":{"type":"dropper.state-changed","fields":{"activeReward":"boolean","progressPercent":"percent-nullable","routingState":"token"}},"menuSections":{"main":["drops","streams","campaigns","settings"],"appearance":["appearance"],"advanced":["advanced"],"system":["system"]},"repository":"Dropper","rootId":"tdh-root"},"shift":{"role":"product","priority":3,"launcherPriority":100,"themePriority":3,"capabilities":["appearance.theme","appearance.readability","appearance.site-profile"],"presentationPhases":["theme"],"state":{"type":"shift.state-changed","fields":{"active":"boolean","theme":"token","safeMode":"boolean","excluded":"boolean"}},"menuSections":{"appearance":["appearance","readability"],"advanced":["effects","effects-integrations","profiles","profiles-sites"],"system":["system"]},"repository":"SHIFT","rootId":"exp-shift-root"},"ward":{"role":"product","priority":2,"launcherPriority":60,"themePriority":1,"capabilities":["retail.classification","retail.cleanup","retail.coupons"],"presentationPhases":["classify","visibility"],"state":{"type":"ward.state-changed","fields":{"active":"boolean","pageType":"token","interventions":"count","hide":"count","dim":"count","collapse":"count","annotate":"count"}},"menuSections":{"main":["protection","amazon","tools"],"appearance":["appearance"],"advanced":["advanced","patterns","advanced-amazon"],"system":["system"]},"repository":"WARD","rootId":"exp-ward-root"},"prisma":{"role":"product","priority":1,"launcherPriority":40,"themePriority":2,"capabilities":["text.identity-detection","text.identity-highlighting","identity.catalog"],"presentationPhases":["annotate"],"state":{"type":"prisma.state-changed","fields":{"status":"token","total":"count","temporarilyHidden":"boolean"}},"menuSections":{"main":["page","highlights"],"appearance":["style","highlight-style","look","appearance"],"advanced":["tools","language","sites"],"system":["system"]},"repository":"PRISMA","rootId":"exp-prisma-root"}});
   const SUITE_PRIORITY = Object.freeze(Object.fromEntries(
     Object.entries(SUITE_PRODUCTS).map(([id, value]) => [id, value.priority])
   ));
@@ -3753,7 +3747,7 @@ const ExtraPotionsCore = (() => {
     const single = singleSlot(state);
     if (single) {
       document.documentElement.dataset.expLauncherAnchor = 'top';
-      return { top: single.hub.top, right: viewWidth() - single.hub.left - FLYOUT_TILE, anchor: 'top', delta: savedDelta(), site: true, size: FLYOUT_TILE };
+      return { top: single.hub.top, right: viewWidth() - single.hub.left - single.hub.size, anchor: 'top', delta: savedDelta(), site: true, size: single.hub.size };
     }
     const { offset, x } = launcherCell(host);
     const delta = Math.max(8-(innerHeight-60), Math.min(4, Number(read(GRID_DELTA,0)) || 0));
@@ -3868,7 +3862,7 @@ const ExtraPotionsCore = (() => {
     // A reserved surface never reaches into the launcher column: a product that marks a whole row holding
     // its launcher gets the same geometry as one that marks only the card beside it.
     const columnLeft = Math.min(...launchers.map(box => box.left));
-    const reservedBoxes = hosts.flatMap(node => [...(node.shadowRoot?.querySelectorAll('[data-exp-reserved]') || [])]).filter(node=>node!==ignoredSurface)
+    const reservedBoxes = hosts.flatMap(node => [...(node.shadowRoot?.querySelectorAll('[data-exp-reserved]') || [])]).filter(node=>node!==ignoredSurface&&!ignoredSurface?.contains(node))
       .map(node => node.getBoundingClientRect()).filter(box => box.width && box.height)
       .map(box => ({ top:box.top, bottom:box.bottom, left:box.left, right:box.left < columnLeft ? Math.min(box.right, columnLeft - 8) : box.right }))
       .filter(box => box.right > box.left);
@@ -3883,7 +3877,8 @@ const ExtraPotionsCore = (() => {
   // 2. Beside the launcher grid, lined up with the launcher that opened it.
   // 3. Above or below the grid when the window is too narrow for either.
   function placeMenu(host, panel, preferredWidth = 312) {
-    const geometry = surfaceGeometry(host);
+    // An embedded progress card moves with this menu; it is not an external obstacle.
+    const geometry = surfaceGeometry(host, panel);
     if (!geometry) return null;
     const { own, reserved, gridLeft, anchorTop } = geometry;
     // A product stylesheet may still size its menu; decide using the width the menu actually renders at.
@@ -3897,6 +3892,20 @@ const ExtraPotionsCore = (() => {
       return { top, right:Math.round(right), width, side };
     };
     const slot = slotBand();
+    if (slot?.hub?.dock === 'right') {
+      // A left-rail entry opens beside the rail, rather than at the window's right edge.
+      const viewport = viewWidth(), hub = slot.hub;
+      panel.style.width = Math.min(preferredWidth, Math.max(0, viewport - 16)) + 'px';
+      const w = panel.offsetWidth || preferredWidth;
+      const beside = hub.left + hub.size + 8;
+      const fitsBeside = beside + w <= viewport - 8;
+      const left = fitsBeside ? beside : Math.max(8, Math.min(viewport - w - 8, hub.left));
+      const top = fitsBeside ? (slot.bottom > hub.top + hub.size ? slot.bottom + 8 : hub.top) : slot.bottom + 8;
+      const room = innerHeight - top - 8;
+      panel.style.maxHeight = Math.max(0, room < 160 ? innerHeight - 16 : room) + 'px';
+      host.dataset.openDirection = 'down';
+      return finish(room < 160 ? 'rail-viewport' : fitsBeside ? 'rail-beside' : 'rail-below', viewport - left - w, room < 160 ? 8 : top, panel.offsetHeight);
+    }
     if (slot) {
       // From the flyout or a site slot: right-aligned 8px from the window edge, beyond the launcher and its open flyout.
       const blocks=reserved&&reserved.left<innerWidth-8&&reserved.right>innerWidth-8-width;
@@ -3965,8 +3974,13 @@ const ExtraPotionsCore = (() => {
       }
     } else if (slotBand()) {
       const band = slotBand();
-      right = viewWidth() - 8;
-      top = clearReserved(band.down ? band.bottom + 8 : band.top - height - 8, height, right - width, right, band.down, notice);
+      if (band.hub?.dock === 'right') {
+        const left = Math.max(8, Math.min(viewWidth() - width - 8, band.hub.left + band.hub.size + 8));
+        right = left + width; top = band.bottom + 8;
+      } else {
+        right = viewWidth() - 8;
+        top = clearReserved(band.down ? band.bottom + 8 : band.top - height - 8, height, right - width, right, band.down, notice);
+      }
     } else if (reserved && reserved.right - 8 >= width) {
       right = reserved.right;
       top = anchorTop ? reserved.bottom + 8 : reserved.top - height - 8;
@@ -4000,8 +4014,8 @@ const ExtraPotionsCore = (() => {
   // Flyout launcher: with two or more products on a page, one shared launcher (the hub, owned by the lead
   // product's host) opens a row of tiles, and each tile is that product's own launcher. Every Core copy derives
   // the same state from host attributes; the open state lives on <html> as data-exp-flyout-open.
-  const FLYOUT_ACCENTS = Object.freeze({ dropper:'#bc94f5', shift:'#80d7d2', prisma:'#91bfff', ward:'#e7bb75' });
-  const FLYOUT_NAMES = Object.freeze({ dropper:'Dropper', shift:'SHIFT', prisma:'PRISMA', ward:'WARD' });
+  const FLYOUT_ACCENTS = Object.freeze({ dropper:'#bc94f5', shift:'#80d7d2', prisma:'#91bfff', ward:'#e7bb75', thread:'#ff7636' });
+  const FLYOUT_NAMES = Object.freeze({ dropper:'Dropper', shift:'SHIFT', prisma:'PRISMA', ward:'WARD', thread:'THREAD' });
   const FLYOUT_TILE = 40, FLYOUT_GAP = 6, FLYOUT_PAD = 7;
   const launcherHosts = () => [...document.querySelectorAll('[data-exp-product-launcher="1"]')];
   const hostLauncher = host => host?.shadowRoot?.querySelector('[data-exp-part="launcher"],.launcher') || null;
@@ -4038,14 +4052,14 @@ const ExtraPotionsCore = (() => {
   // The shared launcher sits in the site's slot when it has one, otherwise in the bottom-right corner.
   function flyoutHubBox() {
     const slot = siteSlot();
-    if (slot) return { left:slot.left, top:slot.top, size:FLYOUT_TILE, anchor:'top', site:true };
+    if (slot) return { left:slot.left, top:slot.top, size:slot.size||FLYOUT_TILE, shape:slot.shape, anchor:'top', site:true, dock:slot.dock };
     const origin = innerHeight-60+savedDelta(), anchor = origin <= (innerHeight-48)/2 ? 'top' : 'bottom';
     return { left:viewWidth()-12-48, top:Math.max(8, Math.min(innerHeight-56, origin)) + siteControlShift(origin, anchor), size:48, anchor, site:false };
   }
   function flyoutPanelBox(hub, count) {
     const width = 2 + FLYOUT_PAD*2 + FLYOUT_TILE*count + FLYOUT_GAP*Math.max(0, count-1), height = 2 + FLYOUT_PAD*2 + FLYOUT_TILE;
-    const left = Math.max(8, Math.min(viewWidth() - 8 - width, hub.left + hub.size - width));
-    const top = hub.anchor === 'top' ? hub.top + hub.size + 6 : hub.top - 6 - height;
+    const left = Math.max(8, Math.min(viewWidth() - 8 - width, hub.dock === 'right' ? hub.left + hub.size + 6 : hub.left + hub.size - width));
+    const top = hub.dock === 'right' && hub.left + hub.size + 6 + width <= viewWidth() - 8 ? hub.top : hub.anchor === 'top' ? hub.top + hub.size + 6 : hub.top - 6 - height;
     return { left, top, width, height, right:left+width, bottom:top+height };
   }
   function flyoutBand(state = flyoutState()) {
@@ -4066,7 +4080,7 @@ const ExtraPotionsCore = (() => {
     if (node === watchedSlotNode || typeof ResizeObserver !== 'function') return;
     slotWatch ??= new ResizeObserver(() => { slotMemo = null; scheduleGrid(); });
     if (watchedSlotNode) slotWatch.unobserve(watchedSlotNode);
-    watchedSlotNode = node; slotWatch.observe(node);
+    watchedSlotNode = node; if (node) slotWatch.observe(node);
   }
   function twitchSlot() {
     const bar = document.querySelector('nav[data-a-target="top-nav-container"] .top-nav__menu');
@@ -4086,11 +4100,38 @@ const ExtraPotionsCore = (() => {
     if (left < searchEnd + 8) return null;
     return { left, top: Math.round(barBox.top + (barBox.height - FLYOUT_TILE) / 2) };
   }
-  const SITE_SLOTS = Object.freeze([{ host:/(^|\.)twitch\.tv$/, find:twitchSlot }]);
+  // Reddit's left-rail entry belongs to THREAD. Other products alone keep their existing placement.
+  // Native accessible controls/rail geometry supply coordinates; no enhancement-script anchor is used.
+  function redditSlot() {
+    if (!document.querySelector('[data-exp-product-launcher="1"][data-product-id="thread"]')) return null;
+    const rail = document.querySelector('#left-sidebar-container');
+    watchSlotNode(rail);
+    const box = rail && visibleBox(rail);
+    const handles = [...document.querySelectorAll('button[aria-controls="left-sidebar-container"],button[aria-label="Collapse navigation"],button[aria-label="Collapse sidebar"],button[aria-label="Expand navigation"],button[aria-label="Expand sidebar"]')]
+      .filter(node => !node.closest('[data-exp-owned]')).map(visibleBox).filter(Boolean);
+    const handle = handles.find(r => r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < Math.min(innerWidth / 2, 420)) || null;
+    const header = document.querySelector('reddit-header-large,shreddit-header,header[role="banner"]');
+    const headerBox = header && visibleBox(header);
+    const expanded = box && box.width >= 120 && box.right <= Math.min(viewWidth() - 48, 600) && box.bottom > 80;
+    const size = handle ? Math.max(24, Math.min(48, Math.min(handle.width, handle.height))) : 32;
+    let left = expanded ? box.right - size / 2 : handle ? handle.left + (handle.width - size) / 2 : 12;
+    let top = handle ? handle.bottom + 8 : expanded ? Math.max(8, box.top) + 56 : Math.max(8, headerBox?.bottom || 48) + 12;
+    // Sidebar links retain their hit targets. Slide clear of a native control in the proposed slot.
+    const controls = [...(rail?.querySelectorAll('button,a[href]') || [])].slice(0,120).map(visibleBox).filter(Boolean);
+    for (let attempt=0;attempt<8;attempt++) {
+      const blocked = controls.find(r => r.left < left + size && r.right > left && r.top < top + size && r.bottom > top);
+      if (!blocked) break;
+      top = blocked.bottom + 8;
+    }
+    left = Math.max(8, Math.min(viewWidth() - size - 8, left));
+    top = Math.max(8, Math.min(innerHeight - size - 8, top));
+    return {left:Math.round(left),top:Math.round(top),dock:'right',size,shape:'circle'};
+  }
+  const SITE_SLOTS = Object.freeze([{ host:/(^|\.)twitch\.tv$/, find:twitchSlot },{ host:/^(www|sh)\.reddit\.com$/, find:redditSlot }]);
   let slotMemo = null, frozenSlot;
   function siteSlot() {
     // While the flyout is open the launcher stays put, so the open flyout never jumps under the pointer.
-    if (frozenSlot !== undefined && document.documentElement.dataset.expFlyoutOpen === '1') return frozenSlot;
+    if (frozenSlot !== undefined && frozenSlot?.dock !== 'right' && document.documentElement.dataset.expFlyoutOpen === '1') return frozenSlot;
     const now = performance.now();
     if (!slotMemo || now - slotMemo.at > 150 || slotMemo.width !== innerWidth || slotMemo.height !== innerHeight) {
       const row = SITE_SLOTS.find(entry => entry.host.test(location.hostname));
@@ -4105,7 +4146,7 @@ const ExtraPotionsCore = (() => {
   function singleSlot(state = flyoutState()) {
     if (state.active || state.hosts.length !== 1) return null;
     const slot = siteSlot();
-    return slot ? { hub:{ ...slot, size:FLYOUT_TILE, anchor:'top', site:true }, panel:null, top:slot.top, bottom:slot.top + FLYOUT_TILE, down:true } : null;
+    return slot ? { hub:{ ...slot, size:slot.size||FLYOUT_TILE, anchor:'top', site:true }, panel:null, top:slot.top, bottom:slot.top + (slot.size||FLYOUT_TILE), down:true } : null;
   }
   function slotBand(state = flyoutState()) { return state.active ? flyoutBand(state) : singleSlot(state); }
   function setFlyoutOpen(value) {
@@ -4190,12 +4231,16 @@ const ExtraPotionsCore = (() => {
 :host([data-exp-flyout-selected="1"]) ${launcherPart}{border-color:${accent}!important;box-shadow:inset 0 0 0 1px ${accent}!important}
 .exp-flyout-hub{all:initial;position:fixed;z-index:2147483601;box-sizing:border-box;display:grid;place-items:center;width:48px;height:48px;border-radius:12px;background:radial-gradient(circle at 50% 35%,#1d1a24,#0c0b10 70%);border:1px solid color-mix(in srgb,${accent} 50%,#3f3f46);box-shadow:inset 0 1px 0 #ffffff12;cursor:pointer;pointer-events:auto}
 .exp-flyout-hub[data-size="40"]{border-radius:10px}
+.exp-flyout-hub[data-shape="circle"]{border-radius:50%;background:var(--theme-panel,#181c1f);box-shadow:none}
+:host([data-exp-rail-launcher="circle"][data-exp-flyout-role="site"]) ${launcherPart}{width:var(--exp-rail-launcher-size)!important;height:var(--exp-rail-launcher-size)!important;min-width:var(--exp-rail-launcher-size)!important;min-height:var(--exp-rail-launcher-size)!important;max-width:var(--exp-rail-launcher-size)!important;max-height:var(--exp-rail-launcher-size)!important;border-radius:50%!important}
+:host([data-exp-rail-launcher="circle"][data-exp-flyout-role="site"]) ${launcherPart}>:is(img,svg,.icon):not(.launcher-ring):not(.ring){width:22px!important;height:22px!important}
 .exp-flyout-hub.has-ring{border-color:transparent}
 .exp-flyout-ring{position:absolute;left:-6px;top:-6px;pointer-events:none;overflow:visible}
 .exp-flyout-ring[hidden]{display:none}
 .exp-flyout-hub:focus-visible{outline:2px solid ${accent};outline-offset:3px}
 .exp-flyout-icon{display:grid;place-items:center;width:32px;height:32px;pointer-events:none}
 .exp-flyout-hub[data-size="40"] .exp-flyout-icon{width:26px;height:26px}
+.exp-flyout-hub[data-shape="circle"] .exp-flyout-icon{width:22px;height:22px}
 .exp-flyout-icon>*{display:block!important;position:static!important;width:100%!important;height:100%!important;margin:0!important}
 .exp-flyout-count{position:absolute;right:-6px;bottom:-6px;box-sizing:border-box;min-width:20px;height:16px;padding:0 4px;border-radius:4px;background:#27272a;border:1px solid #3f3f46;outline:2px solid #0e0e10;color:#fafafa;font:600 10px/14px Inter,"Segoe UI",system-ui,sans-serif;text-align:center;pointer-events:none}
 .exp-flyout-mark{position:absolute;top:-5px;right:-5px;width:10px;height:10px;box-sizing:border-box;border-radius:3px;background:var(--exp-flyout-mark,#a1a1aa);outline:2px solid #0e0e10;pointer-events:none}
@@ -4278,8 +4323,9 @@ const ExtraPotionsCore = (() => {
     mark.hidden = !updating;
     if (updating) mark.style.setProperty('--exp-flyout-mark', FLYOUT_ACCENTS[updating] || '#a1a1aa');
     const progressHost = state.order.map(id => state.hosts.find(node => node.dataset.productId === id)).find(node => node?.dataset.expProgress !== undefined);
-    renderRing(hub, box.size, box.size === FLYOUT_TILE ? 10 : 12, progressHost ? { fraction:Number(progressHost.dataset.expProgress), color:FLYOUT_ACCENTS[progressHost.dataset.productId] || '#a1a1aa' } : null, Boolean(updating));
+    renderRing(hub, box.size, box.shape === 'circle' ? box.size/2 : box.size === FLYOUT_TILE ? 10 : 12, progressHost ? { fraction:Number(progressHost.dataset.expProgress), color:FLYOUT_ACCENTS[progressHost.dataset.productId] || '#a1a1aa' } : null, Boolean(updating));
     hub.dataset.size = String(box.size);
+    hub.dataset.shape = box.shape || 'rectangle';
     hub.setAttribute('aria-expanded', String(state.open));
     // The marker and ring are visual; the name carries the same news for screen readers.
     const notes = [];
@@ -4298,6 +4344,9 @@ const ExtraPotionsCore = (() => {
     for (const host of state.hosts) {
       if (!registrations.has(host)) continue;
       const id = host.dataset.productId;
+      const slot=siteSlot();
+      if(slot?.shape==='circle'){host.dataset.expRailLauncher='circle';host.style.setProperty('--exp-rail-launcher-size',slot.size+'px');}
+      else{delete host.dataset.expRailLauncher;host.style.removeProperty('--exp-rail-launcher-size');}
       if (!state.active) {
         if (singleSlot(state)) host.dataset.expFlyoutRole = 'site'; else delete host.dataset.expFlyoutRole;
         delete host.dataset.expFlyoutSelected; removeHub(host); continue;
@@ -5297,7 +5346,7 @@ const ExtraPotionsCore = (() => {
   document.addEventListener('pointerdown', onFlyoutOutside, true);
   addEventListener('keydown', onFlyoutEscape, true);
   addEventListener('resize',scheduleGrid,{passive:true});
-  addEventListener('scroll',recheckSiteControls,{passive:true,capture:true});
+  addEventListener('scroll',()=>{recheckSiteControls();if (/^(www|sh)\.reddit\.com$/.test(location.hostname)) markSlotStale();},{passive:true,capture:true});
   // Core-owned product bootstrap for downstream consumers.
   function createProductServices(options = {}) {
     const productId = String(options.productId || '').toLowerCase();
@@ -5324,6 +5373,6 @@ const ExtraPotionsCore = (() => {
     return Object.freeze({ lifecycle, diagnostics, updates });
   }
 
-  const api = Object.freeze({...ExtraPotionsTools,setMenuHelp:ExpMenuHelp.setMenuHelp,...ExpMenuPreferences,normalizeHealth,createHealthControls,createRecoveryGuard,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createMenuController,createProduct,setMenuStatus:ExpLeanMenu.setMenuStatus,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,setLauncherUpdate,setLauncherProgress,bindLauncherDrag,launcherPlacement,placeMenu,placeNotice,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidth,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,takeNoticeTurn,releaseNoticeTurn,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,isQuietUpgrade,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,suiteSitePaused,setSuiteSitePaused,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,mountSubmenuTabs:ExpMenuArrangement.mountTabs,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
+  const api = Object.freeze({...ExtraPotionsTools,setMenuHelp:ExpMenuHelp.setMenuHelp,...ExpMenuPreferences,normalizeHealth,createHealthControls,createRecoveryGuard,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createMenuController,createProduct,menuTemplate:ExpLeanMenu.template,setMenuStatus:ExpLeanMenu.setMenuStatus,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,setLauncherUpdate,setLauncherProgress,bindLauncherDrag,launcherPlacement,placeMenu,placeNotice,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidth,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,takeNoticeTurn,releaseNoticeTurn,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,isQuietUpgrade,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,suiteSitePaused,setSuiteSitePaused,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,mountSubmenuTabs:ExpMenuArrangement.mountTabs,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
   return api;
 })();

@@ -1,15 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
-  <title id="title">Dropper Launcher Mark</title>
-  <desc id="desc">Gem-only micro mark for the Dropper launcher.</desc>
-  <polygon points="494,210 285,500 430,590" fill="#D9B5FF"/>
-  <polygon points="494,210 430,590 494,470" fill="#9B5AF9"/>
-  <polygon points="285,500 285,685 430,590" fill="#8C39F2"/>
-  <polygon points="285,685 494,842 430,590" fill="#5417B3"/>
-  <polygon points="430,590 494,470 494,842" fill="#7428E8"/>
-  <polygon points="530,210 739,500 594,590" fill="#AEB0C2"/>
-  <polygon points="530,210 594,590 530,470" fill="#6A6E87"/>
-  <polygon points="739,500 739,685 594,590" fill="#4E5268"/>
-  <polygon points="739,685 530,842 594,590" fill="#242633"/>
-  <polygon points="594,590 530,470 530,842" fill="#3F4254"/>
-  <rect x="502" y="205" width="20" height="650" rx="10" fill="#101017"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Dropper split Brilliant gem"><title>Dropper Launcher Mark</title><polygon points="29.00,24.00 62.00,24.00 62.00,40.20 47.90,40.20" fill="#D9B5FF"/><polygon points="66.00,24.00 99.00,24.00 80.10,40.20 66.00,40.20" fill="#AEB0C2"/><polygon points="47.90,40.20 62.00,40.20 62.00,52.29" fill="#8C39F2"/><polygon points="66.00,40.20 80.10,40.20 66.00,52.29" fill="#4E5268"/><polygon points="99.00,24.00 119.00,53.00 89.30,53.54 80.10,40.20" fill="#6A6E87"/><polygon points="80.10,40.20 89.30,53.54 66.00,53.96 66.00,52.29" fill="#3F4254"/><polygon points="119.00,53.00 66.00,111.78 66.00,79.38 89.30,53.54" fill="#4E5268"/><polygon points="89.30,53.54 66.00,79.38 66.00,53.96" fill="#242633"/><polygon points="62.00,111.78 9.00,53.00 38.70,53.54 62.00,79.38" fill="#7428E8"/><polygon points="62.00,79.38 38.70,53.54 62.00,53.96" fill="#7428E8"/><polygon points="9.00,53.00 29.00,24.00 47.90,40.20 38.70,53.54" fill="#5417B3"/><polygon points="38.70,53.54 47.90,40.20 62.00,52.29 62.00,53.96" fill="#9B5AF9"/></svg>

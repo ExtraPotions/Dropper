@@ -15,26 +15,15 @@ const mappings = [
   ['manifest.json', 'dist/manifest.json'],
 ];
 
-// A product released with a new Core is pushed before that Core is published, so in CI a missing tag is
-// waited for instead of failing the run. Local checks fail at once.
-const waitSeconds = Number(process.env.EXP_CORE_PIN_WAIT_SECONDS || (process.env.CI ? 1800 : 0));
-const pollSeconds = Number(process.env.EXP_CORE_PIN_POLL_SECONDS || 30);
-const deadline = Date.now() + waitSeconds * 1000;
-
+// Optional published-pin diagnostic: one bounded request per asset, with no release-order wait.
 async function fetchPinned(remotePath) {
   const url = `https://raw.githubusercontent.com/ExtraPotions/exp-core/${pin}/${remotePath}`;
-  for (;;) {
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'ExtraPotions-exp-core-pin-check' },
-      signal: AbortSignal.timeout(20000),
-    });
-    if (response.ok) return Buffer.from(await response.arrayBuffer());
-    if (response.status !== 404 || Date.now() + pollSeconds * 1000 > deadline) {
-      throw new Error(`Could not fetch ${pin}/${remotePath}: HTTP ${response.status}`);
-    }
-    console.log(`Waiting for exp-core ${pin} to be published (${remotePath} is not there yet).`);
-    await new Promise(resolve => setTimeout(resolve, pollSeconds * 1000));
-  }
+  const response = await fetch(url, {
+    headers: { 'User-Agent': 'ExtraPotions-exp-core-pin-check' },
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!response.ok) throw new Error(`Could not fetch ${pin}/${remotePath}: HTTP ${response.status}`);
+  return Buffer.from(await response.arrayBuffer());
 }
 
 (async () => {

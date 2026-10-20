@@ -1,4 +1,5 @@
 'use strict';
+const {openSystem}=require('../../exp-core/tests/helpers/system-navigation.cjs');
 const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path');
 const { chromium } = require('playwright');
@@ -18,7 +19,7 @@ for (const [pointer, context, minTarget] of [['fine pointer', {}, 28], ['coarse 
   await page.evaluate(() => { window.GM_xmlhttpRequest = () => {}; });
   await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../dropper.user.js'), 'utf8') });
   const host = page.locator('#tdh-root'); await host.waitFor({state:'attached'});
-  await host.locator('#tdh-settings-launcher').click(); await host.locator('[data-exp-menu-shortcut="support"]').click();
+  await host.locator('#tdh-settings-launcher').click(); await openSystem(host,'support');
   const system = host.locator('[data-exp-product-system]');
   assert.deepEqual(await system.locator('[data-exp-system-item]').evaluateAll(nodes => nodes.map(n => n.dataset.expSystemItem)), ['status','support','reset']);
   assert.equal(await system.locator('[data-exp-system-item="status"]').evaluate(n => n.open), true, 'Status stays open so Resume recovery is visible');

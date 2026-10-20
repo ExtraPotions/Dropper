@@ -11,11 +11,12 @@ const source = loadDropperSource(root);
 const launcher = fs.readFileSync(path.join(root, 'assets', 'dropper-launcher.svg'), 'utf8');
 
 test('launcher mark is a dedicated borderless asset', () => {
-  assert.equal(crypto.createHash('sha256').update(launcher).digest('hex'), '730dd1b661c995ffdfed7e3883393affa24bcbbe88932e35c6835f3f474ca449');
+  assert.equal(crypto.createHash('sha256').update(launcher).digest('hex'), '2028c0f52ad921d4b06d4a0b91e2d1be13c09c2559dcbe2b90c7dc1b1f3a7b53');
   assert.match(launcher, /Dropper Launcher Mark/u);
   assert.doesNotMatch(launcher, /borderGrad|<rect x="32"|<rect x="42"/u);
   assert.match(source, /function dropperGemSvg\(className\)/u);
-  assert.match(source, /<svg class="\$\{className\}" viewBox="0 0 1024 1024"/u);
+  assert.match(source, /<svg class="\$\{className\}" viewBox="0 0 128 128"/u);
+  assert.deepEqual([...source.match(/function dropperGemSvg[\s\S]*?\n  \}/u)[0].matchAll(/<polygon[^>]+>/gu)].map(m=>m[0]),[...launcher.matchAll(/<polygon[^>]+>/gu)].map(m=>m[0]),'inline badges use the exact canonical facets');
   assert.match(source, /dropperGemSvg\("icon"\)/u);
 });
 
@@ -131,7 +132,7 @@ test('launcher host is protected from hostile site CSS', () => {
   assert.match(source, /protectionStyle\.dataset\.expHostProtection/u);
 });
 
-test('Badge Only uses the single compact card without moving it into the menu',()=>{assert.match(source,/card\.dataset\.presentation='compact-card'/u);assert.match(source,/card\.dataset\.collapsed=String/u);assert.match(source,/ui\.cluster\.append\(card\)/u);assert.doesNotMatch(source,/menuSlot\.append\(card\)/u);});
+test('one compact card moves into the menu slot and returns outside',()=>{assert.match(source,/card\.dataset\.presentation='compact-card'/u);assert.match(source,/card\.dataset\.collapsed=String/u);assert.match(source,/target=inMenu\?menuSlot:ui\.cluster/u);assert.match(source,/target\.append\(card\)/u);});
 
 test('the fixed Dropper row leaves neighboring product launchers clickable', () => {
   assert.match(source, /\.cluster\{pointer-events:none!important\}/u);

@@ -1,4 +1,5 @@
 'use strict';
+const {openSystem}=require('../../exp-core/tests/helpers/system-navigation.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{chromium}=require('playwright');
 // Opens the current inline settings group without collapsing an already-open disclosure.
 async function openSubmenu(scope,label){
@@ -37,8 +38,8 @@ test('installed Dropper migrates preferences, keeps the page bridge working, and
  const event=await page.evaluate(()=>fixtureEvents.at(-1));assert.equal(event.operations.length,1);assert.equal(event.operations[0].name,'Inventory');
  assert.equal(event.headers.authorization,undefined);assert.equal(event.json[0].data.currentUser.email,undefined);
  assert.equal(await page.evaluate(()=>fixtureResponse[0].data.chat),'private','Twitch still receives its original response');
- await page.evaluate(()=>dropperShow());await host.locator('[data-exp-menu-shortcut="support"]').click();
- await host.locator('[data-exp-menu-shortcut="reset"]').click();
+ await page.evaluate(()=>dropperShow());await openSystem(host,'support');
+ await openSystem(host,'reset');
  await host.getByRole('button',{name:'Reset All Settings',exact:true}).click();
  assert.equal(await page.evaluate(()=>fixtureManager.has('exp:v3:dropper:settings')),true,'first tap only arms reset');
  // Cancel the navigation while inspecting the state immediately after reset.

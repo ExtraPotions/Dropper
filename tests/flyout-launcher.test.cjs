@@ -39,8 +39,8 @@ for(const others of [[],['shift'],['prisma','ward','shift']])test('compact card 
  const {page,host}=await open(t,{others});const initial=await strip(host);assert.equal(initial.presentation,'compact-card');assert.ok(initial.box[2]>0&&initial.box[3]>0);
  assert.ok(initial.box[0]>=0&&initial.box[1]>=0&&initial.box[0]+initial.box[2]<=1600&&initial.box[1]+initial.box[3]<=900);
  await host.locator('[data-exp-part="launcher"]').evaluate(n=>n.click());await host.locator('.exp-menu-workspace').waitFor();
- const a=await host.locator('#tdh-drop-card').boundingBox(),b=await host.locator('[data-exp-part="dock"]').boundingBox();assert.ok(a.x+a.width<=b.x||b.x+b.width<=a.x||a.y+a.height<=b.y||b.y+b.height<=a.y,'menu clears card');
- assert.equal(await host.locator('#tdh-card-pause').count(),1);assert.equal(await host.locator('[data-exp-part="dock"] #tdh-card-pause').count(),0);
+ const a=await host.locator('#tdh-drop-card').boundingBox(),b=await host.locator('[data-exp-part="dock"]').boundingBox();assert.ok(a.x>=b.x&&a.x+a.width<=b.x+b.width&&a.y>=b.y&&a.y+a.height<=b.y+b.height,'menu contains the single card');
+ assert.equal(await host.locator('#tdh-card-pause').count(),1);assert.equal(await host.locator('[data-exp-part="dock"] #tdh-card-pause').count(),1);
  if(others.length){await host.locator('#tdh-rail-close').click();await openFlyout(page);assert.equal((await hubBox(page)).open,true);}
 });
 test('compact card and notice stay bounded at a narrow width and with long reward text',async t=>{

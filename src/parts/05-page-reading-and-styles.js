@@ -714,7 +714,8 @@
     if (!box || !channel || !game) return;
     box.classList.remove("stream-info-hidden");
     channel.textContent = info.channelName || watchingLogin() || "Finding Stream…";
-    game.textContent = info.game || currentDrop?.game || "Waiting For Category";
+    // Credit and reward identity belong together, even while another category is playing.
+    game.textContent = currentDrop?.game || info.game || "Waiting For Category";
   }
 
   function authoritativeProgressPercent() {
@@ -800,7 +801,9 @@
 
     if (!currentDrop) {
       name.textContent = "Waiting For Twitch To Start A Drop Session";
-      meta.textContent = "0 / 0 min";
+      meta.textContent = "— / — min";
+      meta.setAttribute('aria-label','Twitch credited progress unknown');
+      fill?.closest('[role=progressbar]')?.removeAttribute('aria-valuenow');
       if (fill) fill.style.width = "0%";
       if (ring) ring.setAttribute("stroke-dasharray", "0 100");
       if (percentNode) percentNode.textContent = "—";
@@ -829,9 +832,15 @@
       : currentDrop.requiredMinutes
         ? `${currentDrop.currentMinutes == null ? "Pending" : currentDrop.currentMinutes} / ${currentDrop.requiredMinutes} min`
         : "Waiting For First Credited Minute";
-    meta.textContent = minutes;
+    const credited=progressUnknown||currentDrop.currentMinutes==null?'—':currentDrop.currentMinutes;
+    const required=progressUnknown||!currentDrop.requiredMinutes?'—':currentDrop.requiredMinutes;
+    meta.textContent = `${credited} / ${required} min`;
+    meta.setAttribute('aria-label',`${credited} of ${required} minutes credited by Twitch`);
+    meta.title=minutes;
 
     const renderedPercent = progressUnknown || percent == null ? null : percent;
+    const progress=fill?.closest('[role=progressbar]');
+    if(progress){if(renderedPercent==null)progress.removeAttribute('aria-valuenow');else progress.setAttribute('aria-valuenow',String(renderedPercent));}
     if (fill) fill.style.width = renderedPercent == null ? "0%" : `${renderedPercent}%`;
     if (ring) ring.setAttribute("stroke-dasharray", renderedPercent == null ? "0 100" : `${renderedPercent} 100`);
     // The shared flyout launcher draws Dropper's progress as its ring.
@@ -2137,25 +2146,30 @@
         #tdh-drop-card { flex:1 1 auto; width:auto; min-width:0; max-width:none; }
       }
 
-      .cluster #tdh-drop-card[data-presentation="compact-card"]{position:fixed!important;display:block!important;box-sizing:border-box!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;border:1px solid var(--theme-line,#848494)!important;border-radius:10px!important;background:var(--theme-bg,#18181b)!important;background-image:none!important;box-shadow:0 4px 10px #0003!important;color:var(--theme-text,#efeff1)!important;font-family:"Segoe UI",system-ui,sans-serif!important;overflow:hidden!important;container-type:normal!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"]{position:fixed!important;display:block!important;box-sizing:border-box!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;border:1px solid var(--theme-line,#848494)!important;border-radius:7px!important;background:var(--theme-bg,#18181b)!important;background-image:none!important;box-shadow:0 4px 10px #0003!important;color:var(--theme-text,#efeff1)!important;font-family:"Segoe UI",system-ui,sans-serif!important;overflow:hidden!important;container-type:normal!important}
       .cluster #tdh-drop-card[data-presentation="compact-card"]:is(::before,::after){display:none!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .stream-info{padding:var(--exp-menu-padding,10px)!important;min-height:0!important;background:transparent!important;border:0!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .progress-copy{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;grid-template-areas:"game percent" "name name" "bar bar" "status meta"!important;gap:4px 6px!important;width:100%!important;padding:0!important;min-width:0!important;align-items:center!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .stream-info{padding:7px 7px 0!important;min-height:0!important;background:transparent!important;border:0!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .progress-copy{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;grid-template-areas:"game status" "name percent" "bar bar"!important;gap:4px 6px!important;width:100%!important;padding:0!important;min-width:0!important;align-items:center!important}
       .cluster #tdh-drop-card[data-presentation="compact-card"] :is(.progress-head,.progress-category,.progress-reward-row,.drop-status-row,.status-meta-chip){display:contents!important}
       .cluster #tdh-drop-card[data-presentation="compact-card"] :is(.stream-channel,.strip-art,.strip-meta,.progress-dot,.status-chip-divider,.status-clock-icon,#tdh-updated-ago){display:none!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .stream-game{grid-area:game!important;font:600 12px/1.35 "Segoe UI",sans-serif!important;color:var(--theme-muted)!important;min-width:0!important;white-space:normal!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-name{grid-area:name!important;font:700 13px/1.3 "Segoe UI",sans-serif!important;color:var(--theme-text)!important;white-space:normal!important;overflow-wrap:anywhere!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-percent{grid-area:percent!important;font:400 10px/1.3 "Segoe UI",sans-serif!important;color:var(--theme-muted)!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-meta{grid-area:meta!important;font:600 10px/1.3 "Segoe UI",sans-serif!important;color:var(--theme-text)!important;white-space:normal!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-bar{grid-area:bar!important;height:3px!important;min-height:3px!important;margin:2px 0!important;background:#0e0e10!important;border-radius:2px!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] #tdh-drop-fill{height:100%!important;background:#9146ff!important;border-radius:2px!important}
-      .cluster #tdh-drop-card[data-presentation="compact-card"] .state-pill{grid-area:status!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;font:500 10px/1.35 "Segoe UI",sans-serif!important;white-space:normal!important}
-      .compact-card-actions{display:flex;gap:6px;padding:0 var(--exp-menu-padding,10px) var(--exp-menu-padding,10px)}
-      .compact-card-actions button{flex:1;min-width:0;min-height:var(--exp-menu-control,30px);padding:4px 6px;border:1px solid var(--theme-line);border-radius:7px;background:var(--theme-raised,#3a3a3d);color:var(--theme-text);font:600 12px/1.3 "Segoe UI",sans-serif;cursor:pointer}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .stream-game{grid-area:game!important;font:600 12px/1.35 "Segoe UI",sans-serif!important;color:var(--theme-text)!important;min-width:0!important;white-space:normal!important;overflow-wrap:anywhere!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-name{grid-area:name!important;font:400 12px/1.35 "Segoe UI",sans-serif!important;color:var(--theme-text)!important;white-space:normal!important;overflow-wrap:anywhere!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-percent{grid-area:percent!important;font:400 11px/1.35 "Segoe UI",sans-serif!important;color:var(--theme-text)!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .drop-bar{grid-area:bar!important;height:5px!important;min-height:5px!important;margin:2px 0 0!important;background:var(--theme-raised,#3a3a3d)!important;border-radius:2px!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] #tdh-drop-fill{height:100%!important;background:var(--theme-accent2,#bf94ff)!important;border-radius:2px!important}
+      .cluster #tdh-drop-card[data-presentation="compact-card"] .state-pill{grid-area:status!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;font:500 11px/1.35 "Segoe UI",sans-serif!important;white-space:normal!important;text-align:right!important}
+      .cluster #tdh-drop-card .compact-card-actions{display:flex;align-items:center;gap:4px;padding:6px 7px 7px;min-width:0}
+      .cluster #tdh-drop-card .compact-card-actions .drop-meta{flex:1;min-width:0;margin-right:auto;font:400 11px/1.35 "Segoe UI",sans-serif!important;color:var(--theme-text)!important;white-space:normal!important;overflow-wrap:anywhere!important}
+      .cluster #tdh-drop-card .compact-card-actions button{flex:none;box-sizing:border-box;min-width:0;min-height:28px;padding:3px 5px;border:1px solid var(--theme-muted,#adadb8);border-radius:5px;background:var(--theme-panel,#1f1f23);color:var(--theme-text);font:400 11px/1.35 "Segoe UI",sans-serif;cursor:pointer;white-space:nowrap}
+      .cluster #tdh-drop-card .compact-card-actions .skip-countdown{display:none!important}
+      .cluster #tdh-drop-card .compact-card-actions button:disabled{cursor:default;opacity:.6}
+      .cluster #tdh-drop-card .compact-card-actions button:focus-visible{outline:2px solid var(--theme-focus,#bf94ff);outline-offset:1px}
       .cluster #tdh-drop-card[data-presentation="compact-card"] .strip-toggle{display:none!important}
       .cluster #tdh-drop-card[data-collapsed="true"] :is(.expanded-content,.compact-card-actions){display:none!important}
       .cluster #tdh-drop-card[data-collapsed="true"] .strip-toggle{display:block!important;position:static!important;width:100%!important;height:auto!important;min-height:30px!important;padding:6px!important;color:var(--theme-text)!important;background:var(--theme-bg)!important;opacity:1!important;transform:none!important;font:600 12px "Segoe UI",sans-serif!important}
       .cluster #tdh-drop-card[data-chat-docked="true"] .strip-toggle{display:block!important;position:static!important;width:100%!important;min-height:26px!important;padding:4px 6px!important;border:0!important;border-bottom:1px solid var(--theme-line)!important;background:var(--theme-bg)!important;color:var(--theme-text)!important;font:600 12px "Segoe UI",sans-serif!important;cursor:pointer!important}
+      .cluster #tdh-drop-card[data-progress-placement="menu"]{position:static!important;width:100%!important;max-width:100%!important;border:0!important;border-bottom:1px solid var(--theme-line)!important;border-radius:0!important;box-shadow:none!important}
+      .cluster #tdh-drop-card[data-progress-placement="menu"] #tdh-card-menu{display:none!important}
       #tdh-campaign-order-note{display:none!important}
       #tdh-campaign-search{box-sizing:border-box;width:100%;min-width:0;padding:7px 8px;margin:6px 0;border:1px solid var(--theme-line);border-radius:7px;background:var(--theme-inset,#0e0e10);color:var(--theme-text);font:12px "Segoe UI",sans-serif;min-height:34px}
       .campaign-game-row[hidden]{display:none!important}
@@ -2163,7 +2177,7 @@
       .campaign-ignore-check[role="switch"]::after{content:''!important;display:block!important;width:12px!important;height:16px!important;border-radius:3px!important;background:var(--theme-text)!important;transform:none!important}
       .campaign-ignore-check[role="switch"][aria-checked=true]{background:var(--theme-accent)!important}
       .campaign-ignore-check[role="switch"][aria-checked=true]::after{transform:translateX(12px)!important;background:var(--theme-onAccent)!important}
-      @media(pointer:coarse){.compact-card-actions button{min-height:34px}}
+      @media(pointer:coarse){.cluster #tdh-drop-card .compact-card-actions button{min-height:36px}}
     `;
   }
 
