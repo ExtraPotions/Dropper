@@ -1,17 +1,17 @@
 <p align="center"><img src="assets/dropper-launcher.svg" width="128" height="128" alt="Dropper icon"></p>
 
-# Dropper
+# Dropper for Twitch
 
 **Your Drops at a glance**
 
-[![Install Dropper](docs/badges/install.svg)](https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js)
+[![Install Dropper for Twitch](docs/badges/install.svg)](https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js)
 [![Code: PolyForm Noncommercial 1.0.0](docs/badges/code.svg)](LICENSE-CODE.md)
 [![Artwork and documentation: CC BY-NC-SA 4.0](docs/badges/assets.svg)](LICENSE-ASSETS.md)
 
 ## Get started
 
 1. Install a userscript manager such as [Violentmonkey](https://violentmonkey.github.io/get-it/) or [Tampermonkey](https://www.tampermonkey.net/).
-2. [Install Dropper](https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js) and confirm in your userscript manager.
+2. [Install Dropper for Twitch](https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js) and confirm in your userscript manager.
 3. Sign in to Twitch, refresh, and open the Dropper launcher in Twitch's top bar. With other ExtraPotions products installed, they share one launcher: open it and choose Dropper.
 
 The script appears as **Dropper for Twitch** in your userscript manager.
