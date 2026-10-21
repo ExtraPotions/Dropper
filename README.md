@@ -14,6 +14,8 @@
 2. [Install Dropper](https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js) and confirm in your userscript manager.
 3. Sign in to Twitch, refresh, and open the Dropper launcher in Twitch's top bar. With other ExtraPotions products installed, they share one launcher: open it and choose Dropper.
 
+The script appears as **Dropper for Twitch** in your userscript manager.
+
 Stream switching starts at **Follow campaign order** in the first eligible tab. Saved choices, manual stream holds and pauses are respected; additional browsing tabs stay where you open them. Change the policy in **Settings → Stream switching**.
 
 ## What you can do

@@ -1,3 +1,8 @@
+## 3.4.53 — 2026-10-20
+
+- Show Dropper for Twitch as the name in userscript managers.
+- Keep the existing namespace, update links and settings keys.
+
 ## 3.4.52 — 2026-10-20
 
 - Stream switching starts at Follow campaign order in the first eligible tab.
