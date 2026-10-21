@@ -1,8 +1,8 @@
 {
-  "coreVersion": "3.9.8",
+  "coreVersion": "3.9.9",
   "source": {
     "source": "ExtraPotions/exp-core",
-    "sourceVersion": "3.9.8",
+    "sourceVersion": "3.9.9",
     "architecture": "core-native"
   },
   "suiteContract": {
@@ -125,7 +125,8 @@
         ]
       },
       "repository": "SHIFT",
-      "rootId": "exp-shift-root"
+      "rootId": "exp-shift-root",
+      "maintenance": "retired"
     },
     "ward": {
       "role": "product",
@@ -219,12 +220,12 @@
       "rootId": "exp-prisma-root"
     }
   },
-  "bundleSha256": "8010b87ea04c29c4d4fd1af2e031d2b00d1fbf0bb3b22dc5d4bc6596250e4158",
+  "bundleSha256": "9c73c4a3e24a55d607df5a0758e67945f654a9846cbe0f63a1753bf30d593b78",
   "files": {
     "foundation.js": "983c32545da78bc43c5f2705eecdf25be7ea6e0a83bd2eab59833098e3505bd5",
     "diagnostic-report.js": "563d6314d8866d2655141b6d06cb3ba4dc3f964ee2c0a427dad35d3f1c81a1f6",
     "lifecycle.js": "fc7d4e72f5edc54e5b9edce2578125d8091c207467d606260d4e9204b4c4712d",
-    "product-tools.js": "c824103fb77a6680d75b1a63d483cf7f9909dbc98e3ba2c9b6664017d8c2f34c",
+    "product-tools.js": "39763f0c455a33175d0fd38aee9f12c65f226b0538b0b9ae141dfc49cbeab5a4",
     "menu-tabs.js": "e2968d6b3b22a7da762120f89f70121cabed266717f0adc3dd893b05e7412170",
     "menu-arrangement.js": "19073942264db29e637f3ab40a9ca8533807ebc448f54e8a2fc1a6af28177f9b",
     "health-summary.js": "dccf0a557e5dff4e91199346b53deee65fd4165e4d8fd7bb04a6c5dcd88236eb",
@@ -235,6 +236,6 @@
     "menu-preferences.js": "dc3ea4dc10043357da26de3a7a5710cea5c36fb0f30b4d82a7efc3f42566ab03",
     "launcher-flyout.js": "3918f47a2a0eb51f36ad33d38b6f3a2eac4a1e6d543b2e90dea1129712064061",
     "runtime.js": "20195ee4e8e41e99428cdd13480beac70f033022a9de40037bf6ebc43d4dd98e",
-    "suite-contract.json": "186077450ba1b1095ed19761652897e8b32eec2c8f282bc9c994e6f9d5b1c4d4"
+    "suite-contract.json": "48d07c705f2c5c4e1e72bc55b549593612ae251b5c4e505d96e3ea5016820894"
   }
 }

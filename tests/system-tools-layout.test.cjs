@@ -6,12 +6,12 @@ const { chromium } = require('playwright');
 // Opens the current inline settings group without collapsing an already-open disclosure.
 async function openSubmenu(scope,label){
  const aliases={Style:'Highlight style',Menu:'Menu Preferences',Transfer:'Settings transfer',Effects:'Effects & integrations',Profiles:'Profiles & sites',Page:'Page tools',Retailers:'Retailer modules',Review:'Protection review',Activity:'Page activity',Playback:'Playback options',Alerts:'Notifications',Patterns:'Advanced Amazon',Tools:'Page tools'};
- if(label==='Overview')return;
+ if(['Overview','Support','Reset'].includes(label))return;
  const shortcut=scope.locator('[data-exp-menu-shortcut="'+label.toLowerCase()+'"]');if(await shortcut.count()){await shortcut.click();return;}
  const summary=scope.locator('summary:visible').filter({hasText:new RegExp('^'+(aliases[label]||label)+'(?: .*)?'+'$')}).first();
  await summary.waitFor();if(!await summary.evaluate(n=>n.parentElement.open))await summary.click();
 }
-for (const [pointer, context, minTarget] of [['fine pointer', {}, 28], ['coarse pointer', { hasTouch: true, isMobile: true }, 36]]) test(`System groups Status, Support, and Reset and keeps them readable and contained (${pointer})`, async t => {
+for (const [pointer, context, minTarget] of [['fine pointer', {}, 28], ['coarse pointer', { hasTouch: true, isMobile: true }, 36]]) test(`System keeps diagnostics and reset directly accessible, readable and contained (${pointer})`, async t => {
   const browser = await chromium.launch(); t.after(() => browser.close());
   const page = await browser.newPage({ viewport: { width: 360, height: 720 }, ...context });
   await page.route('**/*', r => r.request().isNavigationRequest() ? r.fulfill({contentType:'text/html',body:'<main>Fixture</main>'}) : r.abort());
@@ -28,10 +28,11 @@ for (const [pointer, context, minTarget] of [['fine pointer', {}, 28], ['coarse 
   assert.deepEqual(await system.locator('[data-exp-system-item="support"] .action-pair button').evaluateAll(nodes => nodes.map(n => n.textContent)), ['Show Diagnostics','Copy Diagnostics'], 'diagnostics share a row');
   assert.equal(await system.getByRole('button',{name:'Show Diagnostics',exact:true}).count(),1);
   assert.equal(await system.getByRole('button',{name:'Copy Diagnostics',exact:true}).count(),1);
+  for(const name of ['Show Diagnostics','Copy Diagnostics','Reset All Settings'])assert.equal(await system.getByRole('button',{name,exact:true}).evaluate(n=>Boolean(n.closest('details'))),false);
   assert.equal(await system.getByText('Maintenance',{exact:true}).count(),0);
   for(const width of [280,596,1280]) {
     await page.setViewportSize({width,height:720});
-    // Status is the System home view; Support and Reset open as detail views.
+    // Status may expand; diagnostics and reset remain directly visible.
     for(const name of ['Overview','Support','Reset']) {
       await openSubmenu(system,name);
       const result=await system.evaluate(group=>({horizontal:group.scrollWidth-group.clientWidth,visiblePanels:[...group.querySelectorAll('details[open]')].filter(n=>n.getClientRects().length).length,targets:[...group.querySelectorAll('summary')].filter(n=>n.getClientRects().length).map(n=>n.getBoundingClientRect().height)}));

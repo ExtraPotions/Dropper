@@ -48,5 +48,8 @@ test('compact card and notice stay bounded at a narrow width and with long rewar
  await page.evaluate(()=>window.dispatchEvent(new Event('resize')));await page.waitForTimeout(100);
  assert.ok(await host.locator('#tdh-drop-card').evaluate(n=>{const r=n.getBoundingClientRect();return n.scrollWidth<=n.clientWidth&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;}));
  await host.locator('[data-exp-part="launcher"]').evaluate(n=>n.click());await host.locator('#tdh-header-version').click();
- assert.ok(await host.locator('.update-notice:visible').evaluate(n=>{const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;}));
+ // Core schedules notice placement on the next animation frame; measure the laid-out surface.
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+ const noticeBox=await host.locator('.update-notice:visible').evaluate(n=>{const r=n.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:innerWidth,height:innerHeight};});
+ assert.ok(noticeBox.left>=0&&noticeBox.right<=noticeBox.width&&noticeBox.top>=0&&noticeBox.bottom<=noticeBox.height,JSON.stringify(noticeBox));
 });

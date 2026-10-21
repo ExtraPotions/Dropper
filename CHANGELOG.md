@@ -1,3 +1,8 @@
+## 3.4.50 — 2026-10-20
+
+- Keep Show Diagnostics, Copy Diagnostics and Reset All Settings directly accessible in System.
+- Keep shared menus, themes and launchers working independently of retired SHIFT.
+
 ## 3.4.49 — 2026-10-20
 
 - Refreshes the split purple and graphite gem with a broad angular cut.
