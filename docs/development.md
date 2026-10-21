@@ -29,6 +29,8 @@ Suite-wide steps (shared Core changes, release order, screenshots, adding a prod
 
 ## Live checks
 
+`findNextStream` defaults to true with the normal campaign-order policy. At startup, a tab with no saved routing/viewing/manual-selection/lock state can claim switching ownership only with no opener and no live peer. Explicit saved Off choices and additional browsing tabs remain protected; existing session-recovery rules still apply.
+
 Restart recovery retains a matching, unpaused automatic viewing intent after the short navigation marker expires. It can restore a lost switching-tab mark after the update migration window only with restart recovery enabled, matching account/channel session state, active routing and no opener. Unknown arrivals, viewer pauses, manual stream choices and campaign restrictions remain protected. Session state that the browser did not retain cannot establish restored-tab ownership.
 
 The chat progress card recognises the previous-leaderboard control and current Top Gifters button/entry markers. It reserves and hides only the leaderboard wrapper while expanded, restoring it when hidden or moved into the menu. Authored fixture checks do not establish acceptance in the user's installed browser.

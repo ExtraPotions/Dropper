@@ -93,7 +93,7 @@
     return true;
   }
 
-  // Automatic switching runs only in the tab the viewer chose for it, so a Twitch tab opened to browse stays put.
+  // The first eligible tab starts with the default switching policy; additional browsing tabs stay put.
   // The choice is kept in the tab's window name: it survives Dropper's own navigation in that tab, and unlike
   // sessionStorage it is not copied into tabs opened from it. A window that already has a name keeps it, with the mark added.
   const AUTOMATION_TAB_NAME = 'exp-dropper-automation-tab';
@@ -107,6 +107,13 @@
   const AUTOMATION_TAB_SINCE_KEY = 'dropper-automation-tab-since-v1';
   function adoptSwitchingTabAfterUpdate(routing) {
     try {
+      if (!routing && settings.findNextStream && !page.opener &&
+          !readSession(VIEWING_INTENT_KEY, null) && !readSession(VIEWING_SELECTION_KEY, null) &&
+          !readSession(MANUAL_STREAM_LOCK_KEY, null) && !liveTabPeers().length) {
+        claimAutomationTab();
+        noteRequestedViewingNavigation(location.href);
+        return;
+      }
       const key = scopedLocalStorageKey(AUTOMATION_TAB_SINCE_KEY);
       let since = Number(localStorage.getItem(key)) || 0;
       if (!since) { since = Date.now(); localStorage.setItem(key, String(since)); }

@@ -1,3 +1,8 @@
+## 3.4.52 — 2026-10-20
+
+- Stream switching starts at Follow campaign order in the first eligible tab.
+- Saved Off choices, manual stream holds, pauses and additional browsing tabs are respected.
+
 ## 3.4.51 — 2026-10-20
 
 - Separate Reset All Settings from other System controls.

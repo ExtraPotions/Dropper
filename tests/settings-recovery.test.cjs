@@ -2,6 +2,14 @@
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');const source=require('./load-source.cjs').loadDropperSource();
 function fn(name){const a=source.indexOf('  function '+name+'('),b=source.indexOf('\n  function ',a+4);return source.slice(a,b);}
 
+test('stream switching defaults on while saved off and saved policies remain authoritative',()=>{
+ const defaults=vm.runInNewContext('('+source.match(/const DEFAULTS = (\{[\s\S]*?\n  \});/)[1]+')');
+ let saved=null;const c={productResetting:false,DEFAULTS:defaults,SETTINGS_KEY:'settings',GM_getValue:()=>saved,GM_setValue:(key,value)=>saved=value,localStorage:{getItem:()=>null,removeItem(){}}};
+ vm.runInNewContext(fn('loadSettings'),c);assert.equal(c.loadSettings().findNextStream,true);assert.equal(c.loadSettings().switchPolicy,'normal');
+ saved={findNextStream:false};assert.equal(c.loadSettings().findNextStream,false);
+ saved={findNextStream:true,switchPolicy:'stopped-earning'};assert.equal(c.loadSettings().switchPolicy,'stopped-earning');
+});
+
 test('Dropper saves preferences and removes obsolete authentication fields without backup storage',()=>{
  const defaults=vm.runInNewContext('('+source.match(/const DEFAULTS = (\{[\s\S]*?\n  \});/)[1]+')');
  const store=new Map([['settings',JSON.stringify({muteRestarted:false,authToken:'fixture-secret',quietHoursStart:'99:99',protectedChannels:'invalid',excludedChannels:['CHANNEL','channel','bad name']})]]),access=[];

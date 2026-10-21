@@ -14,6 +14,8 @@
 2. [Install Dropper](https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js) and confirm in your userscript manager.
 3. Sign in to Twitch, refresh, and open the Dropper launcher in Twitch's top bar. With other ExtraPotions products installed, they share one launcher: open it and choose Dropper.
 
+Stream switching starts at **Follow campaign order** in the first eligible tab. Saved choices, manual stream holds and pauses are respected; additional browsing tabs stay where you open them. Change the policy in **Settings → Stream switching**.
+
 ## What you can do
 
 - **Track progress:** see credited watch time for the current reward on a compact card. Opening the menu moves the same card inside it. When the menu is closed and chat's leaderboard is available, the expanded card replaces that space; Hide progress card restores the leaderboard. Badge Only collapses the card until you open it. Pause or Resume reflects your viewing intent; Skip asks for confirmation. Twitch decides eligibility and credit.

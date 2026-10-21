@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.51
+// @version      3.4.52
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.51";
+  const APP_VERSION = "3.4.52";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.52": ["Stream switching starts at Follow campaign order in the first eligible tab.","Saved Off choices, manual stream holds, pauses and additional browsing tabs are respected."],
     "3.4.51": ["Separate Reset All Settings from other System controls.","Restore known stream-switching sessions after restart while respecting deliberate pauses and manual stream choices.","Place the progress card in the current Top Gifters leaderboard slot while preserving chat.","Match Skip to the other progress-panel buttons while keeping confirmation."],
     "3.4.50": ["Keep Show Diagnostics, Copy Diagnostics and Reset All Settings directly accessible in System.","Keep shared menus, themes and launchers working independently of retired SHIFT."],
     "3.4.49": ["Refreshes the split purple and graphite gem with a broad angular cut.","Uses the approved compact campaign menu and revised progress panel, with Skip and state-aware Pause or Resume.","Groups diagnostics, support and reset inside System while keeping donations in the header."],
@@ -583,7 +584,7 @@
     keepTabActive: true,
     claimDrops: true,
     progressInTitle: true,
-    findNextStream: false,
+    findNextStream: true,
     muteRestarted: true,
     backgroundEarning: false,
     autoPictureInPicture: false,

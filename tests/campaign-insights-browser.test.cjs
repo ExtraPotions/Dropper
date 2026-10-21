@@ -49,6 +49,8 @@ test('the campaign list shows the planner and subscription rewards, and unclaime
   const now = Date.now();
   await page.addInitScript(({ campaigns, at }) => {
     window.GM_xmlhttpRequest = () => {};
+    // This static catalog-rendering fixture must not start routing or claim processing.
+    localStorage.setItem('tdh-settings-v3',JSON.stringify({findNextStream:false}));
     sessionStorage.setItem('dropper-campaign-catalog:account:signed-out', JSON.stringify({ at, campaigns }));
   }, { campaigns: campaignFixture(now), at: now });
   await page.goto('https://www.twitch.tv/insights-fixture');

@@ -60,7 +60,7 @@ const exposed = source.replace('  startDropper();\n})();', `
 })();`);
 assert.notEqual(exposed, source, 'test-only hooks inserted without changing distribution');
 
-async function fixture(run, pathname = '/chosen_channel', { viewport = { width: 1280, height: 900 }, extra = '' } = {}) {
+async function fixture(run, pathname = '/chosen_channel', { viewport = { width: 1280, height: 900 }, extra = '', defaultSwitching = false } = {}) {
   const browser = await chromium.launch({ headless: true });
   try {
     const context = await browser.newContext({ viewport });
@@ -74,7 +74,9 @@ async function fixture(run, pathname = '/chosen_channel', { viewport = { width: 
     </body></html>` }));
     const page = await context.newPage(); const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.addInitScript(() => {
+    await page.addInitScript(defaultSwitching => {
+      // Most cases exercise explicit manual-control preferences, not a fresh install.
+      if(!defaultSwitching&&!localStorage.getItem('tdh-settings-v3'))localStorage.setItem('tdh-settings-v3',JSON.stringify({findNextStream:false}));
       window.GM_xmlhttpRequest = ({ onload }) => queueMicrotask(() => onload?.({ status: 503, responseText: '{}' }));
       window.__makeVideo = node => {
         let paused = false;
@@ -92,7 +94,7 @@ async function fixture(run, pathname = '/chosen_channel', { viewport = { width: 
           if (video.paused) video.play(); else video.pause();
         });
       });
-    });
+    }, defaultSwitching);
     await page.goto('https://www.twitch.tv' + pathname);
     await page.addScriptTag({ content: exposed });
     await page.waitForFunction(() => !!window.__dropperTest && !!document.getElementById('tdh-root')?.shadowRoot);
@@ -1482,6 +1484,14 @@ test('custom Dropper menu yields suite ownership without replacing progress geom
 }));
 
 // The 2026-10 review opened twitch.tv/directory in a new tab and Dropper moved it to a stream with no click.
+test('fresh settings enable switching in the primary tab without taking over an additional browsing tab',async()=>fixture(async(page,context)=>{
+ const initial=await page.evaluate(()=>({chosen:window.__dropperTest.automationTab(),allowed:window.__dropperTest.navigation('automatic-routing'),policy:document.getElementById('tdh-root').shadowRoot.getElementById('tdh-switch-policy').value}));
+ assert.deepEqual(initial,{chosen:true,allowed:true,policy:'normal'});
+ if(process.env.EXP_DEFAULT_SWITCHING_EVIDENCE){const folder=process.env.EXP_DEFAULT_SWITCHING_EVIDENCE;require('fs').mkdirSync(folder,{recursive:true});const host=page.locator('#tdh-root');await host.locator('[data-exp-part=launcher]').click();await host.getByRole('tab',{name:'Settings',exact:true}).click();await host.locator('[data-exp-part=dock]').screenshot({path:path.join(folder,'default-switching.png')});}
+ const second=await context.newPage();await second.goto('https://www.twitch.tv/directory');await second.addScriptTag({content:exposed});await second.waitForFunction(()=>window.__dropperTest);
+ assert.equal(await second.evaluate(()=>window.__dropperTest.automationTab()),false);assert.equal(await second.evaluate(()=>window.__dropperTest.navigation('automatic-routing')),false);await second.close();
+},'/chosen_channel',{defaultSwitching:true}));
+
 test('a newly opened Twitch tab is left where it is until the viewer chooses it for automatic switching', async () => fixture(async page => {
   const before = await page.evaluate(() => {
     const t = window.__dropperTest; t.setFindNext(true); t.sync();
