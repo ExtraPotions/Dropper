@@ -102,6 +102,8 @@
   // Before tabs were chosen, any Dropper tab could switch streams. For a week after updating, a tab that loads
   // with routing already under way (it was switching before the update) keeps doing so without a click.
   // A tab opened from another one carries a copy of its session state, so it is never adopted.
+  // Later browser restores may lose the window-name mark: a matching unpaused
+  // automatic intent can restore ownership when restart recovery is enabled.
   const AUTOMATION_TAB_SINCE_KEY = 'dropper-automation-tab-since-v1';
   function adoptSwitchingTabAfterUpdate(routing) {
     try {
@@ -109,7 +111,10 @@
       let since = Number(localStorage.getItem(key)) || 0;
       if (!since) { since = Date.now(); localStorage.setItem(key, String(since)); }
       const underWay = routing && ![ROUTING_STATES.IDLE, ROUTING_STATES.PAUSED, undefined].includes(routing.state);
-      if (underWay && !page.opener && Date.now() - since < 7 * 24 * 60 * 60 * 1000) claimAutomationTab();
+      const saved = readSession(VIEWING_INTENT_KEY, null);
+      const restoredSwitching = settings.resumeSessionOnRestart && saved && saved.account === storageAccountLogin() &&
+        saved.channel === (watchingLogin() || '') && saved.manualStream === false && !saved.paused;
+      if (underWay && !page.opener && (restoredSwitching || Date.now() - since < 7 * 24 * 60 * 60 * 1000)) claimAutomationTab();
     } catch (_) {}
   }
   function viewingNavigationAllowed(reason = '', explicit = false) {

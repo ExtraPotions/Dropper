@@ -216,7 +216,7 @@
             <div class="compact-card-actions">
               <span class="drop-meta" id="tdh-drop-meta">— / — min</span>
               <button type="button" id="tdh-card-pause">Resume</button>
-              <button type="button" class="skip-streamer-chip" id="tdh-skip-streamer" aria-label="No active streamer to skip"><span class="skip-label">Skip</span><span class="skip-countdown" hidden></span></button>
+              <button type="button" id="tdh-skip-streamer" aria-label="No active streamer to skip"><span class="skip-label">Skip</span><span class="skip-countdown" hidden></span></button>
               <button type="button" id="tdh-card-menu" aria-label="Open Dropper menu" aria-expanded="false">Menu</button>
             </div>
           </section>
@@ -248,7 +248,7 @@
     chromeResizeObserver.observe(ui.dock);
     chromeResizeObserver.observe(shadow.querySelector(".badge-row"));
     chromeResizeObserver.observe(shadow.getElementById("tdh-drop-card"));
-    const chatTargets='.stream-chat,.chat-room__content,button[aria-label="Previous leaderboard set"]';
+    const chatTargets='.stream-chat,.chat-room__content,button[aria-label="Previous leaderboard set"],button[aria-label="Expand Top Gifters Leaderboard"],[data-testid="leaderboard-top-three-entry"]';
     const chatObserver = new MutationObserver(records => {
       if (!host.isConnected) { restoreChatProgressSlot(); ui.chatResizeObserver?.disconnect(); chatObserver.disconnect(); removeEventListener('pagehide',restoreChatProgressSlot); return; }
       if (records.some(record => [...record.addedNodes, ...record.removedNodes].some(node =>
@@ -1648,7 +1648,7 @@
     const card=ui?.shadow.getElementById('tdh-drop-card');
     if(!card||card.dataset.progressPlacement==='menu')return false;
     const content=document.querySelector('.stream-chat .chat-room__content');
-    const leaderboard=content?.querySelector('button[aria-label="Previous leaderboard set"]');
+    const leaderboard=content?.querySelector('button[aria-label="Previous leaderboard set"],button[aria-label="Expand Top Gifters Leaderboard"],[data-testid="leaderboard-top-three-entry"]');
     let panel=leaderboard;
     while(panel && panel.parentElement!==content)panel=panel.parentElement;
     const box=panel?.getBoundingClientRect();

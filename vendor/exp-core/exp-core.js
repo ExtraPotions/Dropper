@@ -1704,7 +1704,7 @@ const ExtraPotionsTools = (() => {
     function disarm(){clearTimeout(armTimer);armedUntil=0;reset.textContent='Reset All Settings';delete reset.dataset.expResetArmed;resetStatus.textContent='';}
     reset.style.cssText+=';border:1px solid #ff2438;background:#e11428;color:#fff;font-weight:700';
     ExpMenuHelp.setMenuHelp(reset,`Clears ${product} settings and stored data on this browser. This cannot be undone. Tap twice within 4 seconds to confirm.`);
-    const resetCard=document.createElement('section');resetCard.setAttribute('aria-label','Reset settings');resetCard.append(reset,resetStatus);
+    const resetCard=document.createElement('section');resetCard.setAttribute('aria-label','Reset settings');resetCard.style.cssText='margin-block-start:12px;padding-block-start:8px';resetCard.append(reset,resetStatus);
     reset.addEventListener('blur',disarm);
     for(const [key,node] of [['status',timeline],['support',support],['preferences',preferences],['reset',resetCard]]){
       if(!node)continue;node.dataset.expSystemItem=key;node.style.minWidth='0';node.style.maxWidth='100%';
@@ -2576,7 +2576,7 @@ const ExpLauncherFlyout = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.9.9';
+  const version = '3.9.10';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';

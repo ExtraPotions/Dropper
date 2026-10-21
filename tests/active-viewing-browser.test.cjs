@@ -39,6 +39,7 @@ const exposed = source.replace('  startDropper();\n})();', `
     pauseIntent: () => { viewingIntent.pause(true); },
     lockStream: value => setManualStreamLock(Boolean(value), 'test'),
     automationTab: () => isAutomationTab(), claimTab: () => claimAutomationTab(), controller: () => isAutoRoutingController(), publish: () => publishTabPresence(), badgeOnly: () => Boolean(settings.badgeOnly),
+    prepareRestart: drop => { settings.findNextStream=true;settings.resumeSessionOnRestart=true;saveSettings();viewingIntent.allowSwitching();writeSession('tdh-drop',drop);writeRoutingControllerSession({...routingSessionDefaults(ROUTING_STATES.FIND_STREAM),...routingControllerTargetFromDrop(drop)});writeSession(VIEWING_NAVIGATION_KEY,{channel:watchingLogin(),until:Date.now()-1});localStorage.setItem(scopedLocalStorageKey(AUTOMATION_TAB_SINCE_KEY),String(Date.now()-8*86400000));page.name=''; },
     streamLock: () => manualStreamLockSnapshot(),
     refreshHealth: () => { refreshStreamHealthSummary(); refreshEligibilityChecklist(); refreshViewingControls(); },
     confidence: () => earningConfidencePresentation(),
@@ -230,6 +231,18 @@ test('campaign strategy modes reorder viable campaigns without promoting known-u
   assert.equal(result.deadline, 'Soon');
   assert.equal(result.completion, 'Almost');
   assert.equal(result.shortest, 'Almost');
+}));
+
+test('restored automatic tabs restart a paused initial player after the navigation marker expires and retain later viewer pauses',async()=>fixture(async page=>{
+ await page.evaluate(drop=>window.__dropperTest.prepareRestart(drop),data().drop);
+ await page.reload();await page.evaluate(()=>document.querySelector('video').pause());await page.addScriptTag({content:exposed});
+ await page.waitForFunction(()=>window.__dropperTest&&document.getElementById('tdh-root')?.shadowRoot);
+ const automatic=await page.evaluate(()=>{const t=window.__dropperTest;t.sync();t.ensure();return{chosen:t.automationTab(),intent:t.intent.snapshot(),playing:!document.querySelector('video').paused};});
+ assert.equal(automatic.chosen,true);assert.equal(automatic.intent.manualStream,false);assert.equal(automatic.intent.paused,false);assert.equal(automatic.playing,true);
+ await page.locator('#fixture-control').click();assert.equal(await page.evaluate(()=>window.__dropperTest.intent.snapshot().pauseReason),'viewer');
+ await page.reload();await page.evaluate(()=>document.querySelector('video').pause());await page.addScriptTag({content:exposed});await page.waitForFunction(()=>window.__dropperTest);
+ const held=await page.evaluate(()=>{const t=window.__dropperTest;t.sync();t.ensure();return{intent:t.intent.snapshot(),plays:document.querySelector('video').playCount};});
+ assert.equal(held.intent.paused,true);assert.equal(held.intent.pauseReason,'viewer');assert.equal(held.plays,0);
 }));
 
 test('restart recovery restores a bounded target but requires Twitch verification again', async () => fixture(async page => {

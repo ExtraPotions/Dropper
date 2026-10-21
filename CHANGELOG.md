@@ -1,3 +1,10 @@
+## 3.4.51 — 2026-10-20
+
+- Separate Reset All Settings from other System controls.
+- Restore known stream-switching sessions after restart while respecting deliberate pauses and manual stream choices.
+- Place the progress card in the current Top Gifters leaderboard slot while preserving chat.
+- Match Skip to the other progress-panel buttons while keeping confirmation.
+
 ## 3.4.50 — 2026-10-20
 
 - Keep Show Diagnostics, Copy Diagnostics and Reset All Settings directly accessible in System.

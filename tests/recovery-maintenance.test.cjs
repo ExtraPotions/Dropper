@@ -12,6 +12,24 @@ function extract(name) {
   return next < 0 ? rest : rest.slice(0, next + 4);
 }
 const now = Date.parse('2026-10-01T20:03:19Z');
+test('restored switching tabs retain ownership after the update migration window expires',()=>{
+ const saved={account:'alice',channel:'chosen',manualStream:false,paused:false},page={name:'',opener:null};
+ const c={Date:{now:()=>now},page,settings:{resumeSessionOnRestart:true},ROUTING_STATES:{IDLE:'idle',PAUSED:'paused'},AUTOMATION_TAB_SINCE_KEY:'since',VIEWING_INTENT_KEY:'intent',localStorage:{getItem:()=>String(now-8*86400000),setItem(){}},scopedLocalStorageKey:k=>k,storageAccountLogin:()=> 'alice',watchingLogin:()=> 'chosen',readSession:()=>saved,claimAutomationTab:()=>page.name='chosen-tab'};
+ vm.runInNewContext(extract('adoptSwitchingTabAfterUpdate'),c);
+ c.adoptSwitchingTabAfterUpdate({state:'find-stream'});assert.equal(page.name,'chosen-tab');
+ for(const patch of [{manualStream:true},{paused:true},{account:'bob'},{channel:'other'}]){const old={...saved};Object.assign(saved,patch);page.name='';c.adoptSwitchingTabAfterUpdate({state:'find-stream'});assert.equal(page.name,'');Object.assign(saved,old);}
+ page.opener={};c.adoptSwitchingTabAfterUpdate({state:'find-stream'});assert.equal(page.name,'');
+ page.opener=null;c.settings.resumeSessionOnRestart=false;c.adoptSwitchingTabAfterUpdate({state:'find-stream'});assert.equal(page.name,'');
+});
+test('restored automatic arrivals survive an expired navigation marker without overriding manual selections or pauses',()=>{
+ const saved={account:'alice',channel:'chosen',manualStream:false,paused:false},records={intent:saved,navigation:{channel:'chosen',until:now-1}};
+ const c={Date:{now:()=>now},settings:{resumeSessionOnRestart:true},VIEWING_NAVIGATION_KEY:'navigation',VIEWING_SELECTION_KEY:'selection',VIEWING_INTENT_KEY:'intent',watchingLogin:()=> 'chosen',storageAccountLogin:()=> 'alice',readSession:(key,fallback)=>records[key]??fallback,isAutomationTab:()=>true};
+ vm.runInNewContext(extract('automaticViewingArrival'),c);
+ assert.equal(c.automaticViewingArrival(),true);
+ records.selection={channel:'chosen',until:now+1000};assert.equal(c.automaticViewingArrival(),false);delete records.selection;
+ for(const patch of [{paused:true},{manualStream:true},{channel:'other'},{account:'bob'}]){const old={...saved};Object.assign(saved,patch);assert.equal(c.automaticViewingArrival(),false);Object.assign(saved,old);}
+ c.isAutomationTab=()=>false;assert.equal(c.automaticViewingArrival(),false);
+});
 const reward = (id, total, minutes, extra = {}) => ({ id, requiredMinutesWatched: total, self: { currentMinutesWatched: minutes, isClaimed: false }, ...extra });
 const campaign = drops => ({ startAt: '2026-09-28T16:00:00Z', endAt: '2026-10-05T06:59:59.999Z', timeBasedDrops: drops });
 

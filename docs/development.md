@@ -29,6 +29,10 @@ Suite-wide steps (shared Core changes, release order, screenshots, adding a prod
 
 ## Live checks
 
+Restart recovery retains a matching, unpaused automatic viewing intent after the short navigation marker expires. It can restore a lost switching-tab mark after the update migration window only with restart recovery enabled, matching account/channel session state, active routing and no opener. Unknown arrivals, viewer pauses, manual stream choices and campaign restrictions remain protected. Session state that the browser did not retain cannot establish restored-tab ownership.
+
+The chat progress card recognises the previous-leaderboard control and current Top Gifters button/entry markers. It reserves and hides only the leaderboard wrapper while expanded, restoring it when hidden or moved into the menu. Authored fixture checks do not establish acceptance in the user's installed browser.
+
 [WATCH.md](WATCH.md) runs Dropper in a headed browser that keeps a signed-in Twitch profile and writes diagnostics to `artifacts/diagnostics/`. Neither that folder nor `.watch-profile/` may be committed. [ACTIVE-VIEWING.md](ACTIVE-VIEWING.md) records how stream handling was verified.
 
 ## Writing about Dropper

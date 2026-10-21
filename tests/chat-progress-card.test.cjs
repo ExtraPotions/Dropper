@@ -1,6 +1,18 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require('playwright');
+test('current top gifters markup docks without the older pagination button and restores the native wrapper',async t=>{
+ const browser=await chromium.launch();t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1100,height:800}});
+ await page.route('**/*',r=>r.request().isNavigationRequest()?r.fulfill({contentType:'text/html',body:'<style>body{margin:0}.stream-chat{position:fixed;right:0;top:60px;width:340px;height:700px}.chat-room__content{display:flex;flex-direction:column;height:100%}.native-leaderboard{height:71px;flex-shrink:0}.messages{flex:1}</style><aside class="stream-chat"><div class="chat-room__content"><div class="native-leaderboard"><div><button aria-label="Expand Top Gifters Leaderboard">Top gifters</button><div data-testid="leaderboard-top-three-entry">Fixture supporter</div></div></div><div class="messages">Chat messages</div><input aria-label="Chat input"></div></aside>'}):r.abort());
+ await page.goto('https://www.twitch.tv/sample_streamer');await page.evaluate(()=>{window.GM_xmlhttpRequest=()=>({abort(){}});});await page.addScriptTag({content:fs.readFileSync(path.join(__dirname,'../dropper.user.js'),'utf8')});
+ const host=page.locator('#tdh-root'),card=host.locator('#tdh-drop-card'),panel=page.locator('.native-leaderboard');
+ await page.waitForFunction(()=>document.querySelector('.native-leaderboard').hasAttribute('inert'));
+ const rect=await card.boundingBox(),slot=await panel.boundingBox();assert.equal(rect.x,slot.x);assert.equal(rect.y,slot.y);assert.equal(rect.width,slot.width);assert((await page.locator('.messages').boundingBox()).y>=rect.y+rect.height);
+ await page.locator('[aria-label="Expand Top Gifters Leaderboard"]').evaluate(n=>n.remove());await page.evaluate(()=>dispatchEvent(new Event('resize')));await page.waitForTimeout(100);assert.equal(await card.getAttribute('data-chat-docked'),'true','stable entry marker also identifies the slot');
+ await host.getByRole('button',{name:'Hide progress card',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.native-leaderboard').hasAttribute('inert'));assert.equal((await panel.getAttribute('style'))||'','');assert.equal(await page.getByRole('textbox',{name:'Chat input'}).isVisible(),true);
+ await host.getByRole('button',{name:'Show progress card',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.native-leaderboard').hasAttribute('inert'));
+ const evidence=process.env.EXP_CHAT_EVIDENCE;if(evidence){fs.mkdirSync(evidence,{recursive:true});await page.screenshot({path:path.join(evidence,'current-top-gifters.png')});}
+});
 test('chat card replaces only the leaderboard, restores it and survives resizing and route replacement',async t=>{
  const browser=await chromium.launch();t.after(()=>browser.close());
  const page=await browser.newPage({viewport:{width:1100,height:800}});

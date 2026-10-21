@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper
 // @namespace    twitch-drops-helper
-// @version      3.4.50
+// @version      3.4.51
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.50";
+  const APP_VERSION = "3.4.51";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.51": ["Separate Reset All Settings from other System controls.","Restore known stream-switching sessions after restart while respecting deliberate pauses and manual stream choices.","Place the progress card in the current Top Gifters leaderboard slot while preserving chat.","Match Skip to the other progress-panel buttons while keeping confirmation."],
     "3.4.50": ["Keep Show Diagnostics, Copy Diagnostics and Reset All Settings directly accessible in System.","Keep shared menus, themes and launchers working independently of retired SHIFT."],
     "3.4.49": ["Refreshes the split purple and graphite gem with a broad angular cut.","Uses the approved compact campaign menu and revised progress panel, with Skip and state-aware Pause or Resume.","Groups diagnostics, support and reset inside System while keeping donations in the header."],
     "3.4.48": ["Shows the expanded progress card across the chat leaderboard space without covering messages.","Restores the native leaderboard when the card is hidden, with floating placement when chat is unavailable."],
@@ -1496,7 +1497,12 @@
     const requested = readSession(VIEWING_NAVIGATION_KEY, null);
     const selected = readSession(VIEWING_SELECTION_KEY, null);
     if (selected?.channel === login && selected.until > now) return false;
-    return Boolean(requested && requested.channel === login && requested.until > now);
+    if (requested && requested.channel === login && requested.until > now) return true;
+    // A restored switching tab can outlive the short navigation marker. Keep
+    // its known automatic arrival distinct from an unknown paused player.
+    const saved = readSession(VIEWING_INTENT_KEY, null);
+    return Boolean(login && settings.resumeSessionOnRestart && isAutomationTab() && saved &&
+      saved.account === storageAccountLogin() && saved.channel === login && saved.manualStream === false && !saved.paused);
   }
 
   function syncViewingContext() {
@@ -1734,6 +1740,8 @@
   // Before tabs were chosen, any Dropper tab could switch streams. For a week after updating, a tab that loads
   // with routing already under way (it was switching before the update) keeps doing so without a click.
   // A tab opened from another one carries a copy of its session state, so it is never adopted.
+  // Later browser restores may lose the window-name mark: a matching unpaused
+  // automatic intent can restore ownership when restart recovery is enabled.
   const AUTOMATION_TAB_SINCE_KEY = 'dropper-automation-tab-since-v1';
   function adoptSwitchingTabAfterUpdate(routing) {
     try {
@@ -1741,7 +1749,10 @@
       let since = Number(localStorage.getItem(key)) || 0;
       if (!since) { since = Date.now(); localStorage.setItem(key, String(since)); }
       const underWay = routing && ![ROUTING_STATES.IDLE, ROUTING_STATES.PAUSED, undefined].includes(routing.state);
-      if (underWay && !page.opener && Date.now() - since < 7 * 24 * 60 * 60 * 1000) claimAutomationTab();
+      const saved = readSession(VIEWING_INTENT_KEY, null);
+      const restoredSwitching = settings.resumeSessionOnRestart && saved && saved.account === storageAccountLogin() &&
+        saved.channel === (watchingLogin() || '') && saved.manualStream === false && !saved.paused;
+      if (underWay && !page.opener && (restoredSwitching || Date.now() - since < 7 * 24 * 60 * 60 * 1000)) claimAutomationTab();
     } catch (_) {}
   }
   function viewingNavigationAllowed(reason = '', explicit = false) {
@@ -15768,7 +15779,7 @@
             <div class="compact-card-actions">
               <span class="drop-meta" id="tdh-drop-meta">— / — min</span>
               <button type="button" id="tdh-card-pause">Resume</button>
-              <button type="button" class="skip-streamer-chip" id="tdh-skip-streamer" aria-label="No active streamer to skip"><span class="skip-label">Skip</span><span class="skip-countdown" hidden></span></button>
+              <button type="button" id="tdh-skip-streamer" aria-label="No active streamer to skip"><span class="skip-label">Skip</span><span class="skip-countdown" hidden></span></button>
               <button type="button" id="tdh-card-menu" aria-label="Open Dropper menu" aria-expanded="false">Menu</button>
             </div>
           </section>
@@ -15800,7 +15811,7 @@
     chromeResizeObserver.observe(ui.dock);
     chromeResizeObserver.observe(shadow.querySelector(".badge-row"));
     chromeResizeObserver.observe(shadow.getElementById("tdh-drop-card"));
-    const chatTargets='.stream-chat,.chat-room__content,button[aria-label="Previous leaderboard set"]';
+    const chatTargets='.stream-chat,.chat-room__content,button[aria-label="Previous leaderboard set"],button[aria-label="Expand Top Gifters Leaderboard"],[data-testid="leaderboard-top-three-entry"]';
     const chatObserver = new MutationObserver(records => {
       if (!host.isConnected) { restoreChatProgressSlot(); ui.chatResizeObserver?.disconnect(); chatObserver.disconnect(); removeEventListener('pagehide',restoreChatProgressSlot); return; }
       if (records.some(record => [...record.addedNodes, ...record.removedNodes].some(node =>
@@ -17200,7 +17211,7 @@
     const card=ui?.shadow.getElementById('tdh-drop-card');
     if(!card||card.dataset.progressPlacement==='menu')return false;
     const content=document.querySelector('.stream-chat .chat-room__content');
-    const leaderboard=content?.querySelector('button[aria-label="Previous leaderboard set"]');
+    const leaderboard=content?.querySelector('button[aria-label="Previous leaderboard set"],button[aria-label="Expand Top Gifters Leaderboard"],[data-testid="leaderboard-top-three-entry"]');
     let panel=leaderboard;
     while(panel && panel.parentElement!==content)panel=panel.parentElement;
     const box=panel?.getBoundingClientRect();

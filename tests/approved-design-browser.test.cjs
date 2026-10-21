@@ -35,6 +35,8 @@ test('IA1 has Campaigns Settings Look System and keeps infrequent controls under
 test('one DP1 card moves between chat and menu, with credited time, confirmed Skip and state-aware Pause Resume',async t=>fixture(t,async(page,host)=>{
  await page.evaluate(drop=>window.__approvedDesign.drop(drop),reward);const card=host.locator('#tdh-drop-card');
  assert.equal(await card.locator('.compact-card-actions #tdh-drop-meta').count(),1);assert.equal(await card.locator('.compact-card-actions #tdh-skip-streamer').isVisible(),true);
+ const actionStyles=await card.locator('.compact-card-actions button').evaluateAll(buttons=>buttons.map(button=>{const style=getComputedStyle(button);return Object.fromEntries(['fontFamily','fontSize','fontWeight','lineHeight','height','minHeight','padding','borderRadius','backgroundColor','borderColor','boxShadow','color','opacity'].map(key=>[key,style[key]]));}));
+ assert.deepEqual(actionStyles[1],actionStyles[0],'Skip uses the same button presentation as Pause');assert.deepEqual(actionStyles[1],actionStyles[2],'Skip uses the same button presentation as Menu');
  if(evidence){await page.waitForTimeout(500);await card.screenshot({path:path.join(evidence,'progress-outside-waiting.png')});}
  await card.getByRole('button',{name:'Pause',exact:true}).click();assert.equal(await card.locator('#tdh-card-pause').innerText(),'Resume');
  await card.locator('#tdh-skip-streamer').click();assert.equal(await card.locator('.skip-label').innerText(),'Confirm');assert.equal(await page.evaluate(()=>window.__approvedDesign.intent().paused),true);await page.keyboard.press('Escape');assert.equal(await card.locator('.skip-label').innerText(),'Skip');
