@@ -1,3 +1,8 @@
+## 3.4.54 — 2026-10-22
+
+- Add Site colors in Look: six optional palettes for Twitch pages that follow Twitch light or dark mode.
+- Twitch keeps its purple buttons, live badges and status colors.
+
 ## 3.4.53 — 2026-10-20
 
 - Show Dropper for Twitch as the name in userscript managers.
