@@ -66,6 +66,7 @@
       for (const name of ['protectedChannels','excludedChannels']) if (Object.hasOwn(stored,name)) stored[name] = Array.isArray(stored[name]) ? [...new Set(stored[name].filter(value=>typeof value==='string').map(value=>value.trim().toLowerCase()).filter(value=>/^[a-z0-9_]{1,25}$/.test(value)))].slice(0,100) : [];
       for (const name of ['quietHoursStart','quietHoursEnd']) if (Object.hasOwn(stored,name) && !/^([01]\d|2[0-3]):[0-5]\d$/.test(stored[name] || '')) stored[name] = DEFAULTS[name];
       if (Object.hasOwn(stored,'quietHoursEnabled')) stored.quietHoursEnabled = stored.quietHoursEnabled === true;
+      if (Object.hasOwn(stored,'siteColors') && !['off','default','indigo','blue','green','red','gray'].includes(stored.siteColors)) stored.siteColors = DEFAULTS.siteColors;
       if (Object.hasOwn(stored,'switchPolicy') && !['normal','stopped-earning'].includes(stored.switchPolicy)) stored.switchPolicy = DEFAULTS.switchPolicy;
       if (managerReadable && typeof GM_setValue === 'function') {
         try {

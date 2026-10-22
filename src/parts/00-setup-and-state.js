@@ -594,6 +594,7 @@
     rememberContentWarnings: false,
     reduceMotion: false,
     uiTheme: "dropper",
+    siteColors: "off",
     customOpacity: false,
     opacityPercent: 85,
     badgeOnly: false,

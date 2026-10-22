@@ -1091,7 +1091,7 @@
 
   function boot() {
     mountUi();
-    ExtraPotionsCore.onSuiteEvent(event=>{if(event.type!=='suite.site-control'||event.detail?.hostname!==location.hostname.toLowerCase())return;syncClaimWatchers();if(ExtraPotionsCore.suiteSitePaused?.())restoreTwitchSubscriptionPromos();else{watchTwitchSubscriptionPromos();heartbeat();}refreshViewingControls();},{type:'suite.site-control'});
+    ExtraPotionsCore.onSuiteEvent(event=>{if(event.type!=='suite.site-control'||event.detail?.hostname!==location.hostname.toLowerCase())return;syncClaimWatchers();applySiteColors();if(ExtraPotionsCore.suiteSitePaused?.())restoreTwitchSubscriptionPromos();else{watchTwitchSubscriptionPromos();heartbeat();}refreshViewingControls();},{type:'suite.site-control'});
     restorePersistedRoutingVerification();
     watchProgressTitle();
     syncClaimWatchers();

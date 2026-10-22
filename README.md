@@ -24,6 +24,7 @@ Stream switching starts at **Follow campaign order** in the first eligible tab. 
 - **Check eligibility:** see whether the stream you are watching matches the campaign: account, campaign, reward, game, and stream.
 - **Keep rewards in reach:** browse campaigns, review your history, and open your Drops inventory from the menu.
 - **Choose your games:** follow the games you care about and ignore the rest.
+- **Pick site colors:** recolor Twitch's pages with Default, Indigo, Blue, Green, Red or Gray in **Look → Site colors**. Palettes follow Twitch's light or dark mode, and Twitch keeps its purple buttons and live badges. Choose Twitch to restore its own colors.
 
 ## See it in action
 

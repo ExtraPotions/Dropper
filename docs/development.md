@@ -27,6 +27,8 @@ Suite-wide steps (shared Core changes, release order, screenshots, adding a prod
 - Older changelog headings that the distribution test lists must stay in `CHANGELOG.md`.
 - Surfaces that update cards must not cover (the progress strip and the page card) carry `data-exp-reserved`.
 
+- Site colors (`siteColors`, default `off`) use Core's shared palettes and only override Twitch's `:root` `--color-*` surface, text, border and link variables. Brand buttons, live and status colours and the `ScLayoutCssVars` overlay container keep Twitch's values. Mode follows `tw-root--theme-light`/`-dark` on `html`; Off and the suite site pause remove the style and root marker (`tests/site-colors.test.cjs`).
+
 ## Live checks
 
 `findNextStream` defaults to true with the normal campaign-order policy. At startup, a tab with no saved routing/viewing/manual-selection/lock state can claim switching ownership only with no opener and no live peer. Explicit saved Off choices and additional browsing tabs remain protected; existing session-recovery rules still apply.

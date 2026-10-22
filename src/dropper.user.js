@@ -594,6 +594,7 @@
     rememberContentWarnings: false,
     reduceMotion: false,
     uiTheme: "dropper",
+    siteColors: "off",
     customOpacity: false,
     opacityPercent: 85,
     badgeOnly: false,
@@ -2731,7 +2732,7 @@
 
   function boot() {
     mountUi();
-    ExtraPotionsCore.onSuiteEvent(event=>{if(event.type!=='suite.site-control'||event.detail?.hostname!==location.hostname.toLowerCase())return;syncClaimWatchers();if(ExtraPotionsCore.suiteSitePaused?.())restoreTwitchSubscriptionPromos();else{watchTwitchSubscriptionPromos();heartbeat();}refreshViewingControls();},{type:'suite.site-control'});
+    ExtraPotionsCore.onSuiteEvent(event=>{if(event.type!=='suite.site-control'||event.detail?.hostname!==location.hostname.toLowerCase())return;syncClaimWatchers();applySiteColors();if(ExtraPotionsCore.suiteSitePaused?.())restoreTwitchSubscriptionPromos();else{watchTwitchSubscriptionPromos();heartbeat();}refreshViewingControls();},{type:'suite.site-control'});
     restorePersistedRoutingVerification();
     watchProgressTitle();
     syncClaimWatchers();
@@ -13261,6 +13262,7 @@
       for (const name of ['protectedChannels','excludedChannels']) if (Object.hasOwn(stored,name)) stored[name] = Array.isArray(stored[name]) ? [...new Set(stored[name].filter(value=>typeof value==='string').map(value=>value.trim().toLowerCase()).filter(value=>/^[a-z0-9_]{1,25}$/.test(value)))].slice(0,100) : [];
       for (const name of ['quietHoursStart','quietHoursEnd']) if (Object.hasOwn(stored,name) && !/^([01]\d|2[0-3]):[0-5]\d$/.test(stored[name] || '')) stored[name] = DEFAULTS[name];
       if (Object.hasOwn(stored,'quietHoursEnabled')) stored.quietHoursEnabled = stored.quietHoursEnabled === true;
+      if (Object.hasOwn(stored,'siteColors') && !['off','default','indigo','blue','green','red','gray'].includes(stored.siteColors)) stored.siteColors = DEFAULTS.siteColors;
       if (Object.hasOwn(stored,'switchPolicy') && !['normal','stopped-earning'].includes(stored.switchPolicy)) stored.switchPolicy = DEFAULTS.switchPolicy;
       if (managerReadable && typeof GM_setValue === 'function') {
         try {
@@ -17285,7 +17287,48 @@
     }
   }
 
+  // Optional Twitch page colours from Core's shared palettes. Only neutral surfaces, text, borders and links change;
+  // Twitch's purple buttons, live and status colours stay, and its dark overlay container keeps its own values.
+  function twitchSiteColorCss(p, scope) {
+    const alpha = (color, percent) => `color-mix(in srgb,${color} ${percent}%,transparent)`;
+    const solid = (color, percent) => `color-mix(in srgb,${color} ${percent}%,${p.bg})`;
+    const groups = [
+      [p.bg, ['background-body','background-social-column']],
+      [p.panel, ['background-base','background-input','background-input-focus','background-modal']],
+      [p.raised, ['background-alt','background-alt-2','background-float','background-chat-alt','background-chat-line-mentioning','background-ftue-tooltip','background-snackbar-info']],
+      [p.inset, ['background-chat','background-chat-header']],
+      [alpha(p.text, p.mode === 'dark' ? 13 : 6), ['background-hover','background-interactable-alpha-hover','background-interactable-alpha-selected']],
+      [alpha(p.line, 30), ['background-button-secondary-default','background-placeholder','background-selectable','background-tag-default','background-input-disabled','background-segmented-button']],
+      [alpha(p.line, 40), ['background-interactable-hover','background-button-secondary-hover','background-button-text-hover','background-selectable-hover','background-tag-hover','background-button-icon-primary-hover','border-base','border-tab','border-tag','border-selectable','border-selectable-hover','border-spinner','border-bottom-sheet-item']],
+      [alpha(p.line, 50), ['background-interactable-active','background-button-secondary-active','background-button-text-active','background-tag-active','background-segmented-bar','background-button-icon-primary-active']],
+      [alpha(p.text, 40), ['background-scrollbar']],
+      [solid(p.line, 35), ['border-region']],
+      [p.line, ['border-input-hover','border-segmented-button','border-selectable-hover-outer']],
+      [p.accent, ['border-input-focus','border-tab-active','text-link','text-link-active','text-link-visited','text-tab-active','text-button-text']],
+      [`color-mix(in srgb,${p.accent} 75%,${p.text})`, ['text-link-hover','text-link-focus','border-tab-hover','border-tab-focus']],
+      [p.text, ['text-base','text-alt','text-input','text-label','text-tab','text-tag','text-button-secondary','text-button-text-hover','text-button-disabled','text-snackbar-info','border-spinner-fill']],
+      [p.muted, ['text-alt-2','text-hint','text-label-optional','text-keyboard-prompt','border-input','border-input-checkbox','border-toggle','border-quote']],
+      [alpha(p.text, 70), ['text-input-placeholder']],
+    ];
+    const vars = groups.flatMap(([value, names]) => names.map(name => `--color-${name}:${value}!important`)).join(';');
+    return `${scope}{color-scheme:${p.mode};${vars};background-color:${p.bg}!important}
+${scope} ::selection{background:${alpha(p.accent, 35)};color:${p.text}}`;
+  }
+
+  let siteColors = null;
+  function applySiteColors() {
+    if (settings.siteColors === 'off' || ExtraPotionsCore.suiteSitePaused?.()) { siteColors?.clear(); return; }
+    siteColors ??= ExtraPotionsCore.createSiteColors({
+      product: 'dropper',
+      css: twitchSiteColorCss,
+      mode: () => document.documentElement.classList.contains('tw-root--theme-light') ? 'light' : 'dark',
+      watch: render => { const observer = new MutationObserver(render); observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] }); return () => observer.disconnect(); },
+    });
+    siteColors.apply(settings.siteColors);
+  }
+
   function applyAppearanceSettings() {
+    applySiteColors();
     if (!ui) return;
     const theme = UI_THEMES.find((item) => item.id === 'dropper');
     settings.uiTheme = theme.id;
@@ -17462,6 +17505,7 @@
     // Menu size is a display choice, so it lives at the end of Appearance.
     const appearance=ui.shadow.getElementById('tdh-progress-body');
     if(appearance&&!appearance.querySelector('[data-dropper-menu-preferences]')){const preferences=ExtraPotionsCore.createMenuSizeControls();preferences.dataset.dropperMenuPreferences='1';appearance.prepend(preferences);}
+    if(appearance&&!appearance.querySelector('[data-dropper-site-colors]')){const row=ExtraPotionsCore.createSiteColorControl({value:settings.siteColors,offLabel:'Twitch',onChange:value=>{settings.siteColors=value;saveSettings();applySiteColors();}});row.dataset.dropperSiteColors='1';appearance.querySelector('[data-dropper-menu-preferences]')?.after(row);}
     const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,onReset:resetAllDropperData,notify:setStatus,layout:'grouped',issueSettings:()=>({current:settings,defaults:DEFAULTS})});
     target.replaceChildren(system);
   }
