@@ -937,8 +937,8 @@
       const empty = document.createElement("div");
       empty.className = "campaign-manager-note";
       empty.textContent = lastGqlError
-        ? "Campaign data is temporarily unavailable. Dropper will retry automatically."
-        : "No dated open campaigns are available yet. Dropper will refresh this list automatically.";
+        ? "Campaigns unavailable. Retrying."
+        : "No open campaigns. Refreshing.";
       list.appendChild(empty);
       return;
     }
@@ -954,54 +954,55 @@
       title.textContent = item.game;
       const meta = document.createElement("div");
       meta.className = "campaign-game-meta";
-      const campaignLabel = `${item.campaignCount} open campaign${item.campaignCount === 1 ? "" : "s"}`;
+      const campaignLabel = `${item.campaignCount} campaign${item.campaignCount === 1 ? "" : "s"}`;
       const subscriptionText = subscriptionRewardText(subscriptionRewards.get(item.key));
       const gameKey = normalizeGameName(item.game);
-      const orderLabel = gameKey && gameKey === watchingKey ? 'Watching now · ' : gameKey && gameKey === nextKey && !ignored ? 'Next up · ' : '';
-      meta.textContent = `${orderLabel}${campaignLabel} · Latest ${formatCampaignEndLabel(item.latestEndAt, item.latestEndMs, now).toLowerCase()}${subscriptionText ? ` · ${subscriptionText}` : ""}`;
+      const orderLabel = gameKey && gameKey === watchingKey ? 'Watching · ' : gameKey && gameKey === nextKey && !ignored ? 'Next · ' : '';
+      const endLabel = formatCampaignEndLabel(item.latestEndAt, item.latestEndMs, now);
+      meta.textContent = `${orderLabel}${campaignLabel} · ${item.campaignCount > 1 ? `Latest ${endLabel.toLowerCase()}` : endLabel}${subscriptionText ? ` · ${subscriptionText}` : ""}`;
       copy.append(title, meta);
       const rank = manualOrder ? visiblePriorityOrder.indexOf(normalizeGameName(item.game)) : openGames.indexOf(item);
-      const priorityControls = document.createElement('label');
-      priorityControls.className = 'campaign-priority-controls';
-      const priorityLabel = document.createElement('span');
-      priorityLabel.textContent = 'Priority';
-      const priorityPosition = document.createElement('select');
-      priorityPosition.className = 'select-lite campaign-priority-position';
-      const priorityName = `Priority position for ${item.game}`;
-      priorityPosition.setAttribute('aria-label', priorityName);
-      priorityPosition.disabled = !manualOrder || rank < 0 || openGames.length < 2;
-      if (!manualOrder) priorityPosition.title = 'Choose My Priority as the Campaign Order to rank games by hand';
-      const currentPosition = document.createElement('option');
-      currentPosition.value = String(rank + 1); currentPosition.textContent = `#${rank + 1}`;
-      priorityPosition.append(currentPosition);
-      priorityPosition.value = String(rank + 1);
-      function populatePositions() {
-        if (priorityPosition.options.length === openGames.length) return;
-        priorityPosition.replaceChildren();
-        for (let position = 1; position <= openGames.length; position++) {
-          const option = document.createElement('option');
-          option.value = String(position); option.textContent = `#${position}`;
-          priorityPosition.append(option);
-        }
+      if (manualOrder) {
+        const priorityControls = document.createElement('label');
+        priorityControls.className = 'campaign-priority-controls';
+        const priorityPosition = document.createElement('select');
+        priorityPosition.className = 'select-lite campaign-priority-position';
+        const priorityName = `Priority position for ${item.game}`;
+        priorityPosition.setAttribute('aria-label', priorityName);
+        priorityPosition.disabled = !manualOrder || rank < 0 || openGames.length < 2;
+        if (!manualOrder) priorityPosition.title = 'Choose My Priority as the Campaign Order to rank games by hand';
+        const currentPosition = document.createElement('option');
+        currentPosition.value = String(rank + 1); currentPosition.textContent = `#${rank + 1}`;
+        priorityPosition.append(currentPosition);
         priorityPosition.value = String(rank + 1);
+        function populatePositions() {
+          if (priorityPosition.options.length === openGames.length) return;
+          priorityPosition.replaceChildren();
+          for (let position = 1; position <= openGames.length; position++) {
+            const option = document.createElement('option');
+            option.value = String(position); option.textContent = `#${position}`;
+            priorityPosition.append(option);
+          }
+          priorityPosition.value = String(rank + 1);
+        }
+        // Only the active picker needs the full list of positions.
+        priorityPosition.addEventListener('focus', populatePositions);
+        priorityPosition.addEventListener('pointerdown', populatePositions);
+        priorityPosition.addEventListener('blur', () => {
+          const selected = priorityPosition.selectedOptions[0];
+          if (selected) priorityPosition.replaceChildren(selected);
+        });
+        priorityPosition.addEventListener('change', () => {
+          const position = Number(priorityPosition.value);
+          if (!manualOrder || !setCampaignPriorityPosition(item.game, position, openGames)) return;
+          const moved = applyCampaignOrderNow('campaign-priority-changed');
+          if (!moved.switched) routingControllerTick(Date.now(), 'campaign-priority-changed');
+          setStatus(`${item.game} moved to priority #${position}${moved.switched ? ` · Switching to ${moved.game}` : moved.why ? ` · Current Stream Unchanged (${moved.why})` : ''}`);
+          refreshOpenCampaignList(Date.now(), true);
+          [...ui.shadow.querySelectorAll('.campaign-priority-position')].find(select => select.getAttribute('aria-label') === priorityName)?.focus({ preventScroll: true });
+        });
+        priorityControls.append(priorityPosition); copy.append(priorityControls);
       }
-      // Only the active picker needs the full list of positions.
-      priorityPosition.addEventListener('focus', populatePositions);
-      priorityPosition.addEventListener('pointerdown', populatePositions);
-      priorityPosition.addEventListener('blur', () => {
-        const selected = priorityPosition.selectedOptions[0];
-        if (selected) priorityPosition.replaceChildren(selected);
-      });
-      priorityPosition.addEventListener('change', () => {
-        const position = Number(priorityPosition.value);
-        if (!manualOrder || !setCampaignPriorityPosition(item.game, position, openGames)) return;
-        const moved = applyCampaignOrderNow('campaign-priority-changed');
-        if (!moved.switched) routingControllerTick(Date.now(), 'campaign-priority-changed');
-        setStatus(`${item.game} moved to priority #${position}${moved.switched ? ` · Switching to ${moved.game}` : moved.why ? ` · Current Stream Unchanged (${moved.why})` : ''}`);
-        refreshOpenCampaignList(Date.now(), true);
-        [...ui.shadow.querySelectorAll('.campaign-priority-position')].find(select => select.getAttribute('aria-label') === priorityName)?.focus({ preventScroll: true });
-      });
-      priorityControls.append(priorityLabel, priorityPosition); copy.append(priorityControls);
 
       const check = document.createElement("button");
       check.type = "button";
@@ -1272,6 +1273,7 @@
       healthy,
       routingState: timing.routingState,
       visibilityState: attention.visibilityState,
+      pictureInPicture: Boolean(typeof document !== 'undefined' && document && document.pictureInPictureElement),
       documentFocused: attention.documentFocused,
       backgrounded: attention.backgrounded,
       backgroundSince: attention.backgroundSince,

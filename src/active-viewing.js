@@ -360,6 +360,9 @@
       if (health.live === false) return { code: 'offline', recoverable: true };
       if (health.gameMatches === false) return { code: 'wrong-game', recoverable: true };
       if (health.playback === 'error') return { code: 'playback-error', recoverable: true };
+      if (health.playback === 'paused' && health.pauseReason !== 'viewer' && (health.visibilityState === 'hidden' || health.pictureInPicture === true)) {
+        return { code: 'credit-delayed-background', recoverable: false };
+      }
       if ((health.playback === 'paused' || health.playback === 'ended') && health.pauseReason !== 'viewer') {
         return { code: 'playback-stopped', recoverable: true };
       }

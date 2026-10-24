@@ -80,13 +80,13 @@
     if (!summary || !summary.campaigns) return "";
     const parts = [];
     const known = summary.campaigns - summary.unknown;
-    if (known > 0) parts.push(`about ${insightsSpan(summary.remainingMinutes)} of watching left`);
-    else parts.push("watch time not known yet");
-    parts.push(`${summary.campaigns} open campaign${summary.campaigns === 1 ? "" : "s"}`);
-    if (summary.earliestEndMs > now) parts.push(`first ends in ${insightsSpan((summary.earliestEndMs - now) / 60000)}`);
-    if (summary.atRisk) parts.push(`${summary.atRisk} may not finish in time`);
-    if (summary.unknown && known > 0) parts.push(`${summary.unknown} without a known time`);
-    return `Planner: ${parts.join(" · ")}`;
+    if (known > 0) parts.push(`~${insightsSpan(summary.remainingMinutes)} watch`);
+    else parts.push("Watch time unknown");
+    parts.push(`${summary.campaigns} campaign${summary.campaigns === 1 ? "" : "s"}`);
+    if (summary.earliestEndMs > now) parts.push(`First ends ${insightsSpan((summary.earliestEndMs - now) / 60000)}`);
+    if (summary.atRisk) parts.push(`${summary.atRisk} at risk`);
+    if (summary.unknown && known > 0) parts.push(`${summary.unknown} untimed`);
+    return parts.join(" · ");
   }
 
   function campaignPlannerText(now = Date.now()) {

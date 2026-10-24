@@ -1180,8 +1180,8 @@ test('the campaign list follows Campaign Order and matches the campaign Dropper 
     return {
       list: [...root.querySelectorAll('.campaign-game-row')].map(row => ({
         game: row.querySelector('.campaign-game-name').textContent,
-        label: row.querySelector('.campaign-game-meta').textContent.match(/^(Watching now|Next up)/)?.[1] || '',
-        pickerOff: row.querySelector('.campaign-priority-position').disabled,
+        label: row.querySelector('.campaign-game-meta').textContent.match(/^(Watching|Next)/)?.[1] || '',
+        pickerPresent: Boolean(row.querySelector('.campaign-priority-position')),
       })),
       picks: pick?.game || '',
       helperCount: root.querySelectorAll('#tdh-campaign-order-note').length,
@@ -1196,9 +1196,9 @@ test('the campaign list follows Campaign Order and matches the campaign Dropper 
     await choose(strategy);
     const view = await snapshot();
     assert.deepEqual(view.list.map(item => item.game), expected, `${strategy}: the list is in the order Dropper picks`);
-    assert.equal(view.list[0].label, 'Next up', `${strategy}: the first game is marked next`);
+    assert.equal(view.list[0].label, 'Next', `${strategy}: the first game is marked next`);
     assert.equal(view.picks, expected[0], `${strategy}: the router picks the game shown first`);
-    assert.ok(view.list.every(item => item.pickerOff), `${strategy}: hand-ranking pickers are off outside My Priority`);
+    assert.ok(view.list.every(item => !item.pickerPresent), `${strategy}: hand-ranking pickers stay out of the way outside My Priority`);
     assert.equal(view.helperCount,0,'ordering is communicated by the list and selector, without helper prose');
   }
 
@@ -1218,8 +1218,8 @@ test('the campaign list follows Campaign Order and matches the campaign Dropper 
   await page.evaluate(campaigns => window.__dropperTest.configure({ id: 'reward-bravo', campaignId: 'bravo', campaignKey: 'bravo', name: 'Bravo reward', game: 'Bravo', requiredMinutes: 120, currentMinutes: 30, percent: 25, isClaimed: false }, campaigns), campaigns);
   await page.evaluate(() => window.__dropperTest.refresh());
   view = await snapshot();
-  assert.equal(view.list.find(item => item.game === 'Bravo').label, 'Watching now');
-  assert.equal(view.list.find(item => item.game === 'Charlie').label, 'Next up');
+  assert.equal(view.list.find(item => item.game === 'Bravo').label, 'Watching');
+  assert.equal(view.list.find(item => item.game === 'Charlie').label, 'Next');
 }));
 
 // Changing Campaign Order (or hand-ranking a game) acts immediately: Dropper leaves the campaign it is earning on

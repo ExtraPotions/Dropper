@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      3.4.55
+// @version      3.4.56
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.55";
+  const APP_VERSION = "3.4.56";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.56": ["Use the browser native automatic Picture-in-Picture callback when leaving Twitch.","Preserve the selected stream and Twitch-credited progress through hidden-tab pauses.","Handle late Picture-in-Picture entry and failed exits while preserving manual PiP and playback pauses.","Shorten campaign summaries and show ranking controls only for My Priority."],
     "3.4.55": ["Use the compact shared menu at the original three widths.","Keep the separate progress panel and existing controls available."],
     "3.4.54": ["Add Site colors in Look: six optional palettes for Twitch pages that follow Twitch light or dark mode.","Twitch keeps its purple buttons, live badges and status colors."],
     "3.4.53": ["Show Dropper for Twitch as the name in userscript managers.","Keep the existing namespace, update links and settings keys."],
@@ -1085,6 +1086,9 @@
       if (health.live === false) return { code: 'offline', recoverable: true };
       if (health.gameMatches === false) return { code: 'wrong-game', recoverable: true };
       if (health.playback === 'error') return { code: 'playback-error', recoverable: true };
+      if (health.playback === 'paused' && health.pauseReason !== 'viewer' && (health.visibilityState === 'hidden' || health.pictureInPicture === true)) {
+        return { code: 'credit-delayed-background', recoverable: false };
+      }
       if ((health.playback === 'paused' || health.playback === 'ended') && health.pauseReason !== 'viewer') {
         return { code: 'playback-stopped', recoverable: true };
       }
@@ -1859,6 +1863,7 @@
       if (event.type === 'error') viewingIntent.observe('error');
       refreshViewingControls();
       syncScreenWakeLock();
+      armAutoPictureInPicture();
     };
     const preserveLayoutChoice = event => {
       if (!event.isTrusted || event.composedPath().some(node => node?.id === 'tdh-root')) return;
@@ -2734,7 +2739,7 @@
 
   function boot() {
     mountUi();
-    ExtraPotionsCore.onSuiteEvent(event=>{if(event.type!=='suite.site-control'||event.detail?.hostname!==location.hostname.toLowerCase())return;syncClaimWatchers();applySiteColors();if(ExtraPotionsCore.suiteSitePaused?.())restoreTwitchSubscriptionPromos();else{watchTwitchSubscriptionPromos();heartbeat();}refreshViewingControls();},{type:'suite.site-control'});
+    ExtraPotionsCore.onSuiteEvent(event=>{if(event.type!=='suite.site-control'||event.detail?.hostname!==location.hostname.toLowerCase())return;syncClaimWatchers();applySiteColors();if(ExtraPotionsCore.suiteSitePaused?.())restoreTwitchSubscriptionPromos();else{watchTwitchSubscriptionPromos();heartbeat();}refreshViewingControls();void syncAutoPictureInPicture("suite-site-control");},{type:'suite.site-control'});
     restorePersistedRoutingVerification();
     watchProgressTitle();
     syncClaimWatchers();
@@ -2775,9 +2780,10 @@
       }
       void syncAutoPictureInPicture("visibilitychange");
     });
-    document.addEventListener("leavepictureinpicture", () => {
-      syncAutoPictureInPicture.owns = false;
+    document.addEventListener("leavepictureinpicture", (event) => {
+      if (event.target?.dataset?.tdhPipRequest) syncAutoPictureInPicture.owns = false;
     }, true);
+    armAutoPictureInPicture();
     window.addEventListener("resize", () => {
       syncMenuSizing();
       layoutChrome();
@@ -5036,6 +5042,8 @@
     if (!viewingNavigationAllowed(reason)) {
       const session = readRoutingControllerSession();
       const viewing = viewingIntent.snapshot();
+      const hiddenHold = viewing.paused && viewing.pauseReason !== 'viewer' && typeof document !== 'undefined' && document && (document.hidden || document.pictureInPictureElement);
+      if (hiddenHold) return false;
       const waitReason = viewing.paused ? 'viewer-paused' : viewing.manualStream ? 'manual-stream' : 'stream-locked';
       if (session.state !== ROUTING_STATES.PAUSED || session.waitReason !== waitReason || session.candidateEvidence || session.targetStream) {
         transitionRoutingController(ROUTING_STATES.PAUSED, {
@@ -15462,13 +15470,13 @@
     if (!summary || !summary.campaigns) return "";
     const parts = [];
     const known = summary.campaigns - summary.unknown;
-    if (known > 0) parts.push(`about ${insightsSpan(summary.remainingMinutes)} of watching left`);
-    else parts.push("watch time not known yet");
-    parts.push(`${summary.campaigns} open campaign${summary.campaigns === 1 ? "" : "s"}`);
-    if (summary.earliestEndMs > now) parts.push(`first ends in ${insightsSpan((summary.earliestEndMs - now) / 60000)}`);
-    if (summary.atRisk) parts.push(`${summary.atRisk} may not finish in time`);
-    if (summary.unknown && known > 0) parts.push(`${summary.unknown} without a known time`);
-    return `Planner: ${parts.join(" · ")}`;
+    if (known > 0) parts.push(`~${insightsSpan(summary.remainingMinutes)} watch`);
+    else parts.push("Watch time unknown");
+    parts.push(`${summary.campaigns} campaign${summary.campaigns === 1 ? "" : "s"}`);
+    if (summary.earliestEndMs > now) parts.push(`First ends ${insightsSpan((summary.earliestEndMs - now) / 60000)}`);
+    if (summary.atRisk) parts.push(`${summary.atRisk} at risk`);
+    if (summary.unknown && known > 0) parts.push(`${summary.unknown} untimed`);
+    return parts.join(" · ");
   }
 
   function campaignPlannerText(now = Date.now()) {
@@ -16513,8 +16521,8 @@
       const empty = document.createElement("div");
       empty.className = "campaign-manager-note";
       empty.textContent = lastGqlError
-        ? "Campaign data is temporarily unavailable. Dropper will retry automatically."
-        : "No dated open campaigns are available yet. Dropper will refresh this list automatically.";
+        ? "Campaigns unavailable. Retrying."
+        : "No open campaigns. Refreshing.";
       list.appendChild(empty);
       return;
     }
@@ -16530,54 +16538,55 @@
       title.textContent = item.game;
       const meta = document.createElement("div");
       meta.className = "campaign-game-meta";
-      const campaignLabel = `${item.campaignCount} open campaign${item.campaignCount === 1 ? "" : "s"}`;
+      const campaignLabel = `${item.campaignCount} campaign${item.campaignCount === 1 ? "" : "s"}`;
       const subscriptionText = subscriptionRewardText(subscriptionRewards.get(item.key));
       const gameKey = normalizeGameName(item.game);
-      const orderLabel = gameKey && gameKey === watchingKey ? 'Watching now · ' : gameKey && gameKey === nextKey && !ignored ? 'Next up · ' : '';
-      meta.textContent = `${orderLabel}${campaignLabel} · Latest ${formatCampaignEndLabel(item.latestEndAt, item.latestEndMs, now).toLowerCase()}${subscriptionText ? ` · ${subscriptionText}` : ""}`;
+      const orderLabel = gameKey && gameKey === watchingKey ? 'Watching · ' : gameKey && gameKey === nextKey && !ignored ? 'Next · ' : '';
+      const endLabel = formatCampaignEndLabel(item.latestEndAt, item.latestEndMs, now);
+      meta.textContent = `${orderLabel}${campaignLabel} · ${item.campaignCount > 1 ? `Latest ${endLabel.toLowerCase()}` : endLabel}${subscriptionText ? ` · ${subscriptionText}` : ""}`;
       copy.append(title, meta);
       const rank = manualOrder ? visiblePriorityOrder.indexOf(normalizeGameName(item.game)) : openGames.indexOf(item);
-      const priorityControls = document.createElement('label');
-      priorityControls.className = 'campaign-priority-controls';
-      const priorityLabel = document.createElement('span');
-      priorityLabel.textContent = 'Priority';
-      const priorityPosition = document.createElement('select');
-      priorityPosition.className = 'select-lite campaign-priority-position';
-      const priorityName = `Priority position for ${item.game}`;
-      priorityPosition.setAttribute('aria-label', priorityName);
-      priorityPosition.disabled = !manualOrder || rank < 0 || openGames.length < 2;
-      if (!manualOrder) priorityPosition.title = 'Choose My Priority as the Campaign Order to rank games by hand';
-      const currentPosition = document.createElement('option');
-      currentPosition.value = String(rank + 1); currentPosition.textContent = `#${rank + 1}`;
-      priorityPosition.append(currentPosition);
-      priorityPosition.value = String(rank + 1);
-      function populatePositions() {
-        if (priorityPosition.options.length === openGames.length) return;
-        priorityPosition.replaceChildren();
-        for (let position = 1; position <= openGames.length; position++) {
-          const option = document.createElement('option');
-          option.value = String(position); option.textContent = `#${position}`;
-          priorityPosition.append(option);
-        }
+      if (manualOrder) {
+        const priorityControls = document.createElement('label');
+        priorityControls.className = 'campaign-priority-controls';
+        const priorityPosition = document.createElement('select');
+        priorityPosition.className = 'select-lite campaign-priority-position';
+        const priorityName = `Priority position for ${item.game}`;
+        priorityPosition.setAttribute('aria-label', priorityName);
+        priorityPosition.disabled = !manualOrder || rank < 0 || openGames.length < 2;
+        if (!manualOrder) priorityPosition.title = 'Choose My Priority as the Campaign Order to rank games by hand';
+        const currentPosition = document.createElement('option');
+        currentPosition.value = String(rank + 1); currentPosition.textContent = `#${rank + 1}`;
+        priorityPosition.append(currentPosition);
         priorityPosition.value = String(rank + 1);
+        function populatePositions() {
+          if (priorityPosition.options.length === openGames.length) return;
+          priorityPosition.replaceChildren();
+          for (let position = 1; position <= openGames.length; position++) {
+            const option = document.createElement('option');
+            option.value = String(position); option.textContent = `#${position}`;
+            priorityPosition.append(option);
+          }
+          priorityPosition.value = String(rank + 1);
+        }
+        // Only the active picker needs the full list of positions.
+        priorityPosition.addEventListener('focus', populatePositions);
+        priorityPosition.addEventListener('pointerdown', populatePositions);
+        priorityPosition.addEventListener('blur', () => {
+          const selected = priorityPosition.selectedOptions[0];
+          if (selected) priorityPosition.replaceChildren(selected);
+        });
+        priorityPosition.addEventListener('change', () => {
+          const position = Number(priorityPosition.value);
+          if (!manualOrder || !setCampaignPriorityPosition(item.game, position, openGames)) return;
+          const moved = applyCampaignOrderNow('campaign-priority-changed');
+          if (!moved.switched) routingControllerTick(Date.now(), 'campaign-priority-changed');
+          setStatus(`${item.game} moved to priority #${position}${moved.switched ? ` · Switching to ${moved.game}` : moved.why ? ` · Current Stream Unchanged (${moved.why})` : ''}`);
+          refreshOpenCampaignList(Date.now(), true);
+          [...ui.shadow.querySelectorAll('.campaign-priority-position')].find(select => select.getAttribute('aria-label') === priorityName)?.focus({ preventScroll: true });
+        });
+        priorityControls.append(priorityPosition); copy.append(priorityControls);
       }
-      // Only the active picker needs the full list of positions.
-      priorityPosition.addEventListener('focus', populatePositions);
-      priorityPosition.addEventListener('pointerdown', populatePositions);
-      priorityPosition.addEventListener('blur', () => {
-        const selected = priorityPosition.selectedOptions[0];
-        if (selected) priorityPosition.replaceChildren(selected);
-      });
-      priorityPosition.addEventListener('change', () => {
-        const position = Number(priorityPosition.value);
-        if (!manualOrder || !setCampaignPriorityPosition(item.game, position, openGames)) return;
-        const moved = applyCampaignOrderNow('campaign-priority-changed');
-        if (!moved.switched) routingControllerTick(Date.now(), 'campaign-priority-changed');
-        setStatus(`${item.game} moved to priority #${position}${moved.switched ? ` · Switching to ${moved.game}` : moved.why ? ` · Current Stream Unchanged (${moved.why})` : ''}`);
-        refreshOpenCampaignList(Date.now(), true);
-        [...ui.shadow.querySelectorAll('.campaign-priority-position')].find(select => select.getAttribute('aria-label') === priorityName)?.focus({ preventScroll: true });
-      });
-      priorityControls.append(priorityLabel, priorityPosition); copy.append(priorityControls);
 
       const check = document.createElement("button");
       check.type = "button";
@@ -16848,6 +16857,7 @@
       healthy,
       routingState: timing.routingState,
       visibilityState: attention.visibilityState,
+      pictureInPicture: Boolean(typeof document !== 'undefined' && document && document.pictureInPictureElement),
       documentFocused: attention.documentFocused,
       backgrounded: attention.backgrounded,
       backgroundSince: attention.backgroundSince,
@@ -17811,33 +17821,183 @@ ${scope} ::selection{background:${alpha(p.accent, 35)};color:${p.text}}`;
     }
   }
 
-  async function syncAutoPictureInPicture(reason = '') {
-    const video = streamVideoElement();
-    const active = document.pictureInPictureElement;
-    const owns = Boolean(syncAutoPictureInPicture.owns);
-    if (ExtraPotionsCore.suiteSitePaused?.() || !settings.autoPictureInPicture || !document.hidden) {
-      if (owns && active && typeof document.exitPictureInPicture === 'function') {
-        try { await document.exitPictureInPicture(); } catch (_) {}
-      }
-      syncAutoPictureInPicture.owns = false;
-      return false;
+  function autoPipPageHook() {
+    const root = document.documentElement;
+    if (!root) return;
+    if (window.__tdhAutoPipHooked) {
+      try { window.__tdhAutoPipSync?.(); } catch (_) {}
+      return;
     }
-    if (!video || typeof video.requestPictureInPicture !== 'function' || document.pictureInPictureEnabled === false) return false;
-    if (active === video) return true;
-    try {
-      await video.requestPictureInPicture();
-      syncAutoPictureInPicture.owns = true;
-      syncAutoPictureInPicture.lastError = '';
-      logActivity('picture-in-picture', 'Entered Picture-in-Picture because the Twitch tab became hidden', { reason: reason || 'hidden' });
+    window.__tdhAutoPipHooked = true;
+    let installed = false;
+    let generation = 0;
+    const ready = video => Boolean(video && !video.paused && !video.ended && video.readyState > 1 && video.videoWidth > 0 && !video.disablePictureInPicture && typeof video.requestPictureInPicture === 'function');
+    function eligible() {
+      const videos = [...document.querySelectorAll('video')];
+      return videos.find(video => ready(video) && video.closest?.('[data-a-player-state]')) || videos.find(ready) || null;
+    }
+    function clearOwned() {
+      for (const video of document.querySelectorAll('video')) {
+        if (video.dataset?.tdhAutoPip !== '1') continue;
+        try { video.autoPictureInPicture = false; } catch (_) {}
+        delete video.dataset.tdhAutoPip;
+      }
+    }
+    async function finish(video, ticket) {
+      const mark = String(ticket);
+      if (root.dataset.tdhPipTicket !== mark || video.dataset?.tdhPipRequest !== mark) return;
+      if (document.pictureInPictureElement !== video) return;
+      if (document.visibilityState !== 'visible' && root.dataset.tdhAutoPip === '1') return;
+      if (typeof document.exitPictureInPicture !== 'function') return;
+      try { await document.exitPictureInPicture(); }
+      catch (_) { return; }
+      if (root.dataset.tdhPipTicket !== mark || document.pictureInPictureElement === video) return;
+      if (video.dataset?.tdhPipRequest === mark) delete video.dataset.tdhPipRequest;
+      if (!document.pictureInPictureElement?.dataset?.tdhPipRequest) delete root.dataset.tdhPipOwns;
+    }
+    function request(video) {
+      if (!video || document.pictureInPictureElement) return;
+      const ticket = ++generation;
+      root.dataset.tdhPipTicket = String(ticket);
+      video.dataset.tdhPipRequest = String(ticket);
+      let pending;
+      try { pending = video.requestPictureInPicture(); }
+      catch (_) { delete video.dataset.tdhPipRequest; return; }
+      Promise.resolve(pending).then(() => Promise.resolve(finish(video, ticket)).catch(() => {}), () => {
+        if (root.dataset.tdhPipTicket === String(ticket)) delete video.dataset.tdhPipRequest;
+      });
+    }
+    function sync() {
+      const armed = root.dataset.tdhAutoPip === '1';
+      const session = navigator.mediaSession;
+      if (!armed) {
+        clearOwned();
+        if (installed && session && typeof session.setActionHandler === 'function') {
+          try { session.setActionHandler('enterpictureinpicture', null); } catch (_) {}
+        }
+        installed = false;
+        window.__tdhAutoPipHandler = false;
+        return;
+      }
+      clearOwned();
+      const video = eligible();
+      if (video) {
+        try { video.autoPictureInPicture = true; } catch (_) {}
+        video.dataset.tdhAutoPip = '1';
+      }
+      if (installed || !session || typeof session.setActionHandler !== 'function') return;
+      try {
+        session.setActionHandler('enterpictureinpicture', () => {
+          if (root.dataset.tdhAutoPip !== '1') return;
+          const current = eligible();
+          if (!current) return;
+          request(current);
+        });
+        installed = true;
+        window.__tdhAutoPipHandler = true;
+      } catch (_) {
+        installed = false;
+        window.__tdhAutoPipHandler = false;
+      }
+    }
+    document.addEventListener('playing', event => {
+      if (event.target?.tagName === 'VIDEO') sync();
+    }, true);
+    document.addEventListener('enterpictureinpicture', event => {
+      if (event.target?.dataset?.tdhPipRequest) root.dataset.tdhPipOwns = '1';
+    }, true);
+    document.addEventListener('leavepictureinpicture', event => {
+      if (!event.target?.dataset?.tdhPipRequest) return;
+      delete event.target.dataset.tdhPipRequest;
+      delete root.dataset.tdhPipOwns;
+    }, true);
+    window.__tdhAutoPipSync = sync;
+    // shortcut: Chrome invokes enterpictureinpicture once per hide. Re-arm on playing for the next leave if the player was not eligible yet.
+    window.__tdhAutoPipEnter = () => {
+      if (window.__tdhAutoPipHandler || root.dataset.tdhAutoPip !== '1' || document.visibilityState === 'visible') return false;
+      const video = eligible();
+      if (!video) return false;
+      request(video);
       return true;
-    } catch (error) {
-      const message = cleanText(error?.message || error || 'Picture-in-Picture unavailable');
-      if (message !== syncAutoPictureInPicture.lastError) {
-        syncAutoPictureInPicture.lastError = message;
-        logActivity('picture-in-picture', 'Automatic Picture-in-Picture was unavailable', { reason: reason || 'hidden', message });
+    };
+    sync();
+  }
+
+  function installAutoPictureInPictureHook() {
+    if (installAutoPictureInPictureHook.done) return;
+    installAutoPictureInPictureHook.done = true;
+    const uw = typeof page !== 'undefined' && page ? page : window;
+    if (uw.__tdhAutoPipHooked) return;
+    const injector = `(${autoPipPageHook.toString()})();`;
+    let injected = false;
+    try {
+      const script = document.createElement('script');
+      script.textContent = injector;
+      (document.documentElement || document.head || document.body).appendChild(script);
+      script.remove();
+      injected = Boolean(uw.__tdhAutoPipHooked);
+    } catch (_) { /* CSP can block the inline script. */ }
+    if (injected || uw.__tdhAutoPipHooked) return;
+    try {
+      if (typeof uw.eval === 'function') uw.eval(injector);
+      else if (typeof uw.Function === 'function') uw.Function(injector)();
+    } catch (_) { /* The visibility fallback remains when the page world is closed. */ }
+  }
+
+  function autoPictureInPictureArmed() {
+    return Boolean(settings.autoPictureInPicture) && !ExtraPotionsCore.suiteSitePaused?.() && !(typeof viewingIntent !== 'undefined' && viewingIntent.snapshot?.().pauseReason === 'viewer');
+  }
+
+  function armAutoPictureInPicture() {
+    installAutoPictureInPictureHook();
+    const root = document.documentElement;
+    if (!root) return false;
+    if (autoPictureInPictureArmed() && document.pictureInPictureEnabled !== false) root.dataset.tdhAutoPip = '1';
+    else delete root.dataset.tdhAutoPip;
+    try {
+      const uw = typeof page !== 'undefined' && page ? page : window;
+      uw.__tdhAutoPipSync?.();
+    } catch (_) {}
+    return root.dataset.tdhAutoPip === '1';
+  }
+
+  async function syncAutoPictureInPicture(reason = '') {
+    const ticket = (syncAutoPictureInPicture.ticket = (syncAutoPictureInPicture.ticket || 0) + 1);
+    if (autoPictureInPictureArmed() && document.pictureInPictureEnabled === false && syncAutoPictureInPicture.lastError !== 'disabled') {
+      syncAutoPictureInPicture.lastError = 'disabled';
+      logActivity('picture-in-picture', 'Automatic Picture-in-Picture was unavailable', { reason: reason || 'hidden', message: 'Picture-in-Picture is disabled' });
+    }
+    const armed = armAutoPictureInPicture();
+    const root = document.documentElement;
+    const active = document.pictureInPictureElement;
+    const requestTicket = active?.dataset?.tdhPipRequest;
+    const rootTicket = root?.dataset?.tdhPipTicket;
+    const owned = Boolean(active && root?.dataset.tdhPipOwns === '1' && requestTicket && requestTicket === rootTicket);
+    if (!armed || !document.hidden) {
+      if (owned && typeof document.exitPictureInPicture === 'function' && document.pictureInPictureElement === active) {
+        try { await document.exitPictureInPicture(); }
+        catch (_) {
+          if (syncAutoPictureInPicture.ticket === ticket) syncAutoPictureInPicture.owns = true;
+          return false;
+        }
+        if (syncAutoPictureInPicture.ticket !== ticket) return false;
+        if (document.pictureInPictureElement !== active && root.dataset.tdhPipTicket === rootTicket) {
+          if (active.dataset.tdhPipRequest === requestTicket) delete active.dataset.tdhPipRequest;
+          if (!document.pictureInPictureElement?.dataset?.tdhPipRequest) delete root.dataset.tdhPipOwns;
+          syncAutoPictureInPicture.owns = false;
+        }
+        return false;
       }
+      if (syncAutoPictureInPicture.ticket !== ticket) return false;
+      syncAutoPictureInPicture.owns = root?.dataset.tdhPipOwns === '1';
       return false;
     }
+    const uw = typeof page !== 'undefined' && page ? page : window;
+    if (!uw.__tdhAutoPipHandler) {
+      try { uw.__tdhAutoPipEnter?.(); } catch (_) {}
+    }
+    syncAutoPictureInPicture.owns = root?.dataset.tdhPipOwns === '1';
+    return false;
   }
 
   function checkCampaignDeadlineNotification(now = Date.now()) {

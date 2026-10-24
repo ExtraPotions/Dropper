@@ -1,3 +1,10 @@
+## 3.4.56 — 2026-10-24
+
+- Use the browser native automatic Picture-in-Picture callback when leaving Twitch.
+- Preserve the selected stream and Twitch-credited progress through hidden-tab pauses.
+- Handle late Picture-in-Picture entry and failed exits while preserving manual PiP and playback pauses.
+- Shorten campaign summaries and show ranking controls only for My Priority.
+
 ## 3.4.55 — 2026-10-24
 
 - Use the compact shared menu at the original three widths.

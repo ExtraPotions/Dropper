@@ -216,6 +216,7 @@
       if (event.type === 'error') viewingIntent.observe('error');
       refreshViewingControls();
       syncScreenWakeLock();
+      armAutoPictureInPicture();
     };
     const preserveLayoutChoice = event => {
       if (!event.isTrusted || event.composedPath().some(node => node?.id === 'tdh-root')) return;
@@ -1091,7 +1092,7 @@
 
   function boot() {
     mountUi();
-    ExtraPotionsCore.onSuiteEvent(event=>{if(event.type!=='suite.site-control'||event.detail?.hostname!==location.hostname.toLowerCase())return;syncClaimWatchers();applySiteColors();if(ExtraPotionsCore.suiteSitePaused?.())restoreTwitchSubscriptionPromos();else{watchTwitchSubscriptionPromos();heartbeat();}refreshViewingControls();},{type:'suite.site-control'});
+    ExtraPotionsCore.onSuiteEvent(event=>{if(event.type!=='suite.site-control'||event.detail?.hostname!==location.hostname.toLowerCase())return;syncClaimWatchers();applySiteColors();if(ExtraPotionsCore.suiteSitePaused?.())restoreTwitchSubscriptionPromos();else{watchTwitchSubscriptionPromos();heartbeat();}refreshViewingControls();void syncAutoPictureInPicture("suite-site-control");},{type:'suite.site-control'});
     restorePersistedRoutingVerification();
     watchProgressTitle();
     syncClaimWatchers();
@@ -1132,9 +1133,10 @@
       }
       void syncAutoPictureInPicture("visibilitychange");
     });
-    document.addEventListener("leavepictureinpicture", () => {
-      syncAutoPictureInPicture.owns = false;
+    document.addEventListener("leavepictureinpicture", (event) => {
+      if (event.target?.dataset?.tdhPipRequest) syncAutoPictureInPicture.owns = false;
     }, true);
+    armAutoPictureInPicture();
     window.addEventListener("resize", () => {
       syncMenuSizing();
       layoutChrome();
@@ -3393,6 +3395,8 @@
     if (!viewingNavigationAllowed(reason)) {
       const session = readRoutingControllerSession();
       const viewing = viewingIntent.snapshot();
+      const hiddenHold = viewing.paused && viewing.pauseReason !== 'viewer' && typeof document !== 'undefined' && document && (document.hidden || document.pictureInPictureElement);
+      if (hiddenHold) return false;
       const waitReason = viewing.paused ? 'viewer-paused' : viewing.manualStream ? 'manual-stream' : 'stream-locked';
       if (session.state !== ROUTING_STATES.PAUSED || session.waitReason !== waitReason || session.candidateEvidence || session.targetStream) {
         transitionRoutingController(ROUTING_STATES.PAUSED, {

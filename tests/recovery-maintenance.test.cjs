@@ -122,6 +122,32 @@ test('blocked routing clears stale earning evidence but keeps the campaign, rewa
     assert.equal(transitions, 1, 'held heartbeat does not repeatedly rewrite or log the same state');
   }
 });
+test('a hidden non-viewer pause keeps the earning stream and credited timestamp', () => {
+  let session = { state: 'earning', targetStream: 'channel', targetGame: 'Game', targetCampaignKey: 'campaign', targetDropId: 'reward', candidateEvidence: { campaignVerified: true }, deadlineAt: now + 90000 };
+  let transitions = 0;
+  const c = {
+    Date, settings: { findNextStream: true }, lastProgressAt: 123456,
+    document: { hidden: true, pictureInPictureElement: null },
+    ROUTING_STATES: { PAUSED: 'paused' },
+    routingControllerResetLegacyHandoff() {}, recoveryNavigationState: () => ({ suspended: false }),
+    isAutoRoutingController: () => true, viewingNavigationAllowed: () => false,
+    readRoutingControllerSession: () => session,
+    viewingIntent: { snapshot: () => ({ paused: true, pauseReason: 'unknown', manualStream: false }) },
+    lastViewingNavigationBlock: 'Playback Paused', refreshViewingControls() {},
+    transitionRoutingController: () => { transitions += 1; },
+    setManualStreamLock() { throw new Error('hidden pause must not release the stream lock'); },
+  };
+  vm.createContext(c); vm.runInContext(extract('routingControllerTick'), c);
+  assert.equal(c.routingControllerTick(now), false);
+  assert.equal(transitions, 0);
+  assert.equal(session.targetStream, 'channel');
+  assert.equal(session.candidateEvidence.campaignVerified, true);
+  assert.equal(session.targetDropId, 'reward');
+  assert.equal(c.lastProgressAt, 123456);
+  c.viewingIntent.snapshot = () => ({ paused: true, pauseReason: 'viewer', manualStream: false });
+  c.routingControllerTick(now);
+  assert.equal(transitions, 1, 'an explicit viewer pause still holds routing');
+});
 test('resuming on the wrong game requests fresh category discovery instead of stale cached stream', () => {
   let session = { deferredCampaigns: {} }, navigation;
   const c = { Date: { now: () => now }, isAutomationTab: () => true, settings: { findNextStream: true }, currentDrop: { id: 'two', game: 'Heroes of the Storm', gameSlug: 'heroes-of-the-storm', currentMinutes: 89, requiredMinutes: 120 }, ROUTING_STATES: { FIND_STREAM: 'find-stream', VERIFY_STREAM: 'verify-stream' }, ROUTING_NAVIGATION_DEADLINE_MS: 30000, routingControllerResetLegacyHandoff() {}, campaignMarkedComplete: () => false, campaignIsRoutingOpen: () => true, dropProgressComplete: () => false, watchingLogin: () => 'unrelated', readStreamInfo: () => ({ live: true, game: 'Just Chatting' }), gameNamesMatch: (a,b) => a === b, routingControllerTargetFromDrop: d => ({ targetGame: d.game, targetSlug: d.gameSlug }), transitionRoutingController: (state, patch) => session = { ...session, ...patch, state }, readRoutingControllerSession: () => session, cleanText: s => String(s || '').trim(), resolveCategorySlug: o => o.gameSlug, isDirectoryCategoryPage: () => false, routingControllerNavigate: (url, reason) => { navigation = { url, reason }; } };

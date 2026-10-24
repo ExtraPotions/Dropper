@@ -73,33 +73,183 @@
     }
   }
 
-  async function syncAutoPictureInPicture(reason = '') {
-    const video = streamVideoElement();
-    const active = document.pictureInPictureElement;
-    const owns = Boolean(syncAutoPictureInPicture.owns);
-    if (ExtraPotionsCore.suiteSitePaused?.() || !settings.autoPictureInPicture || !document.hidden) {
-      if (owns && active && typeof document.exitPictureInPicture === 'function') {
-        try { await document.exitPictureInPicture(); } catch (_) {}
-      }
-      syncAutoPictureInPicture.owns = false;
-      return false;
+  function autoPipPageHook() {
+    const root = document.documentElement;
+    if (!root) return;
+    if (window.__tdhAutoPipHooked) {
+      try { window.__tdhAutoPipSync?.(); } catch (_) {}
+      return;
     }
-    if (!video || typeof video.requestPictureInPicture !== 'function' || document.pictureInPictureEnabled === false) return false;
-    if (active === video) return true;
-    try {
-      await video.requestPictureInPicture();
-      syncAutoPictureInPicture.owns = true;
-      syncAutoPictureInPicture.lastError = '';
-      logActivity('picture-in-picture', 'Entered Picture-in-Picture because the Twitch tab became hidden', { reason: reason || 'hidden' });
+    window.__tdhAutoPipHooked = true;
+    let installed = false;
+    let generation = 0;
+    const ready = video => Boolean(video && !video.paused && !video.ended && video.readyState > 1 && video.videoWidth > 0 && !video.disablePictureInPicture && typeof video.requestPictureInPicture === 'function');
+    function eligible() {
+      const videos = [...document.querySelectorAll('video')];
+      return videos.find(video => ready(video) && video.closest?.('[data-a-player-state]')) || videos.find(ready) || null;
+    }
+    function clearOwned() {
+      for (const video of document.querySelectorAll('video')) {
+        if (video.dataset?.tdhAutoPip !== '1') continue;
+        try { video.autoPictureInPicture = false; } catch (_) {}
+        delete video.dataset.tdhAutoPip;
+      }
+    }
+    async function finish(video, ticket) {
+      const mark = String(ticket);
+      if (root.dataset.tdhPipTicket !== mark || video.dataset?.tdhPipRequest !== mark) return;
+      if (document.pictureInPictureElement !== video) return;
+      if (document.visibilityState !== 'visible' && root.dataset.tdhAutoPip === '1') return;
+      if (typeof document.exitPictureInPicture !== 'function') return;
+      try { await document.exitPictureInPicture(); }
+      catch (_) { return; }
+      if (root.dataset.tdhPipTicket !== mark || document.pictureInPictureElement === video) return;
+      if (video.dataset?.tdhPipRequest === mark) delete video.dataset.tdhPipRequest;
+      if (!document.pictureInPictureElement?.dataset?.tdhPipRequest) delete root.dataset.tdhPipOwns;
+    }
+    function request(video) {
+      if (!video || document.pictureInPictureElement) return;
+      const ticket = ++generation;
+      root.dataset.tdhPipTicket = String(ticket);
+      video.dataset.tdhPipRequest = String(ticket);
+      let pending;
+      try { pending = video.requestPictureInPicture(); }
+      catch (_) { delete video.dataset.tdhPipRequest; return; }
+      Promise.resolve(pending).then(() => Promise.resolve(finish(video, ticket)).catch(() => {}), () => {
+        if (root.dataset.tdhPipTicket === String(ticket)) delete video.dataset.tdhPipRequest;
+      });
+    }
+    function sync() {
+      const armed = root.dataset.tdhAutoPip === '1';
+      const session = navigator.mediaSession;
+      if (!armed) {
+        clearOwned();
+        if (installed && session && typeof session.setActionHandler === 'function') {
+          try { session.setActionHandler('enterpictureinpicture', null); } catch (_) {}
+        }
+        installed = false;
+        window.__tdhAutoPipHandler = false;
+        return;
+      }
+      clearOwned();
+      const video = eligible();
+      if (video) {
+        try { video.autoPictureInPicture = true; } catch (_) {}
+        video.dataset.tdhAutoPip = '1';
+      }
+      if (installed || !session || typeof session.setActionHandler !== 'function') return;
+      try {
+        session.setActionHandler('enterpictureinpicture', () => {
+          if (root.dataset.tdhAutoPip !== '1') return;
+          const current = eligible();
+          if (!current) return;
+          request(current);
+        });
+        installed = true;
+        window.__tdhAutoPipHandler = true;
+      } catch (_) {
+        installed = false;
+        window.__tdhAutoPipHandler = false;
+      }
+    }
+    document.addEventListener('playing', event => {
+      if (event.target?.tagName === 'VIDEO') sync();
+    }, true);
+    document.addEventListener('enterpictureinpicture', event => {
+      if (event.target?.dataset?.tdhPipRequest) root.dataset.tdhPipOwns = '1';
+    }, true);
+    document.addEventListener('leavepictureinpicture', event => {
+      if (!event.target?.dataset?.tdhPipRequest) return;
+      delete event.target.dataset.tdhPipRequest;
+      delete root.dataset.tdhPipOwns;
+    }, true);
+    window.__tdhAutoPipSync = sync;
+    // shortcut: Chrome invokes enterpictureinpicture once per hide. Re-arm on playing for the next leave if the player was not eligible yet.
+    window.__tdhAutoPipEnter = () => {
+      if (window.__tdhAutoPipHandler || root.dataset.tdhAutoPip !== '1' || document.visibilityState === 'visible') return false;
+      const video = eligible();
+      if (!video) return false;
+      request(video);
       return true;
-    } catch (error) {
-      const message = cleanText(error?.message || error || 'Picture-in-Picture unavailable');
-      if (message !== syncAutoPictureInPicture.lastError) {
-        syncAutoPictureInPicture.lastError = message;
-        logActivity('picture-in-picture', 'Automatic Picture-in-Picture was unavailable', { reason: reason || 'hidden', message });
+    };
+    sync();
+  }
+
+  function installAutoPictureInPictureHook() {
+    if (installAutoPictureInPictureHook.done) return;
+    installAutoPictureInPictureHook.done = true;
+    const uw = typeof page !== 'undefined' && page ? page : window;
+    if (uw.__tdhAutoPipHooked) return;
+    const injector = `(${autoPipPageHook.toString()})();`;
+    let injected = false;
+    try {
+      const script = document.createElement('script');
+      script.textContent = injector;
+      (document.documentElement || document.head || document.body).appendChild(script);
+      script.remove();
+      injected = Boolean(uw.__tdhAutoPipHooked);
+    } catch (_) { /* CSP can block the inline script. */ }
+    if (injected || uw.__tdhAutoPipHooked) return;
+    try {
+      if (typeof uw.eval === 'function') uw.eval(injector);
+      else if (typeof uw.Function === 'function') uw.Function(injector)();
+    } catch (_) { /* The visibility fallback remains when the page world is closed. */ }
+  }
+
+  function autoPictureInPictureArmed() {
+    return Boolean(settings.autoPictureInPicture) && !ExtraPotionsCore.suiteSitePaused?.() && !(typeof viewingIntent !== 'undefined' && viewingIntent.snapshot?.().pauseReason === 'viewer');
+  }
+
+  function armAutoPictureInPicture() {
+    installAutoPictureInPictureHook();
+    const root = document.documentElement;
+    if (!root) return false;
+    if (autoPictureInPictureArmed() && document.pictureInPictureEnabled !== false) root.dataset.tdhAutoPip = '1';
+    else delete root.dataset.tdhAutoPip;
+    try {
+      const uw = typeof page !== 'undefined' && page ? page : window;
+      uw.__tdhAutoPipSync?.();
+    } catch (_) {}
+    return root.dataset.tdhAutoPip === '1';
+  }
+
+  async function syncAutoPictureInPicture(reason = '') {
+    const ticket = (syncAutoPictureInPicture.ticket = (syncAutoPictureInPicture.ticket || 0) + 1);
+    if (autoPictureInPictureArmed() && document.pictureInPictureEnabled === false && syncAutoPictureInPicture.lastError !== 'disabled') {
+      syncAutoPictureInPicture.lastError = 'disabled';
+      logActivity('picture-in-picture', 'Automatic Picture-in-Picture was unavailable', { reason: reason || 'hidden', message: 'Picture-in-Picture is disabled' });
+    }
+    const armed = armAutoPictureInPicture();
+    const root = document.documentElement;
+    const active = document.pictureInPictureElement;
+    const requestTicket = active?.dataset?.tdhPipRequest;
+    const rootTicket = root?.dataset?.tdhPipTicket;
+    const owned = Boolean(active && root?.dataset.tdhPipOwns === '1' && requestTicket && requestTicket === rootTicket);
+    if (!armed || !document.hidden) {
+      if (owned && typeof document.exitPictureInPicture === 'function' && document.pictureInPictureElement === active) {
+        try { await document.exitPictureInPicture(); }
+        catch (_) {
+          if (syncAutoPictureInPicture.ticket === ticket) syncAutoPictureInPicture.owns = true;
+          return false;
+        }
+        if (syncAutoPictureInPicture.ticket !== ticket) return false;
+        if (document.pictureInPictureElement !== active && root.dataset.tdhPipTicket === rootTicket) {
+          if (active.dataset.tdhPipRequest === requestTicket) delete active.dataset.tdhPipRequest;
+          if (!document.pictureInPictureElement?.dataset?.tdhPipRequest) delete root.dataset.tdhPipOwns;
+          syncAutoPictureInPicture.owns = false;
+        }
+        return false;
       }
+      if (syncAutoPictureInPicture.ticket !== ticket) return false;
+      syncAutoPictureInPicture.owns = root?.dataset.tdhPipOwns === '1';
       return false;
     }
+    const uw = typeof page !== 'undefined' && page ? page : window;
+    if (!uw.__tdhAutoPipHandler) {
+      try { uw.__tdhAutoPipEnter?.(); } catch (_) {}
+    }
+    syncAutoPictureInPicture.owns = root?.dataset.tdhPipOwns === '1';
+    return false;
   }
 
   function checkCampaignDeadlineNotification(now = Date.now()) {

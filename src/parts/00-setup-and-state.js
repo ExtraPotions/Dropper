@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      3.4.55
+// @version      3.4.56
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.55";
+  const APP_VERSION = "3.4.56";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.56": ["Use the browser native automatic Picture-in-Picture callback when leaving Twitch.","Preserve the selected stream and Twitch-credited progress through hidden-tab pauses.","Handle late Picture-in-Picture entry and failed exits while preserving manual PiP and playback pauses.","Shorten campaign summaries and show ranking controls only for My Priority."],
     "3.4.55": ["Use the compact shared menu at the original three widths.","Keep the separate progress panel and existing controls available."],
     "3.4.54": ["Add Site colors in Look: six optional palettes for Twitch pages that follow Twitch light or dark mode.","Twitch keeps its purple buttons, live badges and status colors."],
     "3.4.53": ["Show Dropper for Twitch as the name in userscript managers.","Keep the existing namespace, update links and settings keys."],
@@ -1085,6 +1086,9 @@
       if (health.live === false) return { code: 'offline', recoverable: true };
       if (health.gameMatches === false) return { code: 'wrong-game', recoverable: true };
       if (health.playback === 'error') return { code: 'playback-error', recoverable: true };
+      if (health.playback === 'paused' && health.pauseReason !== 'viewer' && (health.visibilityState === 'hidden' || health.pictureInPicture === true)) {
+        return { code: 'credit-delayed-background', recoverable: false };
+      }
       if ((health.playback === 'paused' || health.playback === 'ended') && health.pauseReason !== 'viewer') {
         return { code: 'playback-stopped', recoverable: true };
       }

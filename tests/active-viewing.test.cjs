@@ -336,6 +336,12 @@ test('recovery diagnosis separates viewer intent, offline, eligibility, delay, a
   expectDiagnosis({ ...base, backgrounded: true, progressAgeMs: 6 * 60 * 1000 }, { code: 'credit-delayed-background', recoverable: false }, { delayedMs: 5 * 60 * 1000, stalledMs: 6 * 60 * 1000 });
   expectDiagnosis({ ...base, foregroundGraceRemainingMs: 15_000, progressAgeMs: 6 * 60 * 1000 }, { code: 'foreground-revalidation-grace', recoverable: false }, { delayedMs: 5 * 60 * 1000, stalledMs: 6 * 60 * 1000 });
   expectDiagnosis({ ...base, backgrounded: true, playback: 'paused', progressAgeMs: 6 * 60 * 1000 }, { code: 'playback-stopped', recoverable: true }, { delayedMs: 5 * 60 * 1000, stalledMs: 6 * 60 * 1000 });
+  expectDiagnosis({ ...base, visibilityState: 'hidden', playback: 'paused', pauseReason: 'unknown' }, { code: 'credit-delayed-background', recoverable: false });
+  expectDiagnosis({ ...base, pictureInPicture: true, playback: 'paused', pauseReason: 'unknown' }, { code: 'credit-delayed-background', recoverable: false });
+  expectDiagnosis({ ...base, visibilityState: 'hidden', playback: 'paused', pauseReason: 'viewer' }, { code: 'viewer-paused', recoverable: false });
+  expectDiagnosis({ ...base, visibilityState: 'visible', playback: 'paused', pauseReason: 'unknown' }, { code: 'playback-stopped', recoverable: true });
+  expectDiagnosis({ ...base, visibilityState: 'hidden', playback: 'ended', pauseReason: 'unknown' }, { code: 'playback-stopped', recoverable: true });
+  expectDiagnosis({ ...base, visibilityState: 'hidden', playback: 'error' }, { code: 'playback-error', recoverable: true });
   expectDiagnosis({ ...base, progressAgeMs: 5 * 60 * 1000 }, { code: 'credit-delayed', recoverable: false }, { delayedMs: 5 * 60 * 1000, stalledMs: 6 * 60 * 1000 });
 });
 
@@ -485,33 +491,245 @@ test('stream-switch browser alerts are opt-in and cooldown only after successful
   assert.equal(notices.length, 1);
 });
 
-test('automatic Picture-in-Picture remains explicitly opt-in', async () => {
+test('automatic Picture-in-Picture uses the page media-session callback', async () => {
   const calls = [];
-  const video = { requestPictureInPicture: async () => { calls.push('enter'); } };
+  const logs = [];
+  const listeners = {};
+  const handlers = {};
+  const preview = { paused: true, ended: false, readyState: 2, videoWidth: 0, disablePictureInPicture: false, dataset: {}, closest: () => null, tagName: 'VIDEO', autoPictureInPicture: false, requestPictureInPicture: () => { calls.push('preview'); return Promise.resolve(); } };
+  let resolveEnter;
+  const player = { paused: false, ended: false, readyState: 2, videoWidth: 320, disablePictureInPicture: false, dataset: {}, closest: () => ({}), tagName: 'VIDEO', autoPictureInPicture: false, requestPictureInPicture: () => { calls.push('enter'); return new Promise(resolve => { resolveEnter = resolve; }); } };
+  const root = { dataset: {} };
   const document = {
-    hidden: true,
+    hidden: false,
+    visibilityState: 'visible',
     pictureInPictureElement: null,
     pictureInPictureEnabled: true,
-    exitPictureInPicture: async () => { calls.push('exit'); },
+    documentElement: root,
+    head: { appendChild() {}, removeChild() {} },
+    createElement: () => ({ remove() {} }),
+    querySelectorAll: () => [preview, player],
+    addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); },
+    dispatchEvent: event => (listeners[event.type] || []).forEach(fn => fn(event)),
+    exitPictureInPicture: () => { calls.push('exit'); document.pictureInPictureElement = null; return Promise.resolve(); },
   };
   const context = {
-    ExtraPotionsCore:{suiteSitePaused:()=>false},
+    ExtraPotionsCore: { suiteSitePaused: () => false },
     settings: { autoPictureInPicture: false },
     document,
-    streamVideoElement: () => video,
-    logActivity: () => {},
+    navigator: { mediaSession: { setActionHandler: (name, fn) => { handlers[name] = fn; } } },
+    logActivity: (...args) => logs.push(args),
     cleanText: value => String(value ?? '').trim(),
+    viewingIntent: { snapshot: () => ({ pauseReason: '' }) },
   };
-  vm.runInNewContext(extract('syncAutoPictureInPicture'), context);
-  assert.equal(await context.syncAutoPictureInPicture('test'), false);
+  context.window = context;
+  context.page = context;
+  context.Promise = Promise;
+  vm.runInNewContext([
+    extract('autoPipPageHook'),
+    extract('installAutoPictureInPictureHook'),
+    extract('autoPictureInPictureArmed'),
+    extract('armAutoPictureInPicture'),
+    extract('syncAutoPictureInPicture'),
+  ].join('\n'), context);
+  context.autoPipPageHook();
+  assert.equal(await context.syncAutoPictureInPicture('setting-off'), false);
+  assert.equal(handlers.enterpictureinpicture, undefined);
+  assert.equal(player.autoPictureInPicture, false);
   assert.deepEqual(calls, []);
   context.settings.autoPictureInPicture = true;
-  assert.equal(await context.syncAutoPictureInPicture('test'), true);
-  assert.deepEqual(calls, ['enter']);
   document.hidden = false;
-  document.pictureInPictureElement = video;
-  assert.equal(await context.syncAutoPictureInPicture('return'), false);
-  assert.deepEqual(calls, ['enter', 'exit']);
+  document.visibilityState = 'visible';
+  assert.equal(await context.syncAutoPictureInPicture('visible'), false);
+  assert.equal(typeof handlers.enterpictureinpicture, 'function');
+  assert.equal(player.autoPictureInPicture, true);
+  assert.equal(preview.autoPictureInPicture, false);
+  assert.equal(player.dataset.tdhAutoPip, '1');
+  assert.deepEqual(calls, []);
+  document.hidden = true;
+  document.visibilityState = 'hidden';
+  assert.equal(await context.syncAutoPictureInPicture('visibilitychange'), false);
+  assert.deepEqual(calls, [], 'a hidden tab does not request Picture-in-Picture outside the browser callback');
+  handlers.enterpictureinpicture();
+  assert.deepEqual(calls, ['enter']);
+  assert.equal(player.dataset.tdhPipRequest, '1');
+  document.dispatchEvent({ type: 'enterpictureinpicture', target: player });
+  assert.equal(root.dataset.tdhPipOwns, '1');
+  document.visibilityState = 'visible';
+  document.hidden = false;
+  document.pictureInPictureElement = player;
+  resolveEnter();
+  for (let step = 0; step < 6; step += 1) await Promise.resolve();
+  assert.ok(calls.includes('exit'));
+  assert.notEqual(root.dataset.tdhPipOwns, '1');
+  assert.equal(context.syncAutoPictureInPicture.owns, false);
+  const manual = { dataset: {} };
+  document.pictureInPictureElement = manual;
+  calls.length = 0;
+  assert.equal(await context.syncAutoPictureInPicture('manual'), false);
+  assert.deepEqual(calls, [], 'manual Picture-in-Picture is left alone');
+  player.paused = true;
+  player.readyState = 0;
+  delete player.dataset.tdhAutoPip;
+  document.hidden = true;
+  document.visibilityState = 'hidden';
+  document.pictureInPictureElement = null;
+  assert.equal(await context.syncAutoPictureInPicture('late'), false);
+  assert.notEqual(player.dataset.tdhAutoPip, '1');
+  player.paused = false;
+  player.readyState = 3;
+  player.videoWidth = 320;
+  document.dispatchEvent({ type: 'playing', target: player });
+  assert.equal(player.dataset.tdhAutoPip, '1');
+  assert.deepEqual(calls, [], 'becoming ready does not request Picture-in-Picture or schedule a timer');
+  document.pictureInPictureEnabled = false;
+  await context.syncAutoPictureInPicture('disabled');
+  await context.syncAutoPictureInPicture('disabled-again');
+  assert.equal(logs.filter(entry => entry[2]?.message === 'Picture-in-Picture is disabled').length, 1);
+  context.settings.autoPictureInPicture = false;
+  document.pictureInPictureEnabled = true;
+  player.dataset.tdhAutoPip = '1';
+  player.autoPictureInPicture = true;
+  await context.syncAutoPictureInPicture('opt-out');
+  assert.equal(handlers.enterpictureinpicture, null);
+  assert.equal(player.autoPictureInPicture, false);
+  assert.notEqual(player.dataset.tdhAutoPip, '1');
+  assert.doesNotMatch(extract('autoPipPageHook'), /setTimeout|requestAnimationFrame/);
+});
+
+test('a missing media-session action can request Picture-in-Picture while hidden', async () => {
+  const calls = [];
+  const player = { paused: false, ended: false, readyState: 2, videoWidth: 10, disablePictureInPicture: false, dataset: {}, closest: () => ({}), tagName: 'VIDEO', autoPictureInPicture: false, requestPictureInPicture: () => { calls.push('enter'); return Promise.resolve(); } };
+  const document = {
+    hidden: true, visibilityState: 'hidden', pictureInPictureElement: null, pictureInPictureEnabled: true,
+    documentElement: { dataset: {} }, createElement: () => ({ remove() {} }),
+    querySelectorAll: () => [player], addEventListener() {}, exitPictureInPicture: async () => {},
+  };
+  const context = {
+    ExtraPotionsCore: { suiteSitePaused: () => false }, settings: { autoPictureInPicture: true }, document,
+    navigator: { mediaSession: { setActionHandler() { throw new Error('unsupported'); } } },
+    logActivity() {}, cleanText: value => String(value ?? ''), viewingIntent: { snapshot: () => ({ pauseReason: '' }) },
+  };
+  context.window = context;
+  context.page = context;
+  context.Promise = Promise;
+  vm.runInNewContext([
+    extract('autoPipPageHook'), extract('installAutoPictureInPictureHook'), extract('autoPictureInPictureArmed'),
+    extract('armAutoPictureInPicture'), extract('syncAutoPictureInPicture'),
+  ].join('\n'), context);
+  context.autoPipPageHook();
+  player.readyState = 0;
+  assert.equal(await context.syncAutoPictureInPicture('not-ready'), false);
+  assert.deepEqual(calls, []);
+  player.readyState = 2;
+  assert.equal(await context.syncAutoPictureInPicture('hidden'), false);
+  assert.deepEqual(calls, ['enter']);
+  assert.equal(context.__tdhAutoPipHandler, false);
+});
+
+test('Picture-in-Picture exit follows disarm and keeps markers when exit fails', async () => {
+  function harness() {
+    const calls = [];
+    let resolveEnter;
+    const listeners = {};
+    const player = {
+      paused: false, ended: false, readyState: 2, videoWidth: 320, disablePictureInPicture: false, dataset: {}, closest: () => ({}), tagName: 'VIDEO', autoPictureInPicture: false,
+      requestPictureInPicture() { calls.push('enter'); return new Promise(resolve => { resolveEnter = resolve; }); },
+    };
+    const root = { dataset: {} };
+    const document = {
+      hidden: true, visibilityState: 'hidden', pictureInPictureElement: null, pictureInPictureEnabled: true, documentElement: root,
+      createElement: () => ({ remove() {} }), querySelectorAll: () => [player],
+      addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); },
+      dispatchEvent: event => (listeners[event.type] || []).forEach(fn => fn(event)),
+      exitPictureInPicture: () => { calls.push('exit'); document.pictureInPictureElement = null; return Promise.resolve(); },
+    };
+    const context = {
+      ExtraPotionsCore: { suiteSitePaused: () => false }, settings: { autoPictureInPicture: true }, document, handlers: {},
+      navigator: { mediaSession: { setActionHandler: (name, fn) => { context.handlers[name] = fn; } } },
+      logActivity() {}, cleanText: value => String(value ?? ''), viewingIntent: { snapshot: () => ({ pauseReason: '' }) },
+    };
+    context.window = context; context.page = context; context.Promise = Promise;
+    vm.runInNewContext([
+      extract('autoPipPageHook'), extract('installAutoPictureInPictureHook'), extract('autoPictureInPictureArmed'),
+      extract('armAutoPictureInPicture'), extract('syncAutoPictureInPicture'),
+    ].join('\n'), context);
+    context.autoPipPageHook();
+    return { calls, context, document, player, root, resolve: () => resolveEnter() };
+  }
+  async function flush() { for (let i = 0; i < 6; i += 1) await Promise.resolve(); }
+  async function openHidden(h) {
+    await h.context.syncAutoPictureInPicture('arm');
+    h.context.handlers.enterpictureinpicture();
+    h.document.pictureInPictureElement = h.player;
+    h.document.dispatchEvent({ type: 'enterpictureinpicture', target: h.player });
+  }
+
+  const late = harness();
+  await openHidden(late);
+  late.resolve();
+  await flush();
+  assert.equal(late.calls.includes('exit'), false, 'hidden armed playback stays in Picture-in-Picture');
+  assert.equal(late.root.dataset.tdhPipOwns, '1');
+  late.document.hidden = false;
+  late.document.visibilityState = 'visible';
+  await late.context.syncAutoPictureInPicture('return');
+  assert.equal(late.calls.filter(call => call === 'exit').length, 1);
+  assert.notEqual(late.root.dataset.tdhPipOwns, '1');
+  assert.equal(late.player.dataset.tdhPipRequest, undefined);
+
+  const disarmed = harness();
+  await disarmed.context.syncAutoPictureInPicture('arm');
+  disarmed.context.handlers.enterpictureinpicture();
+  disarmed.context.settings.autoPictureInPicture = false;
+  await disarmed.context.syncAutoPictureInPicture('off');
+  assert.equal(disarmed.calls.includes('exit'), false);
+  disarmed.document.pictureInPictureElement = disarmed.player;
+  disarmed.document.dispatchEvent({ type: 'enterpictureinpicture', target: disarmed.player });
+  disarmed.resolve();
+  await flush();
+  assert.equal(disarmed.calls.filter(call => call === 'exit').length, 1, 'setting off while hidden exits once the request resolves');
+  assert.notEqual(disarmed.root.dataset.tdhPipOwns, '1');
+
+  const paused = harness();
+  await paused.context.syncAutoPictureInPicture('arm');
+  paused.context.handlers.enterpictureinpicture();
+  paused.context.ExtraPotionsCore.suiteSitePaused = () => true;
+  await paused.context.syncAutoPictureInPicture('suite');
+  paused.document.pictureInPictureElement = paused.player;
+  paused.document.dispatchEvent({ type: 'enterpictureinpicture', target: paused.player });
+  paused.resolve();
+  await flush();
+  assert.equal(paused.calls.filter(call => call === 'exit').length, 1, 'suite pause while hidden exits once the request resolves');
+
+  const rejected = harness();
+  await rejected.context.syncAutoPictureInPicture('arm');
+  rejected.player.dataset.tdhPipRequest = '1';
+  rejected.root.dataset.tdhPipTicket = '1';
+  rejected.root.dataset.tdhPipOwns = '1';
+  rejected.document.pictureInPictureElement = rejected.player;
+  rejected.document.hidden = false;
+  rejected.document.visibilityState = 'visible';
+  rejected.document.exitPictureInPicture = () => { rejected.calls.push('reject'); return Promise.reject(new Error('blocked')); };
+  await rejected.context.syncAutoPictureInPicture('return');
+  assert.equal(rejected.root.dataset.tdhPipOwns, '1');
+  assert.equal(rejected.player.dataset.tdhPipRequest, '1');
+  assert.equal(rejected.document.pictureInPictureElement, rejected.player);
+  rejected.document.exitPictureInPicture = () => { rejected.calls.push('exit'); rejected.document.pictureInPictureElement = null; return Promise.resolve(); };
+  await rejected.context.syncAutoPictureInPicture('retry');
+  assert.equal(rejected.calls.filter(call => call === 'exit').length, 1);
+  assert.notEqual(rejected.root.dataset.tdhPipOwns, '1');
+  assert.equal(rejected.player.dataset.tdhPipRequest, undefined);
+
+  const manual = harness();
+  const other = { dataset: {} };
+  manual.document.pictureInPictureElement = other;
+  manual.document.hidden = false;
+  manual.document.visibilityState = 'visible';
+  manual.root.dataset.tdhPipOwns = '1';
+  await manual.context.syncAutoPictureInPicture('manual');
+  assert.equal(manual.calls.includes('exit'), false);
+  assert.equal(manual.document.pictureInPictureElement, other);
 });
 
 test('multi-tab routing ownership is deterministic and oldest-tab wins', () => {

@@ -53,13 +53,13 @@ test('the planner adds up known watch time, skips ignored games, and counts risk
   });
   assert.equal(
     api.campaignPlanText(summary, NOW),
-    'Planner: about 12h 30m of watching left · 4 open campaigns · first ends in 1d 0h · 1 may not finish in time · 1 without a known time',
+    '~12h 30m watch · 4 campaigns · First ends 1d 0h · 1 at risk · 1 untimed',
   );
 });
 
 test('the planner says so when no watch time is known, and stays silent with nothing open', () => {
   const unknownOnly = api.summarizeCampaignPlan([{ game: 'A', endMs: NOW + DAY, sequenceRemainingMinutes: null }], { now: NOW });
-  assert.equal(api.campaignPlanText(unknownOnly, NOW), 'Planner: watch time not known yet · 1 open campaign · first ends in 1d 0h');
+  assert.equal(api.campaignPlanText(unknownOnly, NOW), 'Watch time unknown · 1 campaign · First ends 1d 0h');
   assert.equal(api.campaignPlanText(api.summarizeCampaignPlan([], { now: NOW }), NOW), '');
   assert.equal(api.campaignPlanText(null, NOW), '');
   assert.equal(api.summarizeCampaignPlan(undefined, { now: NOW }).campaigns, 0);

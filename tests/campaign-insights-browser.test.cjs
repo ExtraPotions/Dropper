@@ -80,7 +80,7 @@ test('the campaign list shows the planner and subscription rewards, and unclaime
     };
   });
 
-  assert.match(facts.planner, /^Planner: about 2h 40m of watching left · 2 open campaigns · first ends in 2d 0h$/u, facts.planner);
+  assert.match(facts.planner, /^~2h 40m watch · 2 campaigns · First ends 2d 0h$/u, facts.planner);
   assert.deepEqual(facts.games.sort(), ['Alpha Quest', 'Beta Arena']);
   const beta = facts.metas.find((meta) => meta.includes('subscription'));
   assert.ok(beta && /1 subscription reward \(up to 2 subs\)/u.test(beta), JSON.stringify(facts.metas));
@@ -91,6 +91,18 @@ test('the campaign list shows the planner and subscription rewards, and unclaime
   assert.equal(facts.unclaimedCount, '1 unclaimed');
   assert.match(facts.unclaimedRows[0], /^Gamma Badge · Gamma Grid · campaign ended 6d 0h ago · claim soon$/u);
   assert.match(facts.unclaimedRows.at(-1), /Drops Inventory/u);
+  const order=host.locator('#tdh-campaign-strategy');
+  assert.equal(await host.locator('.campaign-priority-position').count(),2);
+  for(const strategy of ['deadline','completion','shortest']){
+    await order.selectOption(strategy);
+    assert.equal(await host.locator('.campaign-priority-position').count(),0,'automatic order has no disabled priority rows');
+  }
+  for(const [size,width]of [['standard',324],['compact',304],['mini',280]]){
+    await page.evaluate(s=>{localStorage.setItem('exp:suite:menu-size',s);document.dispatchEvent(new CustomEvent('exp-core:menu-size',{detail:s}));},size);
+    const layout=await host.locator('[data-exp-part=dock]').evaluate(n=>({width:n.getBoundingClientRect().width,overflow:n.scrollWidth-n.clientWidth,listOverflow:n.querySelector('#tdh-open-campaigns').scrollWidth-n.querySelector('#tdh-open-campaigns').clientWidth}));
+    assert.equal(layout.width,width);assert(layout.overflow<=1&&layout.listOverflow<=1);
+  }
+  await order.selectOption('priority');assert.equal(await host.getByLabel('Priority position for Alpha Quest',{exact:true}).count(),1,'manual ranking remains available');
 });
 
 test('with no campaigns the insights stay out of the way', async (t) => {
