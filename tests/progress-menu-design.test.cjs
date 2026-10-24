@@ -53,7 +53,7 @@ for (const width of [360, 1280]) for (const size of ['standard', 'compact', 'min
     });
     assert.equal(facts.background, facts.menuBackground);
     assert.ok(contrast(facts.border,facts.background)>=3,'card outline remains visible');
-    assert.equal(facts.radius,'7px');assert.equal(facts.menuRadius,'7px');
+    assert.equal(facts.radius,'7px');assert.equal(facts.menuRadius,'12px');
     assert.equal(facts.font, facts.menuFont);
     assert.equal(facts.texture, 'none');
     assert.equal(facts.weight, '600');

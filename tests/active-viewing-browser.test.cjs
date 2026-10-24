@@ -1184,7 +1184,7 @@ test('the campaign list follows Campaign Order and matches the campaign Dropper 
         pickerOff: row.querySelector('.campaign-priority-position').disabled,
       })),
       picks: pick?.game || '',
-      note: root.getElementById('tdh-campaign-order-note').textContent,
+      helperCount: root.querySelectorAll('#tdh-campaign-order-note').length,
     };
   });
   const choose = value => page.evaluate(value => {
@@ -1199,7 +1199,7 @@ test('the campaign list follows Campaign Order and matches the campaign Dropper 
     assert.equal(view.list[0].label, 'Next up', `${strategy}: the first game is marked next`);
     assert.equal(view.picks, expected[0], `${strategy}: the router picks the game shown first`);
     assert.ok(view.list.every(item => item.pickerOff), `${strategy}: hand-ranking pickers are off outside My Priority`);
-    assert.match(view.note, /Choose My Priority to rank games/);
+    assert.equal(view.helperCount,0,'ordering is communicated by the list and selector, without helper prose');
   }
 
   // My Priority: jump directly to a rank and shift intervening games in order.
@@ -1211,7 +1211,7 @@ test('the campaign list follows Campaign Order and matches the campaign Dropper 
   let view = await snapshot();
   assert.deepEqual(view.list.map(item => item.game), ['Charlie', 'Alpha', 'Bravo'], 'one selection reorders the list');
   assert.equal(view.picks, 'Charlie', 'the router follows the hand-ranked order');
-  assert.match(view.note, /Choose a priority position/);
+  assert.equal(view.helperCount,0);
   await page.getByLabel('Priority position for Charlie', { exact: true }).press('Tab');
 
   // While a reward is being earned, that game is marked and the next game is the top of the rest.
@@ -1319,7 +1319,7 @@ test('campaign position picker supports long jumps, keyboard focus and uninterru
     return { overflow: node.scrollWidth - node.clientWidth, height: rect.height, left: rect.left, right: rect.right };
   });
   assert.ok(layout.overflow <= 1 && layout.left >= 0 && layout.right <= 360, JSON.stringify(layout));
-  assert.ok(layout.height >= 36, 'position control has a usable target');
+  assert.ok(layout.height >= 26, 'position control retains the approved dense target');
 }));
 
 test('choosing a priority position also moves an earning Dropper right away', async () => orderFixture(async page => {
@@ -1600,7 +1600,8 @@ test('in a short window the menu keeps its navigation reachable and the full in-
     const card = root.getElementById('tdh-drop-card');
     const box = n => { const r = n?.getBoundingClientRect(); return r ? [Math.round(r.top), Math.round(r.bottom)] : null; };
     const layout = { panel: box(dock), header: box(root.querySelector('.rail-header,.header,[data-exp-part="header"]')), card: box(card), section: box(root.querySelector('.exp-section-tabs')), sub: box(visibleSub), scrollTop: dock.scrollTop, scrollHeight: dock.scrollHeight, dockTag: dock.id || dock.className };
-    return { layout, tabsBottom: tabs.bottom, panelBottom: panel.bottom, reward: getComputedStyle(card.querySelector('.progress-reward-row')).display, percent: getComputedStyle(card.querySelector('.drop-percent')).display };
+    const geometry=[dock,...dock.children].map(n=>{const s=getComputedStyle(n);return {tag:n.className,height:n.getBoundingClientRect().height,gap:s.rowGap,margin:s.margin,padding:s.padding,display:s.display};});
+    return { layout, geometry, tabsBottom: tabs.bottom, panelBottom: panel.bottom, reward: getComputedStyle(card.querySelector('.progress-reward-row')).display, percent: getComputedStyle(card.querySelector('.drop-percent')).display };
   });
   assert.ok(facts.tabsBottom <= facts.panelBottom, 'section and subsection tabs are inside the menu: ' + JSON.stringify(facts));
   assert.ok(facts.layout.card[1]<=facts.panelBottom,'in-menu progress stays contained: '+JSON.stringify(facts));

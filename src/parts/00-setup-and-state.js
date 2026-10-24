@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      3.4.54
+// @version      3.4.55
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.54";
+  const APP_VERSION = "3.4.55";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.55": ["Use the compact shared menu at the original three widths.","Keep the separate progress panel and existing controls available."],
     "3.4.54": ["Add Site colors in Look: six optional palettes for Twitch pages that follow Twitch light or dark mode.","Twitch keeps its purple buttons, live badges and status colors."],
     "3.4.53": ["Show Dropper for Twitch as the name in userscript managers.","Keep the existing namespace, update links and settings keys."],
     "3.4.52": ["Stream switching starts at Follow campaign order in the first eligible tab.","Saved Off choices, manual stream holds, pauses and additional browsing tabs are respected."],

@@ -26,12 +26,12 @@ test('progress and Pause stay on one compact card inside the menu, then outside 
  const a=await card.boundingBox(),b=await dock.boundingBox();assert.ok(a.x>=b.x&&a.x+a.width<=b.x+b.width&&a.y>=b.y&&a.y+a.height<=b.y+b.height,'single card contained by menu');
  await host.locator('#tdh-settings-launcher').click();assert.equal(await card.isVisible(),true);
 });
-test('Advanced expands playback options inline and the header retains the tagline',async t=>{
+test('Advanced expands playback options inline without a header tagline',async t=>{
  const {host}=await openMenu(t);await host.locator('[data-exp-section-tab="tdh-streams-body"]').click();
  const viewing=host.locator('summary').filter({hasText:/^Advanced$/});await viewing.click();
  assert.equal(await host.getByRole('switch',{name:'Mute Opened Streams'}).isVisible(),true);await host.locator('summary').filter({hasText:/^Interruption rules$/i}).click();assert.equal(await host.locator('#tdh-pause-switch').isVisible(),true);
  assert.equal(await host.locator('#tdh-remember-content-warnings').isVisible(),false);await host.locator('summary').filter({hasText:/^Playback options$/}).click();assert.equal(await host.locator('#tdh-remember-content-warnings').isVisible(),true);
- assert.equal(await host.locator('#tdh-rail-subtitle').textContent(),'Your Drops at a glance');
+ assert.equal(await host.locator('#tdh-rail-subtitle').count(),0);
 });
 test('Badge Only collapses the same card and exposes its full detail on demand',async t=>{
  const {host,page}=await openMenu(t);await host.evaluate(n=>n.shadowRoot.getElementById('tdh-badge-only').click());await page.waitForTimeout(50);

@@ -21,7 +21,6 @@
                   <h2 id="tdh-rail-title">Dropper</h2>
                   <button type="button" id="tdh-header-version" aria-label="View Dropper v${APP_VERSION} Changelog">v${APP_VERSION}</button>
                 </div>
-                <div id="tdh-rail-subtitle">Your Drops at a glance</div>
               </div>
             </div>
             <div class="header-actions">
@@ -65,7 +64,7 @@
             <details class="campaign-manager" id="tdh-open-campaigns">
               <summary><span class="campaign-manager-title">Open Campaigns</span><span class="campaign-manager-summary" id="tdh-open-campaign-summary">Loading…</span></summary>
               <div class="mini-row campaign-strategy-row"><span>Campaign Order</span><select class="select-lite" id="tdh-campaign-strategy"><option value="priority">My Priority</option><option value="deadline">Ending Soonest</option><option value="completion">Closest to Completion</option><option value="shortest">Shortest Remaining</option></select></div>
-              <div class="campaign-manager-note" id="tdh-campaign-order-note">Choose a priority position to move a game directly to that rank. The selected Campaign Order controls how viable campaigns are chosen.</div>
+
               <div class="campaign-game-list" id="tdh-open-campaign-list"></div>
             </details>
             <details class="eligibility-chip" id="tdh-reward-eligibility" data-tone="muted">
@@ -108,7 +107,7 @@
               <label for="tdh-protected-channels">Protected channels</label><input id="tdh-protected-channels" placeholder="channel1, channel2" maxlength="2000">
               <label for="tdh-excluded-channels">Never automatically open</label><input id="tdh-excluded-channels" placeholder="channel1, channel2" maxlength="2000">
               <div class="mini-row"><label for="tdh-switch-policy">Switch policy</label><select id="tdh-switch-policy"><option value="normal">Follow campaign order</option><option value="stopped-earning">Keep an earning stream</option></select></div>
-              <p class="campaign-manager-note">Channel rules use Twitch login names. Quiet hours hold automatic navigation; manual Skip Streamer remains available.</p>
+
             </div></details>
             <details class="campaign-manager" id="tdh-stream-health-panel">
               <summary><span class="campaign-manager-title">Stream Health</span><span class="campaign-manager-summary" id="tdh-stream-health-summary">Checking…</span></summary>

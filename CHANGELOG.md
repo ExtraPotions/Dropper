@@ -1,3 +1,8 @@
+## 3.4.55 — 2026-10-24
+
+- Use the compact shared menu at the original three widths.
+- Keep the separate progress panel and existing controls available.
+
 ## 3.4.54 — 2026-10-22
 
 - Add Site colors in Look: six optional palettes for Twitch pages that follow Twitch light or dark mode.

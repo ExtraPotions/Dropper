@@ -1319,10 +1319,10 @@
   function switchHtml(id, label, description, on) {
     const tip = String(description || "").trim().replace(/&/g, "&amp;").replace(/"/g, "&quot;");
     const labelClass = tip ? "fl-switch-text has-tooltip" : "fl-switch-text";
-    const tipAttr = tip ? ` data-tip="${tip}" role="button" tabindex="0" aria-description="${tip}"` : "";
+    const tipAttr = tip ? ` data-tip="${tip}" aria-description="${tip}"` : "";
     return `
       <div class="fl-switch">
-        <span class="${labelClass}"${tipAttr} id="${id}-label">${label}</span>
+        <label class="${labelClass}"${tipAttr} id="${id}-label" for="${id}">${label}</label>
         <button id="${id}" type="button" class="fl-switch-input toggleSwitch" role="switch" aria-labelledby="${id}-label" aria-checked="${on ? "true" : "false"}"></button>
       </div>`;
   }
@@ -1865,9 +1865,9 @@
       .routing-history-time,.claim-history-time { color:var(--theme-muted); font-size:var(--exp-font-size-small,11px); line-height:1.25; }
       #tdh-toggle-inventory,
       #tdh-refresh-campaign-data { grid-column:1/-1; }
-      .auth-advanced { margin-top:2px; border:1px solid var(--theme-line); border-radius:7px; background:var(--theme-inset); padding:6px 8px; }
-      .auth-advanced > summary { cursor:pointer; list-style:none; color:var(--theme-muted); font-size:var(--exp-font-size-body,13px); font-weight:600; user-select:none; }
-      .auth-advanced > summary::-webkit-details-marker { display:none; }
+      .auth-advanced { margin-top:2px; border:0; border-bottom:1px solid var(--theme-line); border-radius:0; background:transparent; padding:0; }
+      .auth-advanced > summary { cursor:pointer; list-style:disclosure-closed inside; color:var(--theme-text); font-size:var(--exp-font-size-body,13px); font-weight:600; user-select:none; }
+      .auth-advanced[open] > summary { list-style-type:disclosure-open; }
       .auth-advanced[open] > summary { margin-bottom:6px; color:var(--theme-text); }
       .auth-advanced-body { display:flex; flex-direction:column; gap:6px; }
       .auth-hint { color:var(--theme-muted); font-size:var(--exp-font-size-small,11px); line-height:1.35; }

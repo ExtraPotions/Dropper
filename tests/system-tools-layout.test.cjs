@@ -11,7 +11,7 @@ async function openSubmenu(scope,label){
  const summary=scope.locator('summary:visible').filter({hasText:new RegExp('^'+(aliases[label]||label)+'(?: .*)?'+'$')}).first();
  await summary.waitFor();if(!await summary.evaluate(n=>n.parentElement.open))await summary.click();
 }
-for (const [pointer, context, minTarget] of [['fine pointer', {}, 28], ['coarse pointer', { hasTouch: true, isMobile: true }, 36]]) test(`System keeps diagnostics and reset directly accessible, readable and contained (${pointer})`, async t => {
+for (const [pointer, context, minTarget] of [['fine pointer', {}, 26], ['coarse pointer', { hasTouch: true, isMobile: true }, 26]]) test(`System keeps diagnostics and reset directly accessible, readable and contained (${pointer})`, async t => {
   const browser = await chromium.launch(); t.after(() => browser.close());
   const page = await browser.newPage({ viewport: { width: 360, height: 720 }, ...context });
   await page.route('**/*', r => r.request().isNavigationRequest() ? r.fulfill({contentType:'text/html',body:'<main>Fixture</main>'}) : r.abort());
@@ -39,7 +39,7 @@ for (const [pointer, context, minTarget] of [['fine pointer', {}, 28], ['coarse 
       assert.ok(result.horizontal<=1,JSON.stringify(result));assert.ok(result.visiblePanels>=1);assert.ok(result.targets.length&&result.targets.every(height=>height>=minTarget),JSON.stringify(result));
       if(name==='Overview')assert.equal(await system.locator('[data-exp-system-item="status"]').isVisible(),true);
       if(name==='Support')assert.equal(await system.getByRole('button',{name:'Show Diagnostics',exact:true}).isVisible(),true);
-      if(name==='Reset'){const button=system.getByRole('button',{name:'Reset All Settings',exact:true});assert.equal(await button.isVisible(),true);assert.deepEqual(await button.evaluate(n=>{const s=getComputedStyle(n);return {destructive:n.dataset.expDestructive,color:s.color,border:s.borderTopColor,background:s.backgroundColor};}),{destructive:'1',color:'rgb(252, 165, 165)',border:'rgb(248, 113, 113)',background:'rgba(0, 0, 0, 0)'},'Reset keeps the destructive outline style');}
+      if(name==='Reset'){const button=system.getByRole('button',{name:'Reset All Settings',exact:true});assert.equal(await button.isVisible(),true);assert.deepEqual(await button.evaluate(n=>{const s=getComputedStyle(n);return {destructive:n.dataset.expDestructive,color:s.color,border:s.borderTopColor,background:s.backgroundColor};}),{destructive:'1',color:'rgb(255, 255, 255)',border:'rgb(151, 27, 33)',background:'rgb(180, 35, 42)'},'Reset keeps the approved filled danger style');}
     }
   }
 });
@@ -55,7 +55,8 @@ test('Dropper menu has one primary action and a header status', async t => {
   const primary = host.locator('[data-exp-primary="1"]');
   assert.equal(await primary.count(), 1);
   assert.equal(await primary.getAttribute('id'), 'tdh-toggle-inventory');
-  const status = host.locator('#tdh-rail-subtitle');
+  assert.equal(await host.locator('#tdh-rail-subtitle').count(),0);
+  const status = host.locator('[data-exp-part="status"]');
   assert.equal(await status.count(), 1);
   assert.ok((await status.textContent()).trim().length > 0, 'header status text is not empty');
 });

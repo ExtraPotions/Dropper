@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      3.4.54
+// @version      3.4.55
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.54";
+  const APP_VERSION = "3.4.55";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.55": ["Use the compact shared menu at the original three widths.","Keep the separate progress panel and existing controls available."],
     "3.4.54": ["Add Site colors in Look: six optional palettes for Twitch pages that follow Twitch light or dark mode.","Twitch keeps its purple buttons, live badges and status colors."],
     "3.4.53": ["Show Dropper for Twitch as the name in userscript managers.","Keep the existing namespace, update links and settings keys."],
     "3.4.52": ["Stream switching starts at Follow campaign order in the first eligible tab.","Saved Off choices, manual stream holds, pauses and additional browsing tabs are respected."],
@@ -14516,10 +14517,10 @@
   function switchHtml(id, label, description, on) {
     const tip = String(description || "").trim().replace(/&/g, "&amp;").replace(/"/g, "&quot;");
     const labelClass = tip ? "fl-switch-text has-tooltip" : "fl-switch-text";
-    const tipAttr = tip ? ` data-tip="${tip}" role="button" tabindex="0" aria-description="${tip}"` : "";
+    const tipAttr = tip ? ` data-tip="${tip}" aria-description="${tip}"` : "";
     return `
       <div class="fl-switch">
-        <span class="${labelClass}"${tipAttr} id="${id}-label">${label}</span>
+        <label class="${labelClass}"${tipAttr} id="${id}-label" for="${id}">${label}</label>
         <button id="${id}" type="button" class="fl-switch-input toggleSwitch" role="switch" aria-labelledby="${id}-label" aria-checked="${on ? "true" : "false"}"></button>
       </div>`;
   }
@@ -15062,9 +15063,9 @@
       .routing-history-time,.claim-history-time { color:var(--theme-muted); font-size:var(--exp-font-size-small,11px); line-height:1.25; }
       #tdh-toggle-inventory,
       #tdh-refresh-campaign-data { grid-column:1/-1; }
-      .auth-advanced { margin-top:2px; border:1px solid var(--theme-line); border-radius:7px; background:var(--theme-inset); padding:6px 8px; }
-      .auth-advanced > summary { cursor:pointer; list-style:none; color:var(--theme-muted); font-size:var(--exp-font-size-body,13px); font-weight:600; user-select:none; }
-      .auth-advanced > summary::-webkit-details-marker { display:none; }
+      .auth-advanced { margin-top:2px; border:0; border-bottom:1px solid var(--theme-line); border-radius:0; background:transparent; padding:0; }
+      .auth-advanced > summary { cursor:pointer; list-style:disclosure-closed inside; color:var(--theme-text); font-size:var(--exp-font-size-body,13px); font-weight:600; user-select:none; }
+      .auth-advanced[open] > summary { list-style-type:disclosure-open; }
       .auth-advanced[open] > summary { margin-bottom:6px; color:var(--theme-text); }
       .auth-advanced-body { display:flex; flex-direction:column; gap:6px; }
       .auth-hint { color:var(--theme-muted); font-size:var(--exp-font-size-small,11px); line-height:1.35; }
@@ -15596,7 +15597,6 @@
                   <h2 id="tdh-rail-title">Dropper</h2>
                   <button type="button" id="tdh-header-version" aria-label="View Dropper v${APP_VERSION} Changelog">v${APP_VERSION}</button>
                 </div>
-                <div id="tdh-rail-subtitle">Your Drops at a glance</div>
               </div>
             </div>
             <div class="header-actions">
@@ -15640,7 +15640,7 @@
             <details class="campaign-manager" id="tdh-open-campaigns">
               <summary><span class="campaign-manager-title">Open Campaigns</span><span class="campaign-manager-summary" id="tdh-open-campaign-summary">Loading…</span></summary>
               <div class="mini-row campaign-strategy-row"><span>Campaign Order</span><select class="select-lite" id="tdh-campaign-strategy"><option value="priority">My Priority</option><option value="deadline">Ending Soonest</option><option value="completion">Closest to Completion</option><option value="shortest">Shortest Remaining</option></select></div>
-              <div class="campaign-manager-note" id="tdh-campaign-order-note">Choose a priority position to move a game directly to that rank. The selected Campaign Order controls how viable campaigns are chosen.</div>
+
               <div class="campaign-game-list" id="tdh-open-campaign-list"></div>
             </details>
             <details class="eligibility-chip" id="tdh-reward-eligibility" data-tone="muted">
@@ -15683,7 +15683,7 @@
               <label for="tdh-protected-channels">Protected channels</label><input id="tdh-protected-channels" placeholder="channel1, channel2" maxlength="2000">
               <label for="tdh-excluded-channels">Never automatically open</label><input id="tdh-excluded-channels" placeholder="channel1, channel2" maxlength="2000">
               <div class="mini-row"><label for="tdh-switch-policy">Switch policy</label><select id="tdh-switch-policy"><option value="normal">Follow campaign order</option><option value="stopped-earning">Keep an earning stream</option></select></div>
-              <p class="campaign-manager-note">Channel rules use Twitch login names. Quiet hours hold automatic navigation; manual Skip Streamer remains available.</p>
+
             </div></details>
             <details class="campaign-manager" id="tdh-stream-health-panel">
               <summary><span class="campaign-manager-title">Stream Health</span><span class="campaign-manager-summary" id="tdh-stream-health-summary">Checking…</span></summary>
