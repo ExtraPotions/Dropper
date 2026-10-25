@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      3.4.57
+// @version      3.4.58
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.57";
+  const APP_VERSION = "3.4.58";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.58": ["Harden Twitch network bridge endpoint validation for gql and integrity routes.","Allow query parameters and normalized path structures while rejecting URL fragments on bridge requests."],
     "3.4.57": ["Use shorter settings and full-width backup-stream switches while retaining the progress panel.","Keep menus clear of the shared launcher in short windows.","Handle overlapping picture-in-picture requests without losing their owner."],
     "3.4.56": ["Use the browser native automatic Picture-in-Picture callback when leaving Twitch.","Preserve the selected stream and Twitch-credited progress through hidden-tab pauses.","Handle late Picture-in-Picture entry and failed exits while preserving manual PiP and playback pauses.","Shorten campaign summaries and show ranking controls only for My Priority."],
     "3.4.55": ["Use the compact shared menu at the original three widths.","Keep the separate progress panel and existing controls available."],
@@ -7725,8 +7726,9 @@
     try {
       if (!detail || detail.secret !== correlation) return null;
       const url = new URL(detail.url, location.href);
+      const pathname = url.pathname.replace(/\/+$/, '') || '/';
       if (url.protocol !== 'https:' || url.hostname !== 'gql.twitch.tv' || url.port || url.username || url.password ||
-          !['/gql', '/integrity'].includes(url.pathname) || url.search || url.hash) return null;
+          !['/gql', '/integrity'].includes(pathname) || url.hash) return null;
       if (detail.requestScope?.account !== storageAccountLogin() || detail.requestScope?.path !== location.pathname) return null;
       if (!Number.isInteger(detail.status) || detail.status < 200 || detail.status >= 300) return null;
       const seen = new Set();
@@ -7756,7 +7758,7 @@
         headers[name] = value;
       }
       if (headers['client-id'] && !CLIENT_IDS.includes(headers['client-id'])) return null;
-      if (url.pathname === '/integrity') {
+      if (pathname === '/integrity') {
         const token = detail.json?.token, expiration = detail.json?.expiration;
         const expiresAt = expiration > 1e12 ? expiration : expiration * 1000;
         if (typeof token !== 'string' || !/^[\x21-\x7e]{1,8192}$/.test(token) ||
@@ -7822,8 +7824,9 @@
     const limit = 1024 * 1024, supported = new Set(supportedNames);
     const endpoint = value => {
       try { const p = new URL(String(value || ''), location.href);
+        const pathname = p.pathname.replace(/\/+$/, '') || '/';
         return p.protocol === 'https:' && p.hostname==="gql.twitch.tv" && !p.port && !p.username && !p.password &&
-          !p.search && !p.hash && ['/gql', '/integrity'].includes(p.pathname) ? p.pathname : ''; } catch (_) { return ''; }
+          !p.hash && ['/gql', '/integrity'].includes(pathname) ? pathname : ''; } catch (_) { return ''; }
     };
     const scope = () => {
       const get = key => {

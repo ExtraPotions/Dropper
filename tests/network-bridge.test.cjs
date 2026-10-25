@@ -88,3 +88,24 @@ test('page hook preserves fetch responses and XHR calls while sending only Drops
   assert.equal(events.length,2);assert.equal(events[1].detail.json.length,1);assert.equal(calls[1],body);
   await c.window.fetch('https://example.com/',{body});assert.equal(events.length,2);
 });
+
+test('accepts query strings and trailing slashes on GQL and integrity while rejecting hash fragments', () => {
+  const validate = validator();
+  const gqlQuery = payload();
+  gqlQuery.url = 'https://gql.twitch.tv/gql?client_id=kimne78kx3ncx6brgo4mv6wki5h1ko';
+  assert.ok(validate(gqlQuery));
+
+  const gqlTrailingSlash = payload();
+  gqlTrailingSlash.url = 'https://gql.twitch.tv/gql/';
+  assert.ok(validate(gqlTrailingSlash));
+
+  const integrityQuery = payload();
+  integrityQuery.url = 'https://gql.twitch.tv/integrity?v=2';
+  integrityQuery.operations = null;
+  integrityQuery.json = {token: 'token', expiration: Math.floor(Date.now() / 1000) + 300};
+  assert.ok(validate(integrityQuery));
+
+  const gqlHash = payload();
+  gqlHash.url = 'https://gql.twitch.tv/gql#fragment';
+  assert.equal(validate(gqlHash), null);
+});

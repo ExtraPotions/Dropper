@@ -1,3 +1,8 @@
+## 3.4.58 — 2026-10-25
+
+- Harden Twitch network bridge endpoint validation for gql and integrity routes.
+- Allow query parameters and normalized path structures while rejecting URL fragments on bridge requests.
+
 ## 3.4.57 — 2026-10-25
 
 - Use shorter settings and full-width backup-stream switches while retaining the progress panel.

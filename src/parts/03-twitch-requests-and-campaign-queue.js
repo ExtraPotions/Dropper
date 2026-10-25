@@ -340,8 +340,9 @@
     try {
       if (!detail || detail.secret !== correlation) return null;
       const url = new URL(detail.url, location.href);
+      const pathname = url.pathname.replace(/\/+$/, '') || '/';
       if (url.protocol !== 'https:' || url.hostname !== 'gql.twitch.tv' || url.port || url.username || url.password ||
-          !['/gql', '/integrity'].includes(url.pathname) || url.search || url.hash) return null;
+          !['/gql', '/integrity'].includes(pathname) || url.hash) return null;
       if (detail.requestScope?.account !== storageAccountLogin() || detail.requestScope?.path !== location.pathname) return null;
       if (!Number.isInteger(detail.status) || detail.status < 200 || detail.status >= 300) return null;
       const seen = new Set();
@@ -371,7 +372,7 @@
         headers[name] = value;
       }
       if (headers['client-id'] && !CLIENT_IDS.includes(headers['client-id'])) return null;
-      if (url.pathname === '/integrity') {
+      if (pathname === '/integrity') {
         const token = detail.json?.token, expiration = detail.json?.expiration;
         const expiresAt = expiration > 1e12 ? expiration : expiration * 1000;
         if (typeof token !== 'string' || !/^[\x21-\x7e]{1,8192}$/.test(token) ||
@@ -437,8 +438,9 @@
     const limit = 1024 * 1024, supported = new Set(supportedNames);
     const endpoint = value => {
       try { const p = new URL(String(value || ''), location.href);
+        const pathname = p.pathname.replace(/\/+$/, '') || '/';
         return p.protocol === 'https:' && p.hostname==="gql.twitch.tv" && !p.port && !p.username && !p.password &&
-          !p.search && !p.hash && ['/gql', '/integrity'].includes(p.pathname) ? p.pathname : ''; } catch (_) { return ''; }
+          !p.hash && ['/gql', '/integrity'].includes(pathname) ? pathname : ''; } catch (_) { return ''; }
     };
     const scope = () => {
       const get = key => {
