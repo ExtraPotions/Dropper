@@ -36,7 +36,7 @@ Stream switching starts at **Follow campaign order** in the first eligible tab. 
 
 <table>
   <tr>
-    <td width="50%" valign="top" align="center"><a href="docs/screenshots/drops-menu.png"><img src="docs/screenshots/drops-menu.png" width="220" alt="Dropper: Campaigns and inventory"></a><br><strong>Campaigns and inventory</strong></td>
+    <td width="50%" valign="top" align="center"><a href="docs/screenshots/drops-menu.gif"><img src="docs/screenshots/drops-menu.gif" width="220" alt="Dropper: Campaigns and inventory"></a><br><strong>Campaigns and inventory</strong></td>
     <td width="50%" valign="top" align="center"><a href="docs/screenshots/streams-menu.png"><img src="docs/screenshots/streams-menu.png" width="220" alt="Dropper: stream playback settings"></a><br><strong>Settings: Advanced and playback</strong></td>
   </tr>
 </table>

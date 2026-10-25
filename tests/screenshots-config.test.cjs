@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '..');
 test('README screenshots and the shot list name the same images', () => {
   const config = require(path.join(root, 'docs', 'screenshots.config.cjs'));
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-  const referenced = [...new Set([...readme.matchAll(/docs\/screenshots\/([\w.-]+\.png)/g)].map(match => match[1]))].sort();
+  const referenced = [...new Set([...readme.matchAll(/docs\/screenshots\/([\w.-]+\.(?:png|gif))/g)].map(match => match[1]))].sort();
   assert.deepEqual(config.shots.map(shot => shot.file).sort(), referenced);
 });
 
