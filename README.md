@@ -8,6 +8,12 @@
 [![Code: PolyForm Noncommercial 1.0.0](docs/badges/code.svg)](LICENSE-CODE.md)
 [![Artwork and documentation: CC BY-NC-SA 4.0](docs/badges/assets.svg)](LICENSE-ASSETS.md)
 
+## Latest changes
+
+- Use shorter settings and full-width backup-stream switches while retaining the progress panel.
+- Keep menus clear of the shared launcher in short windows.
+- Handle overlapping picture-in-picture requests without losing their owner.
+
 ## Get started
 
 1. Install a userscript manager such as [Violentmonkey](https://violentmonkey.github.io/get-it/) or [Tampermonkey](https://www.tampermonkey.net/).

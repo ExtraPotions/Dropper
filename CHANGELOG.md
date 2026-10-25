@@ -1,3 +1,9 @@
+## 3.4.57 — 2026-10-25
+
+- Use shorter settings and full-width backup-stream switches while retaining the progress panel.
+- Keep menus clear of the shared launcher in short windows.
+- Handle overlapping picture-in-picture requests without losing their owner.
+
 ## 3.4.56 — 2026-10-24
 
 - Use the browser native automatic Picture-in-Picture callback when leaving Twitch.

@@ -92,8 +92,8 @@
             </div>
             <div class="multi-tab-status" id="tdh-multi-tab-status" role="status" hidden></div>
             <div class="session-recovery-status" id="tdh-session-recovery-status" role="status" hidden></div>
-            <div class="action-pair"><button type="button" class="life-btn" id="tdh-resume-playback">Resume Playback</button><button type="button" class="life-btn" id="tdh-allow-switching">Use Automatic Switching</button></div>
-            <div class="action-pair">
+            <div class="action-pair action-stack"><button type="button" class="life-btn" id="tdh-resume-playback">Resume Playback</button><button type="button" class="life-btn" id="tdh-allow-switching">Allow switching</button></div>
+            <div class="action-pair action-stack">
               <button type="button" class="life-btn" id="tdh-stream-lock" aria-pressed="false">Stay On This Stream</button>
               <button type="button" class="life-btn" id="tdh-recovery-action" hidden>Recheck Twitch</button>
             </div>
@@ -118,10 +118,10 @@
               <div class="auth-advanced-body">
                 ${switchHtml("tdh-remember-content-warnings", "Remember Accepted Warnings", "Remembers content warning types you accept across all Twitch channels. New warning types still ask.", settings.rememberContentWarnings)}
                 <button id="tdh-forget-content-warnings" type="button" class="life-btn">Forget Accepted Warnings</button>
-                ${switchHtml("tdh-restore-channel-player", "Restore Channel Player On Arrival", "Returns An Initial Twitch Mini-player To The Normal Channel View. Stops After You Interact With The Page.", settings.restoreChannelPlayer)}
+                ${switchHtml("tdh-restore-channel-player", "Restore player on arrival", "Returns An Initial Twitch Mini-player To The Normal Channel View. Stops After You Interact With The Page.", settings.restoreChannelPlayer)}
                 <button id="tdh-restore-channel-player-now" type="button" class="life-btn">Restore Channel Player</button>
-                ${switchHtml("tdh-background-earning", "Background Progress Tracking", "Reports Actual Twitch Credit In Hidden Tabs Or Picture-in-Picture. Does Not Simulate Viewing.", settings.backgroundEarning)}
-                ${switchHtml("tdh-auto-pip", "Picture-in-Picture When Away", "Attempts Picture-in-Picture when this Twitch tab becomes hidden and exits Dropper-started PiP when you return. Browser permission and user-activation rules still apply.", settings.autoPictureInPicture)}
+                ${switchHtml("tdh-background-earning", "Background tracking", "Reports Actual Twitch Credit In Hidden Tabs Or Picture-in-Picture. Does Not Simulate Viewing.", settings.backgroundEarning)}
+                ${switchHtml("tdh-auto-pip", "PiP when away", "Attempts Picture-in-Picture when this Twitch tab becomes hidden and exits Dropper-started PiP when you return. Browser permission and user-activation rules still apply.", settings.autoPictureInPicture)}
               </div>
             </details>
             <details class="auth-advanced">
@@ -139,15 +139,15 @@
               <summary>Routing & backup</summary>
               <div class="auth-advanced-body">
                 ${switchHtml("tdh-resume-session", "Resume Last Drop Session", "Keeps a small account-scoped resume snapshot across browser restarts and re-verifies Twitch before continuing.", settings.resumeSessionOnRestart)}
-                ${switchHtml("tdh-queue-enabled", "Maintain Backup Streams", "Keeps A Short List Of Eligible Backup Drops Channels Ready.", settings.queueEnabled)}
+                ${switchHtml("tdh-queue-enabled", "Backup streams", "Keeps A Short List Of Eligible Backup Drops Channels Ready.", settings.queueEnabled)}
                 <div class="mini-row"><span>Standby Streams</span><select class="select-lite" id="tdh-queue-count"><option value="1">1</option><option value="3">3</option><option value="5">5</option></select></div>
                 <div class="queue-switches">
-                  <div class="queue-switches-label">Skip On</div>
-                  ${switchHtml("tdh-queue-stall", "Stall", "Switches The Current Tab When Credited Progress Stalls.", settings.queueOnStall)}
-                  ${switchHtml("tdh-queue-offline", "Offline", "Switches The Current Tab When The Active Stream Goes Offline.", settings.queueOnOffline)}
-                  ${switchHtml("tdh-queue-category", "Category Change", "Finds A Replacement Stream If The Current Channel Changes Away From The Active Drop Game.", settings.queueOnCategoryChange)}
+
+                  ${switchHtml("tdh-queue-stall", "Switch on stall", "Switches The Current Tab When Credited Progress Stalls.", settings.queueOnStall)}
+                  ${switchHtml("tdh-queue-offline", "Switch when offline", "Switches The Current Tab When The Active Stream Goes Offline.", settings.queueOnOffline)}
+                  ${switchHtml("tdh-queue-category", "Switch on category change", "Finds A Replacement Stream If The Current Channel Changes Away From The Active Drop Game.", settings.queueOnCategoryChange)}
                 </div>
-                <div class="mini-row"><span>Channel Preference</span><select class="select-lite" id="tdh-queue-preference"><option>Any Eligible</option><option>Lowest Viewers</option><option>Highest Viewers</option></select></div>
+                <div class="mini-row"><span>Channel choice</span><select class="select-lite" id="tdh-queue-preference"><option>Any Eligible</option><option>Lowest Viewers</option><option>Highest Viewers</option></select></div>
                 <details class="queue-collapsible" id="tdh-queue-details">
                   <summary class="queue-summary-head">
                     <div><strong>Active + Standby</strong><span id="tdh-queue-summary"></span></div>

@@ -113,12 +113,11 @@ test('appearance uses the locked eight-slot palette system', () => {
 });
 
 
-test('Skip On conditions are a left label with vertically stacked toggles', () => {
-  assert.match(source, /<div class="queue-switches-label">Skip On<\/div>/u);
+test('backup conditions keep three named switches without a separate label column', () => {
+  assert.doesNotMatch(source, /<div class="queue-switches-label">Skip On<\/div>/u);
   assert.doesNotMatch(source, /<fieldset class="queue-switches"><legend>Switch On<\/legend>/u);
-  assert.match(source, /\.queue-switches\{display:grid;grid-template-columns:minmax\(58px,\.7fr\) minmax\(0,1\.3fr\);/u);
-  assert.match(source, /\.queue-switches-label\{grid-column:1;grid-row:1\/span 3;/u);
-  assert.match(source, /\.queue-switches>\.fl-switch\{grid-column:2;display:flex!important;flex-direction:row!important;/u);
+  for(const label of ['Switch on stall','Switch when offline','Switch on category change'])assert.ok(source.includes(label));
+  for(const id of ['tdh-queue-stall','tdh-queue-offline','tdh-queue-category'])assert.ok(source.includes(id));
 });
 
 

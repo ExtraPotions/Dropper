@@ -83,6 +83,7 @@
     window.__tdhAutoPipHooked = true;
     let installed = false;
     let generation = 0;
+    let pendingEntry = null;
     const ready = video => Boolean(video && !video.paused && !video.ended && video.readyState > 1 && video.videoWidth > 0 && !video.disablePictureInPicture && typeof video.requestPictureInPicture === 'function');
     function eligible() {
       const videos = [...document.querySelectorAll('video')];
@@ -108,16 +109,18 @@
       if (!document.pictureInPictureElement?.dataset?.tdhPipRequest) delete root.dataset.tdhPipOwns;
     }
     function request(video) {
-      if (!video || document.pictureInPictureElement) return;
+      if (!video || document.pictureInPictureElement || pendingEntry) return;
       const ticket = ++generation;
       root.dataset.tdhPipTicket = String(ticket);
       video.dataset.tdhPipRequest = String(ticket);
+      const entry = {video, ticket};
+      pendingEntry = entry;
       let pending;
       try { pending = video.requestPictureInPicture(); }
-      catch (_) { delete video.dataset.tdhPipRequest; return; }
+      catch (_) { if(pendingEntry===entry)pendingEntry=null;delete video.dataset.tdhPipRequest; return; }
       Promise.resolve(pending).then(() => Promise.resolve(finish(video, ticket)).catch(() => {}), () => {
-        if (root.dataset.tdhPipTicket === String(ticket)) delete video.dataset.tdhPipRequest;
-      });
+        if (video.dataset.tdhPipRequest === String(ticket)) delete video.dataset.tdhPipRequest;
+      }).finally(()=>{if(pendingEntry===entry)pendingEntry=null;});
     }
     function sync() {
       const armed = root.dataset.tdhAutoPip === '1';
