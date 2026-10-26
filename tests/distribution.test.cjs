@@ -121,12 +121,14 @@ test('progress panel stays solid without auto-collapse fade timing', () => {
 
 test('README stays feature-focused without npm install guidance', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-  assert.match(readme, /## What you can do/u);
+  assert.match(readme, /## Features/u);
   assert.match(readme, /https:\/\/github\.com\/ExtraPotions\/Dropper\/releases\/latest\/download\/dropper\.user\.js/u);
   assert.doesNotMatch(readme, /\/raw\/refs\/heads\/main\//u, 'the README installs a published release, not whatever is on main');
   assert.match(readme, /docs\/screenshots\/drops-menu\.(?:png|gif)/u);
   assert.match(readme, /docs\/screenshots\/streams-menu\.png/u);
-  assert.match(readme, /<table>[\s\S]*<tr>[\s\S]*<td[\s\S]*<td/u);
+  assert.match(readme, /<details>\s*<summary>More screenshots<\/summary>/u);
+  assert.match(readme, /\[Usage\]\(docs\/usage\.md\)/u);
+  assert.equal((readme.split('<details>')[0].match(/docs\/screenshots\//g) || []).length, 1, 'one main screenshot before the optional gallery');
   assert.match(readme, /LICENSE-CODE\.md/u);
   assert.match(readme, /LICENSE-ASSETS\.md/u);
   assert.doesNotMatch(readme, /^#{1,6} .*?(Technical|Development|Changelog|Diagnostics)/imu);

@@ -1,57 +1,37 @@
-<p align="center"><img src="assets/dropper-launcher.svg" width="128" height="128" alt="Dropper icon"></p>
+# <img src="assets/dropper-launcher.svg" width="48" height="48" alt=""> Dropper for Twitch
 
-# Dropper for Twitch
+Track Twitch Drops progress, campaign eligibility and inventory from one menu.
 
-**Your Drops at a glance**
+[Install Dropper for Twitch](https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js) · Requires [Violentmonkey](https://violentmonkey.github.io/get-it/) or [Tampermonkey](https://www.tampermonkey.net/).
 
-[![Install Dropper for Twitch](docs/badges/install.svg)](https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js)
-[![Code: PolyForm Noncommercial 1.0.0](docs/badges/code.svg)](LICENSE-CODE.md)
-[![Artwork and documentation: CC BY-NC-SA 4.0](docs/badges/assets.svg)](LICENSE-ASSETS.md)
+After installing, sign in to Twitch, refresh, and open Dropper in Twitch’s top bar. [Setup and controls →](docs/usage.md)
 
-## Latest changes
+## Features
 
-- Use shorter settings and full-width backup-stream switches while retaining the progress panel.
-- Keep menus clear of the shared launcher in short windows.
-- Handle overlapping picture-in-picture requests without losing their owner.
+- Track credited watch time and check stream eligibility for the current reward.
+- Browse campaigns, review reward history and open your Drops inventory.
+- Choose games and manage stream-switching preferences.
+- Adjust Twitch’s site colors and the progress card.
 
-## Get started
-
-1. Install a userscript manager such as [Violentmonkey](https://violentmonkey.github.io/get-it/) or [Tampermonkey](https://www.tampermonkey.net/).
-2. [Install Dropper for Twitch](https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js) and confirm in your userscript manager.
-3. Sign in to Twitch, refresh, and open the Dropper launcher in Twitch's top bar. With other ExtraPotions products installed, they share one launcher: open it and choose Dropper.
-
-The script appears as **Dropper for Twitch** in your userscript manager.
-
-Stream switching starts at **Follow campaign order** in the first eligible tab. Saved choices, manual stream holds and pauses are respected; additional browsing tabs stay where you open them. Change the policy in **Settings → Stream switching**.
-
-## What you can do
-
-- **Track progress:** see credited watch time for the current reward on a compact card. Opening the menu moves the same card inside it. When the menu is closed and chat's leaderboard is available, the expanded card replaces that space; Hide progress card restores the leaderboard. Badge Only collapses the card until you open it. Pause or Resume reflects your viewing intent; Skip asks for confirmation. Twitch decides eligibility and credit.
-- **Check eligibility:** see whether the stream you are watching matches the campaign: account, campaign, reward, game, and stream.
-- **Keep rewards in reach:** browse campaigns, review your history, and open your Drops inventory from the menu.
-- **Choose your games:** follow the games you care about and ignore the rest.
-- **Pick site colors:** recolor Twitch's pages with Default, Indigo, Blue, Green, Red or Gray in **Look → Site colors**. Palettes follow Twitch's light or dark mode, and Twitch keeps its purple buttons and live badges. Choose Twitch to restore its own colors.
+Twitch determines eligibility and credit. Saved choices, manual stream holds and pauses are respected; additional browsing tabs stay where you open them.
 
 ## See it in action
 
-<table>
-  <tr>
-    <td width="50%" valign="top" align="center"><a href="docs/screenshots/drops-menu.gif"><img src="docs/screenshots/drops-menu.gif" width="220" alt="Dropper: Campaigns and inventory"></a><br><strong>Campaigns and inventory</strong></td>
-    <td width="50%" valign="top" align="center"><a href="docs/screenshots/streams-menu.png"><img src="docs/screenshots/streams-menu.png" width="220" alt="Dropper: stream playback settings"></a><br><strong>Settings: Advanced and playback</strong></td>
-  </tr>
-</table>
+<img src="docs/screenshots/streams-menu.png" width="324" alt="Dropper settings menu">
+
+<details>
+<summary>More screenshots</summary>
+
+![Campaigns and inventory walkthrough](docs/screenshots/drops-menu.gif)
+
+</details>
 
 Screenshots use sample content.
 
-All ExtraPotions menus share the same Core template. Open **System** for status, diagnostics, troubleshooting and Reset. Donations remain in the header heart.
+---
 
-## Support
+[Usage](docs/usage.md) · [Changelog](CHANGELOG.md) · [Support](https://ko-fi.com/expdare) · [Code license](LICENSE-CODE.md) · [Artwork and documentation license](LICENSE-ASSETS.md)
 
-[Support development](https://ko-fi.com/expdare). Donations are optional. All features remain available without donating.
+Donations are optional. All features remain available without donating.
 
-## License
-
-**Code:** [PolyForm Noncommercial License 1.0.0](LICENSE-CODE.md)<br>
-**Artwork and documentation:** [CC BY-NC-SA 4.0](LICENSE-ASSETS.md)
-
-Dropper is an independent project and is not affiliated with or endorsed by Twitch.
+Dropper is independent and is not affiliated with or endorsed by Twitch.

@@ -1,3 +1,8 @@
+## 3.4.59 — 2026-10-26
+
+- Restore rounded-square header buttons with the existing touch targets.
+- Shorten the README, retain detailed usage instructions and remove unused badges.
+
 ## 3.4.58 — 2026-10-25
 
 - Harden Twitch network bridge endpoint validation for gql and integrity routes.

@@ -2284,7 +2284,7 @@ const ExpMenuLayout = (() => {
     ${S} :is(.header-title-row h2,[data-exp-part=title],#tdh-rail-title){margin:0!important;font-size:14px!important;font-weight:600!important;line-height:1.2!important}
     ${S} :is([data-exp-part=subtitle],#tdh-rail-subtitle,.header-divider,.exp-menu-tagline){display:none!important}
     ${S} .header-actions{display:flex!important;align-items:center!important;gap:0!important;flex:none!important}
-    ${S} :is(.support-button,[data-exp-part=close],[data-exp-part=version],#tdh-header-version,#tdh-rail-close){display:grid!important;place-items:center!important;flex:none!important;width:44px!important;height:44px!important;min-width:44px!important;min-height:44px!important;margin:0!important;padding:0!important;border:0!important;border-radius:6px!important;background:transparent!important;color:var(--theme-text)!important;box-shadow:none!important}
+    ${S} :is(.support-button,[data-exp-part=close],[data-exp-part=version],#tdh-header-version,#tdh-rail-close){display:grid!important;place-items:center!important;flex:none!important;width:44px!important;height:44px!important;min-width:44px!important;min-height:44px!important;margin:0 2px!important;padding:0!important;border:1px solid var(--theme-line)!important;border-radius:6px!important;background:transparent!important;color:var(--theme-text)!important;box-shadow:none!important}
     ${S} :is([data-exp-part=version],#tdh-header-version){position:relative!important;display:block!important;font-size:13px!important;line-height:1.4!important}
     ${S} .exp-changelog-icon{display:block;position:absolute;inset:0;margin:auto;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7}
     ${S} [data-exp-part=status]{font-size:12px!important;margin-top:2px!important}
@@ -2701,7 +2701,7 @@ const ExpLauncherFlyout = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.10.4';
+  const version = '3.10.5';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';

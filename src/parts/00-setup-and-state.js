@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      3.4.58
+// @version      3.4.59
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.58";
+  const APP_VERSION = "3.4.59";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.59": ["Restore rounded-square header buttons with the existing touch targets.","Shorten the README, retain detailed usage instructions and remove unused badges."],
     "3.4.58": ["Harden Twitch network bridge endpoint validation for gql and integrity routes.","Allow query parameters and normalized path structures while rejecting URL fragments on bridge requests."],
     "3.4.57": ["Use shorter settings and full-width backup-stream switches while retaining the progress panel.","Keep menus clear of the shared launcher in short windows.","Handle overlapping picture-in-picture requests without losing their owner."],
     "3.4.56": ["Use the browser native automatic Picture-in-Picture callback when leaving Twitch.","Preserve the selected stream and Twitch-credited progress through hidden-tab pauses.","Handle late Picture-in-Picture entry and failed exits while preserving manual PiP and playback pauses.","Shorten campaign summaries and show ranking controls only for My Priority."],
