@@ -404,8 +404,11 @@
 
   function normalizedGameSlug(value) {
     return cleanText(value)
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
       .toLowerCase()
       .replace(/&/g, "and")
+      .replace(/['’ʼ]/g, "")
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
   }

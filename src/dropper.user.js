@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      3.4.59
+// @version      3.4.60
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.59";
+  const APP_VERSION = "3.4.60";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -186,7 +186,7 @@
   const FIRST_WATCH_CREDIT_GRACE_MS = 90 * 1000;
   const FOREGROUND_REVALIDATION_GRACE_MS = 30 * 1000;
   const STREAM_OFFLINE_CONFIRM_MS = 60 * 1000;
-  const CATEGORY_SLUG_CACHE_KEY = "dropper-category-slugs-v3";
+  const CATEGORY_SLUG_CACHE_KEY = "dropper-category-slugs-v4";
   const EXCLUDED_CATEGORY_SLUGS = new Set(["first-partners-collection"]);
   const EXCLUDED_CAMPAIGN_NAMES = new Set(["first partners collection"]);
   const CATEGORY_SLUG_ALIASES = Object.freeze({
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.4.60": ["Route games with apostrophes or accented letters to the correct Twitch category.","Relearn category addresses saved under the previous naming rule."],
     "3.4.59": ["Restore rounded-square header buttons with the existing touch targets.","Shorten the README, retain detailed usage instructions and remove unused badges."],
     "3.4.58": ["Harden Twitch network bridge endpoint validation for gql and integrity routes.","Allow query parameters and normalized path structures while rejecting URL fragments on bridge requests."],
     "3.4.57": ["Use shorter settings and full-width backup-stream switches while retaining the progress panel.","Keep menus clear of the shared launcher in short windows.","Handle overlapping picture-in-picture requests without losing their owner."],
@@ -10407,8 +10408,11 @@
 
   function normalizedGameSlug(value) {
     return cleanText(value)
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
       .toLowerCase()
       .replace(/&/g, "and")
+      .replace(/['’ʼ]/g, "")
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
   }
@@ -17447,7 +17451,7 @@ ${scope} ::selection{background:${alpha(p.accent, 35)};color:${p.text}}`;
     clearSkipStreamerArm('product-reset');resetClaimReadyTimer();
     try{screenWakeLock?.release();}catch{}screenWakeLock=null;
     try {
-      ExtraPotionsCore.clearProductData('dropper',{legacyKeys:["exp:v3:dropper:content-warning-memory", "tdh-settings-v3", "dropper-account-scope-owner-v1", "tdh-launcher-top", "tdh-launcher-grid-delta-v3", "dropper-last-version-v2", "dropper-next-game-after-claim", "dropper-routing-session-v310", "dropper-auto-navigation-guard", "dropper-navigation-in-flight", "dropper-activity-log", "dropper-recovery-snapshot-v1", "dropper-notification-quiet-v1", "dropper-network-state", "dropper-standby-streams", "dropper-campaign-catalog", "dropper-campaign-page-import-v1", "dropper-campaign-memory-v1", "dropper-campaign-memory-reset-v1", "dropper-ignored-campaign-games-v1", "dropper-standby-refresh-at", "dropper-standby-maintenance-at", "dropper-mute-pending-v1", "dropper-tab-presence-v1", "dropper-tab-id-v1", "dropper-tab-started-v1", "dropper-category-slugs-v3", "dropper-update-reload-pending", "dropper-client-integrity-v1", "dropper-viewing-intent-v1", "dropper-viewing-navigation-v1", "dropper-viewing-selection-v1", "dropper-manual-stream-lock-v1", "dropper-claim-history-v1", "dropper-campaign-priority-v1", "dropper-campaign-priority-order-v1", "tdh-settings-v1", "tdh-settings-v2", "tdh-drop", "tdh-progress", "tdh-progress-at", "dropper-credited-progress-at-v1", "dropper-progress-timeline-v1", "dropper-recovery-loop-v1", "dropper-campaign-restrictions-v1", "dropper-temp-campaign-skips-v1", "dropper-update-state-v2", "dropper-gql-operations-v1", "dropper-native-earned-rewards-v1"]});
+      ExtraPotionsCore.clearProductData('dropper',{legacyKeys:["exp:v3:dropper:content-warning-memory", "tdh-settings-v3", "dropper-account-scope-owner-v1", "tdh-launcher-top", "tdh-launcher-grid-delta-v3", "dropper-last-version-v2", "dropper-next-game-after-claim", "dropper-routing-session-v310", "dropper-auto-navigation-guard", "dropper-navigation-in-flight", "dropper-activity-log", "dropper-recovery-snapshot-v1", "dropper-notification-quiet-v1", "dropper-network-state", "dropper-standby-streams", "dropper-campaign-catalog", "dropper-campaign-page-import-v1", "dropper-campaign-memory-v1", "dropper-campaign-memory-reset-v1", "dropper-ignored-campaign-games-v1", "dropper-standby-refresh-at", "dropper-standby-maintenance-at", "dropper-mute-pending-v1", "dropper-tab-presence-v1", "dropper-tab-id-v1", "dropper-tab-started-v1", "dropper-category-slugs-v3", "dropper-category-slugs-v4", "dropper-update-reload-pending", "dropper-client-integrity-v1", "dropper-viewing-intent-v1", "dropper-viewing-navigation-v1", "dropper-viewing-selection-v1", "dropper-manual-stream-lock-v1", "dropper-claim-history-v1", "dropper-campaign-priority-v1", "dropper-campaign-priority-order-v1", "tdh-settings-v1", "tdh-settings-v2", "tdh-drop", "tdh-progress", "tdh-progress-at", "dropper-credited-progress-at-v1", "dropper-progress-timeline-v1", "dropper-recovery-loop-v1", "dropper-campaign-restrictions-v1", "dropper-temp-campaign-skips-v1", "dropper-update-state-v2", "dropper-gql-operations-v1", "dropper-native-earned-rewards-v1"]});
       location.reload();
     } catch(error) {productResetting=false;throw error;}
   }

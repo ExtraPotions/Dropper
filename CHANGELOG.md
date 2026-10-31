@@ -1,3 +1,8 @@
+## 3.4.60 — 2026-10-31
+
+- Route games with apostrophes or accented letters to the correct Twitch category.
+- Relearn category addresses saved under the previous naming rule.
+
 ## 3.4.59 — 2026-10-26
 
 - Restore rounded-square header buttons with the existing touch targets.

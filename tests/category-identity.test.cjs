@@ -117,3 +117,29 @@ test('exact observed names retain real Twitch slugs across page loads', () => {
   const next = context({stored: Object.fromEntries(c.storage)});
   assert.equal(next.resolveCategorySlug('Example Game'), '12345-example');
 });
+test('apostrophes in game names drop out of Twitch category slugs', () => {
+  const c = context();
+  c.categorySlugCache['dragon s dogma ii'] = 'dragon-s-dogma-ii';
+  c.saveCategorySlugCache();
+  const drop = {game: "Dragon's Dogma II", gameSlug: 'dragons-dogma-ii', gameId: '435870350'};
+  assert.equal(c.suppliedCategorySlugMatchesGame(drop.game, drop.gameSlug), true);
+  assert.equal(c.resolveCategorySlug(drop), 'dragons-dogma-ii');
+  assert.equal(c.categorySlugCache['dragon s dogma ii'], 'dragons-dogma-ii');
+  assert.equal(c.normalizedGameSlug('Dragon’s Dogma II'), 'dragons-dogma-ii');
+  assert.equal(c.normalizedGameSlug("Tom Clancy's Rainbow Six Siege"), 'tom-clancys-rainbow-six-siege');
+});
+test('accented letters fold to plain Twitch category slugs', () => {
+  const c = context();
+  assert.equal(c.normalizedGameSlug('Ghost of Yōtei'), 'ghost-of-yotei');
+  assert.equal(c.normalizedGameSlug('Pokémon Scarlet'), 'pokemon-scarlet');
+  assert.equal(c.normalizedGameSlug('S.T.A.L.K.E.R. 2: Heart of Chornobyl'), 's-t-a-l-k-e-r-2-heart-of-chornobyl');
+  assert.equal(c.normalizedGameSlug('Warhammer 40,000: Space Marine II'), 'warhammer-40-000-space-marine-ii');
+  assert.equal(c.resolveCategorySlug({game: 'Ghost of Yōtei', gameSlug: 'ghost-of-yotei'}), 'ghost-of-yotei');
+});
+test('slugs learned before apostrophe and accent folding are not reused', () => {
+  const stale = JSON.stringify({'dragon s dogma ii': 'dragon-s-dogma-ii'});
+  const c = context({stored: {'dropper-category-slugs-v3': stale}});
+  assert.equal(c.categorySlugCache['dragon s dogma ii'], undefined);
+  assert.equal(c.resolveCategorySlug({game: "Dragon's Dogma II", gameId: '435870350'}), 'dragons-dogma-ii');
+  assert.equal(c.storage.get('dropper-category-slugs-v3'), stale);
+});
