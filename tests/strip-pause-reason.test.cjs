@@ -1,6 +1,6 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), vm = require('node:vm');
-const source = fs.readFileSync(__dirname + '/../src/parts/07-markup-lists-and-appearance.js', 'utf8');
+const source = fs.readFileSync(__dirname + '/../src/parts/08-markup-lists-and-appearance.js', 'utf8');
 function extract(name) { const start = source.indexOf('  function ' + name + '('), rest = source.slice(start), end = rest.slice(4).search(/^  (?:async )?function \w+\(/m); assert.ok(start >= 0, name); return rest.slice(0, end + 4); }
 const context = vm.createContext({});
 vm.runInContext(extract('briefAge') + extract('stripPauseReason'), context);

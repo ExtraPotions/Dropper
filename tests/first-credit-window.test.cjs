@@ -231,7 +231,7 @@ function fullRoutingHarness({ alternative = false } = {}) {
   vm.runInNewContext([
     block('  function routingControllerBootstrap', '\n  function routingControllerFindStream'),
     block('  function routingControllerReconcileActiveTarget', '\n  // The viewer changed Campaign Order'),
-    fs.readFileSync(path.join(parts, '01-claims-recovery-and-routing.js'), 'utf8').split(/(?=  function routingControllerTick\()/u).at(-1),
+    fs.readFileSync(path.join(parts, '02-routing-controller.js'), 'utf8').split(/(?=  function routingControllerTick\()/u).at(-1),
     'this.select = routingControllerSelectCampaign; this.bootstrap = routingControllerBootstrap; this.controllerTick = routingControllerTick;',
   ].join('\n'), context);
   return { context, tick };

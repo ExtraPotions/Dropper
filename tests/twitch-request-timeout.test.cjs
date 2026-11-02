@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const source = fs.readFileSync(path.join(__dirname, '../src/parts/03-twitch-requests-and-campaign-queue.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '../src/parts/04-twitch-requests-and-campaign-queue.js'), 'utf8');
 const transport = source.slice(source.indexOf('  async function postTwitchJson('), source.indexOf('  function preferredGqlTransports('));
 const routing = fs.readFileSync(path.join(__dirname, '../src/parts/01-claims-recovery-and-routing.js'), 'utf8');
 const poll = routing.slice(routing.indexOf('  async function requestGqlPoll('), routing.indexOf('  function dropProgressPercent('));

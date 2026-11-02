@@ -7,7 +7,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
-const partPath = path.join(root, 'src', 'parts', '06-campaign-insights.js');
+const partPath = path.join(root, 'src', 'parts', '07-campaign-insights.js');
 
 function loadInsights() {
   const context = {};

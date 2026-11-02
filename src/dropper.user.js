@@ -15919,6 +15919,7 @@
       } else { delete progressCard.dataset.chatCollapsed; if(settings.badgeOnly)progressCard.dataset.expanded="1"; }
       syncProgressPanelPlacement();layoutChrome();
     });
+    // exp-core-allow: the progress strip is a Dropper floating card beside the Core dock, not a Core menu, so Core's outside-press close and keepOpen do not cover it.
     document.addEventListener("pointerdown", (event) => {
       if (!progressCard.classList.contains("is-expanded") || event.composedPath().includes(progressCard)) return;
       setStripOpen(false);

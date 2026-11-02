@@ -237,7 +237,8 @@
     "menu-preferences.js": "1ac14123207e51522527d8a568511d7f5705edd734dd79fc8e5184d879cfcd90",
     "site-colors.js": "ddbb5fa6b3ab8651852b297336257b3e9cfebca3d032212b85bf43f746f2d14a",
     "launcher-flyout.js": "3918f47a2a0eb51f36ad33d38b6f3a2eac4a1e6d543b2e90dea1129712064061",
-    "runtime.js": "2366cd8dca7fb14b53470cedf49dee233be9b8b54ef2a13855f532f85eed6b33",
+    "runtime.js": "d569c714b3add6935255b96482f23f3b3bd2d3b0c69980b4d1edd459339ffae9",
+    "runtime-menus.js": "7ef41ecd7367146dc0d32ff17c226467c6d3ed71ff21b1b9cf5cc9b33338d1ae",
     "suite-contract.json": "48d07c705f2c5c4e1e72bc55b549593612ae251b5c4e505d96e3ea5016820894"
   }
 }
