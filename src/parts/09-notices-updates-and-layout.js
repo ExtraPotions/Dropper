@@ -1396,13 +1396,7 @@
       })(),
       interfaceTheme: {
         id: settings.uiTheme,
-        skin: ui?.cluster?.dataset?.themeSkin || "gradient",
-      },
-      interfaceOpacity: {
-        enabled: Boolean(settings.customOpacity),
-        percent: normalizedOpacityPercent(),
-        applied: settings.customOpacity ? normalizedOpacityPercent() / 100 : 1,
-        launcherRemainsOpaque: true,
+        skin: "flat",
       },
       menuLayout: {
         renderedHeight: ui?.dock ? Math.round(ui.dock.getBoundingClientRect().height) : null,
@@ -1666,7 +1660,7 @@
       "tdh-quiet-hours": "quietHoursEnabled",
       "tdh-claim-bonus": "claimBonus", "tdh-keep-tab": "keepTabActive", "tdh-claim-drops": "claimDrops",
       "tdh-progress-title": "progressInTitle", "tdh-find-next": "findNextStream", "tdh-mute-next": "muteRestarted",
-      "tdh-background-earning": "backgroundEarning", "tdh-auto-pip": "autoPictureInPicture", "tdh-resume-session": "resumeSessionOnRestart", "tdh-badge-only": "badgeOnly", "tdh-reduce-motion": "reduceMotion", "tdh-notify-claimed": "notifyClaimed", "tdh-notify-ending": "notifyCampaignEnding", "tdh-notify-stalled": "notifyStalledProgress", "tdh-notify-switch": "notifyStreamSwitches", "tdh-notify-hidden": "notifyOnlyWhenHidden", "tdh-custom-opacity": "customOpacity",
+      "tdh-background-earning": "backgroundEarning", "tdh-auto-pip": "autoPictureInPicture", "tdh-resume-session": "resumeSessionOnRestart", "tdh-badge-only": "badgeOnly", "tdh-reduce-motion": "reduceMotion", "tdh-notify-claimed": "notifyClaimed", "tdh-notify-ending": "notifyCampaignEnding", "tdh-notify-stalled": "notifyStalledProgress", "tdh-notify-switch": "notifyStreamSwitches", "tdh-notify-hidden": "notifyOnlyWhenHidden",
       "tdh-hide-sub-promos": "hideTwitchSubscriptionPromos",
       "tdh-restore-channel-player": "restoreChannelPlayer",
       "tdh-remember-content-warnings": "rememberContentWarnings",
@@ -1698,7 +1692,7 @@
         }
         refreshViewingControls();
         if (key === "progressInTitle") updateTitle();
-        if (key === "badgeOnly" || key === "customOpacity") applyAppearanceSettings();
+        if (key === "badgeOnly") applyAppearanceSettings();
         if (key === "reduceMotion") applyMotionSetting();
         if (key === "hideTwitchSubscriptionPromos") {
           if (settings.hideTwitchSubscriptionPromos) suppressTwitchSubscriptionPromos();
@@ -1717,7 +1711,7 @@
       "tdh-quiet-hours": settings.quietHoursEnabled,
       "tdh-claim-bonus": settings.claimBonus, "tdh-keep-tab": settings.keepTabActive, "tdh-claim-drops": settings.claimDrops,
       "tdh-progress-title": settings.progressInTitle, "tdh-find-next": settings.findNextStream, "tdh-mute-next": settings.muteRestarted,
-      "tdh-background-earning": settings.backgroundEarning, "tdh-auto-pip": settings.autoPictureInPicture, "tdh-resume-session": settings.resumeSessionOnRestart, "tdh-badge-only": settings.badgeOnly, "tdh-reduce-motion": settings.reduceMotion, "tdh-notify-claimed": settings.notifyClaimed, "tdh-notify-ending": settings.notifyCampaignEnding, "tdh-notify-stalled": settings.notifyStalledProgress, "tdh-notify-switch": settings.notifyStreamSwitches, "tdh-notify-hidden": settings.notifyOnlyWhenHidden, "tdh-custom-opacity": settings.customOpacity,
+      "tdh-background-earning": settings.backgroundEarning, "tdh-auto-pip": settings.autoPictureInPicture, "tdh-resume-session": settings.resumeSessionOnRestart, "tdh-badge-only": settings.badgeOnly, "tdh-reduce-motion": settings.reduceMotion, "tdh-notify-claimed": settings.notifyClaimed, "tdh-notify-ending": settings.notifyCampaignEnding, "tdh-notify-stalled": settings.notifyStalledProgress, "tdh-notify-switch": settings.notifyStreamSwitches, "tdh-notify-hidden": settings.notifyOnlyWhenHidden,
       "tdh-hide-sub-promos": settings.hideTwitchSubscriptionPromos,
       "tdh-restore-channel-player": settings.restoreChannelPlayer,
       "tdh-remember-content-warnings": settings.rememberContentWarnings,

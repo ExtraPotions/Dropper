@@ -56,3 +56,12 @@ test('build produces deterministic minified output', async () => {
   assert.match(built, /@version 3\.1\.9/u);
   assert.match(built, /Dropper/u);
 });
+
+test('freshness checks reject stale installs without overwriting them',async t=>{
+ const {input,output}=tempPair('dropper-freshness-');t.after(()=>fs.rmSync(path.dirname(input),{recursive:true,force:true}));
+ fs.writeFileSync(input,SAMPLE_SOURCE);await minifyUserscript(input,output);
+ await minifyUserscript(input,output,{check:true});
+ const stale=fs.readFileSync(output,'utf8')+'\n// stale fixture\n';fs.writeFileSync(output,stale);
+ await assert.rejects(minifyUserscript(input,output,{check:true}),/Install bundle is stale/);
+ assert.equal(fs.readFileSync(output,'utf8'),stale);
+});

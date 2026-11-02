@@ -1820,4 +1820,3 @@
     autoNavigateTwitch(TWITCH_HOME_URL, "campaign-home-search");
     return true;
   }
-

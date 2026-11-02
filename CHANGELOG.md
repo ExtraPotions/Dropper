@@ -1,3 +1,9 @@
+## 3.5.0 — 2026-11-02
+
+- Use Slate Blue Light, Dark or System for menus and supported site themes.
+- Migrate retired color choices to System and remove extra theme and opacity controls.
+- Show product-only Light, Dark and current changelog screenshots.
+
 ## 3.4.60 — 2026-10-31
 
 - Route games with apostrophes or accented letters to the correct Twitch category.

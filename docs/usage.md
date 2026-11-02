@@ -18,7 +18,7 @@ Stream switching starts at **Follow campaign order** in the first eligible tab. 
 - **Check eligibility:** see whether the stream you are watching matches the campaign: account, campaign, reward, game, and stream.
 - **Keep rewards in reach:** browse campaigns, review your history, and open your Drops inventory from the menu.
 - **Choose your games:** follow the games you care about and ignore the rest.
-- **Pick site colors:** recolor Twitch's pages with Default, Indigo, Blue, Green, Red or Gray in **Look → Site colors**. Palettes follow Twitch's light or dark mode, and Twitch keeps its purple buttons and live badges. Choose Twitch to restore its own colors.
+- **Site theme:** choose Slate Blue Light, Dark or System in **Look → Site theme**. System follows your device. Twitch's functional purchase, live and status colors keep their meaning.
 
 ## Shared menu
 
@@ -27,3 +27,7 @@ Open **System** for status, diagnostics, troubleshooting and Reset. Menu sizing 
 ## Support and verification
 
 [Report a problem](https://github.com/ExtraPotions/Dropper/issues) or read the [development notes](development.md) for supported behavior and verification limits. Screenshots use sample content; iPad-sized captures use touch emulation and do not establish installed iPad browser support.
+
+## Appearance
+
+Menu theme uses Slate Blue with Light, Dark and System. System follows your device and updates when its appearance changes. Site theme has the same three choices and is independent of the menu. Legacy palette settings migrate to System. Gem themes, palette choices and custom menu opacity are no longer available.

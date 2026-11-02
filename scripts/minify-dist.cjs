@@ -35,7 +35,7 @@ function cleanInstallHeader(header) {
     .join('\n');
 }
 
-async function minifyUserscript(inputPath, outputPath = DEFAULT_OUTPUT) {
+async function minifyUserscript(inputPath, outputPath = DEFAULT_OUTPUT, { check = false } = {}) {
   let source = fs.readFileSync(inputPath, 'utf8').replace(/\r\n/g, '\n');
   if (path.resolve(inputPath) === DEFAULT_INPUT) {
     source = assembleDropperSource(source, ROOT);
@@ -52,7 +52,9 @@ async function minifyUserscript(inputPath, outputPath = DEFAULT_OUTPUT) {
   });
   if (!result.code) throw new Error(`Terser produced empty output for ${inputPath}`);
   const output = `${cleanInstallHeader(header)}\n\n${result.code}\n`;
-  fs.writeFileSync(outputPath, output);
+  if (check) {
+    if (!fs.existsSync(outputPath) || fs.readFileSync(outputPath,'utf8') !== output) throw new Error('Install bundle is stale. Run npm run build.');
+  } else fs.writeFileSync(outputPath, output);
   const outputBytes = Buffer.byteLength(output);
   const sha256 = crypto.createHash('sha256').update(output).digest('hex');
   return {
@@ -73,9 +75,10 @@ module.exports = {
 
 if (require.main === module) {
   (async () => {
-    const input = process.argv[2] || DEFAULT_INPUT;
-    const output = process.argv[3] || DEFAULT_OUTPUT;
-    const stats = await minifyUserscript(input, output);
+    const args = process.argv.slice(2).filter(arg=>arg!=='--check');
+    const input = args[0] || DEFAULT_INPUT;
+    const output = args[1] || DEFAULT_OUTPUT;
+    const stats = await minifyUserscript(input, output, {check:process.argv.includes('--check')});
     if (stats.minified) {
       console.log(`${path.basename(output)} ${stats.originalBytes} -> ${stats.outputBytes} bytes sha256=${stats.sha256}`);
       return;

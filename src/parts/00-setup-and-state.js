@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      3.4.60
+// @version      3.5.0
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.60";
+  const APP_VERSION = "3.5.0";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.5.0": ["Use Slate Blue Light, Dark or System for menus and supported site themes.","Migrate retired color choices to System and remove extra theme and opacity controls.","Show product-only Light, Dark and current changelog screenshots."],
     "3.4.60": ["Route games with apostrophes or accented letters to the correct Twitch category.","Relearn category addresses saved under the previous naming rule."],
     "3.4.59": ["Restore rounded-square header buttons with the existing touch targets.","Shorten the README, retain detailed usage instructions and remove unused badges."],
     "3.4.58": ["Harden Twitch network bridge endpoint validation for gql and integrity routes.","Allow query parameters and normalized path structures while rejecting URL fragments on bridge requests."],
@@ -600,10 +601,8 @@
     restoreChannelPlayer: true,
     rememberContentWarnings: false,
     reduceMotion: false,
-    uiTheme: "dropper",
-    siteColors: "off",
-    customOpacity: false,
-    opacityPercent: 85,
+    uiTheme: "system",
+    siteColors: "system",
     badgeOnly: false,
     notifications: true,
     notifyClaimed: false,
@@ -629,34 +628,6 @@
     excludedChannels: [],
     switchPolicy: "normal",
   };
-  const { PRIDE_RAINBOW, UI_THEMES } = ExtraPotionsCore.reference;
-  const themeRgb = (value) => [1, 3, 5].map((index) => parseInt(value.slice(index, index + 2), 16));
-  const blendThemeColor = (from, to, amount) => `#${themeRgb(from).map((part, index) => Math.round(part + (themeRgb(to)[index] - part) * amount).toString(16).padStart(2, "0")).join("")}`;
-  const themeLuminance = (value) => {
-    const channels = themeRgb(value).map((part) => { const channel = part / 255; return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4; });
-    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
-  };
-  const themeContrast = (one, two) => { const [light, dark] = [themeLuminance(one), themeLuminance(two)].sort((a, b) => b - a); return (light + 0.05) / (dark + 0.05); };
-  function readableThemeColor(candidate, background, fallback) {
-    if (themeContrast(candidate, background) >= 4.5) return candidate;
-    for (let amount = 0.15; amount <= 1; amount += 0.05) {
-      const lighter = blendThemeColor(candidate, "#ffffff", amount);
-      if (themeContrast(lighter, background) >= 4.5) return lighter;
-      const darker = blendThemeColor(candidate, "#000000", amount);
-      if (themeContrast(darker, background) >= 4.5) return darker;
-    }
-    return fallback;
-  }
-  function semanticTheme(theme) {
-    const onAccent = [theme.text, theme.bg, "#ffffff", "#000000"].sort((a, b) => themeContrast(b, theme.accent) - themeContrast(a, theme.accent))[0];
-    return {
-      raised: blendThemeColor(theme.panel, theme.text, 0.08),
-      inset: blendThemeColor(theme.bg, "#000000", 0.18),
-      link: readableThemeColor(theme.accent2, theme.panel, theme.text),
-      focus: theme.accent2,
-      onAccent,
-    };
-  }
   // Central registry for claim-related Twitch DOM assumptions. Keep selectors
   // here so Twitch UI changes have one fail-closed repair surface.
   const TWITCH_DOM_SELECTORS = Object.freeze({

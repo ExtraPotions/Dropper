@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      3.4.60
+// @version      3.5.0
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -61,7 +61,7 @@
     addEventListener("resize", refreshProductChrome, { passive: true });
     ExtraPotionsCore.layout();
   }
-  const APP_VERSION = "3.4.60";
+  const APP_VERSION = "3.5.0";
   ExtraPotionsCore.registerDiagnosticsProduct("dropper", APP_VERSION);
   const LAST_VERSION_KEY = "dropper-last-version-v2";
   const NOTICE_KEY_PREFIX = "exp:v3:dropper:notice:";
@@ -212,6 +212,7 @@
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(["3.4.43","3.4.30","3.4.27","3.4.26"]);
   const RELEASE_NOTES = {
+    "3.5.0": ["Use Slate Blue Light, Dark or System for menus and supported site themes.","Migrate retired color choices to System and remove extra theme and opacity controls.","Show product-only Light, Dark and current changelog screenshots."],
     "3.4.60": ["Route games with apostrophes or accented letters to the correct Twitch category.","Relearn category addresses saved under the previous naming rule."],
     "3.4.59": ["Restore rounded-square header buttons with the existing touch targets.","Shorten the README, retain detailed usage instructions and remove unused badges."],
     "3.4.58": ["Harden Twitch network bridge endpoint validation for gql and integrity routes.","Allow query parameters and normalized path structures while rejecting URL fragments on bridge requests."],
@@ -600,10 +601,8 @@
     restoreChannelPlayer: true,
     rememberContentWarnings: false,
     reduceMotion: false,
-    uiTheme: "dropper",
-    siteColors: "off",
-    customOpacity: false,
-    opacityPercent: 85,
+    uiTheme: "system",
+    siteColors: "system",
     badgeOnly: false,
     notifications: true,
     notifyClaimed: false,
@@ -629,34 +628,6 @@
     excludedChannels: [],
     switchPolicy: "normal",
   };
-  const { PRIDE_RAINBOW, UI_THEMES } = ExtraPotionsCore.reference;
-  const themeRgb = (value) => [1, 3, 5].map((index) => parseInt(value.slice(index, index + 2), 16));
-  const blendThemeColor = (from, to, amount) => `#${themeRgb(from).map((part, index) => Math.round(part + (themeRgb(to)[index] - part) * amount).toString(16).padStart(2, "0")).join("")}`;
-  const themeLuminance = (value) => {
-    const channels = themeRgb(value).map((part) => { const channel = part / 255; return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4; });
-    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
-  };
-  const themeContrast = (one, two) => { const [light, dark] = [themeLuminance(one), themeLuminance(two)].sort((a, b) => b - a); return (light + 0.05) / (dark + 0.05); };
-  function readableThemeColor(candidate, background, fallback) {
-    if (themeContrast(candidate, background) >= 4.5) return candidate;
-    for (let amount = 0.15; amount <= 1; amount += 0.05) {
-      const lighter = blendThemeColor(candidate, "#ffffff", amount);
-      if (themeContrast(lighter, background) >= 4.5) return lighter;
-      const darker = blendThemeColor(candidate, "#000000", amount);
-      if (themeContrast(darker, background) >= 4.5) return darker;
-    }
-    return fallback;
-  }
-  function semanticTheme(theme) {
-    const onAccent = [theme.text, theme.bg, "#ffffff", "#000000"].sort((a, b) => themeContrast(b, theme.accent) - themeContrast(a, theme.accent))[0];
-    return {
-      raised: blendThemeColor(theme.panel, theme.text, 0.08),
-      inset: blendThemeColor(theme.bg, "#000000", 0.18),
-      link: readableThemeColor(theme.accent2, theme.panel, theme.text),
-      focus: theme.accent2,
-      onAccent,
-    };
-  }
   // Central registry for claim-related Twitch DOM assumptions. Keep selectors
   // here so Twitch UI changes have one fail-closed repair surface.
   const TWITCH_DOM_SELECTORS = Object.freeze({
@@ -3471,7 +3442,6 @@
     autoNavigateTwitch(TWITCH_HOME_URL, "campaign-home-search");
     return true;
   }
-
   function routingSessionDefaults(state = ROUTING_STATES.IDLE) {
     const now = Date.now();
     return {
@@ -13281,7 +13251,10 @@
       for (const name of ['protectedChannels','excludedChannels']) if (Object.hasOwn(stored,name)) stored[name] = Array.isArray(stored[name]) ? [...new Set(stored[name].filter(value=>typeof value==='string').map(value=>value.trim().toLowerCase()).filter(value=>/^[a-z0-9_]{1,25}$/.test(value)))].slice(0,100) : [];
       for (const name of ['quietHoursStart','quietHoursEnd']) if (Object.hasOwn(stored,name) && !/^([01]\d|2[0-3]):[0-5]\d$/.test(stored[name] || '')) stored[name] = DEFAULTS[name];
       if (Object.hasOwn(stored,'quietHoursEnabled')) stored.quietHoursEnabled = stored.quietHoursEnabled === true;
-      if (Object.hasOwn(stored,'siteColors') && !['off','default','indigo','blue','green','red','gray'].includes(stored.siteColors)) stored.siteColors = DEFAULTS.siteColors;
+      stored.uiTheme = ['light','dark','system'].includes(stored.uiTheme) ? stored.uiTheme : 'system';
+      stored.siteColors = ['light','dark','system'].includes(stored.siteColors) ? stored.siteColors : 'system';
+      delete stored.customOpacity;
+      delete stored.opacityPercent;
       if (Object.hasOwn(stored,'switchPolicy') && !['normal','stopped-earning'].includes(stored.switchPolicy)) stored.switchPolicy = DEFAULTS.switchPolicy;
       if (managerReadable && typeof GM_setValue === 'function') {
         try {
@@ -14550,14 +14523,14 @@
         position: fixed; right: 12px; z-index: 2147483600;
         display: flex; flex-direction: column-reverse; align-items: flex-end;
         width: max-content; max-width: calc(100vw - 24px); gap: 8px;
-        --theme-bg:#111114; --theme-panel:#19191e; --theme-raised:#2a2a31; --theme-inset:#0e0e10; --theme-line:#34343b; --theme-text:#efeff1; --theme-muted:#adadb8; --theme-accent:#9147ff; --theme-accent2:#bf94ff; --theme-link:#c6a4ff; --theme-focus:#bf94ff; --theme-onAccent:#111114; --theme-skin:linear-gradient(135deg,#d9b5ff,#9b5af9,#7428e8); --theme-skin-vertical:linear-gradient(180deg,#d9b5ff,#9b5af9,#7428e8); --exp-ui-opacity:1; --exp-menu-width:260px; --dropper-ui-opacity:1;
+        --exp-ui-opacity:1; --exp-menu-width:260px;
         font: 13px/1.42 ui-sans-serif, system-ui, "Segoe UI", sans-serif; color: var(--theme-text);
       }
       .cluster.open-up { flex-direction: column; }
       #tdh-tools-dock,
       #tdh-drop-card,
       .update-notice {
-        opacity:var(--exp-ui-opacity,var(--dropper-ui-opacity,1));
+        opacity:1;
         transition:opacity .15s ease;
       }
       .progress-stack {
@@ -14648,9 +14621,9 @@
       .status-meta-chip{box-sizing:border-box!important;min-width:0!important;height:24px!important;display:flex!important;align-items:center!important;overflow:hidden!important;border:1px solid color-mix(in srgb,var(--theme-line) 88%,var(--theme-accent) 12%)!important;border-radius:6px!important;background:color-mix(in srgb,var(--theme-bg) 94%,var(--theme-panel) 6%)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.018)!important}
       .drop-status-row .state-pill{box-sizing:border-box!important;min-width:0!important;min-height:0!important;height:22px!important;display:inline-flex!important;align-items:center!important;gap:5px!important;padding:0 8px!important;border:0!important;border-radius:0!important;background:transparent!important;color:var(--theme-muted)!important;font-size:var(--exp-font-size-small,11px)!important;font-weight:800!important;line-height:1!important;white-space:nowrap!important}
       .drop-status-row .state-pill::before{content:""!important;flex:0 0 auto!important;width:6px!important;height:6px!important;border-radius:2px!important;background:currentColor!important;box-shadow:0 0 7px color-mix(in srgb,currentColor 42%,transparent)!important}
-      .drop-status-row .state-pill.good{color:#8fd7a0!important}
-      .drop-status-row .state-pill.warn{color:#e4bd6c!important}
-      .drop-status-row .state-pill.bad{color:#dc9393!important}
+      .drop-status-row .state-pill.good{color:light-dark(#21643b,#8fd7a0)!important}
+      .drop-status-row .state-pill.warn{color:light-dark(#7a4b00,#e4bd6c)!important}
+      .drop-status-row .state-pill.bad{color:light-dark(#9d2828,#dc9393)!important}
       .status-chip-divider{flex:0 0 auto!important;width:1px!important;height:12px!important;background:color-mix(in srgb,var(--theme-line) 82%,transparent)!important}
       .status-clock-icon{flex:0 0 auto!important;width:10px!important;height:10px!important;margin-left:7px!important;color:color-mix(in srgb,var(--theme-muted) 86%,var(--theme-text) 14%)!important}
       #tdh-updated-ago{box-sizing:border-box!important;min-width:0!important;max-width:100%!important;padding:0 8px 0 4px!important;border:0!important;color:var(--theme-muted)!important;font-size:var(--exp-font-size-small,11px)!important;font-weight:600!important;font-variant-numeric:tabular-nums!important;line-height:1!important;text-align:left!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
@@ -14750,18 +14723,10 @@
       #tdh-progress-body>.fl-switch,
       #tdh-progress-body>.mini-row{padding:4px 0}
       #tdh-progress-body>.theme-row{min-height:22px;padding:3px 0;gap:6px}
-      #tdh-progress-body .exp-theme-swatches{gap:3px;flex-wrap:nowrap;min-width:0}
-      #tdh-progress-body .exp-theme-swatch{flex:0 0 18px!important;width:18px!important;height:18px!important;min-width:18px!important;min-height:18px!important;max-width:18px!important;max-height:18px!important;border-radius:4px!important}
       .cluster #tdh-progress-body>.theme-row>span {display:none}
       .cluster #tdh-progress-body>.theme-row {gap:0}
-      .cluster #tdh-progress-body .exp-theme-swatches {width:100%;justify-content:space-between}
 
       .appearance-separator{grid-column:1/-1;width:100%;border:0;border-top:1px solid var(--theme-line,#34343b);margin:3px 0 1px}
-      .opacity-row{grid-column:1/-1;display:grid;grid-template-columns:auto minmax(72px,1fr) auto;align-items:center;gap:6px;min-width:0;padding:4px 0;border-top:1px solid #26262b}
-      .opacity-row[hidden]{display:none!important}
-      .opacity-row>span{font-size:var(--exp-font-size-body,13px);line-height:1.25;white-space:nowrap}
-      #tdh-opacity-range{width:100%;min-width:0;accent-color:var(--theme-accent)}
-      #tdh-opacity-value{min-width:34px;text-align:right;font-size:var(--exp-font-size-small,11px);font-weight:800;color:var(--theme-muted)}
 
       #tdh-refresh-now,#tdh-reset-session{border-color:#cb6868!important;background:#402020!important;color:#ffd7d7!important}
       #tdh-settings-launcher:hover {
@@ -14909,19 +14874,6 @@
       .update-release:hover,
       .update-release:focus-visible {
         background:color-mix(in srgb,var(--theme-panel) 88%,var(--theme-accent) 12%);
-      }
-            .cluster[data-theme-skin="gradient"] .update-notice {
-        border:1px solid transparent;
-        background-image:linear-gradient(var(--theme-panel),var(--theme-panel)),var(--theme-skin);
-        background-origin:border-box;
-        background-clip:padding-box,border-box;
-      }
-      .cluster[data-theme-skin="gradient"] .update-version,
-      .cluster[data-theme-skin="gradient"] .update-action {
-        border-color:transparent;
-        background-image:linear-gradient(var(--theme-panel),var(--theme-panel)),var(--theme-skin);
-        background-origin:border-box;
-        background-clip:padding-box,border-box;
       }
       .toast { margin-bottom:7px; padding:6px 8px; border:1px solid #34343b; border-radius:8px; background:#18181b; color:#efeff1; font-size:var(--exp-font-size-small,11px); box-shadow:0 8px 24px #0006; }
       .toast[hidden] { display:none; }
@@ -15089,108 +15041,16 @@
       .auth-input { width:100%; min-height:30px; border:1px solid var(--theme-line); border-radius:6px; background:var(--theme-inset); color:var(--theme-text); padding:6px 8px; font-size:var(--exp-font-size-body,13px); }
       .auth-input:focus { outline:2px solid var(--theme-focus); outline-offset:2px; border-color:var(--theme-focus); }
       .theme-row { grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:28px; padding:6px 0; font-size:var(--exp-font-size-body,13px); }
-      .exp-theme-swatch{box-sizing:border-box!important;flex:0 0 22px!important;width:22px!important;height:22px!important;min-width:22px!important;min-height:22px!important;max-width:22px!important;max-height:22px!important;padding:0!important;border-radius:5px!important}
-      .exp-theme-swatches { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-      .exp-theme-swatch { appearance:none; width:18px; height:18px; min-width:18px; padding:0; border:2px solid var(--theme-line); border-radius:4px; box-sizing:border-box; cursor:pointer; }
-      .exp-theme-swatch.is-on { border-color:var(--theme-text); box-shadow:0 0 0 2px var(--theme-accent); }
       .fl-tool-panel { border-color:var(--theme-line); background:var(--theme-panel); }
       .fl-tool-body { border-color:var(--theme-line); background:var(--theme-bg); color:var(--theme-text); }
       .select-lite, .life-btn { border-color:var(--theme-line); background:var(--theme-raised); color:var(--theme-text); }
       .cluster a { color:var(--theme-link); }
       .fl-tool-chevron, #tdh-rail-subtitle, .compact-extra { color:var(--theme-muted); }
-      .cluster[data-ui-theme="contrast"] .toggleSwitch { border:2px solid #fff; background:#050505; }
-      .cluster[data-ui-theme="contrast"] .toggleSwitch::after { top:0; left:0; border:1px solid #050505; background:#fff; }
-      .cluster[data-ui-theme="contrast"] .toggleSwitch[aria-checked="true"] { background:#fff; border-color:#fff; }
-      .cluster[data-ui-theme="contrast"] .toggleSwitch[aria-checked="true"]::after { background:#050505; border-color:#fff; transform:translateX(14px); }
       @media (forced-colors: active) {
         .toggleSwitch { forced-color-adjust:none; border:1px solid CanvasText; background:Canvas; }
         .toggleSwitch::after { border-color:CanvasText; background:CanvasText; }
         .toggleSwitch[aria-checked="true"] { border-color:Highlight; background:Highlight; }
         .toggleSwitch[aria-checked="true"]::after { border-color:HighlightText; background:HighlightText; }
-      }
-            .cluster[data-theme-skin="gradient"] #tdh-tools-dock:not([data-exp-menu-layout="lean"]) {
-        border:1px solid transparent !important;
-        background-origin:border-box !important;
-        background-clip:padding-box, border-box !important;
-        background-image:linear-gradient(var(--theme-bg),var(--theme-bg)),var(--theme-skin) !important;
-      }
-      .cluster[data-theme-skin="gradient"] #tdh-settings-launcher {
-        border-color:color-mix(in srgb,var(--theme-accent) 30%,transparent) !important;
-        background:var(--theme-panel) !important;
-        background-image:none !important;
-      }
-      .cluster[data-theme-skin="gradient"] #tdh-settings-launcher:hover {
-        border-color:color-mix(in srgb,var(--theme-accent) 58%,transparent) !important;
-        background:color-mix(in srgb,var(--theme-panel) 96%,var(--theme-accent) 4%) !important;
-        background-image:none !important;
-      }
-      .cluster[data-theme-skin="gradient"] #tdh-settings-launcher[aria-expanded="true"] {
-        border:1px solid transparent !important;
-        background-image:linear-gradient(var(--theme-panel),var(--theme-panel)),var(--theme-skin) !important;
-        background-origin:border-box !important;
-        background-clip:padding-box,border-box !important;
-      }
-      .cluster[data-theme-skin="gradient"] #tdh-header-version {
-        border:1px solid var(--theme-line);
-        background:var(--theme-bg);
-        color:var(--theme-text);
-        border-radius:6px;
-      }
-      .cluster[data-theme-skin="gradient"] #tdh-header-version:hover,
-      .cluster[data-theme-skin="gradient"] #tdh-header-version:focus-visible {
-        border-color:transparent;
-        background-image:linear-gradient(var(--theme-panel),var(--theme-panel)),var(--theme-skin);
-        background-origin:border-box;
-        background-clip:padding-box,border-box;
-      }
-      .cluster[data-theme-skin="gradient"] .header-divider {
-        height:2px;
-        border-radius:2px;
-        opacity:.9;
-        background:var(--theme-skin);
-        -webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 16%,#000 84%,transparent 100%);
-        mask-image:linear-gradient(90deg,transparent 0%,#000 16%,#000 84%,transparent 100%);
-      }
-      .cluster[data-theme-skin="gradient"] .drop-bar > span {
-        background:var(--theme-accent) !important;
-      }
-      .cluster[data-theme-skin="gradient"] .progress-head .drop-percent {
-        color:var(--theme-accent2) !important;
-      }
-      .cluster[data-theme-skin="gradient"]:not([data-ui-theme="contrast"]) .toggleSwitch[aria-checked="true"] {
-        border-color:color-mix(in srgb,var(--theme-line) 52%,var(--theme-accent) 48%);
-        background:color-mix(in srgb,var(--theme-panel) 72%,var(--theme-accent) 28%);
-      }
-      .cluster[data-theme-skin="gradient"] .exp-theme-swatch.is-on {
-        border-color:var(--theme-text);
-        box-shadow:0 0 0 2px var(--theme-accent2);
-      }
-      .cluster[data-theme-skin="gradient"] :is(.fl-tool-header,.life-btn).last-opened {
-        box-shadow:none;
-        position:relative;
-      }
-      .cluster[data-theme-skin="gradient"] :is(.fl-tool-header,.life-btn).last-opened::before {
-        content:"";
-        position:absolute;
-        left:0;
-        top:4px;
-        bottom:4px;
-        width:2px;
-        border-radius:2px;
-        background:var(--theme-skin-vertical);
-      }
-      .cluster[data-theme-skin="gradient"] .fl-tool-header:hover,
-      .cluster[data-theme-skin="gradient"] .fl-tool-header:focus-visible,
-      .cluster[data-theme-skin="gradient"] .fl-tool-header[aria-expanded="true"] {
-        background:color-mix(in srgb,var(--theme-panel) 88%,var(--theme-accent) 12%);
-      }
-      .cluster[data-theme-skin="gradient"] :is(.life-btn,.select-lite,.auth-input):focus-visible,
-      .cluster[data-theme-skin="gradient"] .skip-streamer-chip:focus-visible {
-        outline:2px solid transparent !important;
-        border-color:transparent !important;
-        background-origin:border-box !important;
-        background-clip:padding-box,border-box !important;
-        background-image:linear-gradient(var(--theme-bg),var(--theme-bg)),var(--theme-skin) !important;
       }
       .cluster[data-ui-theme="warm"] #tdh-tools-dock {
         border:1px solid color-mix(in srgb,var(--theme-line) 84%,var(--theme-accent) 16%) !important;
@@ -15217,14 +15077,6 @@
       }
       .cluster[data-ui-theme="warm"] :is(.fl-tool-header,.life-btn):not(.last-opened) {
         box-shadow:inset 0 1px 0 #ffedcf0a;
-      }
-      .cluster[data-ui-theme="contrast"] .toggleSwitch[aria-checked="true"] {
-        background:#fff;
-        border-color:#fff;
-      }
-      .cluster[data-ui-theme="contrast"] .toggleSwitch[aria-checked="true"]::after {
-        background:#050505;
-        border-color:#fff;
       }
       .compact-inventory { display:none; margin-top:6px; border:1px solid #9147ff55; background:#111114; border-radius:9px; overflow:hidden; }
       .compact-inventory.open { display:block; }
@@ -15762,13 +15614,6 @@
             ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "", settings.hideTwitchSubscriptionPromos)}
             ${switchHtml("tdh-badge-only", "Badge Only", "Collapses the page card to a small button. Open that button for progress and Pause; progress is never duplicated in the menu.", settings.badgeOnly)}
             ${switchHtml("tdh-reduce-motion", "Reduce motion", "", settings.reduceMotion)}
-            <hr class="appearance-separator">
-            ${switchHtml("tdh-custom-opacity", "Custom Opacity", "Makes Dropper panels translucent while keeping the launcher fully visible.", settings.customOpacity)}
-            <div class="opacity-row" id="tdh-opacity-row"${settings.customOpacity ? "" : " hidden"}>
-              <span id="tdh-opacity-label">Opacity</span>
-              <input id="tdh-opacity-range" type="range" min="40" max="100" step="5" value="${normalizedOpacityPercent()}" aria-labelledby="tdh-opacity-label" aria-valuemin="40" aria-valuemax="100" aria-valuenow="${normalizedOpacityPercent()}" aria-valuetext="${normalizedOpacityPercent()}%">
-              <output id="tdh-opacity-value" for="tdh-opacity-range">${normalizedOpacityPercent()}%</output>
-            </div>
           </div></section>
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-diagnostics-body"><span class="fl-tool-title">System</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-diagnostics-body">
             <div class="action-pair"><button type="button" class="life-btn" id="tdh-diagnostics-toggle">Show Diagnostics</button>
@@ -15867,7 +15712,7 @@
     ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { ExtraPotionsCore.resetLauncherGrid("dropper"); requestAnimationFrame(layoutChrome); } });
     ExtraPotionsCore.setMenuStatus("dropper", systemHealthSnapshot);
     ui.menuController = ExtraPotionsCore.createMenuController({
-      id: "dropper", host, shadow, panel: ui.dock,
+      id: "dropper", host, shadow, panel: ui.dock, themeRoot: ui.cluster,
       getSettings: () => settings, setOpen: setRailOpen, onLayout:layoutChrome,
     });
     const progressCard = shadow.getElementById("tdh-drop-card");
@@ -16657,15 +16502,9 @@
     const fill = ui.shadow.getElementById("tdh-drop-fill");
     const pct = ui.shadow.getElementById("tdh-drop-percent");
     const ring = ui.shadow.getElementById("tdh-ring");
-    let main = "#dc2626", soft = "#fb7185";
-    if (percent >= 90) { main = "#16a34a"; soft = "#4ade80"; }
-    else if (percent >= 70) { main = "#65a30d"; soft = "#a3e635"; }
-    else if (percent >= 50) { main = "#ca8a04"; soft = "#facc15"; }
-    else if (percent >= 25) { main = "#ea580c"; soft = "#fb923c"; }
-    const pride = ui.cluster?.dataset?.uiTheme === "pride";
-    if (fill) fill.style.background = pride ? PRIDE_RAINBOW : `linear-gradient(90deg, ${main}, ${soft})`;
-    if (pct) pct.style.color = pride ? "#d8dbe1" : soft;
-    if (ring) ring.style.stroke = pride ? "#d97898" : main;
+    if (fill) fill.style.background = 'var(--theme-accent)';
+    if (pct) pct.style.color = 'var(--theme-text)';
+    if (ring) ring.style.stroke = 'var(--theme-accent)';
   }
 
   let browserBackgroundSince = 0;
@@ -17162,11 +17001,6 @@
     ui?.cluster?.classList.toggle("reduce-motion", Boolean(settings.reduceMotion));
   }
 
-  function normalizedOpacityPercent(value = settings.opacityPercent) {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return 85;
-    return Math.max(40, Math.min(100, Math.round(numeric / 5) * 5));
-  }
 
   const TWITCH_KEEP_CLEAR = '[data-a-target="player-controls"],.player-controls,#live-channel-stream-information,[data-a-target="stream-info-card-component"],.channel-info-content';
   function updateProgressCardAside() {
@@ -17338,12 +17172,10 @@ ${scope} ::selection{background:${alpha(p.accent, 35)};color:${p.text}}`;
 
   let siteColors = null;
   function applySiteColors() {
-    if (settings.siteColors === 'off' || ExtraPotionsCore.suiteSitePaused?.()) { siteColors?.clear(); return; }
+    if (ExtraPotionsCore.suiteSitePaused?.()) { siteColors?.clear(); return; }
     siteColors ??= ExtraPotionsCore.createSiteColors({
       product: 'dropper',
       css: twitchSiteColorCss,
-      mode: () => document.documentElement.classList.contains('tw-root--theme-light') ? 'light' : 'dark',
-      watch: render => { const observer = new MutationObserver(render); observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] }); return () => observer.disconnect(); },
     });
     siteColors.apply(settings.siteColors);
   }
@@ -17351,38 +17183,7 @@ ${scope} ::selection{background:${alpha(p.accent, 35)};color:${p.text}}`;
   function applyAppearanceSettings() {
     applySiteColors();
     if (!ui) return;
-    const theme = UI_THEMES.find((item) => item.id === 'dropper');
-    settings.uiTheme = theme.id;
-    for (const key of ["bg", "panel", "line", "text", "muted", "accent", "accent2"]) ui.cluster.style.setProperty(`--theme-${key}`, theme[key]);
-    const semantic = semanticTheme(theme);
-    ExtraPotionsCore.publishMenuPalette?.(ui.host, semantic);
-    for (const key of ["raised", "inset", "link", "focus", "onAccent"]) ui.cluster.style.setProperty(`--theme-${key}`, semantic[key]);
-    ExtraPotionsCore.publishMenuPalette?.(ui.host, { ...theme, ...semantic });
-    ui.cluster.style.setProperty("--theme-skin", theme.skin || theme.swatch);
-    ui.cluster.style.setProperty("--theme-skin-vertical", theme.skinVertical || theme.skin || theme.swatch);
-    ui.cluster.dataset.uiTheme = theme.id;
-    ui.cluster.dataset.themeSkin = theme.skinMode === "flat" ? "flat" : "gradient";
-    settings.opacityPercent = normalizedOpacityPercent();
-    const appliedOpacity = settings.customOpacity ? settings.opacityPercent / 100 : 1;
-    ui.cluster.style.setProperty("--exp-ui-opacity", String(appliedOpacity));
-    ui.cluster.style.setProperty("--dropper-ui-opacity", String(appliedOpacity));
-    ui.cluster.dataset.customOpacity = settings.customOpacity ? "true" : "false";
-    ui.cluster.dataset.opacityPercent = String(settings.opacityPercent);
-    const opacityRow = ui.shadow.getElementById("tdh-opacity-row");
-    const opacityRange = ui.shadow.getElementById("tdh-opacity-range");
-    const opacityValue = ui.shadow.getElementById("tdh-opacity-value");
-    if (opacityRow) opacityRow.hidden = !settings.customOpacity;
-    if (opacityRange) {
-      opacityRange.value = String(settings.opacityPercent);
-      opacityRange.setAttribute("aria-valuenow", String(settings.opacityPercent));
-      opacityRange.setAttribute("aria-valuetext", settings.opacityPercent + "%");
-    }
-    if (opacityValue) opacityValue.textContent = settings.opacityPercent + "%";
-    ui.shadow.querySelectorAll(".exp-theme-swatch").forEach((button) => {
-      const active = button.dataset.theme === theme.id;
-      button.classList.toggle("is-on", active);
-      button.setAttribute("aria-pressed", String(active));
-    });
+    ExtraPotionsCore.applyTheme(ui.host, settings.uiTheme);
     const stack = ui.shadow.querySelector(".progress-stack");
     if (!stack) return;
     stack.classList.toggle("badge-only", Boolean(settings.badgeOnly));
@@ -17526,7 +17327,11 @@ ${scope} ::selection{background:${alpha(p.accent, 35)};color:${p.text}}`;
     // Menu size is a display choice, so it lives at the end of Appearance.
     const appearance=ui.shadow.getElementById('tdh-progress-body');
     if(appearance&&!appearance.querySelector('[data-dropper-menu-preferences]')){const preferences=ExtraPotionsCore.createMenuSizeControls();preferences.dataset.dropperMenuPreferences='1';appearance.prepend(preferences);}
-    if(appearance&&!appearance.querySelector('[data-dropper-site-colors]')){const row=ExtraPotionsCore.createSiteColorControl({value:settings.siteColors,offLabel:'Twitch',onChange:value=>{settings.siteColors=value;saveSettings();applySiteColors();}});row.dataset.dropperSiteColors='1';appearance.querySelector('[data-dropper-menu-preferences]')?.after(row);}
+    if(appearance&&!appearance.querySelector('[data-dropper-site-colors]')){
+      const menu=ExtraPotionsCore.createThemeModeControl({value:settings.uiTheme,onChange:uiTheme=>{settings.uiTheme=uiTheme;saveSettings();applyAppearanceSettings();}});
+      const site=ExtraPotionsCore.createSiteColorControl({value:settings.siteColors,onChange:siteColors=>{settings.siteColors=siteColors;saveSettings();applySiteColors();}});
+      site.dataset.dropperSiteColors='1';appearance.querySelector('[data-dropper-menu-preferences]')?.after(menu,site);
+    }
     const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,onReset:resetAllDropperData,notify:setStatus,layout:'grouped',issueSettings:()=>({current:settings,defaults:DEFAULTS})});
     target.replaceChildren(system);
   }
@@ -17739,19 +17544,6 @@ ${scope} ::selection{background:${alpha(p.accent, 35)};color:${p.text}}`;
         : 0;
       settings.pauseAutoSwitchUntil = pauseAutoSwitchUntil;
       saveSettings();refreshStreamPolicyControl();
-    });
-    const opacityRange = s.getElementById("tdh-opacity-range");
-    opacityRange.value = String(normalizedOpacityPercent());
-    opacityRange.addEventListener("input", () => {
-      settings.opacityPercent = normalizedOpacityPercent(opacityRange.value);
-      opacityRange.setAttribute("aria-valuenow", String(settings.opacityPercent));
-      opacityRange.setAttribute("aria-valuetext", settings.opacityPercent + "%");
-      applyAppearanceSettings();
-    });
-    opacityRange.addEventListener("change", () => {
-      settings.opacityPercent = normalizedOpacityPercent(opacityRange.value);
-      saveSettings();
-      applyAppearanceSettings();
     });
     s.getElementById("tdh-update-dismiss")?.addEventListener("click", hideUpdateNotice);
   }
@@ -19154,13 +18946,7 @@ ${scope} ::selection{background:${alpha(p.accent, 35)};color:${p.text}}`;
       })(),
       interfaceTheme: {
         id: settings.uiTheme,
-        skin: ui?.cluster?.dataset?.themeSkin || "gradient",
-      },
-      interfaceOpacity: {
-        enabled: Boolean(settings.customOpacity),
-        percent: normalizedOpacityPercent(),
-        applied: settings.customOpacity ? normalizedOpacityPercent() / 100 : 1,
-        launcherRemainsOpaque: true,
+        skin: "flat",
       },
       menuLayout: {
         renderedHeight: ui?.dock ? Math.round(ui.dock.getBoundingClientRect().height) : null,
@@ -19424,7 +19210,7 @@ ${scope} ::selection{background:${alpha(p.accent, 35)};color:${p.text}}`;
       "tdh-quiet-hours": "quietHoursEnabled",
       "tdh-claim-bonus": "claimBonus", "tdh-keep-tab": "keepTabActive", "tdh-claim-drops": "claimDrops",
       "tdh-progress-title": "progressInTitle", "tdh-find-next": "findNextStream", "tdh-mute-next": "muteRestarted",
-      "tdh-background-earning": "backgroundEarning", "tdh-auto-pip": "autoPictureInPicture", "tdh-resume-session": "resumeSessionOnRestart", "tdh-badge-only": "badgeOnly", "tdh-reduce-motion": "reduceMotion", "tdh-notify-claimed": "notifyClaimed", "tdh-notify-ending": "notifyCampaignEnding", "tdh-notify-stalled": "notifyStalledProgress", "tdh-notify-switch": "notifyStreamSwitches", "tdh-notify-hidden": "notifyOnlyWhenHidden", "tdh-custom-opacity": "customOpacity",
+      "tdh-background-earning": "backgroundEarning", "tdh-auto-pip": "autoPictureInPicture", "tdh-resume-session": "resumeSessionOnRestart", "tdh-badge-only": "badgeOnly", "tdh-reduce-motion": "reduceMotion", "tdh-notify-claimed": "notifyClaimed", "tdh-notify-ending": "notifyCampaignEnding", "tdh-notify-stalled": "notifyStalledProgress", "tdh-notify-switch": "notifyStreamSwitches", "tdh-notify-hidden": "notifyOnlyWhenHidden",
       "tdh-hide-sub-promos": "hideTwitchSubscriptionPromos",
       "tdh-restore-channel-player": "restoreChannelPlayer",
       "tdh-remember-content-warnings": "rememberContentWarnings",
@@ -19456,7 +19242,7 @@ ${scope} ::selection{background:${alpha(p.accent, 35)};color:${p.text}}`;
         }
         refreshViewingControls();
         if (key === "progressInTitle") updateTitle();
-        if (key === "badgeOnly" || key === "customOpacity") applyAppearanceSettings();
+        if (key === "badgeOnly") applyAppearanceSettings();
         if (key === "reduceMotion") applyMotionSetting();
         if (key === "hideTwitchSubscriptionPromos") {
           if (settings.hideTwitchSubscriptionPromos) suppressTwitchSubscriptionPromos();
@@ -19475,7 +19261,7 @@ ${scope} ::selection{background:${alpha(p.accent, 35)};color:${p.text}}`;
       "tdh-quiet-hours": settings.quietHoursEnabled,
       "tdh-claim-bonus": settings.claimBonus, "tdh-keep-tab": settings.keepTabActive, "tdh-claim-drops": settings.claimDrops,
       "tdh-progress-title": settings.progressInTitle, "tdh-find-next": settings.findNextStream, "tdh-mute-next": settings.muteRestarted,
-      "tdh-background-earning": settings.backgroundEarning, "tdh-auto-pip": settings.autoPictureInPicture, "tdh-resume-session": settings.resumeSessionOnRestart, "tdh-badge-only": settings.badgeOnly, "tdh-reduce-motion": settings.reduceMotion, "tdh-notify-claimed": settings.notifyClaimed, "tdh-notify-ending": settings.notifyCampaignEnding, "tdh-notify-stalled": settings.notifyStalledProgress, "tdh-notify-switch": settings.notifyStreamSwitches, "tdh-notify-hidden": settings.notifyOnlyWhenHidden, "tdh-custom-opacity": settings.customOpacity,
+      "tdh-background-earning": settings.backgroundEarning, "tdh-auto-pip": settings.autoPictureInPicture, "tdh-resume-session": settings.resumeSessionOnRestart, "tdh-badge-only": settings.badgeOnly, "tdh-reduce-motion": settings.reduceMotion, "tdh-notify-claimed": settings.notifyClaimed, "tdh-notify-ending": settings.notifyCampaignEnding, "tdh-notify-stalled": settings.notifyStalledProgress, "tdh-notify-switch": settings.notifyStreamSwitches, "tdh-notify-hidden": settings.notifyOnlyWhenHidden,
       "tdh-hide-sub-promos": settings.hideTwitchSubscriptionPromos,
       "tdh-restore-channel-player": settings.restoreChannelPlayer,
       "tdh-remember-content-warnings": settings.rememberContentWarnings,

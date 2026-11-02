@@ -169,13 +169,6 @@
             ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "", settings.hideTwitchSubscriptionPromos)}
             ${switchHtml("tdh-badge-only", "Badge Only", "Collapses the page card to a small button. Open that button for progress and Pause; progress is never duplicated in the menu.", settings.badgeOnly)}
             ${switchHtml("tdh-reduce-motion", "Reduce motion", "", settings.reduceMotion)}
-            <hr class="appearance-separator">
-            ${switchHtml("tdh-custom-opacity", "Custom Opacity", "Makes Dropper panels translucent while keeping the launcher fully visible.", settings.customOpacity)}
-            <div class="opacity-row" id="tdh-opacity-row"${settings.customOpacity ? "" : " hidden"}>
-              <span id="tdh-opacity-label">Opacity</span>
-              <input id="tdh-opacity-range" type="range" min="40" max="100" step="5" value="${normalizedOpacityPercent()}" aria-labelledby="tdh-opacity-label" aria-valuemin="40" aria-valuemax="100" aria-valuenow="${normalizedOpacityPercent()}" aria-valuetext="${normalizedOpacityPercent()}%">
-              <output id="tdh-opacity-value" for="tdh-opacity-range">${normalizedOpacityPercent()}%</output>
-            </div>
           </div></section>
           <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-diagnostics-body"><span class="fl-tool-title">System</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-diagnostics-body">
             <div class="action-pair"><button type="button" class="life-btn" id="tdh-diagnostics-toggle">Show Diagnostics</button>
@@ -274,7 +267,7 @@
     ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { ExtraPotionsCore.resetLauncherGrid("dropper"); requestAnimationFrame(layoutChrome); } });
     ExtraPotionsCore.setMenuStatus("dropper", systemHealthSnapshot);
     ui.menuController = ExtraPotionsCore.createMenuController({
-      id: "dropper", host, shadow, panel: ui.dock,
+      id: "dropper", host, shadow, panel: ui.dock, themeRoot: ui.cluster,
       getSettings: () => settings, setOpen: setRailOpen, onLayout:layoutChrome,
     });
     const progressCard = shadow.getElementById("tdh-drop-card");
@@ -1064,15 +1057,9 @@
     const fill = ui.shadow.getElementById("tdh-drop-fill");
     const pct = ui.shadow.getElementById("tdh-drop-percent");
     const ring = ui.shadow.getElementById("tdh-ring");
-    let main = "#dc2626", soft = "#fb7185";
-    if (percent >= 90) { main = "#16a34a"; soft = "#4ade80"; }
-    else if (percent >= 70) { main = "#65a30d"; soft = "#a3e635"; }
-    else if (percent >= 50) { main = "#ca8a04"; soft = "#facc15"; }
-    else if (percent >= 25) { main = "#ea580c"; soft = "#fb923c"; }
-    const pride = ui.cluster?.dataset?.uiTheme === "pride";
-    if (fill) fill.style.background = pride ? PRIDE_RAINBOW : `linear-gradient(90deg, ${main}, ${soft})`;
-    if (pct) pct.style.color = pride ? "#d8dbe1" : soft;
-    if (ring) ring.style.stroke = pride ? "#d97898" : main;
+    if (fill) fill.style.background = 'var(--theme-accent)';
+    if (pct) pct.style.color = 'var(--theme-text)';
+    if (ring) ring.style.stroke = 'var(--theme-accent)';
   }
 
   let browserBackgroundSince = 0;
@@ -1569,11 +1556,6 @@
     ui?.cluster?.classList.toggle("reduce-motion", Boolean(settings.reduceMotion));
   }
 
-  function normalizedOpacityPercent(value = settings.opacityPercent) {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return 85;
-    return Math.max(40, Math.min(100, Math.round(numeric / 5) * 5));
-  }
 
   const TWITCH_KEEP_CLEAR = '[data-a-target="player-controls"],.player-controls,#live-channel-stream-information,[data-a-target="stream-info-card-component"],.channel-info-content';
   function updateProgressCardAside() {
@@ -1745,12 +1727,10 @@ ${scope} ::selection{background:${alpha(p.accent, 35)};color:${p.text}}`;
 
   let siteColors = null;
   function applySiteColors() {
-    if (settings.siteColors === 'off' || ExtraPotionsCore.suiteSitePaused?.()) { siteColors?.clear(); return; }
+    if (ExtraPotionsCore.suiteSitePaused?.()) { siteColors?.clear(); return; }
     siteColors ??= ExtraPotionsCore.createSiteColors({
       product: 'dropper',
       css: twitchSiteColorCss,
-      mode: () => document.documentElement.classList.contains('tw-root--theme-light') ? 'light' : 'dark',
-      watch: render => { const observer = new MutationObserver(render); observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] }); return () => observer.disconnect(); },
     });
     siteColors.apply(settings.siteColors);
   }
@@ -1758,38 +1738,7 @@ ${scope} ::selection{background:${alpha(p.accent, 35)};color:${p.text}}`;
   function applyAppearanceSettings() {
     applySiteColors();
     if (!ui) return;
-    const theme = UI_THEMES.find((item) => item.id === 'dropper');
-    settings.uiTheme = theme.id;
-    for (const key of ["bg", "panel", "line", "text", "muted", "accent", "accent2"]) ui.cluster.style.setProperty(`--theme-${key}`, theme[key]);
-    const semantic = semanticTheme(theme);
-    ExtraPotionsCore.publishMenuPalette?.(ui.host, semantic);
-    for (const key of ["raised", "inset", "link", "focus", "onAccent"]) ui.cluster.style.setProperty(`--theme-${key}`, semantic[key]);
-    ExtraPotionsCore.publishMenuPalette?.(ui.host, { ...theme, ...semantic });
-    ui.cluster.style.setProperty("--theme-skin", theme.skin || theme.swatch);
-    ui.cluster.style.setProperty("--theme-skin-vertical", theme.skinVertical || theme.skin || theme.swatch);
-    ui.cluster.dataset.uiTheme = theme.id;
-    ui.cluster.dataset.themeSkin = theme.skinMode === "flat" ? "flat" : "gradient";
-    settings.opacityPercent = normalizedOpacityPercent();
-    const appliedOpacity = settings.customOpacity ? settings.opacityPercent / 100 : 1;
-    ui.cluster.style.setProperty("--exp-ui-opacity", String(appliedOpacity));
-    ui.cluster.style.setProperty("--dropper-ui-opacity", String(appliedOpacity));
-    ui.cluster.dataset.customOpacity = settings.customOpacity ? "true" : "false";
-    ui.cluster.dataset.opacityPercent = String(settings.opacityPercent);
-    const opacityRow = ui.shadow.getElementById("tdh-opacity-row");
-    const opacityRange = ui.shadow.getElementById("tdh-opacity-range");
-    const opacityValue = ui.shadow.getElementById("tdh-opacity-value");
-    if (opacityRow) opacityRow.hidden = !settings.customOpacity;
-    if (opacityRange) {
-      opacityRange.value = String(settings.opacityPercent);
-      opacityRange.setAttribute("aria-valuenow", String(settings.opacityPercent));
-      opacityRange.setAttribute("aria-valuetext", settings.opacityPercent + "%");
-    }
-    if (opacityValue) opacityValue.textContent = settings.opacityPercent + "%";
-    ui.shadow.querySelectorAll(".exp-theme-swatch").forEach((button) => {
-      const active = button.dataset.theme === theme.id;
-      button.classList.toggle("is-on", active);
-      button.setAttribute("aria-pressed", String(active));
-    });
+    ExtraPotionsCore.applyTheme(ui.host, settings.uiTheme);
     const stack = ui.shadow.querySelector(".progress-stack");
     if (!stack) return;
     stack.classList.toggle("badge-only", Boolean(settings.badgeOnly));
@@ -1933,7 +1882,11 @@ ${scope} ::selection{background:${alpha(p.accent, 35)};color:${p.text}}`;
     // Menu size is a display choice, so it lives at the end of Appearance.
     const appearance=ui.shadow.getElementById('tdh-progress-body');
     if(appearance&&!appearance.querySelector('[data-dropper-menu-preferences]')){const preferences=ExtraPotionsCore.createMenuSizeControls();preferences.dataset.dropperMenuPreferences='1';appearance.prepend(preferences);}
-    if(appearance&&!appearance.querySelector('[data-dropper-site-colors]')){const row=ExtraPotionsCore.createSiteColorControl({value:settings.siteColors,offLabel:'Twitch',onChange:value=>{settings.siteColors=value;saveSettings();applySiteColors();}});row.dataset.dropperSiteColors='1';appearance.querySelector('[data-dropper-menu-preferences]')?.after(row);}
+    if(appearance&&!appearance.querySelector('[data-dropper-site-colors]')){
+      const menu=ExtraPotionsCore.createThemeModeControl({value:settings.uiTheme,onChange:uiTheme=>{settings.uiTheme=uiTheme;saveSettings();applyAppearanceSettings();}});
+      const site=ExtraPotionsCore.createSiteColorControl({value:settings.siteColors,onChange:siteColors=>{settings.siteColors=siteColors;saveSettings();applySiteColors();}});
+      site.dataset.dropperSiteColors='1';appearance.querySelector('[data-dropper-menu-preferences]')?.after(menu,site);
+    }
     const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,onReset:resetAllDropperData,notify:setStatus,layout:'grouped',issueSettings:()=>({current:settings,defaults:DEFAULTS})});
     target.replaceChildren(system);
   }
@@ -2146,19 +2099,6 @@ ${scope} ::selection{background:${alpha(p.accent, 35)};color:${p.text}}`;
         : 0;
       settings.pauseAutoSwitchUntil = pauseAutoSwitchUntil;
       saveSettings();refreshStreamPolicyControl();
-    });
-    const opacityRange = s.getElementById("tdh-opacity-range");
-    opacityRange.value = String(normalizedOpacityPercent());
-    opacityRange.addEventListener("input", () => {
-      settings.opacityPercent = normalizedOpacityPercent(opacityRange.value);
-      opacityRange.setAttribute("aria-valuenow", String(settings.opacityPercent));
-      opacityRange.setAttribute("aria-valuetext", settings.opacityPercent + "%");
-      applyAppearanceSettings();
-    });
-    opacityRange.addEventListener("change", () => {
-      settings.opacityPercent = normalizedOpacityPercent(opacityRange.value);
-      saveSettings();
-      applyAppearanceSettings();
     });
     s.getElementById("tdh-update-dismiss")?.addEventListener("click", hideUpdateNotice);
   }

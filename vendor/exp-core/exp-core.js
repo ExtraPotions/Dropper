@@ -2,23 +2,19 @@
 const CoreFoundation = (() => {
 const LAUNCHER_ORDER_KEY = "exp:v3:launcher-order";
 const LAUNCHER_GRID_DELTA_KEY = "exp:v3:launcher-grid-delta";
-const PRIDE_RAINBOW = "linear-gradient(90deg,#c84e66,#d07840,#be9f37,#3b8a5f,#3d79a6,#7455a4)";
-
-const PRIDE_RAINBOW_VERTICAL = "linear-gradient(180deg,#c84e66,#d07840,#be9f37,#3b8a5f,#3d79a6,#7455a4)";
-
-const CRIMSON_THEME = Object.freeze({ id:"crimson", name:"Crimson", swatch:"linear-gradient(135deg,#0c0508 0 38%,#941f2f 38% 69%,#2f746e 69% 100%)", canvas:"#0c0508", surface:"#1d090f", primary:"#941f2f", companion:"#5e2144", counterpoint:"#2f746e", interactive:"#b63243", bg:"#0c0508", panel:"#1d090f", line:"#4a1b28", text:"#e5d2d7", muted:"#ae8b94", accent:"#941f2f", accent2:"#b63243", skin:"linear-gradient(135deg,#941f2f 0%,#5e2144 52%,#2f746e 100%)", skinVertical:"linear-gradient(180deg,#941f2f 0%,#5e2144 52%,#2f746e 100%)" });
-
-const UI_THEMES = Object.freeze([
-    { id:"ember", name:"Ember", swatch:"linear-gradient(135deg,#120807 0 38%,#c9512c 38% 69%,#b68a32 69% 100%)", canvas:"#120807", surface:"#24100c", primary:"#c9512c", companion:"#8f2d3f", counterpoint:"#b68a32", interactive:"#e16a3b", bg:"#120807", panel:"#24100c", line:"#4e2a22", text:"#f1ddd2", muted:"#b99787", accent:"#c9512c", accent2:"#e16a3b", skin:"linear-gradient(135deg,#c9512c 0%,#8f2d3f 52%,#b68a32 100%)", skinVertical:"linear-gradient(180deg,#c9512c 0%,#8f2d3f 52%,#b68a32 100%)" },
-    { id:"midnight", name:"Midnight", swatch:"linear-gradient(135deg,#050a12 0 38%,#3563a3 38% 69%,#348f8b 69% 100%)", canvas:"#050a12", surface:"#0c1726", primary:"#3563a3", companion:"#65558f", counterpoint:"#348f8b", interactive:"#477abd", bg:"#050a12", panel:"#0c1726", line:"#26364b", text:"#d4deeb", muted:"#91a2b7", accent:"#3563a3", accent2:"#477abd", skin:"linear-gradient(135deg,#3563a3 0%,#65558f 52%,#348f8b 100%)", skinVertical:"linear-gradient(180deg,#3563a3 0%,#65558f 52%,#348f8b 100%)" },
-    { id:"glacier", name:"Glacier", swatch:"linear-gradient(135deg,#061216 0 38%,#4a9eaa 38% 69%,#92b85b 69% 100%)", canvas:"#061216", surface:"#0d252a", primary:"#4a9eaa", companion:"#5c76a4", counterpoint:"#92b85b", interactive:"#67b7c1", bg:"#061216", panel:"#0d252a", line:"#29464b", text:"#d8ebee", muted:"#8fa9ae", accent:"#4a9eaa", accent2:"#67b7c1", skin:"linear-gradient(135deg,#4a9eaa 0%,#5c76a4 52%,#92b85b 100%)", skinVertical:"linear-gradient(180deg,#4a9eaa 0%,#5c76a4 52%,#92b85b 100%)" },
-    { id:"contrast", name:"High contrast", swatch:"linear-gradient(135deg,#000000 0 48%,#ffffff 48% 78%,#ffd400 78% 100%)", canvas:"#000000", surface:"#0a0a0a", primary:"#ffffff", companion:"#bfbfbf", counterpoint:"#ffd400", interactive:"#ffd400", bg:"#000000", panel:"#0a0a0a", line:"#ffffff", text:"#ffffff", muted:"#e0e0e0", accent:"#ffffff", accent2:"#ffd400", skin:"linear-gradient(135deg,#ffffff 0%,#bfbfbf 55%,#ffd400 100%)", skinVertical:"linear-gradient(180deg,#ffffff 0%,#bfbfbf 55%,#ffd400 100%)" },
-    { id:"verdant", name:"Verdant", swatch:"linear-gradient(135deg,#06110d 0 38%,#318c61 38% 69%,#2f7f86 69% 100%)", canvas:"#06110d", surface:"#0d2218", primary:"#318c61", companion:"#667c3c", counterpoint:"#2f7f86", interactive:"#49a879", bg:"#06110d", panel:"#0d2218", line:"#28483a", text:"#d7e9df", muted:"#93aa9e", accent:"#318c61", accent2:"#49a879", skin:"linear-gradient(135deg,#318c61 0%,#667c3c 52%,#2f7f86 100%)", skinVertical:"linear-gradient(180deg,#318c61 0%,#667c3c 52%,#2f7f86 100%)" },
-    { id:"pride", name:"Pride", swatch:"linear-gradient(135deg,#c84e66 0%,#d07840 16.6%,#be9f37 33.3%,#3b8a5f 50%,#3d79a6 66.6%,#7455a4 100%)", canvas:"#100a12", surface:"#1d1222", primary:"#c34f7d", companion:"#7555a6", counterpoint:"#328c82", interactive:"#dd6793", bg:"#100a12", panel:"#1d1222", line:"#4a2b50", text:"#f0ddea", muted:"#b89db4", accent:"#c34f7d", accent2:"#dd6793", skin:PRIDE_RAINBOW, skinVertical:PRIDE_RAINBOW_VERTICAL },
-    { id:"twitch", name:"Twitch", swatch:"linear-gradient(135deg,#18181b 0 48%,#9147ff 48% 78%,#bf94ff 78% 100%)", canvas:"#111114", surface:"#19191e", primary:"#9147ff", companion:"#772ce8", counterpoint:"#bf94ff", interactive:"#bf94ff", bg:"#111114", panel:"#19191e", line:"#34343b", text:"#efeff1", muted:"#adadb8", accent:"#9147ff", accent2:"#bf94ff", skin:"linear-gradient(135deg,#9147ff,#bf94ff)", skinVertical:"linear-gradient(180deg,#9147ff,#bf94ff)", skinMode:"flat" },
-    { id:"dropper", name:"Dropper gem", swatch:"linear-gradient(135deg,#0b0713 0 38%,#7a46c8 38% 69%,#2a8c9b 69% 100%)", canvas:"#0b0713", surface:"#171025", primary:"#7a46c8", companion:"#b14589", counterpoint:"#2a8c9b", interactive:"#9864dc", bg:"#0b0713", panel:"#171025", line:"#3c2850", text:"#e8ddf2", muted:"#aa98bb", accent:"#7a46c8", accent2:"#9864dc", skin:"linear-gradient(135deg,#7a46c8 0%,#b14589 52%,#2a8c9b 100%)", skinVertical:"linear-gradient(180deg,#7a46c8 0%,#b14589 52%,#2a8c9b 100%)" }
-  ]);
-const SHARED_UI_THEMES = Object.freeze(UI_THEMES.slice(0, 6));
+const THEME_MODES = Object.freeze(['light', 'dark', 'system']);
+const normalizeThemeMode = value => THEME_MODES.includes(value) ? value : 'system';
+const systemThemeMode = () => typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+const SLATE_BLUE = Object.freeze({
+  light: Object.freeze({bg:'#f4f6fa',panel:'#ffffff',raised:'#e6ecf5',inset:'#edf1f7',line:'#718096',text:'#182230',muted:'#4c5d73',accent:'#2459b8',accent2:'#2459b8',link:'#2459b8',focus:'#2459b8',onAccent:'#ffffff'}),
+  dark: Object.freeze({bg:'#111720',panel:'#1b2430',raised:'#283547',inset:'#0c121a',line:'#8293ab',text:'#edf2f8',muted:'#afbed1',accent:'#8cb7ff',accent2:'#8cb7ff',link:'#8cb7ff',focus:'#8cb7ff',onAccent:'#111720'}),
+});
+function resolveTheme(value) {
+  const id=normalizeThemeMode(value),mode=id==='system'?systemThemeMode():id,p=SLATE_BLUE[mode];
+  return {...p,id,mode,name:id[0].toUpperCase()+id.slice(1),swatch:p.accent,canvas:p.bg,surface:p.panel,primary:p.accent,companion:p.accent,counterpoint:p.accent,interactive:p.accent,skin:p.accent,skinVertical:p.accent,skinMode:'flat'};
+}
+const UI_THEMES = Object.freeze(THEME_MODES.map(id=>Object.freeze(resolveTheme(id))));
+const SHARED_UI_THEMES = UI_THEMES;
 
 // A support control carries these styles into native and custom Shadow DOM shells.
 function supportControlCss() {
@@ -26,14 +22,14 @@ function supportControlCss() {
       .support-wrap { position:static; }
       .support-button {
         width:30px; height:30px; min-width:30px; padding:0;
-        border:1px solid #3a3a42; border-radius:8px; background:#151519; color:#b8b8c0;
+        border:1px solid var(--theme-line); border-radius:8px; background:var(--theme-panel); color:var(--theme-muted);
         cursor:pointer;
       }
       .support-button { box-sizing:border-box; display:grid; place-items:center; }
       .support-button svg { width:15px; height:15px; fill:currentColor; }
       .support-button:hover,
       .support-button:focus-visible {
-        border-color:var(--theme-accent); color:var(--theme-accent2); background:#211b2b; outline:none;
+        border-color:var(--theme-accent); color:var(--theme-accent2); background:var(--theme-raised); outline:none;
       }
       .support-popover {
         position:absolute; z-index:14; top:35px; right:0;
@@ -69,7 +65,7 @@ function css() {
         position: fixed; right: 12px; z-index: 2147483600;
         display: flex; flex-direction: column-reverse; align-items: flex-end;
         width: max-content; max-width: calc(100vw - 24px); gap: 8px;
-        --theme-bg:#111114; --theme-panel:#19191e; --theme-raised:#2a2a31; --theme-inset:#0e0e10; --theme-line:#34343b; --theme-text:#efeff1; --theme-muted:#adadb8; --theme-accent:#9147ff; --theme-accent2:#bf94ff; --theme-link:#c6a4ff; --theme-focus:#bf94ff; --theme-onAccent:#111114; --theme-skin:linear-gradient(135deg,#d9b5ff,#9b5af9,#7428e8); --theme-skin-vertical:linear-gradient(180deg,#d9b5ff,#9b5af9,#7428e8); --exp-ui-opacity:1; --exp-menu-width:260px;
+        --exp-ui-opacity:1; --exp-menu-width:260px;
         font: 13px/1.42 ui-sans-serif, system-ui, "Segoe UI", sans-serif; color: var(--theme-text);
       }
       .exp-core-theme.open-up { flex-direction: column; }
@@ -108,11 +104,6 @@ function css() {
       .queue-switches>.fl-switch>span:first-child{display:block;flex:1 1 auto;width:auto!important;min-width:0!important;min-height:0!important;white-space:normal!important;word-break:normal!important;overflow-wrap:normal!important;line-height:1.25;text-align:left}
       .queue-switches>.fl-switch>.toggleSwitch{flex:0 0 34px;margin-left:auto}
       .appearance-separator{grid-column:1/-1;width:100%;border:0;border-top:1px solid var(--theme-line,#34343b);margin:3px 0 1px}
-      .opacity-row{grid-column:1/-1;display:grid;grid-template-columns:auto minmax(72px,1fr) auto;align-items:center;gap:6px;min-width:0;padding:4px 0;border-top:1px solid #26262b}
-      .opacity-row[hidden]{display:none!important}
-      .opacity-row>span{font-size:var(--exp-font-size-body,13px);line-height:1.25;white-space:nowrap}
-      [data-exp-part="opacity-range"]{width:100%;min-width:0;accent-color:var(--theme-accent)}
-      [data-exp-part="opacity-value"]{min-width:34px;text-align:right;font-size:var(--exp-font-size-small,11px);font-weight:800;color:var(--theme-muted)}
 
       [data-exp-part="launcher"]:hover {
         border-color:color-mix(in srgb,var(--theme-accent) 58%,transparent);
@@ -268,19 +259,6 @@ function css() {
       .update-release:focus-visible {
         background:color-mix(in srgb,var(--theme-panel) 88%,var(--theme-accent) 12%);
       }
-            .exp-core-theme[data-theme-skin="gradient"] .update-notice {
-        border:1px solid transparent;
-        background-image:linear-gradient(var(--theme-panel),var(--theme-panel)),var(--theme-skin);
-        background-origin:border-box;
-        background-clip:padding-box,border-box;
-      }
-      .exp-core-theme[data-theme-skin="gradient"] .update-version,
-      .exp-core-theme[data-theme-skin="gradient"] .update-action {
-        border-color:transparent;
-        background-image:linear-gradient(var(--theme-panel),var(--theme-panel)),var(--theme-skin);
-        background-origin:border-box;
-        background-clip:padding-box,border-box;
-      }
       .toast { margin-bottom:7px; padding:6px 8px; border:1px solid #34343b; border-radius:8px; background:#18181b; color:#efeff1; font-size:var(--exp-font-size-small,11px); box-shadow:0 8px 24px #0006; }
       .toast[hidden] { display:none; }
       .fl-tool-panel { position:relative; margin-top:5px; border:1px solid #27272d; background:#19191e; border-radius:9px; overflow:visible; }
@@ -368,10 +346,6 @@ function css() {
       .auth-input { width:100%; min-height:30px; border:1px solid var(--theme-line); border-radius:6px; background:var(--theme-inset); color:var(--theme-text); padding:6px 8px; font-size:var(--exp-font-size-body,13px); }
       .auth-input:focus { outline:2px solid var(--theme-focus); outline-offset:2px; border-color:var(--theme-focus); }
       .theme-row { grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:28px; padding:6px 0; font-size:var(--exp-font-size-body,13px); }
-      .exp-theme-swatch{box-sizing:border-box!important;flex:0 0 22px!important;width:22px!important;height:22px!important;min-width:22px!important;min-height:22px!important;max-width:22px!important;max-height:22px!important;padding:0!important;border-radius:5px!important}
-      .exp-theme-swatches { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-      .exp-theme-swatch { appearance:none; width:18px; height:18px; min-width:18px; padding:0; border:2px solid var(--theme-line); border-radius:4px; box-sizing:border-box; cursor:pointer; }
-      .exp-theme-swatch.is-on { border-color:var(--theme-text); box-shadow:0 0 0 2px var(--theme-accent); }
       .fl-tool-panel { border-color:var(--theme-line); background:var(--theme-panel); }
       .fl-tool-body { border-color:var(--theme-line); background:var(--theme-bg); color:var(--theme-text); }
       .select-lite,
@@ -388,83 +362,6 @@ function css() {
         .toggleSwitch::after { border-color:CanvasText; background:CanvasText; }
         .toggleSwitch[aria-checked="true"] { border-color:Highlight; background:Highlight; }
         .toggleSwitch[aria-checked="true"]::after { border-color:HighlightText; background:HighlightText; }
-      }
-            .exp-core-theme[data-theme-skin="gradient"] [data-exp-part="dock"]:not([data-exp-menu-layout="lean"]) {
-        border:1px solid transparent !important;
-        background-origin:border-box !important;
-        background-clip:padding-box, border-box !important;
-        background-image:linear-gradient(var(--theme-bg),var(--theme-bg)),var(--theme-skin) !important;
-      }
-      .exp-core-theme[data-theme-skin="gradient"] [data-exp-part="launcher"] {
-        border-color:color-mix(in srgb,var(--theme-accent) 30%,transparent) !important;
-        background:var(--theme-panel) !important;
-        background-image:none !important;
-      }
-      .exp-core-theme[data-theme-skin="gradient"] [data-exp-part="launcher"]:hover {
-        border-color:color-mix(in srgb,var(--theme-accent) 58%,transparent) !important;
-        background:color-mix(in srgb,var(--theme-panel) 96%,var(--theme-accent) 4%) !important;
-        background-image:none !important;
-      }
-      .exp-core-theme[data-theme-skin="gradient"] [data-exp-part="launcher"][aria-expanded="true"] {
-        border:1px solid transparent !important;
-        background-image:linear-gradient(var(--theme-panel),var(--theme-panel)),var(--theme-skin) !important;
-        background-origin:border-box !important;
-        background-clip:padding-box,border-box !important;
-      }
-      .exp-core-theme[data-theme-skin="gradient"] [data-exp-part="version"] {
-        border:1px solid var(--theme-line);
-        background:var(--theme-bg);
-        color:var(--theme-text);
-        border-radius:6px;
-      }
-      .exp-core-theme[data-theme-skin="gradient"] [data-exp-part="version"]:hover,
-      .exp-core-theme[data-theme-skin="gradient"] [data-exp-part="version"]:focus-visible {
-        border-color:transparent;
-        background-image:linear-gradient(var(--theme-panel),var(--theme-panel)),var(--theme-skin);
-        background-origin:border-box;
-        background-clip:padding-box,border-box;
-      }
-      .exp-core-theme[data-theme-skin="gradient"] .header-divider {
-        height:2px;
-        border-radius:2px;
-        opacity:.9;
-        background:var(--theme-skin);
-        -webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 16%,#000 84%,transparent 100%);
-        mask-image:linear-gradient(90deg,transparent 0%,#000 16%,#000 84%,transparent 100%);
-      }
-      .exp-core-theme[data-theme-skin="gradient"]:not([data-ui-theme="contrast"]) .toggleSwitch[aria-checked="true"] {
-        border-color:color-mix(in srgb,var(--theme-line) 52%,var(--theme-accent) 48%);
-        background:color-mix(in srgb,var(--theme-panel) 72%,var(--theme-accent) 28%);
-      }
-      .exp-core-theme[data-theme-skin="gradient"] .exp-theme-swatch.is-on {
-        border-color:var(--theme-text);
-        box-shadow:0 0 0 2px var(--theme-accent2);
-      }
-      .exp-core-theme[data-theme-skin="gradient"] :is(.fl-tool-header,.life-btn).last-opened {
-        box-shadow:none;
-        position:relative;
-      }
-      .exp-core-theme[data-theme-skin="gradient"] :is(.fl-tool-header,.life-btn).last-opened::before {
-        content:"";
-        position:absolute;
-        left:0;
-        top:4px;
-        bottom:4px;
-        width:2px;
-        border-radius:2px;
-        background:var(--theme-skin-vertical);
-      }
-      .exp-core-theme[data-theme-skin="gradient"] .fl-tool-header:hover,
-      .exp-core-theme[data-theme-skin="gradient"] .fl-tool-header:focus-visible,
-      .exp-core-theme[data-theme-skin="gradient"] .fl-tool-header[aria-expanded="true"] {
-        background:color-mix(in srgb,var(--theme-panel) 88%,var(--theme-accent) 12%);
-      }
-      .exp-core-theme[data-theme-skin="gradient"] :is(.life-btn,.select-lite,.auth-input):focus-visible {
-        outline:2px solid transparent !important;
-        border-color:transparent !important;
-        background-origin:border-box !important;
-        background-clip:padding-box,border-box !important;
-        background-image:linear-gradient(var(--theme-bg),var(--theme-bg)),var(--theme-skin) !important;
       }
       .exp-core-theme[data-ui-theme="warm"] [data-exp-part="dock"]:not([data-exp-menu-layout="lean"]) {
         border:1px solid color-mix(in srgb,var(--theme-line) 84%,var(--theme-accent) 16%) !important;
@@ -617,7 +514,7 @@ function compareVersions(a, b) {
     }
     return 0;
   }
-return Object.freeze({ PRIDE_RAINBOW, PRIDE_RAINBOW_VERTICAL, CRIMSON_THEME, UI_THEMES, SHARED_UI_THEMES, css, supportControlCss, protectLauncherHost, compareVersions });
+return Object.freeze({ THEME_MODES, SLATE_BLUE, normalizeThemeMode, resolveTheme, UI_THEMES, SHARED_UI_THEMES, css, supportControlCss, protectLauncherHost, compareVersions });
 })();
 
 /* Local diagnostic capture shared at build time by ExtraPotions products. */
@@ -2400,13 +2297,10 @@ const ExpMenuLayout = (() => {
   return Object.freeze({css,mount});
 })();
 
-// Layout and surfaces from the approved Lean menu, with product-specific colors.
+// Layout and surfaces from the approved Lean menu, with the shared Slate Blue palette.
 const ExpLeanMenu = (() => {
   // The shell is shared by existing products and new createProduct/createMenuController consumers.
   const template=Object.freeze({id:'extrapotions-menu',version:1,layout:'sidebar',systemLayout:'grouped',supportNavigation:'system',resetNavigation:'system',donations:'header-heart'});
-  const twitch=Object.freeze({bg:'#18181b',panel:'#1f1f23',raised:'#3a3a3d',inset:'#0e0e10',line:'#848494',text:'#efeff1',muted:'#adadb8',hover:'#53535f',accent:'#9146ff',accent2:'#bf94ff',link:'#bf94ff',focus:'#bf94ff',onAccent:'#ffffff'});
-  // THREAD supplies its native/default and opt-in gem palette through Core.applyTheme.
-  const palettes=Object.freeze({dropper:twitch});
   const sectionIcons = Object.freeze({campaigns:'gift',settings:'system',drops:'gift',streams:'screen',appearance:'brush',advanced:'sliders',system:'system',highlights:'sparkle',protection:'shield',amazon:'bag'});
   // Scoped switches outrank the older product gradient rules.
   const SWITCH='[data-exp-menu-layout="lean"][data-exp-menu-layout="lean"][data-exp-menu-layout="lean"] .toggleSwitch[role="switch"]';
@@ -2421,22 +2315,16 @@ const ExpLeanMenu = (() => {
   function mount({shadow,panel}) {
     const document=panel.ownerDocument,host=shadow.host;
     const id=host?.dataset.productId||host?.id.replace(/^(exp-)|(\-root)$/g,'').replace(/^tdh$/,'dropper');
-    const palette=palettes[id],saved=new Map();panel.dataset.expMenuLayout='lean';panel.dataset.expMenuTemplate=template.id+'-v'+template.version;
-    const themeRoot=shadow.querySelector('.exp-core-theme,.cluster');
-    const properties=['bg','panel','line','text','muted','accent','accent2','link','focus'].map(key=>'--theme-'+key).concat('--exp-menu-hover','background-image');
+    const saved=new Map();panel.dataset.expMenuLayout='lean';panel.dataset.expMenuTemplate=template.id+'-v'+template.version;
+    const properties=['--exp-menu-hover','background-image'];
     for(const property of properties)saved.set(property,[panel.style.getPropertyValue(property),panel.style.getPropertyPriority(property)]);
     function applyPalette(){
-      const selected=themeRoot?.dataset.uiTheme;
       for(const[key,[value,priority]]of saved){if(value)panel.style.setProperty(key,value,priority);else panel.style.removeProperty(key);}
       panel.style.setProperty('background-image','none','important');
       panel.style.setProperty('--exp-menu-hover','color-mix(in srgb,var(--theme-accent) 12%,var(--theme-panel))');
-      if(palette&&selected!=='contrast'){
-        for(const[key,value]of Object.entries(palette)){const property=key==='hover'?'--exp-menu-hover':'--theme-'+key;panel.style.setProperty(property,value);themeRoot?.style.setProperty(property,value);}
-        if(themeRoot)themeRoot.dataset.themeSkin='flat';
-      }
+
     }
     applyPalette();
-    const themeObserver=new MutationObserver(applyPalette);if(themeRoot)themeObserver.observe(themeRoot,{attributes:true,attributeFilter:['data-ui-theme']});
     const style=document.createElement('style');style.dataset.expLeanMenu='1';style.textContent=css;shadow.append(style);const disposeLayout=ExpMenuLayout.mount({panel});
     const status=document.createElement('div');status.dataset.expPart='status';status.setAttribute('role','status');
     const dot=document.createElement('span');dot.className='exp-status-dot';const statusText=document.createElement('span');statusText.className='exp-status-text';status.append(dot,statusText);
@@ -2484,7 +2372,7 @@ const ExpLeanMenu = (() => {
       }
     }
     decorate();const observer=new MutationObserver(decorate);observer.observe(panel,{childList:true,subtree:true});
-    return ()=>{disposeLayout();visibility.disconnect();visibilityResize.disconnect();clearInterval(statusTimer);statusPanels.get(id)?.delete(refreshStatus);status.remove();delete panel.dataset.expMenuStatus;themeObserver.disconnect();observer.disconnect();icons.forEach(icon=>icon.remove());style.remove();for(const[key,[value,priority]]of saved){if(value)panel.style.setProperty(key,value,priority);else panel.style.removeProperty(key);}delete panel.dataset.expMenuLayout;delete panel.dataset.expMenuTemplate;};
+    return ()=>{disposeLayout();visibility.disconnect();visibilityResize.disconnect();clearInterval(statusTimer);statusPanels.get(id)?.delete(refreshStatus);status.remove();delete panel.dataset.expMenuStatus;observer.disconnect();icons.forEach(icon=>icon.remove());style.remove();for(const[key,[value,priority]]of saved){if(value)panel.style.setProperty(key,value,priority);else panel.style.removeProperty(key);}delete panel.dataset.expMenuLayout;delete panel.dataset.expMenuTemplate;};
   }
   return Object.freeze({mount,setMenuStatus,template});
 })();
@@ -2616,36 +2504,18 @@ const ExpMenuPreferences = (() => {
   return Object.freeze({menuSizePreference,setMenuSizePreference,bindMenuSize,createMenuSizeControls,menuSizeTokens:()=>sizes[menuSizePreference()]});
 })();
 
-/* Optional page colours for a product's own site. Core owns the palette list, the Site colors control
-   and one scoped style per product; each product maps the palette tokens onto its site's own surfaces. */
+// Slate Blue site paint shares the menu palette and device-mode resolver.
 const ExpSiteColors = (() => {
-  const base=Object.freeze({
-    dark:{bg:'#18181b',panel:'#202024',raised:'#2b2b31',inset:'#111114',line:'#85858f',text:'#f4f4f6',muted:'#b9b9c3',onAccent:'#111114'},
-    light:{bg:'#f4f4f6',panel:'#ffffff',raised:'#e9e9ee',inset:'#ededf1',line:'#777780',text:'#202024',muted:'#555560',onAccent:'#ffffff'},
-  });
-  // [id, name, dark accent, light accent, dark surfaces bg/panel/raised/inset, light surfaces bg/panel/raised/inset]
-  const table=[
-    ['default','Default','#c4c4cc','#50505c'],
-    ['indigo','Indigo','#b4a2ff','#5943b6',['#171222','#241c36','#34284a','#0f0b18'],['#eee8f7','#faf7ff','#e1d8ef','#e5ddf1']],
-    ['blue','Blue','#82b9ff','#155cad',['#0b1420','#132337','#1e324a','#070e18'],['#e7f0fb','#f6faff','#d7e6f7','#dce8f6']],
-    ['green','Green','#85c99e','#216b3c',['#0e1913','#162a1e','#203b2a','#07100b'],['#e8f3eb','#f5fcf7','#d5e8dc','#dcece2']],
-    ['red','Red','#f6a0a0','#a52b35',['#201214','#321d22','#452931','#160b0f'],['#f8eaec','#fff7f8','#f0d9df','#f1dfe4']],
-    ['gray','Gray','#aeb3b9','#4f5964',['#181a1c','#22262a','#30363b','#111315'],['#eceff1','#fafbfc','#dce2e6','#e1e6ea']],
-  ];
-  const surfaces=values=>values?{bg:values[0],panel:values[1],raised:values[2],inset:values[3]}:{};
-  const sitePalettes=Object.freeze(table.map(([id,name,darkAccent,lightAccent,dark,light])=>Object.freeze({id,name,
-    dark:Object.freeze({...base.dark,...surfaces(dark),accent:darkAccent}),light:Object.freeze({...base.light,...surfaces(light),accent:lightAccent})})));
-  function sitePalette(id,mode='dark',extra=[]){const palette=[...extra,...sitePalettes].find(item=>item.id===id);return palette?{id:palette.id,name:palette.name,mode:mode==='light'?'light':'dark',...palette[mode==='light'?'light':'dark']}:null;}
-  const systemMode=()=>matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';
-  function watchSystem(callback){const query=matchMedia('(prefers-color-scheme: light)');query.addEventListener('change',callback);return ()=>query.removeEventListener('change',callback);}
-  // mode() reads the site's current light/dark state; watch(callback) reports changes and returns a disposer.
-  // Products with manager style grants can supply their lifecycle's CSP-aware injector.
-  function createSiteColors({product,css,mode=systemMode,watch=watchSystem,extra=[],inject}){
+  const {THEME_MODES,normalizeThemeMode,resolveTheme}=CoreFoundation;
+  const sitePalettes=Object.freeze(THEME_MODES.map(id=>Object.freeze({id,name:id[0].toUpperCase()+id.slice(1)})));
+  const sitePalette = id => resolveTheme(id);
+  function watchSystem(callback){const query=matchMedia('(prefers-color-scheme: dark)');query.addEventListener('change',callback);return ()=>query.removeEventListener('change',callback);}
+  function createSiteColors({product,css,inject}){
     const attribute='data-exp-site-colors',scope=`html[${attribute}="${product}"]`,id='exp-site-colors-'+product;
-    let current='off',stopWatching=null,style=null;
+    let current='system',active=false,stopWatching=null,style=null;
     function render(){
-      const palette=sitePalette(current,mode(),extra);if(!palette)return clear();
-      const text=css(palette,scope);
+      if(!active)return;
+      const palette=resolveTheme(current),text=css(palette,scope);
       if(!style?.isConnected){
         style?.remove();
         style=document.getElementById(id)||(inject?inject(text,{expSiteColors:product}):document.createElement('style'));
@@ -2654,21 +2524,24 @@ const ExpSiteColors = (() => {
       }
       if(style.textContent!==text)style.textContent=text;
       if(document.documentElement.getAttribute(attribute)!==product)document.documentElement.setAttribute(attribute,product);
-      document.documentElement.dataset.expSitePalette=palette.id+'-'+palette.mode;
+      document.documentElement.dataset.expSitePalette='slate-blue-'+palette.mode;
     }
-    function apply(next){current=next||'off';if(!sitePalette(current,'dark',extra))return clear();stopWatching??=watch(render);render();}
-    function clear(){current='off';stopWatching?.();stopWatching=null;style?.remove();document.getElementById(id)?.remove();style=null;
+    function apply(next){current=normalizeThemeMode(next);active=true;stopWatching??=watchSystem(()=>{if(current==='system')render();});render();}
+    function clear(){active=false;stopWatching?.();stopWatching=null;style?.remove();document.getElementById(id)?.remove();style=null;
       if(document.documentElement.getAttribute(attribute)===product){document.documentElement.removeAttribute(attribute);delete document.documentElement.dataset.expSitePalette;}}
-    return Object.freeze({apply,clear,refresh:()=>{if(current!=='off')render();},palette:()=>sitePalette(current,mode(),extra)});
+    return Object.freeze({apply,clear,refresh:render,palette:()=>active?resolveTheme(current):null});
   }
-  function createSiteColorControl({value='off',onChange,offLabel='Site default',extra=[],help='Recolor this site’s pages with a palette. Follows the site’s light or dark mode. Menus keep their own theme.'}){
+  function createThemeModeControl({value='system',onChange,label='Menu theme'}){
     const row=document.createElement('label');row.className='row exp-site-colors';const copy=document.createElement('span');copy.className='copy';
-    const title=document.createElement('strong');title.textContent='Site colors';ExpMenuHelp.setMenuHelp(title,help);copy.append(title);
-    const select=document.createElement('select');select.setAttribute('aria-label','Site colors');select.dataset.expSiteColorsSelect='1';
-    for(const [id,name] of [['off',offLabel],...[...extra,...sitePalettes].map(item=>[item.id,item.name])]){const option=document.createElement('option');option.value=id;option.textContent=name;select.append(option);}
-    select.value=sitePalette(value,'dark',extra)?value:'off';select.addEventListener('change',()=>onChange?.(select.value));row.append(copy,select);return row;
+    const title=document.createElement('strong');title.textContent=label;copy.append(title);
+    const select=document.createElement('select');select.setAttribute('aria-label',label);select.dataset.expThemeMode='1';
+    if(label==='Site theme')select.dataset.expSiteColorsSelect='1';
+    for(const {id,name} of sitePalettes){const option=document.createElement('option');option.value=id;option.textContent=name;select.append(option);}
+    ExpMenuHelp.setMenuHelp(select,'Light and Dark use Slate Blue. System follows your device’s appearance.');
+    select.value=normalizeThemeMode(value);select.addEventListener('change',()=>onChange?.(select.value));row.append(copy,select);return row;
   }
-  return Object.freeze({sitePalettes,sitePalette,createSiteColors,createSiteColorControl});
+  const createSiteColorControl = options => createThemeModeControl({...options,label:'Site theme'});
+  return Object.freeze({sitePalettes,sitePalette,createSiteColors,createSiteColorControl,createThemeModeControl,normalizeThemeMode,resolveTheme});
 })();
 
 // Flyout launcher rules shared by every Core copy on a page. Each copy computes the same answer from the
@@ -2701,7 +2574,7 @@ const ExpLauncherFlyout = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.10.5';
+  const version = '3.11.0';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -4635,31 +4508,8 @@ const ExtraPotionsCore = (() => {
     registrations.set(host, dispose);
     return dispose;
   }
-  function themes(productTheme) {
-    return Object.freeze([productTheme || CoreFoundation.UI_THEMES.at(-1)].map(t => { const theme = semanticTheme(t); return Object.freeze({ ...theme, vars: Object.fromEntries(tokenNames.map(k => [k, theme[k]])) }); }));
-  }
-  function createThemeSwatches({ container, themes: choices, value, label = 'Menu Theme', onChange = () => {} }) {
-    const root = resolveShadowRoot(container);
-    if (root && !root.querySelector('style[data-exp-theme-swatches]')) {
-      injectStyle(root, '.exp-theme-swatches{display:flex;align-items:center;gap:6px;min-height:28px;flex-wrap:wrap}.exp-theme-swatch{appearance:none;box-sizing:border-box!important;flex:0 0 22px!important;width:22px!important;height:22px!important;min-width:22px!important;min-height:22px!important;max-width:22px!important;max-height:22px!important;padding:0!important;border:2px solid var(--theme-line,var(--line,#41434d));border-radius:5px!important;cursor:pointer}.exp-theme-swatch:hover,.exp-theme-swatch:focus-visible{outline:2px solid var(--theme-accent,var(--accent,#8b5cf6));outline-offset:2px}.exp-theme-swatch.is-on{border-color:var(--theme-text,var(--text,#fff));box-shadow:0 0 0 2px var(--theme-accent,var(--accent,#8b5cf6))}', { expThemeSwatches: '1' });
-      applyMatteToggleChrome(root);
-    }
-    container.classList.add('exp-theme-swatches'); container.setAttribute('role', 'radiogroup'); container.setAttribute('aria-label', label);
-    const buttons = choices.map(theme => {
-      const button = document.createElement('button'); button.type = 'button'; button.className = 'exp-theme-swatch';
-      for (const property of ['width','height','min-width','min-height','max-width','max-height']) button.style.setProperty(property, '22px', 'important');
-      button.style.setProperty('border-radius', '5px', 'important');
-      button.style.setProperty('padding', '0', 'important');
-      button.style.setProperty('box-sizing', 'border-box', 'important');
-      button.style.setProperty('flex', '0 0 22px', 'important');
-      button.setAttribute('role', 'radio'); button.setAttribute('aria-label', theme.name); button.title = theme.name;
-      button.dataset.theme = button.dataset.swatch = theme.id; button.style.background = theme.swatch;
-      button.addEventListener('click', () => { paint(theme.id); onChange(theme.id); }); container.append(button); return button;
-    });
-    function paint(next) { value = next; buttons.forEach((b,i) => { const on = choices[i].id === value; b.classList.toggle('is-on', on); b.setAttribute('aria-checked', String(on)); b.setAttribute('aria-pressed', String(on)); b.tabIndex = on || !choices.some(t => t.id === value) && i === 0 ? 0 : -1; }); }
-    const keyboard = event => { const current = buttons.indexOf(event.target); if (current < 0 || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key)) return; event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (current + (['ArrowRight','ArrowDown'].includes(event.key) ? 1 : -1) + buttons.length) % buttons.length; buttons[next].click(); buttons[next].focus(); };
-    container.addEventListener('keydown', keyboard); paint(value);
-    return { setValue: paint, destroy() { container.removeEventListener('keydown', keyboard); buttons.forEach(b => b.remove()); } };
+  function themes() {
+    return Object.freeze(CoreFoundation.THEME_MODES.map(id => Object.freeze(semanticTheme(CoreFoundation.resolveTheme(id)))));
   }
   function focusMenuSurface(panel) { if (!(panel instanceof HTMLElement)) return false; panel.tabIndex = -1; panel.style.outline = 'none'; panel.focus({ preventScroll: true }); return true; }
   const FLOATING_NOTICE_CSS = '.exp-floating-update{position:fixed;z-index:2147483647;box-sizing:border-box;width:min(312px,calc(100vw - 24px));max-width:calc(100vw - 24px);margin:0;padding:10px 32px 10px 10px;border:1px solid var(--exp-notice-border,#6f42b4);border-radius:10px;background:linear-gradient(180deg,var(--exp-notice-top,#251a35),var(--exp-notice-bottom,#18181d) 70%);color:var(--exp-notice-text,#f4f4f6);box-shadow:0 10px 28px #0008;font:500 var(--exp-font-size-small,11px)/1.45 system-ui,sans-serif}.exp-floating-update[hidden]{display:none!important}.exp-floating-update-dismiss{position:absolute;top:7px;right:7px;width:23px;height:23px;padding:0;border:1px solid transparent;border-radius:7px;background:transparent;color:inherit;cursor:pointer;font:15px/1 Arial,sans-serif}.exp-floating-update-dismiss:hover,.exp-floating-update-dismiss:focus-visible{border-color:var(--exp-notice-border,#6f42b4);outline:none}';
@@ -4819,7 +4669,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function applyTheme(host, value, choices) {
-    const controller = controllers.get(host); if (!controller) return;
+    const controller = controllers.get(host) || menuControllers.get(host); if (!controller) return;
     controller.setTheme(value, choices);
   }
   function normalizeControls(panel) {
@@ -4882,6 +4732,26 @@ const ExtraPotionsCore = (() => {
       node.addEventListener(type, handler, opts);
       removers.push(() => node.removeEventListener(type, handler, opts));
     };
+    const customThemeRoot = options.themeRoot;
+    let customThemeMode = 'system';
+    function setTheme(value) {
+      if (!customThemeRoot) return;
+      customThemeMode = CoreFoundation.normalizeThemeMode(value);
+      const theme = CoreFoundation.resolveTheme(customThemeMode);
+      for (const target of [customThemeRoot,panel]) {
+        for (const key of tokenNames) target.style.setProperty('--theme-'+key,theme[key]);
+        target.style.setProperty('--theme-skin',theme.accent);
+        target.style.setProperty('--theme-skin-vertical',theme.accent);
+        target.dataset.uiTheme=theme.id;target.dataset.themeSkin='flat';target.style.colorScheme=theme.mode;
+      }
+      host.dataset.uiTheme=theme.id;
+      publishMenuPalette(host,theme);
+    }
+    if(customThemeRoot){
+      const customSystemTheme = matchMedia('(prefers-color-scheme: dark)');
+      on(customSystemTheme,'change',()=>{if(customThemeMode==='system')setTheme(customThemeMode);});
+      setTheme(getSettings().uiTheme);
+    }
     function cancelDismiss() {
       clearTimeout(timer);
       timer = 0;
@@ -4929,7 +4799,7 @@ const ExtraPotionsCore = (() => {
         panel.classList.toggle('fl-rail-open', open);
         if (open) scheduleDismiss(); else cancelDismiss();
       },
-      scheduleDismiss, cancelDismiss, enforceDeadline,
+      setTheme, scheduleDismiss, cancelDismiss, enforceDeadline,
       get isOpen() { return open; },
       get dismissAt() { return deadline; },
       get timerActive() { return Boolean(timer); },
@@ -4977,7 +4847,7 @@ const ExtraPotionsCore = (() => {
     const menuNotices=[...themeRoot.querySelectorAll('.update-notice,.changelog')].map(notice=>createMenuNotice({host,shadow,panel,notice,versionButton:notice.classList.contains('changelog')?versionButton:null,manageVersion:false,durationMs:30000}));
     if (launcherSrc) panel.querySelectorAll('.header-icon img').forEach(image => image.src = launcherSrc);
     host.dataset.coreVersion = version; host.dataset.coreSource = 'exp-core';
-    let choices = themes(productTheme), selected = choices.at(-1), open = false, destroyed = false, frame = 0;
+    let selected, requestedTheme = 'system', open = false, destroyed = false, frame = 0;
     const removers = [];
     const on = (node,type,fn,opts) => { node.addEventListener(type,fn,opts); removers.push(() => node.removeEventListener(type,fn,opts)); };
     let localTheme = null;
@@ -4988,28 +4858,31 @@ const ExtraPotionsCore = (() => {
       themeRoot.style.setProperty('--theme-skin-vertical', selected.skinVertical || selected.skin || selected.swatch || selected.accent);
       Object.assign(themeRoot.dataset, { uiTheme:selected.id, themeSkin:selected.skinMode === 'flat' ? 'flat' : 'gradient' });
       host.dataset.uiTheme = selected.id;
+      themeRoot.style.colorScheme = selected.mode;
+      host.style.colorScheme = selected.mode;
     }
     function syncThemeOwner() {
       host.dataset.expThemeDeprioritized = '0';
       host.dataset.expThemeOwner = id;
       paintTheme(localTheme);
     }
-    function setTheme(value, supplied) {
-      if (supplied) choices = supplied.map(t => semanticTheme({ ...t, ...t.vars, skin:t.skin || t.swatch, skinVertical:t.skinVertical || t.skin || t.swatch }));
-      const alias = ({warm:'ember',discord:'glacier',pine:'verdant',obsidian:'contrast'})[value] || value;
-      localTheme = choices.find(t => t.id === alias) || choices.at(-1);
+    function setTheme(value) {
+      requestedTheme = CoreFoundation.normalizeThemeMode(value);
+      localTheme = semanticTheme(CoreFoundation.resolveTheme(requestedTheme));
       publishMenuPalette(host, localTheme);
       syncThemeOwner();
     }
+    const systemTheme = matchMedia('(prefers-color-scheme: dark)');
+    const followSystemTheme = () => { if (requestedTheme === 'system') setTheme(requestedTheme); };
+    systemTheme.addEventListener('change', followSystemTheme);
+    removers.push(() => systemTheme.removeEventListener('change', followSystemTheme));
     function layout() {
       if (destroyed || !launcher.isConnected) return;
       const state = getSettings();
       themeRoot.style.setProperty('--exp-menu-width', menuWidth() + 'px');
       const fontTokens=ExpMenuPreferences.menuSizeTokens();themeRoot.style.setProperty('--exp-font-size-body',fontTokens.body+'px');themeRoot.style.setProperty('--exp-font-size-small',fontTokens.small+'px');
       themeRoot.classList.toggle('reduce-motion', state.reduceMotion === true || state.reduceMotion === 'on' || state.reducedMotion === 'reduce' || (state.reduceMotion === 'system' || state.reducedMotion === 'system') && matchMedia('(prefers-reduced-motion:reduce)').matches);
-      const opacityValue = Number(state.opacityPercent);
-      const opacity = state.customOpacity ? (Number.isFinite(opacityValue) ? Math.max(40, Math.min(100, Math.round(opacityValue / 5) * 5)) : 85)/100 : 1;
-      themeRoot.style.setProperty('--exp-ui-opacity',String(opacity));
+      themeRoot.style.setProperty('--exp-ui-opacity','1');
       const { top, right } = launcherPlacement(host);
       Object.assign(launcher.style,{top:top+'px',right:right+'px',bottom:'auto',left:'auto',zIndex:open?'2147483647':'2147483600'});
       Object.assign(panel.style,{overflowY:'auto',overflowX:'hidden',overscrollBehavior:'contain',zIndex:open?'2147483647':'2147483599'});
@@ -5042,7 +4915,7 @@ const ExtraPotionsCore = (() => {
       get dismissAt(){return menuController.dismissAt;},
       destroy(){destroyed=true;arrangement?.destroy();arrangementAnchor.remove();defaultSupport?.destroy();menuController.destroy();cancelAnimationFrame(frame);resize?.disconnect();mutation?.disconnect();menuNotices.forEach(notice=>notice.destroy());removers.forEach(f=>f());styles.dispose();controllers.delete(host);}
     };
-    controllers.set(host,controller);setTheme(id);
+    controllers.set(host,controller);setTheme(getSettings().uiTheme);
     queueLayout();return controller;
   }
   function createReleaseUpdateChecker(options = {}) {
@@ -5516,6 +5389,6 @@ const ExtraPotionsCore = (() => {
     return Object.freeze({ lifecycle, diagnostics, updates });
   }
 
-  const api = Object.freeze({...ExtraPotionsTools,setMenuHelp:ExpMenuHelp.setMenuHelp,...ExpMenuPreferences,...ExpSiteColors,normalizeHealth,createHealthControls,createRecoveryGuard,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createMenuController,createProduct,menuTemplate:ExpLeanMenu.template,setMenuStatus:ExpLeanMenu.setMenuStatus,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,setLauncherUpdate,setLauncherProgress,bindLauncherDrag,launcherPlacement,placeMenu,placeNotice,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidth,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,createThemeSwatches,publishMenuPalette,createFloatingNotice,createMenuNotice,takeNoticeTurn,releaseNoticeTurn,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,isQuietUpgrade,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,suiteSitePaused,suiteSitePausePersisted,setSuiteSitePaused,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,mountSubmenuTabs:ExpMenuArrangement.mountTabs,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
+  const api = Object.freeze({...ExtraPotionsTools,setMenuHelp:ExpMenuHelp.setMenuHelp,...ExpMenuPreferences,...ExpSiteColors,normalizeHealth,createHealthControls,createRecoveryGuard,version,sourceVersion,protocol,gridProtocol,reference:CoreFoundation,css:canonicalCss,themes,create,createMenuController,createProduct,menuTemplate:ExpLeanMenu.template,setMenuStatus:ExpLeanMenu.setMenuStatus,createSupportControl,createProductNotice,createLifecycle:()=>createProductLifecycle(api),createProductServices,registerLauncher,setLauncherUpdate,setLauncherProgress,bindLauncherDrag,launcherPlacement,placeMenu,placeNotice,resetLauncherGrid,layout:layoutGrid,replaceMenuContent,createDisclosure,createSystemGrid,isOwnedSheet,menuWidth,cloneSettings,applyTextGradient,injectStyle,applyTheme,applyMatteToggleChrome,applyTwoColumnSettingsGrid,applyContentDrivenMenuLayout,publishMenuPalette,createFloatingNotice,createMenuNotice,takeNoticeTurn,releaseNoticeTurn,createReleaseUpdateChecker,registerFloatingNotice,layoutFloatingNotices,claimNotice,consumeVersionChange,isQuietUpgrade,focusMenuSurface,registerDiagnosticsProduct,registerSuiteProduct,suiteContract,suiteSnapshot,hasProductCapability,capabilityProviders,emitSuiteEvent,publishSuiteState,suiteStateSnapshot,latestSuiteState,subscribeSuiteState,onSuiteEvent,suiteSitePaused,suiteSitePausePersisted,setSuiteSitePaused,pageContext,observeNavigation,navigationObserverState,suiteTrust:SUITE_TRUST,registerPresentationProvider,presentationProviders,suiteHealth,readPresentationState,setPresentationState,clearPresentationState,presentationStateChain,isPresentationSuppressed,presentationPhases:PRESENTATION_PHASES,presentationChannels:PRESENTATION_CHANNELS,observePresentationState,observePage,observePageBatch,pageObserverState,suiteProducts:SUITE_PRODUCTS,suitePriority:SUITE_PRIORITY,productCompatibility:productCompatibilityReport,createCompatibilityControls:createSuiteCompatibilityControls,bindDiagnosticsControls:ExtraPotionsDiagnostics.bindControls,createDiagnosticsReport,downloadDiagnostics,createDiagnosticsControls,mountMenuArrangement:ExpMenuArrangement.mount,mountSubmenuTabs:ExpMenuArrangement.mountTabs,menuCategories:ExpMenuArrangement.categories,categorizeMenuSections:ExpMenuArrangement.describe,createMenuCategoryDisclosure:(label,category,...contents)=>ExpMenuArrangement.createDisclosure({document,label,category,contents}),collapseMenuSubmenus:ExpMenuArrangement.collapseSubmenus,compareVersions:CoreFoundation.compareVersions});
   return api;
 })();

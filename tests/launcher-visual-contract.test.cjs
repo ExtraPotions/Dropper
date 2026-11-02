@@ -101,17 +101,9 @@ test('recover panel and dock use compact trailing spacing', () => {
   assert.match(source, /#tdh-diagnostics-body \{ padding-bottom:2px; \}/u);
 });
 
-test('appearance uses the locked eight-slot palette system', () => {
-  assert.match(source, /name:"Dropper gem"/u);
-  assert.match(source, /#0b0713 0 38%,#7a46c8 38% 69%,#2a8c9b 69% 100%/u);
-  assert.match(source, /\.exp-theme-swatch\{[^}]*width:22px!important;[^}]*height:22px!important;[^}]*border-radius:5px!important/u);
-  const themeBlock = source.match(/const UI_THEMES = Object\.freeze\(\[([\s\S]*?)\]\);/u)?.[1] || '';
-  assert.deepEqual([...themeBlock.matchAll(/id:"([^"]+)"/gu)].map((match) => match[1]), ['ember', 'midnight', 'glacier', 'contrast', 'verdant', 'pride', 'twitch', 'dropper']);
-  assert.match(themeBlock, /id:"glacier", name:"Glacier"/u);
-  assert.match(themeBlock, /id:"twitch", name:"Twitch"/u);
-  assert.match(source, /const CRIMSON_THEME = Object\.freeze\(\{ id:"crimson", name:"Crimson"/u);
+test('appearance delegates its three modes to Core',()=>{
+ assert.match(source,/createThemeModeControl/);assert.doesNotMatch(source,/name:"Dropper gem"|const PRIDE_RAINBOW/);
 });
-
 
 test('backup conditions keep three named switches without a separate label column', () => {
   assert.doesNotMatch(source, /<div class="queue-switches-label">Skip On<\/div>/u);

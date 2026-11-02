@@ -1,7 +1,7 @@
 {
   "name": "extrapotions-dropper",
   "private": true,
-  "version": "3.4.60",
+  "version": "3.5.0",
   "description": "Twitch Drops companion userscript",
   "scripts": {
     "build": "node scripts/assemble-parts.cjs && node scripts/minify-dist.cjs",
@@ -13,7 +13,7 @@
     "watch:import-auth": "node scripts/watch-import-auth.cjs",
     "prepare:release:feature": "node scripts/prepare-feature-release.cjs && npm run build",
     "test:installed-browser": "node scripts/test-installed-browser.cjs",
-    "build:check": "node scripts/assemble-parts.cjs --check",
+    "build:check": "node scripts/assemble-parts.cjs --check && node scripts/minify-dist.cjs --check",
     "release:check": "node scripts/verify-exp-core-pin.cjs && npm test && npm run build:check",
     "verify:release": "npm run release:check"
   },

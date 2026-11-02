@@ -11,6 +11,8 @@ test('README screenshots and the shot list name the same images', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
   const referenced = [...new Set([...readme.matchAll(/docs\/screenshots\/([\w.-]+\.(?:png|gif))/g)].map(match => match[1]))].sort();
   assert.deepEqual(config.shots.map(shot => shot.file).sort(), referenced);
+  assert.equal(config.productOnly,true);
+  assert.deepEqual(config.shots.map(shot=>[shot.file,shot.mode,shot.collapsed,!!shot.notice]),[['menu-light.png','light',true,false],['menu-dark.png','dark',true,false],['changelog.png','dark',true,true]]);
 });
 
 test('screenshots run through the shared exp-core tool', () => {

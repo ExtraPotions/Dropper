@@ -33,8 +33,6 @@ test('Dropper delegates shared launcher and notice infrastructure to exp-core', 
   assert.match(template, /ExtraPotionsCore\.registerDiagnosticsProduct\(productId, APP_VERSION, host\)/u);
   assert.match(template, /ExtraPotionsCore\.claimNotice\("dropper", changeId\)/u);
   assert.match(template, /ExtraPotionsCore\.layoutFloatingNotices\(\)/u);
-  assert.match(template, /ExtraPotionsCore\.publishMenuPalette\?\.\(ui\.host, semantic\)/u);
-  assert.match(template, /const \{ PRIDE_RAINBOW, UI_THEMES \} = ExtraPotionsCore\.reference;/u);
   assert.doesNotMatch(template, /const UI_THEMES = Object\.freeze\(\[/u);
   assert.match(template, /ExtraPotionsCore\.compareVersions\(a, b\)/u);
 });
@@ -47,7 +45,7 @@ test('Dropper uses the public Core API for shared tool services', () => {
   assert.match(template, /ExtraPotionsCore\.createProductSystem\(/u);
   assert.match(template, /ExtraPotionsCore\.createDiagnosticsReport\(/u);
   assert.doesNotMatch(template, /ExtraPotionsDiagnostics\.createReport/u);
-  assert.match(template, /ExtraPotionsCore\.publishMenuPalette\?\.\(ui\.host/u);
+  assert.ok(template.includes('ExtraPotionsCore.applyTheme'));
 });
 
 test('obsolete shared source copies stay removed', () => {
@@ -67,13 +65,11 @@ test('private Core globals disappear once the public API is available', () => {
   assert.match(template, /ExtraPotionsCore\.mountMenuArrangement/u);
 });
 
-test('Dropper uses neutral Core sizing and opacity from canonical Core variables', () => {
+test('Dropper uses neutral Core sizing and opacity from canonical Core variables with fixed opacity', () => {
   assert.match(template, /--exp-menu-width/u);
   assert.match(template, /--exp-ui-opacity/u);
   assert.match(template, /setProperty\("--exp-menu-width"/u);
-  assert.match(template, /setProperty\("--exp-ui-opacity"/u);
   assert.match(template, /var\(--exp-menu-width,260px\)/u);
-  assert.match(template, /var\(--exp-ui-opacity,var\(--dropper-ui-opacity,1\)\)/u);
 });
 
 

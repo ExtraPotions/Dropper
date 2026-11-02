@@ -11,22 +11,17 @@ After installing, sign in to Twitch, refresh, and open Dropper in Twitch’s top
 - Track credited watch time and check stream eligibility for the current reward.
 - Browse campaigns, review reward history and open your Drops inventory.
 - Choose games and manage stream-switching preferences.
-- Adjust Twitch’s site colors and the progress card.
+- Choose Light, Dark or System for Slate Blue menus and Twitch pages.
 
 Twitch determines eligibility and credit. Saved choices, manual stream holds and pauses are respected; additional browsing tabs stay where you open them.
 
-## See it in action
+## Screenshots
 
-<img src="docs/screenshots/streams-menu.png" width="324" alt="Dropper settings menu">
+<img src="docs/screenshots/menu-light.png" width="324" alt="Dropper Light menu with expandable groups closed">
 
-<details>
-<summary>More screenshots</summary>
+<img src="docs/screenshots/menu-dark.png" width="324" alt="Dropper Dark menu with expandable groups closed">
 
-![Campaigns and inventory walkthrough](docs/screenshots/drops-menu.gif)
-
-</details>
-
-Screenshots use sample content.
+<img src="docs/screenshots/changelog.png" width="324" alt="Dropper changelog notice with the current version and release notes">
 
 ---
 
@@ -35,3 +30,4 @@ Screenshots use sample content.
 Donations are optional. All features remain available without donating.
 
 Dropper is independent and is not affiliated with or endorsed by Twitch.
+Menus use Slate Blue in Light, Dark or System mode. Site themes offer the same three modes.

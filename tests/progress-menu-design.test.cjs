@@ -65,7 +65,7 @@ for (const width of [360, 1280]) for (const size of ['standard', 'compact', 'min
       const values=['good','warn','bad'].map(tone=>{status.className='state-pill '+tone;return{tone,color:getComputedStyle(status).color,indicator:getComputedStyle(status,'::before').backgroundColor};});
       status.className=original;return values;
     });
-    assert.deepEqual(tones.map(t=>t.color),['rgb(143, 215, 160)','rgb(228, 189, 108)','rgb(220, 147, 147)']);
+    assert.deepEqual(tones.map(t=>t.color),['rgb(33, 100, 59)','rgb(122, 75, 0)','rgb(157, 40, 40)']);
     for(const tone of tones){assert.equal(tone.indicator,tone.color);assert.ok(contrast(tone.color,facts.background)>=4.5,JSON.stringify(tone));}
     await page.evaluate(() => window.dropperShow());
     if (width === 1280 && size === 'standard') {

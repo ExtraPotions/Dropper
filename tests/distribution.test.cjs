@@ -37,11 +37,13 @@ test('repository keeps only current docs, assets, and required build inputs', ()
     );
   }
 
-  const screenshots = fs.readdirSync(path.join(root, 'docs', 'screenshots')).filter((name) => name.endsWith('.png'));
+  const readme = fs.readFileSync(path.join(root,'README.md'),'utf8');
+  const screenshots = [...readme.matchAll(/docs\/screenshots\/([\w.-]+\.(?:png|gif))/g)].map(match=>match[1]);
+  for(const image of screenshots)assert.equal(fs.existsSync(path.join(root,'docs/screenshots',image)),true);
   assert.deepEqual(
     screenshots.sort(),
-    ['drops-menu.png', 'streams-menu.png'],
-    'docs/screenshots should contain exactly the two README images',
+    ['changelog.png', 'menu-dark.png', 'menu-light.png'],
+    'README uses the three approved product-only PNGs',
   );
 
   const changelog = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');
@@ -124,11 +126,10 @@ test('README stays feature-focused without npm install guidance', () => {
   assert.match(readme, /## Features/u);
   assert.match(readme, /https:\/\/github\.com\/ExtraPotions\/Dropper\/releases\/latest\/download\/dropper\.user\.js/u);
   assert.doesNotMatch(readme, /\/raw\/refs\/heads\/main\//u, 'the README installs a published release, not whatever is on main');
-  assert.match(readme, /docs\/screenshots\/drops-menu\.(?:png|gif)/u);
-  assert.match(readme, /docs\/screenshots\/streams-menu\.png/u);
-  assert.match(readme, /<details>\s*<summary>More screenshots<\/summary>/u);
+  for(const image of ['menu-light.png','menu-dark.png','changelog.png'])assert.ok(readme.includes('docs/screenshots/'+image));
+  assert.doesNotMatch(readme,/docs\/screenshots\/[^"\s)]+\.gif/u);
   assert.match(readme, /\[Usage\]\(docs\/usage\.md\)/u);
-  assert.equal((readme.split('<details>')[0].match(/docs\/screenshots\//g) || []).length, 1, 'one main screenshot before the optional gallery');
+  assert.equal((readme.match(/docs\/screenshots\//g)||[]).length,3,'three product-only images');
   assert.match(readme, /LICENSE-CODE\.md/u);
   assert.match(readme, /LICENSE-ASSETS\.md/u);
   assert.doesNotMatch(readme, /^#{1,6} .*?(Technical|Development|Changelog|Diagnostics)/imu);

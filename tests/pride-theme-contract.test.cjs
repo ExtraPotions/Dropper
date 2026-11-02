@@ -12,61 +12,9 @@ const root = path.resolve(__dirname, '..');
 const source = loadDropperSource(root);
 const installPath = path.join(root, 'dropper.user.js');
 
-const PRIDE_PALETTE = Object.freeze({
-  bg: '#100a12',
-  panel: '#1d1222',
-  line: '#4a2b50',
-  text: '#f0ddea',
-  muted: '#b89db4',
-  accent: '#c34f7d',
-  accent2: '#dd6793',
-});
-const PRIDE_RAINBOW = 'linear-gradient(90deg,#c84e66,#d07840,#be9f37,#3b8a5f,#3d79a6,#7455a4)';
-const PRIDE_RAINBOW_VERTICAL = 'linear-gradient(180deg,#c84e66,#d07840,#be9f37,#3b8a5f,#3d79a6,#7455a4)';
-
-function prideThemeBlock() {
-  const themeBlock = source.match(/const UI_THEMES = Object\.freeze\(\[([\s\S]*?)\]\);/u)?.[1] || '';
-  const prideEntry = themeBlock.match(/\{ id:"pride"[^}]+\}/u)?.[0] || '';
-  return prideEntry;
-}
-
-function dropperThemeBlock() {
-  const themeBlock = source.match(/const UI_THEMES = Object\.freeze\(\[([\s\S]*?)\]\);/u)?.[1] || '';
-  return themeBlock.match(/\{ id:"dropper"[^}]+\}/u)?.[0] || '';
-}
-
-test('pride palette source contract matches the strengthened menu colors', () => {
-  const prideEntry = prideThemeBlock();
-  for (const [key, value] of Object.entries(PRIDE_PALETTE)) {
-    assert.match(prideEntry, new RegExp(`${key}:"${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`,'u'));
-  }
-});
-
-test('pride palette is visibly distinct from dropper gem defaults', () => {
-  const prideEntry = prideThemeBlock();
-  const dropperEntry = dropperThemeBlock();
-  assert.notEqual(prideEntry, dropperEntry);
-  for (const key of Object.keys(PRIDE_PALETTE)) {
-    const prideValue = prideEntry.match(new RegExp(`${key}:"([^"]+)"`, 'u'))?.[1];
-    const dropperValue = dropperEntry.match(new RegExp(`${key}:"([^"]+)"`, 'u'))?.[1];
-    assert.notEqual(prideValue, dropperValue, `expected pride ${key} to differ from dropper`);
-  }
-});
-
-test('applyAppearanceSettings exposes the active theme id on the cluster dataset', () => {
-  assert.match(source, /ui\.cluster\.dataset\.uiTheme\s*=\s*theme\.id/u);
-});
-
-test('pride theme uses shared gradient-skin treatments with the Pride rainbow palette', () => {
-  assert.match(source, /const PRIDE_RAINBOW = "linear-gradient\(90deg,#c84e66,#d07840,#be9f37,#3b8a5f,#3d79a6,#7455a4\)"/u);
-  assert.match(source, /const PRIDE_RAINBOW_VERTICAL = "linear-gradient\(180deg,#c84e66,#d07840,#be9f37,#3b8a5f,#3d79a6,#7455a4\)"/u);
-  assert.match(source, /\.cluster\[data-theme-skin="gradient"\] #tdh-tools-dock/u);
-  assert.match(source, /background-clip:padding-box,border-box/u);
-  assert.match(source, /\.cluster\[data-theme-skin="gradient"\] \.header-divider/u);
-  assert.match(source, /\.cluster\[data-theme-skin="gradient"\] :is\(\.fl-tool-header,\.life-btn\)\.last-opened::before/u);
-  assert.match(source, /background:var\(--theme-skin-vertical\)/u);
-  assert.doesNotMatch(source, /#tdh-drop-card\.collapsed/u);
-  assert.doesNotMatch(source, /\.cluster\[data-ui-theme="pride"\][\s\S]{0,240}#9147ff/u);
+test('retired palettes and opacity controls cannot return from saved settings',()=>{
+ assert.doesNotMatch(source,/PRIDE_RAINBOW|tdh-custom-opacity|tdh-opacity-range/);
+ assert.match(source,/delete stored\.customOpacity/);assert.ok(source.includes("stored.uiTheme = ['light','dark','system'].includes(stored.uiTheme)"));
 });
 
 test('the changelog notice stays fixed inside the viewport', async () => {
