@@ -17,11 +17,9 @@ Twitch determines eligibility and credit. Saved choices, manual stream holds and
 
 ## Screenshots
 
-<img src="docs/screenshots/menu-light.png" width="324" alt="Dropper Light menu with expandable groups closed">
-
-<img src="docs/screenshots/menu-dark.png" width="324" alt="Dropper Dark menu with expandable groups closed">
-
-<img src="docs/screenshots/changelog.png" width="324" alt="Dropper changelog notice with the current version and release notes">
+| Light | Dark | Changelog |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/menu-light.png" width="324" alt="Dropper Light menu with expandable groups closed"> | <img src="docs/screenshots/menu-dark.png" width="324" alt="Dropper Dark menu with expandable groups closed"> | <img src="docs/screenshots/changelog.png" width="324" alt="Dropper changelog notice with the current version and release notes"> |
 
 ---
 
