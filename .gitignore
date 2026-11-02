@@ -1,10 +1,18 @@
-node_modules/
-.watch-profile/
-artifacts/diagnostics/
-test-artifacts/
-test-results.txt
-dropper-source.zip
-dropper-toolchain.tgz
-*Edit conflict*
-*conflicted copy*
-*Name clash*
+# Public distributions only. Development files stay local.
+*
+!/assets/
+!/docs/
+!/docs/screenshots/
+!/.gitattributes
+!/.gitignore
+!/CHANGELOG.md
+!/LICENSE-ASSETS.md
+!/LICENSE-CODE.md
+!/NOTICE.md
+!/README.md
+!/assets/dropper-launcher.svg
+!/dropper.user.js
+!/docs/usage.md
+!/docs/screenshots/menu-light.png
+!/docs/screenshots/menu-dark.png
+!/docs/screenshots/changelog.png

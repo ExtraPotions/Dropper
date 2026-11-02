@@ -26,7 +26,7 @@ Open **System** for status, diagnostics, troubleshooting and Reset. Menu sizing 
 
 ## Support and verification
 
-[Report a problem](https://github.com/ExtraPotions/Dropper/issues) or read the [development notes](development.md) for supported behavior and verification limits. Screenshots use sample content; iPad-sized captures use touch emulation and do not establish installed iPad browser support.
+[Report a problem](https://github.com/ExtraPotions/Dropper/issues).
 
 ## Appearance
 
