@@ -1,3 +1,10 @@
+## 3.6.0 — 2026-11-11
+
+- Use sentence-case wording throughout the menu, with group titles stacked above their summaries.
+- Make status colors readable in Light and Dark and keep the Twitch login row on one line.
+- Pause repeated claim checks for a while when Twitch does not confirm them.
+- Keep Diagnostics on one row with Show and Copy, and outline Reset all settings.
+
 ## 3.5.0 — 2026-11-02
 
 - Use Slate Blue Light, Dark or System for menus and supported site themes.
