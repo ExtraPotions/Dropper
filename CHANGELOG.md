@@ -1,3 +1,9 @@
+## 3.7.0 — 2026-11-12
+
+- Show menu sections as drawers in charcoal with Dropper purple; the menu reopens on the drawer you used last.
+- Fold the progress card outside the menu into one line with the channel, game and percentage; tap it for the reward, status, Pause, Skip and Menu.
+- Respect the Switch when offline setting when a stream goes offline, and keep the shared launcher order.
+
 ## 3.6.2 — 2026-11-12
 
 - Use one typeface for both buttons in the update and changelog notices.
