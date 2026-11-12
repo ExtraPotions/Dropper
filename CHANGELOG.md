@@ -1,3 +1,8 @@
+## 3.6.2 — 2026-11-12
+
+- Use one typeface for both buttons in the update and changelog notices.
+- Include shared Core 3.12.2.
+
 ## 3.6.1 — 2026-11-12
 
 - Use sentence-case wording in update and changelog notices.
