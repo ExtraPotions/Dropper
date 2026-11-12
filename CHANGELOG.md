@@ -1,3 +1,8 @@
+## 3.6.1 — 2026-11-12
+
+- Use sentence-case wording in update and changelog notices.
+- Include shared Core 3.12.1.
+
 ## 3.6.0 — 2026-11-11
 
 - Use sentence-case wording throughout the menu, with group titles stacked above their summaries.
