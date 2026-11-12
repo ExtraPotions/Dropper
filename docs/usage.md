@@ -22,7 +22,7 @@ Stream switching starts at **Follow campaign order** in the first eligible tab. 
 
 ## Shared menu
 
-Each section is a drawer: opening one closes the others, and the menu reopens on the one you used last. Open **System** for status, diagnostics, troubleshooting and Reset. Outside the menu, the progress card is one line with the channel, game and percentage; tap it for the reward, status, Pause, Skip and Menu. Menu sizing is in **Look**. With multiple ExtraPotions products on the same page, open the shared launcher and choose a product. Donations are available from the header heart.
+Each section is a drawer: opening one closes the others, and the menu reopens on the one you used last. Open **System** for status, diagnostics, troubleshooting and Reset. Outside the menu, the progress card is one line with the channel, game and percentage; tap it for the reward, status, Pause, Skip and Menu. Menu sizing is in **Look**. With multiple ExtraPotions products on the same page, open the shared launcher and choose a product; on Twitch each product has its own icon in the top bar. Donations are available from the header heart.
 
 ## Support and verification
 

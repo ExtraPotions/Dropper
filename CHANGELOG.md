@@ -1,3 +1,9 @@
+## 3.8.0 — 2026-11-12
+
+- Remove the floating page-actions bar under the video; its actions stay in the menu.
+- On Twitch, show Dropper's own plain icon in the top bar next to the other ExtraPotions products.
+- Drop hover tips from settings that explain themselves.
+
 ## 3.7.0 — 2026-11-12
 
 - Show menu sections as drawers in charcoal with Dropper purple; the menu reopens on the drawer you used last.
