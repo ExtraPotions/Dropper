@@ -1,3 +1,10 @@
+## 3.8.2 — 2026-11-13
+
+- A reward that starts later in its campaign, or ends early, is only picked while its own dates are open.
+- Rewards whose progress is not known yet rank after rewards that are close to done.
+- Several Dropper tabs keep track of each other reliably, also after switching accounts.
+- The pause setting sits under Interruption rules, and the update card waits its turn beside other products' cards; built on Core 3.15.1.
+
 ## 3.8.1 — 2026-11-13
 
 - Keep the menu open for a minute when it is left alone, instead of 15 seconds.
