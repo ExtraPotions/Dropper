@@ -1,3 +1,8 @@
+## 3.8.1 — 2026-11-13
+
+- Keep the menu open for a minute when it is left alone, instead of 15 seconds.
+- Any tap, scroll or key in the menu still starts that minute again.
+
 ## 3.8.0 — 2026-11-12
 
 - Remove the floating page-actions bar under the video; its actions stay in the menu.
