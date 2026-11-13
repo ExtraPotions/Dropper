@@ -1,3 +1,10 @@
+## 4.0.0 — 2026-11-13
+
+- Dropper is rebuilt from the ground up; your settings, priorities and claim history carry over.
+- The progress card stays in view in place of the Stream Chat title bar, and the menu opens from its edge like a file cabinet.
+- Turn off Drop Details in Look for a one-line card. Hide Chat on the card collapses Twitch chat, and Expand Chat stays in reach.
+- Labels are in Title Case. Built on Core 3.17.0.
+
 ## 3.8.3 — 2026-11-13
 
 - Smaller to download: about 50 KB of code that no longer ran is gone; nothing changes in use.
