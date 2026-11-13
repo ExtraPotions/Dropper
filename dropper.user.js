@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      4.0.0
+// @version      4.0.1
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -266,7 +266,7 @@ function css() {
         font-size:var(--exp-font-size-small,11px); font-weight:800; white-space:nowrap;
       }
       .update-text { margin-top:6px; font-size:var(--exp-font-size-small,11px); line-height:1.45; color:var(--theme-muted); white-space:normal; overflow:visible; }
-      .update-list { margin:7px 0 0; padding:0 0 0 15px; max-height:86px; overflow:auto; color:var(--theme-text); font-size:var(--exp-font-size-small,11px); line-height:1.4; scrollbar-width:thin; }
+      .update-list { margin:7px 0 0; padding:0 0 0 15px; color:var(--theme-text); font-size:var(--exp-font-size-small,11px); line-height:1.4; scrollbar-width:thin; }
       .update-list li::marker { color:var(--theme-accent); }
       .update-list li + li { margin-top:3px; }
       .update-footer { display:flex; justify-content:flex-end; gap:6px; margin-top:8px; padding-top:7px; border-top:1px solid var(--theme-line); }
@@ -2516,7 +2516,7 @@ const ExpLauncherFlyout = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.17.0';
+  const version = '3.17.1';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -10987,6 +10987,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(['3.4.43', '3.4.30', '3.4.27', '3.4.26']);
   const RELEASE_NOTES = {
+    '4.0.1': ["Release notes show in full in the changelog card.", "Built on Core 3.17.1."],
     '4.0.0': ["Dropper is rebuilt from the ground up; your settings, priorities and claim history carry over.", "The progress card stays in view in place of the Stream Chat title bar, and the menu opens from its edge like a file cabinet.", "Turn off Drop Details in Look for a one-line card. Hide Chat on the card collapses Twitch chat, and Expand Chat stays in reach.", "Labels are in Title Case. Built on Core 3.17.0."],
   };
   const UPDATE_NOTICE_TURN = 'dropper:update';
@@ -11384,7 +11385,7 @@ const ExtraPotionsCore = (() => {
           font-size:var(--exp-font-size-small,11px); font-weight:800; white-space:nowrap;
         }
         .update-text { margin-top:6px; font-size:var(--exp-font-size-small,11px); line-height:1.45; color:var(--theme-muted); white-space:normal; overflow:visible; }
-        .update-list { margin:7px 0 0; padding:0 0 0 15px; max-height:86px; overflow:auto; color:var(--theme-text); font-size:var(--exp-font-size-small,11px); line-height:1.4; scrollbar-width:thin; }
+        .update-list { margin:7px 0 0; padding:0 0 0 15px; color:var(--theme-text); font-size:var(--exp-font-size-small,11px); line-height:1.4; scrollbar-width:thin; }
         .update-list li::marker { color:var(--theme-accent); }
         .update-list li + li { margin-top:3px; }
         .update-footer { display:flex; justify-content:flex-end; gap:6px; margin-top:8px; padding-top:7px; border-top:1px solid var(--theme-line); }
@@ -13640,7 +13641,7 @@ const ExtraPotionsCore = (() => {
   // Wiring and startup: the only file that reads browser globals. It builds every module from the real storages,
   // the userscript manager's functions and the page, then runs the heartbeat. Page reading, tabs, the data layer
   // and the menu are wired here as their modules land (milestone 3).
-  const APP_VERSION = '4.0.0';
+  const APP_VERSION = '4.0.1';
   const HEARTBEAT_MS = 5000;
   const ACTIVITY_LOG_LIMIT = 40;
   const SECRET_META = /token|cookie|auth|password|integrity|secret/i;

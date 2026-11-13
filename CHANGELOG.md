@@ -1,3 +1,8 @@
+## 4.0.1 — 2026-11-13
+
+- Release notes show in full in the changelog card.
+- Built on Core 3.17.1.
+
 ## 4.0.0 — 2026-11-13
 
 - Dropper is rebuilt from the ground up; your settings, priorities and claim history carry over.
