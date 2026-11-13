@@ -1,3 +1,8 @@
+## 3.8.3 — 2026-11-13
+
+- Smaller to download: about 50 KB of code that no longer ran is gone; nothing changes in use.
+- Built on Core 3.16.0.
+
 ## 3.8.2 — 2026-11-13
 
 - A reward that starts later in its campaign, or ends early, is only picked while its own dates are open.
