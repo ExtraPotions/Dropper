@@ -1,19 +1,20 @@
 # <img src="assets/dropper-launcher.svg" width="48" height="48" alt=""> Dropper for Twitch
 
-Track Twitch Drops progress, campaign eligibility and inventory from one menu.
+Track Drops progress, campaign eligibility and inventory on Twitch and Kick from one menu.
 
 [Install Dropper for Twitch](https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js) · Requires [Violentmonkey](https://violentmonkey.github.io/get-it/) or [Tampermonkey](https://www.tampermonkey.net/).
 
-After installing, sign in to Twitch, refresh, and open Dropper in Twitch’s top bar. [Setup and controls →](docs/usage.md)
+After installing, sign in to Twitch or Kick, refresh, and open Dropper from its progress card or launcher. [Setup and controls →](docs/usage.md)
 
 ## Features
 
 - Track credited watch time for the current reward on a compact card in the Stream Chat title bar, and check stream eligibility.
 - Browse campaigns, review reward history and open your Drops inventory.
-- Choose games and manage stream-switching preferences.
+- Choose games and manage stream-switching preferences on Twitch.
+- On Kick, see whether the open stream counts, open a stream that does, and go to Kick’s claim page.
 - Choose Light, Dark or System for the menu and for a Slate Blue Twitch theme.
 
-Twitch determines eligibility and credit. Saved choices, manual stream holds and pauses are respected; additional browsing tabs stay where you open them.
+Twitch and Kick determine eligibility and credit. Saved choices, manual stream holds and pauses are respected; additional browsing tabs stay where you open them.
 
 ## Screenshots
 
@@ -27,5 +28,5 @@ Twitch determines eligibility and credit. Saved choices, manual stream holds and
 
 Donations are optional. All features remain available without donating.
 
-Dropper is independent and is not affiliated with or endorsed by Twitch.
+Dropper is independent and is not affiliated with or endorsed by Twitch or Kick.
 Menus are charcoal with purple highlights in Light, Dark or System mode. Site themes use Slate Blue in the same three modes.

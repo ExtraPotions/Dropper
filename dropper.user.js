@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      4.0.2
+// @version      4.1.0
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -9,6 +9,7 @@
 // @updateURL    https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js
 // @downloadURL  https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js
 // @tag          Twitch
+// @tag          Kick
 // @tag          Drops
 // @tag          Rewards
 // @author       expDARE
@@ -16,6 +17,7 @@
 // @match        https://www.twitch.tv/*
 // @match        https://player.twitch.tv/*
 // @match        https://embed.twitch.tv/*
+// @match        https://kick.com/*
 // @run-at       document-start
 // @noframes
 // @grant        unsafeWindow
@@ -2516,7 +2518,7 @@ const ExpLauncherFlyout = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.17.2';
+  const version = '3.17.3';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -3970,7 +3972,7 @@ const ExtraPotionsCore = (() => {
   // Flyout launcher: with two or more products on a page, one shared launcher (the hub, owned by the lead
   // product's host) opens a row of tiles, and each tile is that product's own launcher. Every Core copy derives
   // the same state from host attributes; the open state lives on <html> as data-exp-flyout-open.
-  const FLYOUT_ACCENTS = Object.freeze({ dropper:'#bc94f5', ward:'#e7bb75', thread:'#ff7636' });
+  const FLYOUT_ACCENTS = Object.freeze({ dropper:'#bc94f5', ward:'#5fd9a0', thread:'#ff7636' });
   const FLYOUT_NAMES = Object.freeze({ dropper:'Dropper', ward:'WARD', thread:'THREAD' });
   const FLYOUT_TILE = 40, FLYOUT_GAP = 6, FLYOUT_PAD = 7;
   const launcherHosts = () => [...document.querySelectorAll('[data-exp-product-launcher="1"]')];
@@ -10788,8 +10790,8 @@ const ExtraPotionsCore = (() => {
   }
 
   // The one status line that replaced stream health, eligibility, earning confidence and switch history.
-  function statusLine({ label, tone, status, reward, switching }) {
-    const heading = { Earning: 'Earning', 'BG earning': 'Earning in background', Syncing: 'Waiting for Twitch', Stalled: 'Progress stalled', Delayed: 'Credit delayed', 'BG delayed': 'Credit delayed', Rechecking: 'Rechecking', Paused: 'Paused', 'Login required': 'Login required', 'Claimed ✓': 'Claimed', Earned: 'Earned' }[label] || 'Waiting for Twitch';
+  function statusLine({ label, tone, status, reward, switching, site = 'Twitch' }) {
+    const heading = { 'Not counting': 'Not counting here',  Earning: 'Earning', 'BG earning': 'Earning in background', Syncing: `Waiting for ${site}`, Stalled: 'Progress stalled', Delayed: 'Credit delayed', 'BG delayed': 'Credit delayed', Rechecking: 'Rechecking', Paused: 'Paused', 'Login required': 'Login required', 'Claimed ✓': 'Claimed', Earned: 'Earned' }[label] || `Waiting for ${site}`;
     const fallback = !reward ? 'No active reward is selected.' : switching ? 'Waiting for an eligible stream.' : 'Dropper is waiting for campaign or credited-progress evidence.';
     return { label: heading, detail: status || fallback, tone: tone === 'good' ? 'good' : tone === 'bad' ? 'bad' : tone || reward ? 'warn' : 'muted' };
   }
@@ -10801,10 +10803,10 @@ const ExtraPotionsCore = (() => {
     return { value, heldLabel };
   }
 
-  function buildView({ now = Date.now(), loggedIn = false, settings = {}, controller = {}, reward = null, intent = {}, channel = '', game = '', lastPollAt = 0, status = '', switchingTab = false, locked = false, background = false, campaigns = null, deadline = null, unclaimed = [], peers = 0, inCharge = true, eligibility = null, creditedAt = 0, playing = false }) {
+  function buildView({ now = Date.now(), loggedIn = false, settings = {}, controller = {}, reward = null, intent = {}, channel = '', game = '', lastPollAt = 0, status = '', switchingTab = false, locked = false, background = false, campaigns = null, deadline = null, unclaimed = [], peers = 0, inCharge = true, eligibility = null, creditedAt = 0, playing = false, site = 'Twitch', cardOverride = null }) {
     const creditAge = creditedAt > 0 ? Math.max(0, now - creditedAt) : 0;
     const heldEarning = controller.state === 'paused' && VIEWER_HOLDS.includes(controller.waitReason) && playing && creditedAt > 0 && creditAge < HEALTHY_DELAYED_MS && Number(reward?.currentMinutes) > 0;
-    const [label, tone] = cardState({ loggedIn, paused: Boolean(intent.paused), reward, state: controller.state, verified: Boolean(controller.verification), diagnosis: controller.diagnosis, background: background && settings.backgroundEarning, heldEarning });
+    const [label, tone] = cardOverride || cardState({ loggedIn, paused: Boolean(intent.paused), reward, state: controller.state, verified: Boolean(controller.verification), diagnosis: controller.diagnosis, background: background && settings.backgroundEarning, heldEarning });
     const unknown = !reward || reward.needsDropDetails;
     const percent = unknown || reward.percent == null ? null : Math.max(0, Math.min(100, Math.round(reward.percent)));
     const credited = unknown || reward.currentMinutes == null ? '—' : reward.currentMinutes;
@@ -10816,7 +10818,7 @@ const ExtraPotionsCore = (() => {
       card: {
         label, tone, shortLabel: { 'Login required': 'Login', 'Details pending': 'Details' }[label] || label,
         dot: CARD_TONE_COLORS[label] || (/Earning|Claim/.test(label) ? '#22c55e' : '#9147ff'),
-        rewardName: reward ? reward.name || 'Current Drop' : 'Waiting for Twitch to start a Drop session',
+        rewardName: reward ? reward.name || 'Current Drop' : `Waiting for ${site} to start a Drop session`,
         game: reward?.game || game || '', channel: channel || '', percent, credited, required,
         minutesTitle: unknown ? (reward ? 'Loading Drop details' : '') : reward.requiredMinutes ? `${reward.currentMinutes == null ? 'Pending' : reward.currentMinutes} / ${reward.requiredMinutes} min` : 'Waiting for first credited minute',
         pauseText: intent.paused || !reward ? 'Resume' : 'Pause', pauseDisabled: !reward || !channel || !loggedIn,
@@ -10825,12 +10827,12 @@ const ExtraPotionsCore = (() => {
         stripLeft: !pause && known ? `· ${Math.max(0, Math.ceil(reward.requiredMinutes - reward.currentMinutes))}m` : '',
         image: reward?.rewardImage || '',
       },
-      status: statusLine({ label, tone, status, reward, switching: settings.findNextStream }),
+      status: statusLine({ label, tone, status, reward, switching: site === 'Twitch' && settings.findNextStream, site }),
       titleProgress: percent == null ? '' : `${percent}%`,
       policy: switchingPolicy({ settings, locked, manualStream: Boolean(intent.manualStream), switchingTab }),
       reward, controller, state: controller.state || '', loggedIn,
       campaigns: campaigns || campaignRows({ strategy: settings.campaignStrategy }),
-      deadline: deadlineLine(deadline), inventory: inventoryRow(reward, percent), unclaimed,
+      deadline: deadlineLine(deadline), inventory: inventoryRow(reward, percent, site), unclaimed,
       multiTab: multiTabLine(peers, inCharge), accountLink: accountLinkText(eligibility, reward), eligibilityCode: eligibility?.code || '',
     };
   }
@@ -10964,13 +10966,13 @@ const ExtraPotionsCore = (() => {
   }
 
   // The Drops inventory row for the selected reward.
-  function inventoryRow(reward, percent) {
-    if (!reward) return { name: 'No active Drop', meta: 'Waiting for Twitch', state: 'Idle' };
+  function inventoryRow(reward, percent, site = 'Twitch') {
+    if (!reward) return { name: 'No active Drop', meta: `Waiting for ${site}`, state: 'Idle' };
     const current = reward.currentMinutes == null || reward.currentMinutes === '' ? null : Number(reward.currentMinutes), required = Number(reward.requiredMinutes) || 0;
     const done = required > 0 && current !== null && current >= required;
     return {
       name: reward.name || 'Current Drop',
-      meta: reward.needsDropDetails ? 'Twitch details pending' : required && Number.isFinite(current) && current >= 0 ? `${current} / ${required} Min` : 'Progress pending',
+      meta: reward.needsDropDetails ? `${site} details pending` : required && Number.isFinite(current) && current >= 0 ? `${current} / ${required} Min` : 'Progress pending',
       state: reward.needsDropDetails ? 'Details pending' : reward.isClaimed ? 'Claimed' : done ? 'Claim ready' : percent == null ? 'Progress pending' : `${percent}%`,
     };
   }
@@ -10987,6 +10989,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(['3.4.43', '3.4.30', '3.4.27', '3.4.26']);
   const RELEASE_NOTES = {
+    '4.1.0': ["Dropper works on Kick: the card shows your Drops progress in place of the Chat title bar and says whether the stream counts.", "On Kick, Open Next Stream opens a live stream Kick says counts, and Claim on Kick opens Kick's Drops page.", "Kick's daily watch rewards, including the Sunset Reward Case, show today's minutes.", "Built on Core 3.17.3."],
     '4.0.2': ["The one-line card (Drop Details off) has its own Menu button.", "The Dropper gem is purple throughout. Built on Core 3.17.2."],
     '4.0.1': ["Release notes show in full in the changelog card.", "Built on Core 3.17.1."],
     '4.0.0': ["Dropper is rebuilt from the ground up; your settings, priorities and claim history carry over.", "The progress card stays in view in place of the Stream Chat title bar, and the menu opens from its edge like a file cabinet.", "Turn off Drop Details in Look for a one-line card. Hide Chat on the card collapses Twitch chat, and Expand Chat stays in reach.", "Labels are in Title Case. Built on Core 3.17.0."],
@@ -10998,8 +11001,17 @@ const ExtraPotionsCore = (() => {
   const TWITCH_CONNECTIONS_URL = 'https://www.twitch.tv/settings/connections';
   const TWITCH_CHAT_TOGGLE = '[data-a-target="right-column__toggle-collapse-btn"]';
   const TWITCH_KEEP_CLEAR = TWITCH_CHAT_TOGGLE + ',[data-a-target="player-controls"],.player-controls,#live-channel-stream-information,[data-a-target="stream-info-card-component"],.channel-info-content';
+  // Where the card docks and which controls apply on each site. Twitch keeps everything; another site (Kick) names
+  // its own chat slots and leaves out what only Twitch has: stream switching, claiming, Twitch's page theme.
+  const TWITCH_SITE = Object.freeze({
+    id: 'twitch', name: 'Twitch', twitchControls: true,
+    chatToggle: TWITCH_CHAT_TOGGLE, keepClear: TWITCH_KEEP_CLEAR,
+    chatContent: '.stream-chat .chat-room__content', chatTitle: '.stream-chat .stream-chat-header', stripHeader: '.stream-chat-header',
+    chatTargets: '.stream-chat,.stream-chat-header,.chat-room__content,button[aria-label="Previous leaderboard set"],button[aria-label="Expand Top Gifters Leaderboard"],[data-testid="leaderboard-top-three-entry"]',
+    loginUrl: TWITCH_LOGIN_URL,
+  });
 
-  function createUi({ store, controller, drops, claims, page, tabs, intent, campaigns, view, saveSettings: save, log = () => {}, notify = () => {}, manualLock = () => null, poll = () => {}, sections = [], resetKeys = [], now = Date.now } = {}) {
+  function createUi({ store, controller, drops, claims, page, tabs, intent, campaigns, view, saveSettings: save, log = () => {}, notify = () => {}, manualLock = () => null, poll = () => {}, sections = [], resetKeys = [], site = TWITCH_SITE, now = Date.now } = {}) {
     // 3.x's names, so the carried-over code reads as it did.
     const DEFAULTS = SETTING_DEFAULTS;
     const viewingIntent = intent;
@@ -12022,7 +12034,7 @@ const ExtraPotionsCore = (() => {
                       <div class="drop-percent" id="tdh-drop-percent">0%</div>
                     </div>
                     <div class="progress-category"><span class="stream-game" id="tdh-stream-game">Waiting for category</span></div>
-                    <div class="drop-bar" role="progressbar" aria-label="Twitch Credited Drop Progress" aria-valuemin="0" aria-valuemax="100"><span id="tdh-drop-fill"></span></div>
+                    <div class="drop-bar" role="progressbar" aria-label="${site.name} Credited Drop Progress" aria-valuemin="0" aria-valuemax="100"><span id="tdh-drop-fill"></span></div>
                     <div class="progress-reward-row">
                       <span class="drop-name" id="tdh-drop-name">Waiting for Drop</span>
                     </div>
@@ -12073,7 +12085,7 @@ const ExtraPotionsCore = (() => {
       chromeResizeObserver.observe(ui.dock);
       chromeResizeObserver.observe(shadow.querySelector(".badge-row"));
       chromeResizeObserver.observe(shadow.getElementById("tdh-drop-card"));
-      const chatTargets='.stream-chat,.stream-chat-header,.chat-room__content,button[aria-label="Previous leaderboard set"],button[aria-label="Expand Top Gifters Leaderboard"],[data-testid="leaderboard-top-three-entry"]';
+      const chatTargets=site.chatTargets;
       const chatObserver = new MutationObserver(records => {
         if (!host.isConnected) { restoreChatProgressSlot(); ui.chatResizeObserver?.disconnect(); chatObserver.disconnect(); removeEventListener('pagehide',restoreChatProgressSlot); return; }
         if (records.some(record => [...record.addedNodes, ...record.removedNodes].some(node =>
@@ -12096,6 +12108,7 @@ const ExtraPotionsCore = (() => {
       bindSwitches();
       mountCompactDropperNavigation();
       mountProductTools();
+      if (!site.twitchControls) mountSiteControls();
       bindPanels();
       ExtraPotionsCore.mountMenuArrangement({ panel: ui.dock, id: "dropper", onChange: () => requestAnimationFrame(layoutChrome), resetLaunchers() { ExtraPotionsCore.resetLauncherGrid("dropper"); requestAnimationFrame(layoutChrome); } });
       ExtraPotionsCore.setMenuStatus("dropper", systemHealthSnapshot);
@@ -12234,11 +12247,23 @@ const ExtraPotionsCore = (() => {
       if(appearance&&!appearance.querySelector('[data-dropper-menu-preferences]')){const preferences=ExtraPotionsCore.createMenuSizeControls();preferences.dataset.dropperMenuPreferences='1';appearance.prepend(preferences);}
       if(appearance&&!appearance.querySelector('[data-dropper-site-colors]')){
         const menu=ExtraPotionsCore.createThemeModeControl({value:settings.uiTheme,onChange:uiTheme=>{settings.uiTheme=uiTheme;saveSettings();applyAppearanceSettings();}});
-        const site=ExtraPotionsCore.createSiteColorControl({value:settings.siteColors,onChange:siteColors=>{settings.siteColors=siteColors;saveSettings();applySiteColors();}});
-        site.dataset.dropperSiteColors='1';appearance.querySelector('[data-dropper-menu-preferences]')?.after(menu,site);
+        const siteTheme=ExtraPotionsCore.createSiteColorControl({value:settings.siteColors,onChange:siteColors=>{settings.siteColors=siteColors;saveSettings();applySiteColors();}});
+        siteTheme.dataset.dropperSiteColors='1';appearance.querySelector('[data-dropper-menu-preferences]')?.after(menu,siteTheme);
       }
       const system=ExtraPotionsCore.createProductSystem({id:'dropper',version:APP_VERSION,timeline,diagnostics,onReset:resetAllDropperData,notify:setStatus,layout:'grouped',issueSettings:()=>({current:settings,defaults:DEFAULTS})});
       target.replaceChildren(system);
+    }
+
+    // Another site keeps the card, Look and System; Twitch's stream controls, claiming and page theme are left out,
+    // and the site fills the Campaigns drawer itself. Every render function already skips a missing node.
+    function mountSiteControls() {
+      const s = ui.shadow;
+      s.getElementById('tdh-streams-body')?.closest('.fl-tool-panel')?.remove();
+      for (const id of ['tdh-card-pause', 'tdh-skip-streamer']) s.getElementById(id)?.remove();
+      for (const id of ['tdh-hide-sub-promos', 'tdh-keep-tab']) s.getElementById(id)?.closest('.fl-switch')?.remove();
+      s.querySelector('[data-dropper-site-colors]')?.remove();
+      const body = s.getElementById('tdh-drops-body');
+      if (body) { body.replaceChildren(); site.mountCampaigns?.(body, { setStatus, render }); }
     }
 
     function layoutChrome() {
@@ -12552,21 +12577,21 @@ const ExtraPotionsCore = (() => {
     }
 
     function visibleChatToggle() {
-      return [...document.querySelectorAll(TWITCH_CHAT_TOGGLE)].find(node => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden') || document.querySelector(TWITCH_CHAT_TOGGLE);
+      return [...document.querySelectorAll(site.chatToggle)].find(node => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden') || document.querySelector(site.chatToggle);
     }
 
     function positionChatProgressCard() {
       const card=ui?.shadow.getElementById('tdh-drop-card');
       if(!card||card.dataset.progressPlacement==='menu')return false;
-      const content=document.querySelector('.stream-chat .chat-room__content');
+      const content=document.querySelector(site.chatContent);
       // The card takes the place of the Stream Chat title bar (user, 2026-11-13); without one, the top gifters strip.
-      const title=document.querySelector('.stream-chat .stream-chat-header');
+      const title=document.querySelector(site.chatTitle);
       const titleBox=title?.getBoundingClientRect();
       const leaderboard=content?.querySelector('button[aria-label="Previous leaderboard set"],button[aria-label="Expand Top Gifters Leaderboard"],[data-testid="leaderboard-top-three-entry"]');
       let panel=leaderboard;
       while(panel && panel.parentElement!==content)panel=panel.parentElement;
       if(title&&titleBox?.height>0&&titleBox.width>=160&&getComputedStyle(title).display!=='none')panel=title;
-      if(panel===title&&title?.querySelector(TWITCH_CHAT_TOGGLE))card.dataset.chatToggle='1';else delete card.dataset.chatToggle;
+      if(panel===title&&title?.querySelector(site.chatToggle))card.dataset.chatToggle='1';else delete card.dataset.chatToggle;
       const box=panel?.getBoundingClientRect();
       // Twitch's slot can extend a fractional pixel past the layout viewport at zoomed sizes.
       const left=box?Math.max(0,box.left):0,right=box?Math.min(innerWidth,box.right):0;
@@ -12608,7 +12633,7 @@ const ExtraPotionsCore = (() => {
       if (card.dataset.presentation !== "strip") { card.style.removeProperty("visibility"); return; }
       // The open flyout's tile row crosses the chat title bar; the strip steps aside until the flyout closes.
       card.style.setProperty("visibility", document.documentElement.dataset.expFlyoutOpen === "1" ? "hidden" : "visible", "important");
-      const header = document.querySelector(".stream-chat-header");
+      const header = document.querySelector(site.stripHeader);
       const box = header?.getBoundingClientRect();
       const visible = box && box.width >= 160 && box.height >= 24 && box.bottom > 0 && box.top < window.innerHeight && getComputedStyle(header).visibility !== "hidden";
       card.style.setProperty("position", "fixed", "important");
@@ -12641,7 +12666,7 @@ const ExtraPotionsCore = (() => {
         return style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity) !== 0;
       }).map(node => node.getBoundingClientRect()).filter(r => r.width && r.height);
       const launchers = visibleBoxes(launcherNodes);
-      const obstacles = [...visibleBoxes([...document.querySelectorAll(TWITCH_KEEP_CLEAR)]), ...launchers];
+      const obstacles = [...visibleBoxes([...document.querySelectorAll(site.keepClear)]), ...launchers];
       const overlap = (left, top, boxes = obstacles) => boxes.reduce((area, r) => area + Math.max(0, Math.min(left + box.width, r.right) - Math.max(left, r.left)) * Math.max(0, Math.min(top + box.height, r.bottom) - Math.max(top, r.top)), 0);
       if (!overlap(box.left, box.top)) return;
       const maxLeft = Math.max(8, window.innerWidth - box.width - 8);
@@ -12690,6 +12715,7 @@ const ExtraPotionsCore = (() => {
     }
 
     function applySiteColors() {
+      if (!site.twitchControls) return;
       if (ExtraPotionsCore.suiteSitePaused?.()) { siteColors?.clear(); return; }
       siteColors ??= ExtraPotionsCore.createSiteColors({
         product: 'dropper',
@@ -13168,6 +13194,7 @@ const ExtraPotionsCore = (() => {
       refreshDeadline();
       refreshOpenCampaignList();
       renderClaimHistory();
+      if (!site.twitchControls) site.renderCampaigns?.(shadowNode('tdh-drops-body'), lastView);
       updateTitle();
       ui.healthControl?.refresh();
       ExtraPotionsCore.publishSuiteState('dropper', 'dropper.state-changed', {
@@ -13179,7 +13206,7 @@ const ExtraPotionsCore = (() => {
       const card = lastView.card;
       setText('tdh-drop-name', card.rewardName);
       const meta = setText('tdh-drop-meta', `${card.credited} / ${card.required} min`);
-      if (meta) { meta.setAttribute('aria-label', currentDrop ? `${card.credited} of ${card.required} minutes credited by Twitch` : 'Twitch credited progress unknown'); meta.title = card.minutesTitle; }
+      if (meta) { meta.setAttribute('aria-label', currentDrop ? `${card.credited} of ${card.required} minutes credited by ${site.name}` : `${site.name} credited progress unknown`); meta.title = card.minutesTitle; }
       const fill = shadowNode('tdh-drop-fill'), ring = shadowNode('tdh-ring'), bar = fill?.closest('[role=progressbar]');
       if (bar) { if (card.percent == null) bar.removeAttribute('aria-valuenow'); else bar.setAttribute('aria-valuenow', String(card.percent)); }
       if (fill) fill.style.width = `${card.percent ?? 0}%`;
@@ -13510,6 +13537,7 @@ const ExtraPotionsCore = (() => {
 
     // System → Status: Core's timeline asks this for the headline.
     function systemHealthSnapshot() {
+      if (site.health) return site.health();
       const snapshot = controller.snapshot(), checkedAt = drops.snapshot().lastPollAt || null;
       if (ExtraPotionsCore.suiteSitePaused?.() || intent.snapshot().paused) return { state: 'paused', reason: 'Automatic viewing changes are paused. Pending reward confirmation is preserved.', checkedAt };
       if (snapshot.recoveryLoop?.suspended) return { state: 'attention', reason: 'Automatic recovery stopped after repeated stream changes or reloads.', checkedAt, action: { label: 'Resume Recovery', run: () => { controller.resumeRecovery(); render(); } } };
@@ -13535,6 +13563,8 @@ const ExtraPotionsCore = (() => {
     function diagnosticsText() { return JSON.stringify(diagnosticsReport(), null, 2); }
 
     function resetAllDropperData() {
+      // Another site resets only what is its own; Dropper's shared records belong to Twitch (and Dropper S syncs them).
+      if (site.reset) { productResetting = true; site.reset(); location.reload(); return; }
       productResetting = true;
       save({ findNextStream: false, claimDrops: false, claimBonus: false, keepTabActive: false, backgroundEarning: false, restoreChannelPlayer: false, rememberContentWarnings: false });
       contentWarningMemory.dispose?.();
@@ -13579,7 +13609,7 @@ const ExtraPotionsCore = (() => {
       });
       s.getElementById('tdh-claim-history-panel')?.addEventListener('toggle', renderClaimHistory);
       s.getElementById('tdh-open-campaigns')?.addEventListener('toggle', event => { if (event.currentTarget.open) { render(); requestGqlPoll('open-campaign-list', false); } });
-      s.getElementById('tdh-twitch-login')?.addEventListener('click', () => { openOutside(TWITCH_LOGIN_URL); setStatus('Finish Twitch login, then return to Dropper'); setTimeout(render, 1500); });
+      s.getElementById('tdh-twitch-login')?.addEventListener('click', () => { openOutside(site.loginUrl); setStatus('Finish Twitch login, then return to Dropper'); setTimeout(render, 1500); });
       s.getElementById('tdh-account-link-open')?.addEventListener('click', () => { openOutside(TWITCH_CONNECTIONS_URL); setStatus('Open Twitch connections and link the required game account'); });
       const inventory = s.getElementById('tdh-compact-inventory');
       s.getElementById('tdh-toggle-inventory')?.addEventListener('click', event => {
@@ -13614,8 +13644,8 @@ const ExtraPotionsCore = (() => {
         });
       }
       const strategy = s.getElementById('tdh-campaign-strategy');
-      strategy.value = store.settings().campaignStrategy;
-      strategy.addEventListener('change', () => {
+      if (strategy) strategy.value = store.settings().campaignStrategy;
+      strategy?.addEventListener('change', () => {
         save({ campaignStrategy: strategy.value });
         const moved = controller.reorder('campaign-order-changed');
         const label = { priority: 'My Priority', deadline: 'Ending Soonest', completion: 'Closest to Completion', shortest: 'Shortest Remaining' }[store.settings().campaignStrategy];
@@ -13653,7 +13683,7 @@ const ExtraPotionsCore = (() => {
   // Wiring and startup: the only file that reads browser globals. It builds every module from the real storages,
   // the userscript manager's functions and the page, then runs the heartbeat. Page reading, tabs, the data layer
   // and the menu are wired here as their modules land (milestone 3).
-  const APP_VERSION = '4.0.2';
+  const APP_VERSION = '4.1.0';
   const HEARTBEAT_MS = 5000;
   const ACTIVITY_LOG_LIMIT = 40;
   const SECRET_META = /token|cookie|auth|password|integrity|secret/i;
@@ -13892,6 +13922,408 @@ const ExtraPotionsCore = (() => {
     return Object.freeze({ start, stop, heartbeat, view, saveSettings, log, sync, bridge, get ui() { return ui; }, campaignsPage, store, twitch, campaigns, controller, intent, page, tabs, drops, claims, version: APP_VERSION });
   }
 
-  const dropper = createDropper();
+  // Kick (kick.com). Dropper's card and menu on Kick: the reward Kick is counting, whether the open stream counts
+  // toward it, a link to Kick's own claim page and a button that opens a stream that counts. Nothing here switches
+  // streams or claims on its own, and Twitch's modules are never built on Kick.
+  //
+  // Only this file talks to Kick: web.kick.com and kick.com/api with the signed-in session (the session_token
+  // cookie as a Bearer token, which is what Kick's own pages send). Kick's caches stay in this tab's session
+  // storage; the only shared value Kick touches is Look (settings), through the store like Twitch.
+  const KICK_API = 'https://web.kick.com/api/v1';
+  const KICK_PROGRESS_MS = 60 * 1000;
+  const KICK_CAMPAIGNS_MS = 10 * 60 * 1000;
+  const KICK_ELIGIBILITY_MS = 5 * 60 * 1000;
+  // Kick adds credited minutes in steps; new minutes within this window read as earning.
+  const KICK_CREDIT_FRESH_MS = 6 * 60 * 1000;
+  const KICK_NEXT_STREAM_CHECKS = 6;
+  const KICK_CLAIM_URL = 'https://kick.com/drops/campaigns';
+  const KICK_IMAGE_BASE = 'https://ext.cdn.kick.com/';
+  // The settings Kick shows (Look); Reset on Kick puts only these back.
+  const KICK_RESET_SETTINGS = Object.freeze(['dropDetails', 'progressInTitle', 'reduceMotion', 'uiTheme']);
+  // A Kick request that stalls must not freeze the card.
+  const KICK_REQUEST_MS = 15 * 1000;
+  // First path segments that are Kick's own pages, not channels.
+  const KICK_RESERVED = new Set(['', 'drops', 'browse', 'following', 'categories', 'category', 'search', 'events', 'settings', 'dashboard', 'subscriptions', 'video', 'videos', 'clips', 'clip', 'login', 'signup', 'kicks', 'messages', 'notifications', 'support', 'about', 'creator', 'terms-of-service', 'privacy-policy', 'community-guidelines', 'dmca-policy', 'api']);
+  const KICK_CHAT_HEADER = '#channel-chatroom > .contents > div:first-child';
+  const KICK_SITE_BASE = Object.freeze({
+    id: 'kick', name: 'Kick', twitchControls: false,
+    chatToggle: `${KICK_CHAT_HEADER} > div:first-child > button`,
+    keepClear: `${KICK_CHAT_HEADER} > div:first-child > button,#injected-channel-player [class*="controls"]`,
+    chatContent: '#channel-chatroom', chatTitle: KICK_CHAT_HEADER, stripHeader: KICK_CHAT_HEADER,
+    chatTargets: '#channel-chatroom,#channel-chatroom > .contents',
+    loginUrl: 'https://kick.com/login',
+  });
+
+  const isKickHost = (hostname = location.hostname) => /(^|\.)kick\.com$/i.test(String(hostname || ''));
+  const kickNumber = value => (Number.isFinite(Number(value)) ? Number(value) : null);
+  const kickList = value => (Array.isArray(value) ? value : []);
+  // The stream-page eligibility answer was empty in the capture, so its campaign ID is read from any of the likely fields.
+  const kickCampaignId = item => cleanText(item?.id || item?.campaign_id || item?.campaign?.id);
+
+  // The channel a Kick address shows, or '' on Kick's own pages.
+  function kickChannelSlug(pathname = location.pathname) {
+    const first = String(pathname || '').split('/').filter(Boolean)[0] || '';
+    const slug = first.toLowerCase();
+    return KICK_RESERVED.has(slug) || !/^[a-z0-9_-]{2,40}$/.test(slug) ? '' : slug;
+  }
+
+  function kickImage(path) {
+    const text = cleanText(path);
+    if (!text) return '';
+    return /^https:\/\//i.test(text) ? text : KICK_IMAGE_BASE + text.replace(/^\/+/, '');
+  }
+
+  // One Kick campaign from the progress list as the reward the card shows: the first reward still short of its
+  // minutes, else the first earned one not yet claimed, else the last one. Kick counts minutes per campaign.
+  function kickReward(campaign, now = Date.now()) {
+    if (!campaign || typeof campaign !== 'object') return null;
+    const rewards = kickList(campaign.rewards);
+    if (!rewards.length) return null;
+    const minutes = Math.max(0, kickNumber(campaign.progress_units) ?? 0);
+    const required = reward => Math.max(0, kickNumber(reward?.required_units) ?? 0);
+    const pick = rewards.find(reward => !reward?.claimed && required(reward) > minutes)
+      || rewards.find(reward => !reward?.claimed)
+      || rewards[rewards.length - 1];
+    const requiredMinutes = required(pick);
+    const currentMinutes = requiredMinutes ? Math.min(minutes, requiredMinutes) : minutes;
+    const endMs = Date.parse(campaign.ends_at || '') || 0;
+    return {
+      id: cleanText(pick.id), name: cleanText(pick.name) || 'Kick Drop', game: cleanText(campaign.category?.name),
+      categoryId: kickNumber(campaign.category?.id), campaignId: cleanText(campaign.id), campaignName: cleanText(campaign.name),
+      currentMinutes, requiredMinutes, percent: requiredMinutes ? progressPercent(currentMinutes, requiredMinutes) : null,
+      remainingMinutes: Math.max(0, requiredMinutes - currentMinutes), rewardImage: kickImage(pick.image_url),
+      isClaimed: Boolean(pick.claimed), endAt: cleanText(campaign.ends_at), ended: Boolean(endMs && endMs <= now),
+      connectUrl: cleanText(campaign.connect_url), connected: campaign.user_app_connected !== false || !cleanText(campaign.connect_url),
+    };
+  }
+
+  // Earned rewards Kick has not marked claimed, across every campaign in the progress list.
+  function kickUnclaimed(progress) {
+    const out = [];
+    for (const campaign of kickList(progress)) {
+      const minutes = kickNumber(campaign?.progress_units) ?? 0;
+      for (const reward of kickList(campaign?.rewards)) {
+        const required = kickNumber(reward?.required_units) ?? 0;
+        if (!reward?.claimed && required > 0 && minutes >= required) out.push({ name: cleanText(reward.name) || 'Kick Drop', game: cleanText(campaign.category?.name), campaign: cleanText(campaign.name) });
+      }
+    }
+    return out;
+  }
+
+  // Which reward the card follows: one the open stream counts toward first, then the one closest to done.
+  function kickPickCampaign(progress, eligibleIds = null, now = Date.now()) {
+    const open = kickList(progress).filter(campaign => {
+      const reward = kickReward(campaign, now);
+      return reward && !reward.ended && !(reward.isClaimed && reward.currentMinutes >= reward.requiredMinutes);
+    });
+    const rank = list => [...list].sort((a, b) => (kickReward(b, now).percent ?? 0) - (kickReward(a, now).percent ?? 0));
+    if (eligibleIds?.size) { const counting = rank(open.filter(campaign => eligibleIds.has(cleanText(campaign.id)))); if (counting.length) return counting[0]; }
+    return rank(open)[0] || null;
+  }
+
+  // Kick's daily watch rewards (the Daily Reward chest, the Sunset Reward Case with GTA VI copies): minutes watched on
+  // any stream today toward a case the viewer opens on Kick. Same shape as a Drops reward, marked as a challenge.
+  function kickChallengeReward(challenge, now = Date.now()) {
+    const condition = challenge?.condition;
+    if (!challenge || condition?.type !== 'watch_time_minutes') return null;
+    const required = Math.max(0, kickNumber(condition.threshold) ?? 0), minutes = Math.max(0, kickNumber(condition.progress) ?? 0);
+    const endMs = Date.parse(challenge.active_period?.ends_at || '') || 0;
+    if (!required || (endMs && endMs <= now)) return null;
+    const id = `challenge:${cleanText(challenge.id)}`, name = cleanText(challenge.name) || 'Daily Reward', currentMinutes = Math.min(minutes, required);
+    return {
+      id, name, game: 'Any Stream', campaignId: id, campaignName: name, currentMinutes, requiredMinutes: required,
+      percent: progressPercent(currentMinutes, required), remainingMinutes: required - currentMinutes, rewardImage: '',
+      // Kick's word for an opened case is not known yet; a status that mentions claiming or opening counts.
+      isClaimed: /claim|open|redeem/i.test(cleanText(challenge.status)), endAt: cleanText(challenge.window?.ends_at), ended: false,
+      featured: Boolean(challenge.featured), challenge: true, connected: true,
+    };
+  }
+  const kickDone = reward => Boolean(reward && reward.requiredMinutes > 0 && reward.currentMinutes >= reward.requiredMinutes);
+
+  // What the card follows: a Drops campaign this stream counts toward, else a daily case still to earn (any stream
+  // counts, the featured one first), else the Drops campaign closest to done, else a case earned but not opened.
+  function kickPickTarget(progress, challenges, eligibleIds = null, now = Date.now()) {
+    const campaign = kickPickCampaign(progress, eligibleIds, now), drop = kickReward(campaign, now);
+    const cases = kickList(challenges).map(item => kickChallengeReward(item, now)).filter(Boolean).sort((a, b) => Number(b.featured) - Number(a.featured));
+    if (drop && eligibleIds?.has(drop.campaignId)) return { reward: drop, campaign };
+    const toEarn = cases.find(item => !kickDone(item));
+    if (toEarn) return { reward: toEarn, campaign: null };
+    if (drop) return { reward: drop, campaign };
+    const toOpen = cases.find(item => !item.isClaimed);
+    return toOpen ? { reward: toOpen, campaign: null } : { reward: null, campaign: null };
+  }
+
+  // The card's label for Kick, in the same words Twitch uses where they mean the same thing.
+  function kickCardState({ loggedIn, reward, onChannel, live, eligibility, creditedAt = 0, now = Date.now() }) {
+    if (!loggedIn) return ['Login required', 'warn'];
+    if (reward && reward.requiredMinutes > 0 && reward.currentMinutes >= reward.requiredMinutes) return [reward.isClaimed ? 'Claimed ✓' : 'Earned', 'good'];
+    if (!reward) return ['Idle', ''];
+    if (!onChannel) return ['Waiting', ''];
+    if (live === false) return ['Waiting', 'warn'];
+    if (eligibility === 'no') return ['Not counting', 'warn'];
+    if (eligibility === 'yes') return creditedAt && now - creditedAt < KICK_CREDIT_FRESH_MS ? ['Earning', 'good'] : ['Syncing', 'warn'];
+    return ['Syncing', 'warn'];
+  }
+
+  function kickStatusText({ loggedIn, reward, onChannel, live, eligibility, unclaimed }) {
+    if (!loggedIn) return 'Sign in to Kick to see your Drops progress.';
+    if (unclaimed) return `${unclaimed} earned reward${unclaimed === 1 ? '' : 's'} to claim or open on Kick's Drops page.`;
+    if (!reward) return 'No Kick Drops campaign in progress.';
+    if (!onChannel) return reward.challenge ? `Watch any live stream for ${reward.campaignName}.` : `Open a stream that counts toward ${reward.campaignName || 'this campaign'}.`;
+    if (live === false) return 'This channel is offline.';
+    if (eligibility === 'no') return `This stream does not count toward ${reward.campaignName || 'this campaign'}.`;
+    if (eligibility === 'yes') return reward.challenge ? `Any live stream counts toward ${reward.campaignName}. Kick decides credit.` : `This stream counts toward ${reward.campaignName || 'this campaign'}. Kick decides credit.`;
+    return 'Checking whether this stream counts.';
+  }
+
+  // Kick's API through the page's own fetch, as Kick's pages call it.
+  function createKickClient({ pageFetch, cookie, log = () => {} }) {
+    const token = () => cleanText(cookie('session_token'));
+    async function json(url, { auth = true } = {}) {
+      if (typeof pageFetch !== 'function') throw new Error('No fetch on this page');
+      const headers = { Accept: 'application/json' };
+      if (auth) { const value = token(); if (!value) throw Object.assign(new Error('Not signed in to Kick'), { code: 'login' }); headers.Authorization = `Bearer ${value}`; }
+      const response = await pageFetch(url, { headers, credentials: 'omit', signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(KICK_REQUEST_MS) : undefined });
+      if (response.status === 401 || response.status === 403) throw Object.assign(new Error(`Kick refused (${response.status})`), { code: 'login' });
+      if (!response.ok) throw new Error(`Kick answered ${response.status}`);
+      return response.json();
+    }
+    const data = body => body?.data;
+    return Object.freeze({
+      signedIn: () => Boolean(token()),
+      progress: async () => kickList(data(await json(`${KICK_API}/drops/progress`))),
+      campaigns: async () => kickList(data(await json(`${KICK_API}/drops/campaigns`))),
+      challenges: async () => kickList(data(await json(`${KICK_API}/gamification/challenges`))),
+      // The campaigns this stream counts toward, as Kick's stream page asks.
+      counting: async (channelId, categoryId) => kickList(data(await json(`${KICK_API}/drops/campaigns/livestream?channel_id=${encodeURIComponent(channelId)}&category_id=${encodeURIComponent(categoryId)}`))),
+      channel: async slug => {
+        const body = await json(`https://kick.com/api/v2/channels/${encodeURIComponent(slug)}/info`, { auth: false });
+        const stream = body?.livestream || null, category = kickList(stream?.categories)[0] || null;
+        return { id: kickNumber(body?.id), slug: cleanText(body?.slug) || slug, live: Boolean(stream?.is_live), categoryId: kickNumber(category?.id), category: cleanText(category?.name) };
+      },
+      liveInCategory: async categoryId => {
+        const body = await json(`${KICK_API}/livestreams?limit=24&sort=viewer_count_desc&category_id=${encodeURIComponent(categoryId)}`);
+        return kickList(body?.data?.livestreams).map(item => ({ slug: cleanText(item?.channel?.slug || item?.channel?.user?.username), viewers: kickNumber(item?.viewer_count) || 0 })).filter(item => item.slug);
+      },
+      log,
+    });
+  }
+
+  function createKickDropper({ pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window } = {}) {
+    const gm = typeof GM_getValue === 'function' && typeof GM_setValue === 'function' ? { get: GM_getValue, set: GM_setValue } : null;
+    const pageStorage = read => { try { return read() || null; } catch (_) { return null; } };
+    const local = pageStorage(() => localStorage), session = pageStorage(() => sessionStorage);
+    const store = createStore({ local, session, gm, cookie: readCookie });
+    function log(type, message, meta = null) {
+      const entry = { at: Date.now(), type: cleanText(type || 'info').slice(0, 32), message: cleanText(message || '').slice(0, 240), meta: meta ? sanitizeMeta(meta) : null };
+      const list = store.session.get('activityLog', []);
+      store.session.set('activityLog', [...(Array.isArray(list) ? list : []), entry].slice(-ACTIVITY_LOG_LIMIT));
+      return entry;
+    }
+    const kick = createKickClient({ pageFetch: typeof pageWindow.fetch === 'function' ? pageWindow.fetch.bind(pageWindow) : null, cookie: readCookie, log });
+    const state = {
+      progress: [], challenges: [], campaigns: [], progressAt: 0, campaignsAt: 0, error: '', loginNeeded: false,
+      slug: '', channel: null, channelFor: '', counting: null, countingAt: 0, countingFor: '',
+      credit: { id: '', minutes: null, at: 0 }, searching: false, notice: '',
+    };
+    let ui = null, timer = 0, busy = false;
+    const changed = () => ui?.render();
+
+    async function refreshProgress(force = false) {
+      if (!force && (document.hidden || Date.now() - state.progressAt < KICK_PROGRESS_MS)) return;
+      state.progressAt = Date.now();
+      try {
+        state.progress = await kick.progress();
+        state.error = ''; state.loginNeeded = false;
+        try { state.challenges = await kick.challenges(); } catch (error) { log('kick-challenges', cleanText(error?.message || error)); }
+      } catch (error) {
+        state.error = cleanText(error?.message || error); state.loginNeeded = error?.code === 'login';
+        log('kick-progress', state.error);
+      }
+      noteCredit();
+    }
+    async function refreshCampaigns(force = false) {
+      if (!force && Date.now() - state.campaignsAt < KICK_CAMPAIGNS_MS) return;
+      state.campaignsAt = Date.now();
+      try { state.campaigns = await kick.campaigns(); } catch (error) { log('kick-campaigns', cleanText(error?.message || error)); }
+    }
+    // The open channel, then which campaigns Kick says it counts toward.
+    async function refreshChannel() {
+      const slug = kickChannelSlug();
+      if (slug !== state.slug) { state.slug = slug; state.channel = null; state.channelFor = ''; state.counting = null; state.countingFor = ''; }
+      if (!slug) return;
+      if (state.channelFor !== slug) {
+        state.channelFor = slug;
+        try { state.channel = await kick.channel(slug); } catch (error) { state.channel = null; log('kick-channel', cleanText(error?.message || error), { slug }); return; }
+      }
+      const channel = state.channel;
+      if (!channel?.id || !channel.live || !channel.categoryId) return;
+      const key = `${channel.id}:${channel.categoryId}`;
+      if (state.countingFor === key && Date.now() - state.countingAt < KICK_ELIGIBILITY_MS) return;
+      state.countingFor = key; state.countingAt = Date.now();
+      try { state.counting = new Set((await kick.counting(channel.id, channel.categoryId)).map(kickCampaignId).filter(Boolean)); }
+      catch (error) { state.counting = null; log('kick-counting', cleanText(error?.message || error), { slug }); }
+    }
+    function noteCredit() {
+      const { reward } = kickPickTarget(state.progress, state.challenges, state.counting);
+      const id = reward?.campaignId || '', minutes = reward ? kickNumber(reward.currentMinutes) : null;
+      if (id !== state.credit.id) state.credit = { id, minutes, at: 0 };
+      else if (minutes != null && state.credit.minutes != null && minutes > state.credit.minutes) state.credit = { id, minutes, at: Date.now() };
+      else if (minutes != null && state.credit.minutes == null) state.credit.minutes = minutes;
+    }
+
+    async function heartbeat(force = false) {
+      if (busy) return;
+      busy = true;
+      try {
+        await refreshChannel();
+        await refreshProgress(force);
+        await refreshCampaigns(force);
+      } finally { busy = false; }
+      ui?.heartbeat();
+      changed();
+    }
+
+    // What the card and menu show now.
+    function snapshot() {
+      const at = Date.now(), loggedIn = kick.signedIn() && !state.loginNeeded;
+      const { campaign, reward } = kickPickTarget(state.progress, state.challenges, state.counting, at);
+      const onChannel = Boolean(state.slug), live = state.channel ? state.channel.live : null;
+      // A daily case counts on any live stream; a Drops campaign only where Kick says so.
+      const eligibility = !reward || !onChannel ? '' : reward.challenge ? (live ? 'yes' : '') : !state.counting ? '' : state.counting.has(reward.campaignId) ? 'yes' : 'no';
+      const creditedAt = reward && state.credit.id === reward.campaignId ? state.credit.at : 0;
+      const unclaimed = [...kickUnclaimed(state.progress), ...kickList(state.challenges).map(item => kickChallengeReward(item, at)).filter(item => kickDone(item) && !item.isClaimed).map(item => ({ name: item.name, game: 'Any Stream', campaign: item.name }))];
+      return { at, loggedIn, campaign, reward, onChannel, live, eligibility, creditedAt, unclaimed };
+    }
+    function view() {
+      const now = snapshot(), settings = store.settings();
+      const cardOverride = kickCardState({ ...now, now: now.at });
+      const status = state.notice || kickStatusText({ ...now, unclaimed: now.unclaimed.length });
+      return buildView({
+        now: now.at, loggedIn: now.loggedIn, settings, controller: { state: now.eligibility === 'yes' ? 'earning' : 'idle' }, reward: now.reward,
+        intent: {}, channel: state.channel?.slug || state.slug, game: state.channel?.category || '', lastPollAt: state.progressAt, status,
+        background: document.hidden, site: 'Kick', cardOverride, creditedAt: now.creditedAt,
+        deadline: now.reward?.endAt ? { minutesUntilDeadline: (Date.parse(now.reward.endAt) - now.at) / 60000, requiredMinutes: now.reward.remainingMinutes } : null,
+      });
+    }
+
+    // Open Next Stream: a live channel Kick says counts toward the followed campaign. The viewer presses it.
+    async function openNextStream() {
+      const { reward } = snapshot();
+      if (!reward || state.searching) return;
+      state.searching = true; state.notice = `Looking for a stream that counts toward ${reward.campaignName}…`; changed();
+      try {
+        const listed = kickList(state.campaigns.find(item => cleanText(item?.id) === reward.campaignId)?.channels).map(item => cleanText(item?.slug || item?.user?.username)).filter(Boolean);
+        const candidates = listed.length ? listed : reward.categoryId ? (await kick.liveInCategory(reward.categoryId)).map(item => item.slug) : [];
+        for (const slug of candidates.filter(slug => slug !== state.slug).slice(0, KICK_NEXT_STREAM_CHECKS)) {
+          const channel = await kick.channel(slug).catch(() => null);
+          if (!channel?.live || !channel.id || !channel.categoryId) continue;
+          const counts = await kick.counting(channel.id, channel.categoryId).catch(() => []);
+          if (!counts.some(item => kickCampaignId(item) === reward.campaignId)) continue;
+          log('kick-next-stream', `Opening ${channel.slug}`, { campaign: reward.campaignName });
+          location.assign(`https://kick.com/${channel.slug}`);
+          return;
+        }
+        state.notice = `No live stream found that counts toward ${reward.campaignName}. Try again later.`;
+      } catch (error) {
+        state.notice = cleanText(error?.message || error);
+      } finally { state.searching = false; changed(); setTimeout(() => { state.notice = ''; changed(); }, 60 * 1000); }
+    }
+
+    // The Campaigns drawer on Kick: status, the two buttons and the campaigns in progress.
+    const site = Object.freeze({
+      ...KICK_SITE_BASE,
+      mountCampaigns(body) {
+        const status = Object.assign(document.createElement('div'), { className: 'campaign-manager-note', id: 'tdh-kick-status' });
+        status.setAttribute('role', 'status');
+        const actions = Object.assign(document.createElement('div'), { className: 'action-pair action-stack' });
+        const claim = Object.assign(document.createElement('button'), { type: 'button', className: 'life-btn', id: 'tdh-kick-claim', textContent: 'Claim on Kick' });
+        const next = Object.assign(document.createElement('button'), { type: 'button', className: 'life-btn', id: 'tdh-kick-next', textContent: 'Open Next Stream' });
+        claim.dataset.expPrimary = '1';
+        claim.addEventListener('click', () => { try { window.open(KICK_CLAIM_URL, '_blank', 'noopener'); } catch (_) { location.assign(KICK_CLAIM_URL); } });
+        next.addEventListener('click', openNextStream);
+        actions.append(claim, next);
+        const list = Object.assign(document.createElement('div'), { className: 'campaign-game-list', id: 'tdh-kick-campaigns' });
+        body.append(status, actions, list);
+      },
+      renderCampaigns(body, current) {
+        if (!body) return;
+        const now = snapshot();
+        const status = body.querySelector('#tdh-kick-status'), claim = body.querySelector('#tdh-kick-claim'), next = body.querySelector('#tdh-kick-next'), list = body.querySelector('#tdh-kick-campaigns');
+        if (status) status.textContent = current?.status.detail || '';
+        if (claim) claim.hidden = !now.unclaimed.length;
+        if (next) { next.hidden = !now.loggedIn || !now.reward || now.reward.challenge || now.eligibility === 'yes'; next.disabled = state.searching; }
+        if (!list) return;
+        const cases = kickList(state.challenges).map(item => kickChallengeReward(item, now.at)).filter(Boolean).sort((a, b) => Number(b.featured) - Number(a.featured));
+        const caseRows = cases.map(reward => {
+          const row = Object.assign(document.createElement('div'), { className: 'campaign-game-row' });
+          const copy = Object.assign(document.createElement('div'), { className: 'campaign-game-copy' });
+          const progressText = reward.isClaimed ? 'Opened' : kickDone(reward) ? 'Ready to open on Kick' : `${reward.currentMinutes} / ${reward.requiredMinutes} min today`;
+          copy.append(
+            Object.assign(document.createElement('div'), { className: 'campaign-game-name', textContent: `${reward.name} · Any Stream` }),
+            Object.assign(document.createElement('div'), { className: 'campaign-game-meta', textContent: `${progressText} · Resets ${campaignEndLabel(reward.endAt, 0, now.at).replace(/^Ends /, '')}` }),
+          );
+          row.append(copy);
+          return row;
+        });
+        const rows = kickList(state.progress).map(campaign => ({ campaign, reward: kickReward(campaign, now.at) })).filter(item => item.reward && !item.reward.ended);
+        list.replaceChildren(...caseRows, ...(rows.length ? rows.map(({ campaign, reward }) => {
+          const row = Object.assign(document.createElement('div'), { className: 'campaign-game-row' });
+          const copy = Object.assign(document.createElement('div'), { className: 'campaign-game-copy' });
+          copy.append(
+            Object.assign(document.createElement('div'), { className: 'campaign-game-name', textContent: `${reward.campaignName}${reward.game ? ` · ${reward.game}` : ''}` }),
+            Object.assign(document.createElement('div'), { className: 'campaign-game-meta', textContent: `${reward.name} · ${reward.currentMinutes} / ${reward.requiredMinutes} min · ${campaignEndLabel(campaign.ends_at, 0, now.at)}${reward.connected ? '' : ' · Link your game account on Kick'}` }),
+          );
+          row.append(copy);
+          return row;
+        }) : caseRows.length ? [] : [Object.assign(document.createElement('div'), { className: 'campaign-manager-note', textContent: state.error && !state.progress.length ? 'Kick campaigns unavailable. Retrying.' : 'No Kick campaigns in progress. Watching a stream in a Drops campaign starts one.' })]));
+      },
+      // Reset on Kick: Look back to its defaults and Kick's own caches in this tab. Game choices, priorities and claim
+      // history live in storage Twitch shares (and Dropper S syncs), so they are left alone.
+      reset() {
+        store.saveSettings(Object.fromEntries(KICK_RESET_SETTINGS.map(key => [key, SETTING_DEFAULTS[key]])));
+        store.session.remove('activityLog');
+      },
+      health() {
+        const now = snapshot(), checkedAt = state.progressAt || null;
+        if (!now.loggedIn) return { state: 'attention', reason: 'Sign in to Kick to see Drops progress.', checkedAt };
+        if (now.eligibility === 'yes' && now.creditedAt && now.at - now.creditedAt < KICK_CREDIT_FRESH_MS) return { state: 'working', reason: 'Kick has recently credited reward progress.', checkedAt };
+        return { state: 'waiting', reason: kickStatusText({ ...now, unclaimed: now.unclaimed.length }), checkedAt };
+      },
+    });
+
+    // The menu's Twitch modules, as inert stand-ins: their controls are not on Kick's menu.
+    const controller = { snapshot: () => ({ state: snapshot().eligibility === 'yes' ? 'earning' : 'idle' }), tick() {}, skipStream() { return false; }, reorder() { return {}; }, resumeRecovery() {}, earningConfirmed: () => false, clearSkipped() {} };
+    const drops = { snapshot: () => ({ lastPollAt: state.progressAt, lastError: state.error }), prepend() {}, append() {} };
+    const claims = { summary: () => '', ledger: () => [] };
+    const page = { warnings: { clear: () => false, process() {} }, sync() {}, resume: () => false, restorePlayer: () => false, login: () => state.slug };
+    const tabs = { peers: () => [], chooseForSwitching() {} };
+    const intent = { snapshot: () => ({}), allowSwitching() {}, pause() {} };
+    const campaigns = { rows: () => [], open: () => [], moveGame: () => ({}), ignoreGame: () => false };
+    function saveSettings(patch) { const after = store.saveSettings(patch); ui?.render(); return after; }
+
+    function boot() {
+      ui = createUi({
+        store, controller, drops, claims, page, tabs, intent, campaigns, view, saveSettings, log, site,
+        notify: text => { state.notice = cleanText(text); setTimeout(() => { if (state.notice === cleanText(text)) { state.notice = ''; changed(); } }, 60 * 1000); },
+        poll: () => heartbeat(true),
+      });
+      ui.mount();
+      log('lifecycle', `Dropper ${APP_VERSION} started on Kick`);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) heartbeat(true); });
+      heartbeat(true);
+      timer = setInterval(() => heartbeat(false), HEARTBEAT_MS);
+    }
+    function start() {
+      if (timer) return;
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true }); else boot();
+    }
+    function stop() { clearInterval(timer); timer = 0; }
+    window.dropperShow = () => ui?.open();
+    window.dropperDebug = () => ui?.diagnostics() || null;
+    return Object.freeze({ site: 'kick', start, stop, heartbeat, view, snapshot, saveSettings, log, store, kick, state, openNextStream, sync: null, get ui() { return ui; }, version: APP_VERSION });
+  }
+
+  const dropper = isKickHost() ? createKickDropper() : createDropper();
   dropper.start();
 })();

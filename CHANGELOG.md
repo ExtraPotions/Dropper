@@ -1,3 +1,10 @@
+## 4.1.0 — 2026-11-14
+
+- Dropper works on Kick: the card shows your Drops progress in place of the Chat title bar and says whether the stream counts.
+- On Kick, Open Next Stream opens a live stream Kick says counts, and Claim on Kick opens Kick's Drops page.
+- Kick's daily watch rewards, including the Sunset Reward Case, show today's minutes.
+- Built on Core 3.17.3.
+
 ## 4.0.2 — 2026-11-14
 
 - The one-line card (Drop Details off) has its own Menu button.
