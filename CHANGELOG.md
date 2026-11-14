@@ -1,3 +1,8 @@
+## 4.0.2 — 2026-11-14
+
+- The one-line card (Drop Details off) has its own Menu button.
+- The Dropper gem is purple throughout. Built on Core 3.17.2.
+
 ## 4.0.1 — 2026-11-13
 
 - Release notes show in full in the changelog card.

@@ -14,7 +14,7 @@ Stream switching starts at **Follow Campaign Order** in the first eligible tab. 
 
 ## Features and controls
 
-- **Track progress:** see credited watch time for the current reward on a compact card. On a channel page the card sits in place of the Stream Chat title bar, and the menu opens from its edge. Turn off **Look → Drop Details** for a one-line card with the channel, game and percentage. **Hide Chat** on the card collapses Twitch chat, and Twitch's Expand Chat reopens it. Pause or Resume reflects your viewing intent; Skip asks you to press it again. Twitch decides eligibility and credit.
+- **Track progress:** see credited watch time for the current reward on a compact card. On a channel page the card sits in place of the Stream Chat title bar, and the menu opens from its edge. Turn off **Look → Drop Details** for a one-line card with the channel, game, percentage and **Menu**. **Hide Chat** on the card collapses Twitch chat, and Twitch's Expand Chat reopens it. Pause or Resume reflects your viewing intent; Skip asks you to press it again. Twitch decides eligibility and credit.
 - **Check eligibility:** see whether the stream you are watching matches the campaign: account, campaign, reward, game, and stream.
 - **Keep rewards in reach:** browse campaigns, review your history, and open your Drops inventory from the menu.
 - **Choose your games:** follow the games you care about and ignore the rest.

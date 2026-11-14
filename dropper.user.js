@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      4.0.1
+// @version      4.0.2
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -58,7 +58,7 @@ const CHARCOAL = Object.freeze({
 // Each product's badge colour, tuned to 4.5:1 on the panel in that mode.
 const PRODUCT_ACCENTS = Object.freeze({
   dropper: Object.freeze({light:'#862ff1',dark:'#a869f5'}),
-  ward: Object.freeze({light:'#8e5c05',dark:'#f6a313'}),
+  ward: Object.freeze({light:'#0d7246',dark:'#1fbf7a'}),
   thread: Object.freeze({light:'#bd3300',dark:'#ff4500'}),
 });
 function productPalette(product, mode) {
@@ -2516,7 +2516,7 @@ const ExpLauncherFlyout = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.17.1';
+  const version = '3.17.2';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -10987,6 +10987,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(['3.4.43', '3.4.30', '3.4.27', '3.4.26']);
   const RELEASE_NOTES = {
+    '4.0.2': ["The one-line card (Drop Details off) has its own Menu button.", "The Dropper gem is purple throughout. Built on Core 3.17.2."],
     '4.0.1': ["Release notes show in full in the changelog card.", "Built on Core 3.17.1."],
     '4.0.0': ["Dropper is rebuilt from the ground up; your settings, priorities and claim history carry over.", "The progress card stays in view in place of the Stream Chat title bar, and the menu opens from its edge like a file cabinet.", "Turn off Drop Details in Look for a one-line card. Hide Chat on the card collapses Twitch chat, and Expand Chat stays in reach.", "Labels are in Title Case. Built on Core 3.17.0."],
   };
@@ -11821,7 +11822,15 @@ const ExtraPotionsCore = (() => {
         .cluster #tdh-drop-card[data-chat-toggle="1"]:not(.is-expanded) .chat-collapse{display:grid!important;place-items:center!important;position:absolute!important;left:4px!important;top:7px!important;width:26px!important;height:26px!important;padding:0!important;margin:0!important;border:0!important;border-radius:6px!important;background:transparent!important;color:var(--theme-text)!important;cursor:pointer!important;z-index:6!important}
         .cluster #tdh-drop-card[data-chat-toggle="1"] .chat-collapse:is(:hover,:focus-visible){background:var(--theme-inset)!important;outline:none!important;box-shadow:0 0 0 2px var(--theme-focus,var(--theme-accent))!important}
         .cluster #tdh-drop-card[data-chat-toggle="1"] .chat-collapse svg{width:16px!important;height:16px!important}
-        .cluster #tdh-drop-card[data-chat-toggle="1"]:not(.is-expanded)[data-presentation="compact-card"][data-progress-placement="outside"]:not([data-collapsed="true"]) .progress-copy{grid-template-columns:36px auto minmax(0,1fr) auto 46px!important}
+        /* The one-line card (Drop Details off) has its own Menu button in place of the drawer handle. */
+        .cluster #tdh-drop-card .strip-menu{display:none}
+        .cluster #tdh-drop-card:not(.is-expanded)[data-presentation="compact-card"][data-progress-placement="outside"]:not([data-collapsed="true"]) .strip-toggle::after{display:none!important}
+        .cluster #tdh-drop-card:not(.is-expanded)[data-presentation="compact-card"][data-progress-placement="outside"]:not([data-collapsed="true"]) .progress-copy{grid-template-columns:10px auto minmax(0,1fr) auto 58px!important}
+        .cluster #tdh-drop-card:not(.is-expanded)[data-presentation="compact-card"][data-progress-placement="outside"]:not([data-collapsed="true"]) .strip-menu{display:block!important;position:absolute!important;right:6px!important;top:7px!important;z-index:6!important;box-sizing:border-box!important;height:26px!important;margin:0!important;padding:0 8px!important;border:1px solid color-mix(in srgb,var(--theme-line) 60%,transparent)!important;border-radius:6px!important;background:var(--theme-panel,#1f1f23)!important;color:var(--theme-text)!important;font:400 11px/1.35 "Segoe UI",sans-serif!important;cursor:pointer!important;white-space:nowrap!important}
+        @media(pointer:coarse){.cluster #tdh-drop-card:not(.is-expanded)[data-presentation="compact-card"][data-progress-placement="outside"]:not([data-collapsed="true"]) .strip-menu{height:32px!important;top:5px!important}}
+        .cluster #tdh-drop-card .strip-menu:hover{background:var(--theme-inset)!important}
+        .cluster #tdh-drop-card .strip-menu:focus-visible{outline:2px solid var(--theme-focus,var(--theme-accent))!important;outline-offset:1px!important}
+        .cluster #tdh-drop-card[data-chat-toggle="1"]:not(.is-expanded)[data-presentation="compact-card"][data-progress-placement="outside"]:not([data-collapsed="true"]) .progress-copy{grid-template-columns:36px auto minmax(0,1fr) auto 58px!important}
         .cluster #tdh-drop-card .card-head-actions{display:none}
         .cluster #tdh-drop-card[data-cabinet] .card-head-actions{display:flex!important;position:absolute!important;top:0!important;right:6px!important;height:41px!important;align-items:center!important;gap:2px!important;z-index:6!important}
         .cluster #tdh-drop-card[data-cabinet] .card-head-actions .header-actions{display:flex!important;align-items:center!important;gap:2px!important}
@@ -11852,7 +11861,7 @@ const ExtraPotionsCore = (() => {
     }
 
     function dropperGemSvg(className) {
-      return `<svg class="${className}" viewBox="0 0 128 128" aria-hidden="true"><polygon points="29.00,24.00 62.00,24.00 62.00,40.20 47.90,40.20" fill="#D9B5FF"/><polygon points="66.00,24.00 99.00,24.00 80.10,40.20 66.00,40.20" fill="#AEB0C2"/><polygon points="47.90,40.20 62.00,40.20 62.00,52.29" fill="#8C39F2"/><polygon points="66.00,40.20 80.10,40.20 66.00,52.29" fill="#4E5268"/><polygon points="99.00,24.00 119.00,53.00 89.30,53.54 80.10,40.20" fill="#6A6E87"/><polygon points="80.10,40.20 89.30,53.54 66.00,53.96 66.00,52.29" fill="#3F4254"/><polygon points="119.00,53.00 66.00,111.78 66.00,79.38 89.30,53.54" fill="#4E5268"/><polygon points="89.30,53.54 66.00,79.38 66.00,53.96" fill="#242633"/><polygon points="62.00,111.78 9.00,53.00 38.70,53.54 62.00,79.38" fill="#7428E8"/><polygon points="62.00,79.38 38.70,53.54 62.00,53.96" fill="#7428E8"/><polygon points="9.00,53.00 29.00,24.00 47.90,40.20 38.70,53.54" fill="#5417B3"/><polygon points="38.70,53.54 47.90,40.20 62.00,52.29 62.00,53.96" fill="#9B5AF9"/></svg>`;
+      return `<svg class="${className}" viewBox="0 0 128 128" aria-hidden="true"><polygon points="29.00,24.00 62.00,24.00 62.00,40.20 47.90,40.20" fill="#D9B5FF"/><polygon points="66.00,24.00 99.00,24.00 80.10,40.20 66.00,40.20" fill="#CDBBF0"/><polygon points="47.90,40.20 62.00,40.20 62.00,52.29" fill="#8C39F2"/><polygon points="66.00,40.20 80.10,40.20 66.00,52.29" fill="#5E4A93"/><polygon points="99.00,24.00 119.00,53.00 89.30,53.54 80.10,40.20" fill="#806AB8"/><polygon points="80.10,40.20 89.30,53.54 66.00,53.96 66.00,52.29" fill="#4A3779"/><polygon points="119.00,53.00 66.00,111.78 66.00,79.38 89.30,53.54" fill="#5E4A93"/><polygon points="89.30,53.54 66.00,79.38 66.00,53.96" fill="#2C1F4D"/><polygon points="62.00,111.78 9.00,53.00 38.70,53.54 62.00,79.38" fill="#7428E8"/><polygon points="62.00,79.38 38.70,53.54 62.00,53.96" fill="#7428E8"/><polygon points="9.00,53.00 29.00,24.00 47.90,40.20 38.70,53.54" fill="#5417B3"/><polygon points="38.70,53.54 47.90,40.20 62.00,52.29 62.00,53.96" fill="#9B5AF9"/></svg>`;
     }
 
     function switchHtml(id, label, description, on) {
@@ -12002,6 +12011,7 @@ const ExtraPotionsCore = (() => {
               <button type="button" class="strip-toggle" id="tdh-strip-toggle" aria-controls="tdh-stream-info" aria-expanded="false" aria-label="Show Drop Details"></button>
               <div class="card-head-actions" id="tdh-card-head-actions"></div>
               <button type="button" class="chat-collapse" id="tdh-chat-collapse" aria-label="Hide Chat"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3.5h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5v-2.5H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"></path></svg></button>
+              <button type="button" class="strip-menu" id="tdh-strip-menu" aria-label="Open Dropper Menu">Menu</button>
               <div class="expanded-content">
                 <div class="stream-info" id="tdh-stream-info">
                   <div class="progress-copy">
@@ -12113,6 +12123,8 @@ const ExtraPotionsCore = (() => {
       stripArtImage?.addEventListener("error", () => { stripArtImage.dataset.failed = stripArtImage.getAttribute("src") || ""; stripArtImage.hidden = true; });
       shadow.getElementById('tdh-card-pause')?.addEventListener('click',cardPause);
       shadow.getElementById('tdh-card-menu')?.addEventListener('click',()=>setRailOpen(!railOpen,true));
+      // The one-line card's Menu shows only while the menu is closed, so it only opens.
+      shadow.getElementById('tdh-strip-menu')?.addEventListener('click',()=>setRailOpen(true,true));
       // The card covers the Stream Chat title bar, so it carries Twitch's collapse-chat button for it.
       const hideChat=()=>{if(railOpen)setRailOpen(false);const toggle=visibleChatToggle();restoreChatProgressSlot();toggle?.click();requestAnimationFrame(layoutChrome);};
       for(const id of ['tdh-chat-hide','tdh-chat-collapse'])shadow.getElementById(id)?.addEventListener('click',hideChat);
@@ -13641,7 +13653,7 @@ const ExtraPotionsCore = (() => {
   // Wiring and startup: the only file that reads browser globals. It builds every module from the real storages,
   // the userscript manager's functions and the page, then runs the heartbeat. Page reading, tabs, the data layer
   // and the menu are wired here as their modules land (milestone 3).
-  const APP_VERSION = '4.0.1';
+  const APP_VERSION = '4.0.2';
   const HEARTBEAT_MS = 5000;
   const ACTIVITY_LOG_LIMIT = 40;
   const SECRET_META = /token|cookie|auth|password|integrity|secret/i;
