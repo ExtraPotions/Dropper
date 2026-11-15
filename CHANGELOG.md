@@ -1,3 +1,9 @@
+## 4.1.1 — 2026-11-15
+
+- On Kick, the launcher sits in Kick's top bar, like on Twitch.
+- On Kick, a stream that goes offline and comes back, or changes game, is checked again within a minute, and at once when you return to the tab.
+- Built on Core 3.17.4.
+
 ## 4.1.0 — 2026-11-14
 
 - Dropper works on Kick: the card shows your Drops progress in place of the Chat title bar and says whether the stream counts.

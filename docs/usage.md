@@ -22,11 +22,11 @@ Stream switching starts at **Follow Campaign Order** in the first eligible tab. 
 
 ## Kick
 
-On a Kick channel, the card takes the place of the Chat title bar and shows the reward Kick is counting for you, with credited minutes. **Not counting** means Kick does not credit this stream toward your campaign; **Open Next Stream** in **Campaigns** opens a live stream Kick says counts. When a reward is earned, **Claim on Kick** opens Kick's Drops page, where you claim it. Kick's daily watch rewards, such as the Sunset Reward Case, count on any live stream: **Campaigns** shows today's minutes, and the card follows the featured one when the open stream doesn't count toward a Drops campaign. You open the case on Kick. Stream switching and Settings are Twitch-only. Kick decides eligibility and credit.
+On Kick, the launcher sits in Kick's top bar. On a Kick channel, the card takes the place of the Chat title bar and shows the reward Kick is counting for you, with credited minutes. **Not counting** means Kick does not credit this stream toward your campaign; **Open Next Stream** in **Campaigns** opens a live stream Kick says counts. When a reward is earned, **Claim on Kick** opens Kick's Drops page, where you claim it. Kick's daily watch rewards, such as the Sunset Reward Case, count on any live stream: **Campaigns** shows today's minutes, and the card follows the featured one when the open stream doesn't count toward a Drops campaign. You open the case on Kick. Stream switching and Settings are Twitch-only. Kick decides eligibility and credit; Dropper checks the open stream again every minute, so a stream that goes offline, comes back or changes category is picked up without a reload.
 
 ## Shared menu
 
-Each section is a drawer: opening one closes the others, and the menu reopens on the one you used last. Open **System** for status, diagnostics, troubleshooting and Reset. Menu sizing is in **Look**. With multiple ExtraPotions products on the same page, open the shared launcher and choose a product; on Twitch each product has its own icon in the top bar. Donations are available from the heart on the progress card.
+Each section is a drawer: opening one closes the others, and the menu reopens on the one you used last. Open **System** for status, diagnostics, troubleshooting and Reset. Menu sizing is in **Look**. With multiple ExtraPotions products on the same page, open the shared launcher and choose a product; on Twitch and Kick each product has its own icon in the top bar. Donations are available from the heart on the progress card.
 
 ## Support and verification
 

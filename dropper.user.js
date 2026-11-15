@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      4.1.0
+// @version      4.1.1
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -2518,7 +2518,7 @@ const ExpLauncherFlyout = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.17.3';
+  const version = '3.17.4';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -4051,16 +4051,28 @@ const ExtraPotionsCore = (() => {
   function twitchSlot() {
     const bar = document.querySelector('nav[data-a-target="top-nav-container"] .top-nav__menu');
     if (bar) watchSlotNode(bar);
-    if (!bar || bar.children.length < 3) return null;
+    return bar && bar.children.length >= 3 ? topBarSlot(bar, bar.children[1], bar.children[2], 'input[type="search"],input[data-a-target="tw-input"]') : null;
+  }
+  // Kick: the same place in its wide-window top bar (collapse and logo, centred search, then its icons last).
+  // Narrow windows swap in a different bar, and theater mode hides it; both leave the launcher in the corner.
+  function kickSlot() {
+    const search = 'input[data-testid="search"]';
+    const bar = [...document.querySelectorAll('nav')].find(node => node.querySelector(search) && visibleBox(node)) || null;
+    if (bar) watchSlotNode(bar);
+    const middle = bar && [...bar.children].find(child => child.querySelector(search)), right = bar?.lastElementChild;
+    return middle && right && right !== middle ? topBarSlot(bar, middle, right, search) : null;
+  }
+  // The slot sits between the search box (in `middle`) and the first icon in `iconGroup`.
+  function topBarSlot(bar, middle, iconGroup, searchSelector) {
     const barBox = visibleBox(bar);
     if (!barBox || barBox.height < 40 || barBox.top < -1 || barBox.top > 8) return null;
-    const search = [...bar.children[1].querySelectorAll('input[type="search"],input[data-a-target="tw-input"]')].map(visibleBox).filter(Boolean);
+    const search = [...middle.querySelectorAll(searchSelector)].map(visibleBox).filter(Boolean);
     if (!search.length) return null;
     // Theater mode draws the player over the bar, which keeps its size: the bar must be on top where search is.
     const probe = document.elementFromPoint(search[0].left + search[0].width / 2, search[0].top + search[0].height / 2);
     if (!probe || !bar.contains(probe)) return null;
-    const searchEnd = Math.max(...[...bar.children[1].querySelectorAll('input,button,a')].map(visibleBox).filter(Boolean).map(box => box.right));
-    const icons = [...bar.children[2].querySelectorAll('button,a,input')].map(visibleBox).filter(Boolean);
+    const searchEnd = Math.max(...[...middle.querySelectorAll('input,button,a')].map(visibleBox).filter(Boolean).map(box => box.right));
+    const icons = [...iconGroup.querySelectorAll('button,a,input')].map(visibleBox).filter(Boolean);
     if (!icons.length) return null;
     const right = Math.min(...icons.map(box => box.left)) - 16, left = right - FLYOUT_TILE;
     if (left < searchEnd + 8) return null;
@@ -4095,7 +4107,7 @@ const ExtraPotionsCore = (() => {
     top = Math.max(8, Math.min(innerHeight - size - 8, top));
     return {left:Math.round(left),top:Math.round(top),dock:'right',size,shape:'circle'};
   }
-  const SITE_SLOTS = Object.freeze([{ host:/(^|\.)twitch\.tv$/, find:twitchSlot },{ host:/^(www|sh)\.reddit\.com$/, find:redditSlot }]);
+  const SITE_SLOTS = Object.freeze([{ host:/(^|\.)twitch\.tv$/, find:twitchSlot },{ host:/(^|\.)kick\.com$/, find:kickSlot },{ host:/^(www|sh)\.reddit\.com$/, find:redditSlot }]);
   let slotMemo = null, frozenSlot;
   function siteSlot() {
     // While the flyout is open the launcher stays put, so the open flyout never jumps under the pointer.
@@ -10989,6 +11001,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(['3.4.43', '3.4.30', '3.4.27', '3.4.26']);
   const RELEASE_NOTES = {
+    '4.1.1': ["On Kick, the launcher sits in Kick's top bar, like on Twitch.", "On Kick, a stream that goes offline and comes back, or changes game, is checked again within a minute, and at once when you return to the tab.", "Built on Core 3.17.4."],
     '4.1.0': ["Dropper works on Kick: the card shows your Drops progress in place of the Chat title bar and says whether the stream counts.", "On Kick, Open Next Stream opens a live stream Kick says counts, and Claim on Kick opens Kick's Drops page.", "Kick's daily watch rewards, including the Sunset Reward Case, show today's minutes.", "Built on Core 3.17.3."],
     '4.0.2': ["The one-line card (Drop Details off) has its own Menu button.", "The Dropper gem is purple throughout. Built on Core 3.17.2."],
     '4.0.1': ["Release notes show in full in the changelog card.", "Built on Core 3.17.1."],
@@ -13683,7 +13696,7 @@ const ExtraPotionsCore = (() => {
   // Wiring and startup: the only file that reads browser globals. It builds every module from the real storages,
   // the userscript manager's functions and the page, then runs the heartbeat. Page reading, tabs, the data layer
   // and the menu are wired here as their modules land (milestone 3).
-  const APP_VERSION = '4.1.0';
+  const APP_VERSION = '4.1.1';
   const HEARTBEAT_MS = 5000;
   const ACTIVITY_LOG_LIMIT = 40;
   const SECRET_META = /token|cookie|auth|password|integrity|secret/i;
@@ -13933,6 +13946,8 @@ const ExtraPotionsCore = (() => {
   const KICK_PROGRESS_MS = 60 * 1000;
   const KICK_CAMPAIGNS_MS = 10 * 60 * 1000;
   const KICK_ELIGIBILITY_MS = 5 * 60 * 1000;
+  // A stream ends, restarts or changes category under an open page, so the channel is looked up again this often.
+  const KICK_CHANNEL_MS = 60 * 1000;
   // Kick adds credited minutes in steps; new minutes within this window read as earning.
   const KICK_CREDIT_FRESH_MS = 6 * 60 * 1000;
   const KICK_NEXT_STREAM_CHECKS = 6;
@@ -13943,12 +13958,12 @@ const ExtraPotionsCore = (() => {
   // A Kick request that stalls must not freeze the card.
   const KICK_REQUEST_MS = 15 * 1000;
   // First path segments that are Kick's own pages, not channels.
-  const KICK_RESERVED = new Set(['', 'drops', 'browse', 'following', 'categories', 'category', 'search', 'events', 'settings', 'dashboard', 'subscriptions', 'video', 'videos', 'clips', 'clip', 'login', 'signup', 'kicks', 'messages', 'notifications', 'support', 'about', 'creator', 'terms-of-service', 'privacy-policy', 'community-guidelines', 'dmca-policy', 'api']);
+  const KICK_RESERVED = new Set(['', 'drops', 'browse', 'following', 'categories', 'category', 'search', 'events', 'settings', 'dashboard', 'subscriptions', 'video', 'videos', 'clips', 'clip', 'login', 'signup', 'kicks', 'messages', 'notifications', 'support', 'about', 'creator', 'terms-of-service', 'privacy-policy', 'community-guidelines', 'dmca-policy', 'api', 'collectibles']);
   const KICK_CHAT_HEADER = '#channel-chatroom > .contents > div:first-child';
   const KICK_SITE_BASE = Object.freeze({
     id: 'kick', name: 'Kick', twitchControls: false,
     chatToggle: `${KICK_CHAT_HEADER} > div:first-child > button`,
-    keepClear: `${KICK_CHAT_HEADER} > div:first-child > button,#injected-channel-player [class*="controls"]`,
+    keepClear: `${KICK_CHAT_HEADER} > div:first-child > button,#injected-channel-player [class*="controls"],nav:has(input[data-testid="search"])`,
     chatContent: '#channel-chatroom', chatTitle: KICK_CHAT_HEADER, stripHeader: KICK_CHAT_HEADER,
     chatTargets: '#channel-chatroom,#channel-chatroom > .contents',
     loginUrl: 'https://kick.com/login',
@@ -14123,7 +14138,7 @@ const ExtraPotionsCore = (() => {
     const kick = createKickClient({ pageFetch: typeof pageWindow.fetch === 'function' ? pageWindow.fetch.bind(pageWindow) : null, cookie: readCookie, log });
     const state = {
       progress: [], challenges: [], campaigns: [], progressAt: 0, campaignsAt: 0, error: '', loginNeeded: false,
-      slug: '', channel: null, channelFor: '', counting: null, countingAt: 0, countingFor: '',
+      slug: '', channel: null, channelAt: 0, channelFailed: '', counting: null, countingAt: 0, countingFor: '',
       credit: { id: '', minutes: null, at: 0 }, searching: false, notice: '',
     };
     let ui = null, timer = 0, busy = false;
@@ -14147,19 +14162,25 @@ const ExtraPotionsCore = (() => {
       state.campaignsAt = Date.now();
       try { state.campaigns = await kick.campaigns(); } catch (error) { log('kick-campaigns', cleanText(error?.message || error)); }
     }
-    // The open channel, then which campaigns Kick says it counts toward.
-    async function refreshChannel() {
+    // The open channel, then which campaigns Kick says it counts toward. Both are looked up again while the page
+    // stays open: a stream that ends and comes back, or moves category, gets a fresh answer within a minute.
+    async function refreshChannel(force = false) {
       const slug = kickChannelSlug();
-      if (slug !== state.slug) { state.slug = slug; state.channel = null; state.channelFor = ''; state.counting = null; state.countingFor = ''; }
-      if (!slug) return;
-      if (state.channelFor !== slug) {
-        state.channelFor = slug;
-        try { state.channel = await kick.channel(slug); } catch (error) { state.channel = null; log('kick-channel', cleanText(error?.message || error), { slug }); return; }
+      if (slug !== state.slug) { state.slug = slug; state.channel = null; state.channelAt = 0; state.channelFailed = ''; state.counting = null; state.countingFor = ''; }
+      if (!slug || (!force && document.hidden)) return;
+      if (force || Date.now() - state.channelAt >= KICK_CHANNEL_MS) {
+        state.channelAt = Date.now();
+        try { state.channel = await kick.channel(slug); state.channelFailed = ''; } catch (error) {
+          // A Kick page that is not a channel fails every minute; the activity log notes it once.
+          if (state.channelFailed !== slug) { state.channelFailed = slug; log('kick-channel', cleanText(error?.message || error), { slug }); }
+          if (!state.channel) return;
+        }
       }
       const channel = state.channel;
-      if (!channel?.id || !channel.live || !channel.categoryId) return;
+      // Offline or between categories: no answer is better than the last stream's.
+      if (!channel?.id || !channel.live || !channel.categoryId) { state.counting = null; state.countingFor = ''; return; }
       const key = `${channel.id}:${channel.categoryId}`;
-      if (state.countingFor === key && Date.now() - state.countingAt < KICK_ELIGIBILITY_MS) return;
+      if (!force && state.countingFor === key && Date.now() - state.countingAt < KICK_ELIGIBILITY_MS) return;
       state.countingFor = key; state.countingAt = Date.now();
       try { state.counting = new Set((await kick.counting(channel.id, channel.categoryId)).map(kickCampaignId).filter(Boolean)); }
       catch (error) { state.counting = null; log('kick-counting', cleanText(error?.message || error), { slug }); }
@@ -14176,7 +14197,7 @@ const ExtraPotionsCore = (() => {
       if (busy) return;
       busy = true;
       try {
-        await refreshChannel();
+        await refreshChannel(force);
         await refreshProgress(force);
         await refreshCampaigns(force);
       } finally { busy = false; }
