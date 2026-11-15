@@ -1,4 +1,4 @@
-## 4.1.1 — 2026-11-15
+## 4.1.1 — 2026-11-14
 
 - On Kick, the launcher sits in Kick's top bar, like on Twitch.
 - On Kick, a stream that goes offline and comes back, or changes game, is checked again within a minute, and at once when you return to the tab.
