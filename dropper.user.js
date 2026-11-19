@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      4.1.1
+// @version      4.1.2
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -8925,7 +8925,15 @@ const ExtraPotionsCore = (() => {
         saved.account === storageAccountLogin() && saved.channel === login && saved.manualStream === false && !saved.paused);
     }
 
+    // Every change of the playback hold is logged with what caused it, so a diagnostic shows why Dropper says Paused.
+    function notePauseChange(before, source) {
+      const after = viewingIntent.snapshot();
+      if (Boolean(before?.paused) === Boolean(after.paused)) return;
+      logActivity('playback', after.paused ? 'Playback marked paused' : 'Playback hold cleared', { source, reason: after.pauseReason || before?.pauseReason || '', remounted: videoMountedDuringPause });
+    }
+
     function syncViewingContext() {
+      const before = viewingIntent.snapshot();
       const account = storageAccountLogin();
       if (viewingAccount !== account) resetViewingAccount(account);
       const login = watchingLogin() || '';
@@ -8956,8 +8964,13 @@ const ExtraPotionsCore = (() => {
           // Preserve a known pause through a same-channel player replacement.
           // This does not intercept or replace Twitch's media methods.
           try { video.pause(); } catch (_) {}
+        } else if (held.paused && video.readyState > 1) {
+          // A pause nobody asked for (a stall, an ad changeover) ends when the same player is seen playing, even if
+          // the browser sent no playing event (iPad Safari, 2026-11-19).
+          viewingIntent.resume({ explicit: explicitResume });
         } else viewingIntent.observe(video.readyState > 1 ? 'playing' : 'buffering');
       }
+      notePauseChange(before, 'player-check');
       return viewingIntent.snapshot();
     }
 
@@ -8997,6 +9010,7 @@ const ExtraPotionsCore = (() => {
       const media = event => {
         if (!watchingLogin() || event.target !== streamVideoElement()) return;
         syncViewingContext();
+        const before = viewingIntent.snapshot();
         const explicit = Date.now() - recentPlaybackControl.at < 1500;
         if (event.type === 'pause' && !event.target.ended && !event.target.error) viewingIntent.pause(explicit && recentPlaybackControl.action === 'pause');
         if (event.type === 'playing') {
@@ -9008,6 +9022,7 @@ const ExtraPotionsCore = (() => {
         if (event.type === 'waiting' || event.type === 'stalled') viewingIntent.observe('buffering');
         if (event.type === 'ended') viewingIntent.observe('ended');
         if (event.type === 'error') viewingIntent.observe('error');
+        notePauseChange(before, 'video-' + event.type);
         refreshViewingControls();
         syncScreenWakeLock();
       };
@@ -10234,7 +10249,7 @@ const ExtraPotionsCore = (() => {
     let haveInventory = false;
     const details = new Map(), detailsMisses = new Map(), detailsAttempts = new Map();
     let sessionNote = null, sessionDrop = null, available = [];
-    let lastPollAt = 0, nextPollAt = now() + POLL_STARTUP_QUIET_MS, pendingReason = 'startup', inFlight = false, errorStreak = 0, lastError = '', dashboardAt = 0;
+    let lastPollAt = 0, nextPollAt = now() + POLL_STARTUP_QUIET_MS, pendingReason = 'startup', inFlight = false, errorStreak = 0, lastError = '', dashboardAt = 0, dashboardWithheldAt = 0;
     const target = () => controller()?.snapshot().target || null;
     const isOpen = (campaign, at = now()) => campaigns.state(campaign, null, at).open;
 
@@ -10297,7 +10312,7 @@ const ExtraPotionsCore = (() => {
     // The dashboard replaces catalog membership; rows keep known details and live progress, and page rows for
     // games the dashboard omitted stay selectable.
     function acceptDashboard(list, at) {
-      if (!Array.isArray(list)) return;
+      if (!Array.isArray(list)) return false;
       dashboardAt = at;
       const selected = controller()?.snapshot().target;
       campaigns.retireUnlisted(list, { keep: [...inventory, ...(selected ? [cleanText(selected.campaignKey || selected.campaignId)] : [])] });
@@ -10310,6 +10325,7 @@ const ExtraPotionsCore = (() => {
       // Twitch's own category slugs are trusted, so a slug that cannot be derived from the name still routes (3.x).
       for (const campaign of rows) if (gameOf(campaign) && campaign?.game?.slug) page.rememberSlug?.(gameOf(campaign), campaign.game.slug, 'twitch-gql');
       campaigns.remember(rows, 'viewer-drops-dashboard');
+      return true;
     }
 
     const detailsMissed = (key, at = now()) => { const missedAt = detailsMisses.get(cleanText(key).toLowerCase()) || 0; return Boolean(missedAt && at - missedAt < DETAILS_MISS_TTL_MS); };
@@ -10323,7 +10339,15 @@ const ExtraPotionsCore = (() => {
       const key = cleanText(waiting ? state.waitingFor : selected?.campaignKey || selected?.campaignId).toLowerCase();
       if (!key || /^page:/i.test(key) || detailsMissed(key, at)) return false;
       const campaign = pool(at).find(item => campaignKey(item) === key);
-      if (!campaign?.id) return false;
+      // A campaign the controller waits on is never left waiting silently: no lookup means a logged miss, so routing
+      // moves on to another campaign for 15 minutes.
+      const skip = (why, meta = {}) => {
+        if (!waiting) return false;
+        detailsMisses.set(key, at);
+        log('campaign-details', `No reward details for ${campaign?.name || key}: ${why}`, { campaignKey: key, ...meta });
+        return false;
+      };
+      if (!campaign?.id) return skip('campaign no longer listed');
       const record = dropsOf(campaign).find(drop => String(drop?.id) === String(selected?.id));
       const incomplete = Boolean(!waiting && selected && (!record || !cleanText(record.name || record.benefitEdges?.[0]?.benefit?.name) || !(Number(record.requiredMinutesWatched) > 0)));
       // Twitch credits another reward of the same campaign: one lookup to learn its prerequisites (3.x).
@@ -10332,17 +10356,18 @@ const ExtraPotionsCore = (() => {
       if (waiting && dropsOf(campaign).length && !watchDrops(campaign).length) { detailsMisses.set(key, at); return false; }
       if (at - (detailsAttempts.get(key) ?? -Infinity) < DETAILS_RETRY_MS) return false;
       const viewerId = cleanText(store.session.get('viewerId', ''));
-      if (!/^\d{1,32}$/.test(viewerId)) return false;
+      if (!/^\d{1,32}$/.test(viewerId)) return skip('Twitch account ID not known yet');
       detailsAttempts.set(key, at);
       const asked = context();
-      let detailed = null;
+      let detailed = null, errorCount = 0;
       try {
         const [row] = await twitch.request([{ op: 'dropCampaignDetails', variables: { dropID: String(campaign.id), channelLogin: viewerId } }]);
         const found = row?.data?.user?.dropCampaign || row?.data?.dropCampaign || null;
-        if (found?.id && String(found.id) === String(campaign.id) && !(Array.isArray(row?.errors) && row.errors.length)) detailed = found;
+        errorCount = Array.isArray(row?.errors) ? row.errors.length : 0;
+        if (found?.id && String(found.id) === String(campaign.id) && !errorCount) detailed = found;
       } catch (error) { log('campaign-details', 'DropCampaignDetails skipped', { message: cleanText(error?.message || error) }); return false; }
-      if (!detailed || !Array.isArray(dropsOf(detailed))) return false;
       if (!sameContext(asked)) { log('campaign-details', 'Late reward details ignored', { campaignKey: key }); return false; }
+      if (!detailed || !Array.isArray(dropsOf(detailed))) return skip('Twitch sent no details', { errorCount });
       const found = dropsOf(detailed).length > 0;
       if (found) details.set(key, compactCampaigns(mergeCampaigns([campaign], [detailed]))[0]);
       if (!found || !watchDrops(detailed).length) detailsMisses.set(key, at);
@@ -10400,7 +10425,14 @@ const ExtraPotionsCore = (() => {
         if (!sameContext(asked)) { log('poll', 'Late Drop state ignored after an account or page change', { reason }); return false; }
         let index = 0;
         acceptInventory(rows[index++], at);
-        if (dashboard) acceptDashboard(rows[index++]?.data?.currentUser?.dropCampaigns, at);
+        if (dashboard) {
+          const row = rows[index++];
+          // Twitch can answer with no campaign list and no error (seen 2026-11): logged every 15 minutes at most.
+          if (!acceptDashboard(row?.data?.currentUser?.dropCampaigns, at) && at - dashboardWithheldAt >= DETAILS_MISS_TTL_MS) {
+            dashboardWithheldAt = at;
+            log('poll', 'Twitch sent no campaign list', { currentUser: row?.data?.currentUser === null ? 'null' : typeof row?.data?.currentUser, errorCount: Array.isArray(row?.errors) ? row.errors.length : 0 });
+          }
+        }
         const streamRow = channel ? rows[index++] : null;
         await loadDetails(now());
         if (channel) await loadSession(channel, streamRow?.data?.user?.id ? String(streamRow.data.user.id) : '', now());
@@ -10497,7 +10529,8 @@ const ExtraPotionsCore = (() => {
     return Object.freeze({
       campaigns: pool, inventory: () => inventory, session: () => sessionNote, sessionDrop: () => sessionDrop, available: () => available,
       detailsMissed, poll, heartbeat, request, markClaimed, interval, ingest,
-      snapshot: () => ({ inventoryHealth, haveInventory, lastPollAt, nextPollAt, errorStreak, lastError, dashboardAt, details: details.size, session: sessionNote }),
+      snapshot: () => ({ inventoryHealth, haveInventory, lastPollAt, nextPollAt, errorStreak, lastError, dashboardAt, details: details.size, session: sessionNote,
+        viewerId: /^\d{1,32}$/.test(cleanText(store.session.get('viewerId', ''))), twitch: twitch.snapshot?.() || null }),
     });
   }
 
@@ -11001,6 +11034,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(['3.4.43', '3.4.30', '3.4.27', '3.4.26']);
   const RELEASE_NOTES = {
+    '4.1.2': ["Recovers when Twitch sends no campaign list: a campaign whose reward details never arrive is skipped instead of waited on.", "Playback is read correctly on iPad: a pause you did not make clears as soon as the stream is seen playing.", "Off a stream, the progress card says No Stream Open instead of Finding stream…"],
     '4.1.1': ["On Kick, the launcher sits in Kick's top bar, like on Twitch.", "On Kick, a stream that goes offline and comes back, or changes game, is checked again within a minute, and at once when you return to the tab.", "Built on Core 3.17.4."],
     '4.1.0': ["Dropper works on Kick: the card shows your Drops progress in place of the Chat title bar and says whether the stream counts.", "On Kick, Open Next Stream opens a live stream Kick says counts, and Claim on Kick opens Kick's Drops page.", "Kick's daily watch rewards, including the Sunset Reward Case, show today's minutes.", "Built on Core 3.17.3."],
     '4.0.2': ["The one-line card (Drop Details off) has its own Menu button.", "The Dropper gem is purple throughout. Built on Core 3.17.2."],
@@ -13253,7 +13287,7 @@ const ExtraPotionsCore = (() => {
       const box = shadowNode('tdh-stream-info');
       if (!box) return;
       box.classList.remove('stream-info-hidden');
-      setText('tdh-stream-channel', lastView.card.channel || 'Finding stream…');
+      setText('tdh-stream-channel', lastView.card.channel || (['select', 'find-stream', 'open-stream'].includes(lastView.state) ? 'Finding stream…' : 'No Stream Open'));
       setText('tdh-stream-game', lastView.card.game || 'Waiting for category');
     }
 
@@ -13696,7 +13730,7 @@ const ExtraPotionsCore = (() => {
   // Wiring and startup: the only file that reads browser globals. It builds every module from the real storages,
   // the userscript manager's functions and the page, then runs the heartbeat. Page reading, tabs, the data layer
   // and the menu are wired here as their modules land (milestone 3).
-  const APP_VERSION = '4.1.1';
+  const APP_VERSION = '4.1.2';
   const HEARTBEAT_MS = 5000;
   const ACTIVITY_LOG_LIMIT = 40;
   const SECRET_META = /token|cookie|auth|password|integrity|secret/i;

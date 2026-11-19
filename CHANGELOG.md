@@ -1,3 +1,9 @@
+## 4.1.2 — 2026-11-19
+
+- Recovers when Twitch sends no campaign list: a campaign whose reward details never arrive is skipped instead of waited on.
+- Playback is read correctly on iPad: a pause you did not make clears as soon as the stream is seen playing.
+- Off a stream, the progress card says No Stream Open instead of Finding stream…
+
 ## 4.1.1 — 2026-11-14
 
 - On Kick, the launcher sits in Kick's top bar, like on Twitch.
