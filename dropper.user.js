@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      4.1.2
+// @version      4.1.15
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -5446,6 +5446,7 @@ const ExtraPotionsCore = (() => {
     ['viewingNavigation', 'dropper-viewing-navigation-v1', 'session', 'account', 'kept'],
     ['viewingSelection', 'dropper-viewing-selection-v1', 'session', 'account', 'kept'],
     ['manualStreamLock', 'dropper-manual-stream-lock-v1', 'session', 'account', 'kept'],
+    ['kickRoutedChannel', 'dropper-kick-routed-channel-v1', 'session', 'account', 'kept'],
     ['clientIntegrity', 'dropper-client-integrity-v1', 'session', 'account', 'kept'],
     ['campaignCatalog', 'dropper-campaign-catalog', 'session', 'account', 'kept'],
     ['campaignPageImport', 'dropper-campaign-page-import-v1', 'session', 'account', 'kept'],
@@ -5465,6 +5466,7 @@ const ExtraPotionsCore = (() => {
     ['navigationInFlight', 'dropper-navigation-in-flight', 'session', 'account', 'unused'],
     ['recoverySnapshot', 'dropper-recovery-snapshot-v1', 'session', 'account', 'unused'],
     ['controller', 'dropper-controller-v4', 'session', 'account', 'new'],
+    ['switchingTab', 'dropper-switching-tab-v1', 'session', 'account', 'new'],
   ].map(([name, key, area, scope, use]) => Object.freeze({ name, key, area, scope, use })));
   const KEY = Object.freeze(Object.fromEntries(KEYS.map(entry => [entry.name, entry.key])));
   const KEY_SCOPE = Object.freeze(Object.fromEntries(KEYS.map(entry => [entry.name, entry.scope])));
@@ -5666,7 +5668,8 @@ const ExtraPotionsCore = (() => {
   const CLIENT_IDS = Object.freeze(['kimne78kx3ncx6brgo4mv6wki5h1ko', 'kd1unb4b3q4t58fwlpcbzcbnm76a8fp']);
   const GQL_HASH_PATTERN = /^[a-f0-9]{64}$/;
   const GQL_OPS = Object.freeze({
-    inventory: { name: 'Inventory', hash: '3ab317a5753b25125f47d4ce962ebe928ff4e85047b77508340c94ebc20b6230', variables: { fetchRewardCampaigns: true } },
+    // Inventory: Twitch's own page sends this hash (read 2026-11-19); its earned rewards carry the Drop ID (group.id).
+    inventory: { name: 'Inventory', hash: '5327cc774d7423990c03e57aed7eb3ad66275ffcb7079d91055771f065fd4cc4', variables: { fetchRewardCampaigns: true } },
     viewerDropsDashboard: { name: 'ViewerDropsDashboard', hash: '69750554e0a81492f2d343558f84bdf3e324767650a2dbb6e79a3c629b4548cf', variables: { fetchRewardCampaigns: true } },
     currentDrop: { name: 'DropCurrentSessionContext', hash: '4d06b702d25d652afb9ef835d2a550031f1cf762b193523a92166f40ea3d142b', variables: {} },
     streamInfo: { name: 'VideoPlayerStreamInfoOverlayChannel', hash: '198492e0857f6aedead9665c81c5a06d67b25b58034649687124083ff288597d', variables: { channel: '' } },
@@ -6024,9 +6027,11 @@ const ExtraPotionsCore = (() => {
     }
 
     // requests: [{ op, variables }]. Resolves with one row per request.
-    async function request(requests, { allowInventoryFailure = false } = {}) {
+    async function request(requests, { allowInventoryFailure = false, refreshIntegrity = false } = {}) {
       const auth = authToken();
       if (!auth) throw new Error('Not logged in');
+      // A fresh integrity token over the userscript transport, as 3.x asked for the campaign list.
+      if (refreshIntegrity) { clearIntegrity({ clearCapture: true }); lastTransport = 'gm'; }
       const claimOnly = requests.length > 0 && requests.every(item => item?.op === 'claimDrop');
       const body = requests.map(item => payload(GQL_OPS[item.op], item.variables));
       const send = async (clientId, { refresh = false, transport }) => {
@@ -7326,51 +7331,36 @@ const ExtraPotionsCore = (() => {
     (cleanText(pick.campaignKey || pick.campaignId) && cleanText(pick.campaignKey || pick.campaignId).toLowerCase() === cleanText(target.campaignKey || target.campaignId).toLowerCase())
     || (pick.id && target.id && String(pick.id) === String(target.id))));
 
-  // One pass of 3.x's open-campaign pick. Campaigns whose rewards are not loaded yet (Twitch's dashboard often
-  // omits them) are queued as shells by their end date; a shell with under 15 usable minutes yields to anything
-  // else. Unwinnable rewards yield when a winnable one exists.
-  function pickOnce(campaigns, { state, now, skip, rank, current, preferCurrent }) {
+  // Choose a game before consulting stream availability. A failed search only delays that game's next attempt.
+  function preferredGameCandidates(items, order, gameOf) {
+    if (!order.length || !items.length) return items;
+    const available = new Set(items.map(item => normalizeGameName(gameOf(item))));
+    const first = order.find(game => available.has(game));
+    return first ? items.filter(item => normalizeGameName(gameOf(item)) === first) : items;
+  }
+
+  function pickReward(campaigns, { state, now, rank = items => items, current = null, preferCurrent = true, excludedKeys = [], deferredKeys = [], detailsMissed = () => false, order = [] } = {}) {
+    const excluded = new Set(excludedKeys.map(key => cleanText(key).toLowerCase()).filter(Boolean));
+    const deferred = new Set(deferredKeys.map(key => cleanText(key).toLowerCase()));
     const candidates = [];
     for (const campaign of campaigns || []) {
       const key = campaignKey(campaign);
-      if (skip.has(key) || !plannerGame(campaign) || !state(campaign, null, now).open) continue;
-      if (watchDropsComplete(campaign)) continue;
-      const rewards = earnableRewards(campaign, { state, now });
-      if (rewards.length) { candidates.push(...rewards); continue; }
-      // Only a campaign without reward rows (or whose rewards Twitch has not sent yet) becomes a shell; one whose
-      // rewards are all paid or waiting on a prerequisite has nothing to earn.
-      if (plannerDrops(campaign).length && !campaign.nativeRewardsPending) continue;
-      candidates.push(rewardTarget(campaign));
+      if (excluded.has(key) || !plannerGame(campaign) || !state(campaign, null, now).open || watchDropsComplete(campaign)) continue;
+      if (campaignIsExcluded(campaign)) { excluded.add(key); continue; }
+      let rewards = earnableRewards(campaign, { state, now });
+      if (!rewards.length && (!plannerDrops(campaign).length || campaign.nativeRewardsPending)) rewards = [rewardTarget(campaign)];
+      const possible = rewards.filter(item => item.needsDropDetails || fitsWindow(item, now));
+      if (rewards.length && !possible.length) excluded.add(key);
+      candidates.push(...possible);
     }
-    const incomplete = candidates.filter(item => !rewardComplete(item));
-    const shellSafe = incomplete.filter(item => {
-      if (!item.needsDropDetails) return true;
-      const endMs = Number(item.endMs || 0);
-      if (!Number.isFinite(endMs) || endMs <= 0 || endMs >= FAR_FUTURE / 2) return true;
-      return endMs - now - WINNABLE_BUFFER_MS >= SHELL_MIN_WINDOW_MS;
-    });
-    const pool = shellSafe.length ? shellSafe : incomplete;
-    const winnable = pool.filter(item => fitsWindow(item, now));
-    const ranked = rank(winnable.length ? winnable : pool);
-    const keepCurrent = preferCurrent && current && !current.isClaimed && !current.needsDropDetails && !rewardComplete(current) && fitsWindow(current, now);
-    return (keepCurrent && ranked.find(item => sameTarget(item, current))) || ranked[0] || null;
-  }
-
-  // The next reward to earn. Skips excluded and deferred campaign keys, shells whose details came back empty
-  // recently (`detailsMissed`), and rewards that cannot finish. With preferCurrent, an unfinished winnable current
-  // target is kept. Returns { next, excluded } so the caller can keep skipped keys out of later picks.
-  function pickReward(campaigns, { state, now, rank = items => items, current = null, preferCurrent = true, excludedKeys = [], deferredKeys = [], detailsMissed = () => false } = {}) {
-    const excluded = new Set(excludedKeys.map(key => cleanText(key).toLowerCase()).filter(Boolean));
-    const missed = new Set(deferredKeys.map(key => cleanText(key).toLowerCase()).filter(Boolean));
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      const next = pickOnce(campaigns, { state, now, skip: new Set([...excluded, ...missed]), rank, current, preferCurrent });
-      if (!next) break;
-      const key = cleanText(next.campaignKey || next.campaignId).toLowerCase();
-      if (campaignIsExcluded(next) || (!next.needsDropDetails && !fitsWindow(next, now))) { if (key) excluded.add(key); continue; }
-      if (next.needsDropDetails && key && detailsMissed(key)) { missed.add(key); continue; }
-      return { next, excluded: [...excluded] };
-    }
-    return { next: null, excluded: [...excluded] };
+    const viable = candidates.filter(item => fitsWindow(item, now));
+    const group = preferredGameCandidates(viable.length ? viable : candidates, order, item => item.game);
+    const ordered = group.length > 0 && order.includes(normalizeGameName(group[0].game));
+    const ranked = rank(group);
+    const ready = ranked.filter(item => !deferred.has(item.campaignKey) && !(item.needsDropDetails && detailsMissed(item.campaignKey)));
+    const keep = preferCurrent && current && !current.needsDropDetails && !rewardComplete(current) && fitsWindow(current, now);
+    const next = (keep && ready.find(item => sameTarget(item, current))) || ready[0] || null;
+    return { next, blocked: !next && ordered ? ranked[0] : null, excluded: [...excluded] };
   }
 
   // After a reward reaches full watch time: the next reward in the same campaign, if one can finish. The finished
@@ -7583,7 +7573,10 @@ const ExtraPotionsCore = (() => {
     // The selected reward with fresh progress. A later actual minute (not a first observation) stamps credit.
     function refreshTarget(session) {
       if (!session.target) return session;
-      const fresh = findReward(pool(), session.target);
+      let fresh = findReward(pool(), session.target);
+      if (session.target.needsDropDetails && fresh?.campaignObject) {
+        fresh = earnableRewards(fresh.campaignObject, { state: stateOf, now: now() })[0] || fresh;
+      }
       if (!fresh) return session;
       const { campaignObject, drop, ...plain } = fresh;
       // A poll that omits the artwork does not erase the known image of the same reward.
@@ -7627,7 +7620,12 @@ const ExtraPotionsCore = (() => {
       if (channel && (settings().protectedChannels || []).map(lower).includes(channel)) return 'protected-channel';
       if (reason === 'campaign-order-changed' && settings().switchPolicy === 'stopped-earning' && earningConfirmed()) return 'earning-now';
       if (manualLock()) return 'stream-locked';
-      if (intent && !intent.navigationAllowed(false)) return intent.snapshot().paused ? 'viewer-paused' : 'manual-stream';
+      if (intent && !intent.navigationAllowed(false)) {
+        const viewing = intent.snapshot();
+        // Only the viewer's own pause holds routing; a paused reading nobody asked for does not.
+        if (viewing.paused && viewing.pauseReason === 'viewer') return 'viewer-paused';
+        if (!viewing.paused || viewing.manualStream !== false) return 'manual-stream';
+      }
       return '';
     }
     function earningConfirmed(at = now()) {
@@ -7640,7 +7638,12 @@ const ExtraPotionsCore = (() => {
     // fourth suspends. A move counts as recovery when its reason says so or a stream has already failed.
     function recoveryState(at = now()) {
       const value = store.session.get('recoveryLoop', { events: [], suspended: false });
-      return { events: (Array.isArray(value?.events) ? value.events : []).filter(time => Number.isFinite(time) && time > at - CONTROLLER_TIMING.recoveryWindow).slice(-3), suspended: Boolean(value?.suspended) };
+      const all = (Array.isArray(value?.events) ? value.events : []).filter(time => Number.isFinite(time));
+      // The stop is a five-minute wait, not a dead end: it lifts by itself. A record from before 4.1.14 has no stop
+      // time, so its last move stands in.
+      const stopped = Boolean(value?.suspended), stoppedAt = Number(value?.suspendedAt) || Math.max(0, ...all);
+      const suspended = stopped && at - stoppedAt < CONTROLLER_TIMING.recoveryWindow;
+      return { events: all.filter(time => time > at - CONTROLLER_TIMING.recoveryWindow).slice(-3), suspended, lifted: stopped && !suspended };
     }
     function recoveryAllows(reason, session, at) {
       if (/manual|update-install/i.test(reason)) return true;
@@ -7648,7 +7651,7 @@ const ExtraPotionsCore = (() => {
       if (loop.suspended) return false;
       if (!/recover|retry|fallback|restart|stall/i.test(reason) && !(session.failed || []).length) return true;
       if (loop.events.length >= 3) {
-        store.session.set('recoveryLoop', { ...loop, suspended: true });
+        store.session.set('recoveryLoop', { events: loop.events, suspended: true, suspendedAt: at });
         log('recovery-paused', 'Recovery paused after three navigations within five minutes');
         return false;
       }
@@ -7740,8 +7743,21 @@ const ExtraPotionsCore = (() => {
         const replacement = pickReward(pool(), { state: stateOf, now: at, rank: rank(at), excludedKeys: [key], preferCurrent: false }).next;
         if (replacement && fitsWindow(replacement, at)) reason = `Campaign ${target.campaign || target.game} can no longer finish before its deadline`;
       }
+      if (!reason && settings().campaignStrategy === 'priority' && !(settings().switchPolicy === 'stopped-earning' && earningConfirmed()) && store.priorityOrder().length) {
+        const order = store.priorityOrder(), currentRank = order.indexOf(normalizeGameName(target.game));
+        if (currentRank !== 0) {
+          const decision = pickNext(session, at, false), preferred = decision.next || decision.blocked;
+          const preferredRank = preferred ? order.indexOf(normalizeGameName(preferred.game)) : -1;
+          if (preferredRank >= 0 && (currentRank < 0 || preferredRank < currentRank)) {
+            go(CONTROLLER_STATES.SELECT, { target: null, stream: '', failed: [], evidence: null, verification: null, waitReason: '', flight: null },
+              `Campaign order selects ${preferred.game} ahead of ${target.game}`);
+            select(at);
+            return true;
+          }
+        }
+      }
       if (!reason) {
-        if (Number(session.deferred?.[key]) > at && !(session.state === CONTROLLER_STATES.WAITING && session.waitReason === 'reward-credit-unconfirmed')) { select(at); return true; }
+        if (Number(session.deferred?.[key]) > at && !(session.state === CONTROLLER_STATES.WAITING && ['reward-credit-unconfirmed', 'priority-unavailable'].includes(session.waitReason))) { select(at); return true; }
         return false;
       }
       log('routing-target-evicted', reason, { campaignKey: key, state: session.state });
@@ -7751,17 +7767,30 @@ const ExtraPotionsCore = (() => {
     }
 
     function pickNext(session, at, preferCurrent = true) {
-      return pickReward(pool(), { state: stateOf, now: at, rank: rank(at), current: session.target, preferCurrent, excludedKeys: session.excluded || [], deferredKeys: Object.keys(active(session.deferred, at)), detailsMissed: key => Boolean(data.detailsMissed?.(key)) });
+      const order = settings().campaignStrategy === 'priority' ? store.priorityOrder() : [];
+      return pickReward(pool(), { state: stateOf, now: at, rank: rank(at), order, current: session.target, preferCurrent, excludedKeys: session.excluded || [], deferredKeys: Object.keys(active(session.deferred, at)), detailsMissed: key => Boolean(data.detailsMissed?.(key) && !data.channelDiscovery?.(key)) });
     }
 
     function select(at = now()) {
       const session = read(), target = session.target, key = keyOf(target);
       const retryAt = Number(session.deferred?.[key]) || 0;
       if (target && !target.isClaimed && rewardComplete(target)) return advance(target, 'Completed Drop already has full watch credit');
-      if (target && !target.isClaimed && !campaignIsExcluded(target) && retryAt <= at && stateOf(campaignFor(target), null, at).open && fitsWindow(target, at)) {
+      const { next, blocked, excluded } = pickNext(session, at);
+      if (blocked) {
+        const deadline = Number(session.deferred?.[keyOf(blocked)]) || at + CONTROLLER_TIMING.waitRetry;
+        return go(CONTROLLER_STATES.WAITING, { target: blocked, excluded, waitReason: 'priority-unavailable', deadlineAt: deadline, stream: '', flight: null },
+          `Waiting for ${blocked.game} · retrying the priority campaign`);
+      }
+      const sameReward = next?.id && next.id === target?.id && keyOf(next) === key;
+      // A partial poll can omit a previously verified campaign. Retain its saved target while that campaign is still open.
+      const order = settings().campaignStrategy === 'priority' ? store.priorityOrder() : [];
+      const savedRank = target ? order.indexOf(normalizeGameName(target.game)) : -1;
+      const nextRank = next ? order.indexOf(normalizeGameName(next.game)) : -1;
+      const missingPreferred = target && !findReward(pool(), target) && (!next || (savedRank >= 0 && (nextRank < 0 || savedRank < nextRank)));
+      if (target && !target.isClaimed && !campaignIsExcluded(target) && retryAt <= at && stateOf(campaignFor(target), null, at).open && fitsWindow(target, at)
+        && (sameReward || missingPreferred)) {
         return go(CONTROLLER_STATES.FIND, { stream: '', failed: [], deadlineAt: 0 }, 'Continuing active unfinished campaign');
       }
-      const { next, excluded } = pickNext(session, at);
       if (!next) {
         if (target && !target.isClaimed && retryAt > at) {
           const creditCooldown = Number(session.creditAttempts?.[key]?.count) >= 3;
@@ -7770,7 +7799,7 @@ const ExtraPotionsCore = (() => {
         requestPoll('routing-no-campaign');
         return go(CONTROLLER_STATES.WAITING, { target: null, stream: '', excluded, waitReason: 'no-eligible-campaign', deadlineAt: at + CONTROLLER_TIMING.noCampaignRetry }, 'No eligible watch-time campaign available');
       }
-      if (next.needsDropDetails || !(Number(next.requiredMinutes) > 0)) {
+      if ((next.needsDropDetails || !(Number(next.requiredMinutes) > 0)) && !data.channelDiscovery?.(keyOf(next))) {
         requestPoll('routing-campaign-details');
         return go(CONTROLLER_STATES.WAITING, { excluded, waitingFor: next.campaignKey, waitReason: 'campaign-details', deadlineAt: at + CONTROLLER_TIMING.waitRetry }, `Waiting for Drop details for ${next.campaign || next.game}`);
       }
@@ -7817,6 +7846,7 @@ const ExtraPotionsCore = (() => {
           setStatus(`All visible ${target.game} Streams checked · Retrying shortly`);
           return go(CONTROLLER_STATES.WAITING, { slug, stream: '', failed: [], evidence: null, waitReason: 'stream-cycle-reset', deadlineAt: at + CONTROLLER_TIMING.waitRetry }, `Cleared temporary streamer rotation after trying ${session.failed.length} stream${session.failed.length === 1 ? '' : 's'}`);
         }
+        if (allowed.length) page.revealDirectoryCards?.();
         setStatus(allowed.length ? `Waiting for a live ${target.campaign || target.game} Stream` : `Waiting on ${target.game} Category for an eligible stream`);
         return go(CONTROLLER_STATES.WAITING, { slug, stream: '', evidence: null, waitReason: allowed.length ? 'no-live-allowed-channel' : 'no-category-stream', deadlineAt: at + CONTROLLER_TIMING.waitRetry },
           allowed.length ? `No live allow-listed ${target.campaign || target.game} stream visible yet` : `No usable ${target.game} stream visible yet`);
@@ -7974,10 +8004,14 @@ const ExtraPotionsCore = (() => {
       const health = page.health?.() || {};
       const creditedAt = Number(store.session.get('creditedProgressAt', 0)) || 0;
       const creditedRecently = Boolean(creditedAt && Number(target.currentMinutes || 0) > 0 && at - creditedAt <= CONTROLLER_TIMING.unhealthyDelayed);
-      const healthy = Boolean((info.live && health.playing && gameMatches) || creditedRecently);
+      // A paused reading nobody asked for is not a sign of a broken stream (iPad: credited throughout), so it gets
+      // the same patient credit limits as a playing one.
+      const readsPaused = health.playback === 'paused' && health.pauseReason !== 'viewer';
+      const healthy = Boolean((info.live && (health.playing || readsPaused) && gameMatches) || creditedRecently);
       const anchor = Math.max(session.earningStartedAt || session.enteredAt || 0, creditedAt);
       const diagnosis = DropperActiveViewing.recoveryDiagnosis({
-        login: channel, live: true, gameMatches, playback: health.playback || 'unknown', pauseReason: health.pauseReason || '',
+        // A paused reading alone never ends a verified stream: Twitch's credit decides (the stall checks below).
+        login: channel, live: true, gameMatches, playback: health.playback === 'paused' && health.pauseReason !== 'viewer' ? 'unknown' : health.playback || 'unknown', pauseReason: health.pauseReason || '',
         visibilityState: health.visibilityState, pictureInPicture: health.pictureInPicture, backgrounded: health.backgrounded,
         foregroundGraceRemainingMs: health.foregroundGraceRemainingMs, campaignVerified: true,
         inVerificationGrace: at - (session.earningStartedAt || session.enteredAt || at) < CONTROLLER_TIMING.firstWatchGrace,
@@ -8028,6 +8062,16 @@ const ExtraPotionsCore = (() => {
     function waiting(at) {
       let session = read();
       const target = session.target;
+      // Restore a 4.1.9 tab parked on the target directory with an old discovery cooldown.
+      const key = keyOf(target);
+      if (session.waitReason === 'priority-unavailable' && session.deferred?.[key] && !(session.creditAttempts?.[key]?.count >= 3)
+        && page.category() && page.category() === slugFor(target)) {
+        const deferred = { ...session.deferred };
+        delete deferred[key];
+        go(CONTROLLER_STATES.FIND, { deferred, discoveryStartedAt: at, waitReason: '', deadlineAt: 0 }, 'Resuming priority directory search');
+        return findStream(at);
+      }
+      if (session.waitReason === 'priority-unavailable') setStatus(`Waiting for ${target?.game || 'priority game'} · retrying this campaign`);
       if (session.waitReason === 'reward-credit-unconfirmed') {
         const minutes = target?.currentMinutes ?? null, percent = target?.percent ?? null;
         if ((session.baseline.minutes == null && minutes != null) || (session.baseline.percent == null && percent != null)) {
@@ -8042,11 +8086,13 @@ const ExtraPotionsCore = (() => {
       if (['no-category-stream', 'no-live-allowed-channel'].includes(session.waitReason)) {
         const slug = slugFor(target);
         if (slug && page.category() === slug) {
-          const streams = classifyStreams(page.streams(), { excluded: settings().excludedChannels || [], skipped: session.failed, allowed: targetAllowList(target), now: at, random });
+          const allowed = targetAllowList(target);
+          const streams = classifyStreams(page.streams(), { excluded: settings().excludedChannels || [], skipped: session.failed, allowed, now: at, random });
           if (streams.routable.length) {
             go(CONTROLLER_STATES.FIND, { waitReason: '', deadlineAt: 0 }, `Twitch rendered ${streams.routable.length} usable ${target?.game || 'category'} stream candidate${streams.routable.length === 1 ? '' : 's'}`);
             return findStream(at);
           }
+          if (allowed.length) page.revealDirectoryCards?.();
         }
         setStatus(session.waitReason === 'no-live-allowed-channel' ? `Waiting for a live campaign-compatible ${target?.game || 'Target'} Stream` : `Waiting for ${target?.game || 'Target'} Category streams to render`);
       } else if (session.waitReason === 'stream-cycle-reset') setStatus(`All visible ${target?.game || 'Target'} Streams checked · Retry pending`);
@@ -8061,8 +8107,10 @@ const ExtraPotionsCore = (() => {
     // One step. Only the tab in charge acts; others observe.
     function tick(reason = 'heartbeat') {
       const at = now();
-      if (recoveryState(at).suspended) { setStatus(HOLD_TEXT['recovery-paused']); return false; }
+      const loop = recoveryState(at);
+      if (loop.suspended) { setStatus(HOLD_TEXT['recovery-paused']); return false; }
       if (!inCharge()) return false;
+      if (loop.lifted) { store.session.set('recoveryLoop', { events: [], suspended: false }); log('recovery-resumed', 'Recovery resumed after the five-minute wait'); }
       let session = read();
       if (!settings().findNextStream) {
         if (session.state !== CONTROLLER_STATES.PAUSED || session.waitReason !== 'switching-off') go(CONTROLLER_STATES.PAUSED, { waitReason: 'switching-off', deadlineAt: 0 }, 'Automatic stream routing disabled');
@@ -8083,6 +8131,19 @@ const ExtraPotionsCore = (() => {
       session = refreshTarget(session);
       if (reconcile(at)) return true;
       session = read();
+      if (session.stream && session.stream === login() && page.playbackNeedsInput?.()) {
+        if (session.waitReason !== 'player-blocked') go(CONTROLLER_STATES.WAITING, { waitReason: 'player-blocked', deadlineAt: 0 }, 'Waiting for playback on the selected stream');
+        setStatus('Tap Play on the Twitch player');
+        return false;
+      }
+      if (session.waitReason === 'player-blocked') {
+        if (session.stream !== login() || !session.target) return bootstrap('Playback context changed');
+        return go(CONTROLLER_STATES.VERIFY, { deadlineAt: at + CONTROLLER_TIMING.verify, verification: null }, 'Rechecking the stream after the playback interruption');
+      }
+      if ([CONTROLLER_STATES.VERIFY, CONTROLLER_STATES.EARNING].includes(session.state) && session.stream === login() && page.playbackRecovering?.()) {
+        setStatus('Waiting for Twitch playback to resume');
+        return false;
+      }
       if ([CONTROLLER_STATES.IDLE, CONTROLLER_STATES.PAUSED].includes(session.state)) session = bootstrap(reason);
       if (inFlight(session, at)) return true;
       switch (session.state) {
@@ -8140,22 +8201,27 @@ const ExtraPotionsCore = (() => {
       if (!settings().findNextStream) return none('Automatic switching is off');
       if (!inCharge()) return none('Another tab is routing');
       const session = read(), at = now();
-      if (![CONTROLLER_STATES.SELECT, CONTROLLER_STATES.FIND, CONTROLLER_STATES.OPEN, CONTROLLER_STATES.VERIFY, CONTROLLER_STATES.EARNING].includes(session.state) || !session.target || session.target.isClaimed) return none();
+      if (![CONTROLLER_STATES.SELECT, CONTROLLER_STATES.FIND, CONTROLLER_STATES.OPEN, CONTROLLER_STATES.VERIFY, CONTROLLER_STATES.EARNING, CONTROLLER_STATES.WAITING].includes(session.state) || !session.target || session.target.isClaimed) return none();
       const hold = holdReason(reason);
       if (hold) return none(HOLD_TEXT[hold]);
-      const { next: top, excluded } = pickNext(session, at, false);
+      const decision = pickNext(session, at, false);
+      const top = decision.next || decision.blocked, excluded = decision.excluded;
       if (!top) return none();
       if (keyOf(top) === keyOf(session.target) || (top.id && top.id === session.target.id)) return { switched: false, why: '', alreadyTop: true, game: top.game };
-      if (top.needsDropDetails || !(Number(top.requiredMinutes) > 0)) return none('Reward details pending');
       const leaving = session.target.game || 'Campaign';
       go(CONTROLLER_STATES.SELECT, { target: null, stream: '', evidence: null, excluded, deadlineAt: 0 }, `Campaign order changed · moving from ${leaving} to ${top.game}`);
       tick(reason);
       return { switched: true, why: '', game: top.game, from: leaving };
     }
 
+    function nextGame() {
+      const decision = pickNext(read(), now());
+      return (decision.next || decision.blocked)?.game || '';
+    }
+
     function diagnosisCode(code) { diagnosis = cleanText(code); }
     const snapshot = () => { const session = read(); return { ...session, status, diagnosis: session.state === CONTROLLER_STATES.EARNING ? diagnosis : '', recoveryLoop: recoveryState() }; };
-    return Object.freeze({ tick, observe, skipStream, clearSkipped, reorder, resumeRecovery, earningConfirmed, snapshot, status: () => status });
+    return Object.freeze({ tick, observe, nextGame, skipStream, clearSkipped, reorder, resumeRecovery, earningConfirmed, snapshot, status: () => status });
   }
 
   function locationKeyOf(url) {
@@ -8176,7 +8242,6 @@ const ExtraPotionsCore = (() => {
   const MUTE_PENDING_MS = 45 * 1000;
   const FOREGROUND_REVALIDATION_GRACE_MS = 30 * 1000;
   const CATEGORY_SLUG_CACHE_KEY = 'dropper-category-slugs-v4';
-  const VIEWING_INTENT_KEY = 'dropper-viewing-intent-v1';
   const VIEWING_NAVIGATION_KEY = 'dropper-viewing-navigation-v1';
   const VIEWING_SELECTION_KEY = 'dropper-viewing-selection-v1';
   const MUTE_PENDING_KEY = 'dropper-mute-pending-v1';
@@ -8201,6 +8266,7 @@ const ExtraPotionsCore = (() => {
     const setStatus = text => onChange('status', text);
     let viewingAccount = '';
     let viewingVideo = null;
+    let blockedVideo = null;
     let videoMountedDuringPause = false;
     let viewingListenersInstalled = false;
     let recentPlaybackControl = { action: '', at: 0 };
@@ -8668,6 +8734,21 @@ const ExtraPotionsCore = (() => {
       return false;
     }
 
+    const directoryLinks = 'a[data-a-target="preview-card-channel-link"], a[data-test-selector*="channel-link"], a[data-a-target="preview-card-title-link"], a[data-a-target="preview-card-image-link"]';
+    let lastDirectoryTail = '', lastDirectoryScroll = 0;
+    function revealDirectoryCards() {
+      if (document.hidden || !isDirectoryCategoryPage()) return;
+      const root = document.querySelector('main, [role="main"]');
+      const links = root?.querySelectorAll(directoryLinks);
+      const tail = links?.[links.length - 1];
+      if (!tail || !twitchChannelHref(tail.href) || !tail.getClientRects().length) return;
+      const id = location.pathname + ':' + tail.href;
+      if (id === lastDirectoryTail || Date.now() - lastDirectoryScroll < 5000) return;
+      lastDirectoryTail = id;
+      lastDirectoryScroll = Date.now();
+      tail.scrollIntoView({ block: 'end', behavior: 'instant' });
+    }
+
     function collectDirectoryStreamCandidates(gameName, gameSlug = "", excludedStreams = []) {
       const wantedGame = normalizeGameName(gameName);
       const wantedSlug = resolveCategorySlug({ game: gameName, gameSlug });
@@ -8684,19 +8765,13 @@ const ExtraPotionsCore = (() => {
       const seen = new Set();
       const scanAt = Date.now();
 
-      const links = [
-        ...document.querySelectorAll(
-          'a[data-a-target="preview-card-channel-link"], a[data-test-selector*="channel-link"]',
-        ),
-      ];
+      const links = document.querySelectorAll(directoryLinks);
 
       for (const link of links) {
         const href = twitchChannelHref(link.href);
         if (!href) continue;
         const login = streamLoginFromUrl(href);
         if (!login || excluded.has(login) || seen.has(login)) continue;
-        seen.add(login);
-
         const card = closestDirectoryStreamCard(link);
 
         if (streamCandidateIsPromoted(card, link)) {
@@ -8719,6 +8794,7 @@ const ExtraPotionsCore = (() => {
           normalizedText.includes(wantedGame);
 
         if (!gameMatches) continue;
+        seen.add(login);
         const viewerMatch = text.match(/([\d,.]+)\s*(?:viewers?|watching)/i);
         const viewers = viewerMatch ? streamViewerCount(viewerMatch[1].replace(/,/g, "")) : null;
         candidates.push({
@@ -8831,12 +8907,22 @@ const ExtraPotionsCore = (() => {
       return Boolean(video && !video.paused && !video.ended && video.readyState > 1);
     }
 
+    function playbackNeedsInput() {
+      return Boolean(blockedVideo && blockedVideo === streamVideoElement() && blockedVideo.paused && !blockedVideo.ended && !blockedVideo.error);
+    }
+
+    function playbackRecovering() {
+      const video = streamVideoElement(), attempt = viewingIntent.snapshot();
+      // Allow the intent's 30-second retry interval plus one heartbeat before rotating streams.
+      return Boolean(video?.paused && !video.ended && !video.error && attempt.lastRecoveryAt && Date.now() - attempt.lastRecoveryAt < 35000);
+    }
+
     function ensureStreamPlaying(explicit = false) {
       if (ExtraPotionsCore.suiteSitePaused?.()) return;
       if (!watchingLogin()) return false;
       syncViewingContext();
       const video = streamVideoElement();
-      if (!video || streamVideoIsPlaying(video) || video.ended || video.error || video.readyState < 1) return false;
+      if (!video?.paused || video.ended || video.error || video.readyState < 1 || (!explicit && playbackNeedsInput())) return false;
       // Gates remain Twitch/user decisions. A paused or unknown player is never
       // interpreted as authorization to start playback or open another stream.
       if (!viewingIntent.takeRecovery(explicit)) return false;
@@ -8844,31 +8930,96 @@ const ExtraPotionsCore = (() => {
         videoMountedDuringPause = false;
         recentPlaybackControl = { action: 'resume', at: Date.now() };
       }
+      const attempt = viewingIntent.snapshot();
+      const rejected = error => {
+        const current = viewingIntent.snapshot();
+        if (video !== streamVideoElement() || attempt.generation !== current.generation || attempt.lastRecoveryAt !== current.lastRecoveryAt ||
+          current.pauseReason === 'viewer' || !video.paused || video.ended || video.error) return;
+        const reason = ['AbortError', 'NotAllowedError', 'NotSupportedError'].includes(error?.name) ? error.name : 'player-rejected';
+        const needsInput = reason === 'NotAllowedError' || reason === 'NotSupportedError' || current.recoveryAttempts >= 3;
+        // Only a refusal of the viewer's own Resume asks for a tap; an automatic nudge that is refused is just logged.
+        if (needsInput && explicit) blockedVideo = video;
+        logActivity('playback', needsInput ? 'Player needs attention' : 'Playback request interrupted', { reason, attempt: current.recoveryAttempts });
+        refreshViewingControls();
+      };
       try {
         const playing = video.play();
         logActivity('playback', 'Requested playback resume', { reason: explicit ? 'user-resume' : 'authorized-recovery' });
-        if (playing && typeof playing.catch === 'function') playing.catch(() => {
-          viewingIntent.pause(false);
-          logActivity('playback', 'Playback resume was blocked', { reason: 'player-rejected' });
-          setStatus('Playback needs attention');
-          refreshViewingControls();
-        });
+        if (playing && typeof playing.then === 'function') playing.then(() => { if (!explicit) logActivity('playback', 'Player accepted the play request'); }, rejected);
         return true;
-      } catch (_) {
-        viewingIntent.pause(false);
-        refreshViewingControls();
+      } catch (error) {
+        rejected(error);
         return false;
       }
     }
 
+    // Twitch starts its own player. Dropper asks a player it manages to play at most once, and only after it has
+    // sat loaded and paused for 20 seconds: a request during loading was refused on iPad and then treated as a
+    // pause (2026-11-19). A refusal changes nothing; the Resume button still asks at once.
+    const PAUSED_NUDGE_AFTER_MS = 20 * 1000;
+    let nudgeVideo = null, nudgePausedSince = 0;
+    const nudgedVideos = new WeakSet();
+    function nudgeSettledPausedPlayer(now = Date.now()) {
+      const video = watchingLogin() ? streamVideoElement() : null;
+      const settled = Boolean(video && video.paused && !video.ended && !video.error && video.readyState >= 2);
+      if (!settled || video !== nudgeVideo) { nudgeVideo = settled ? video : null; nudgePausedSince = settled ? now : 0; return false; }
+      if (now - nudgePausedSince < PAUSED_NUDGE_AFTER_MS || nudgedVideos.has(video)) return false;
+      nudgedVideos.add(video);
+      return ensureStreamPlaying();
+    }
+
+    // Twitch unloads a muted player when its tab goes to the background, and watch credit stops with it (seen live
+    // in Desktop Vivaldi, 2026-11-20; an unmuted player keeps playing). On desktop Chromium a stream Dropper opened
+    // is therefore silenced instead of muted: Twitch's own volume at its lowest step and unmuted, the video element
+    // at zero. Other browsers keep the mute, because unmuting without a tap can pause their player.
+    const SILENCED_TWITCH_VOLUME = '0.01';
+    let silenced = false;
+    function silencesInsteadOfMuting() {
+      const agent = navigator.userAgentData;
+      return Boolean(agent && !agent.mobile && agent.brands?.some(item => /Chromium/i.test(item.brand)));
+    }
+    const twitchVolumeSlider = () => document.querySelector('[data-a-target="player-volume-slider"]');
+    function silenceStream(video) {
+      const slider = twitchVolumeSlider(), button = twitchMuteControl();
+      if (!video || !slider || !button) return false;
+      try {
+        if (slider.value !== SILENCED_TWITCH_VOLUME) {
+          Object.getOwnPropertyDescriptor(Object.getPrototypeOf(slider), 'value').set.call(slider, SILENCED_TWITCH_VOLUME);
+          slider.dispatchEvent(new Event('input', { bubbles: true }));
+          slider.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        // Twitch labels the control for the action it will take: "Unmute" means currently muted.
+        if (/^unmute/i.test(cleanText(button.getAttribute('aria-label') || button.textContent || ''))) button.click();
+        video.volume = 0;
+      } catch (_) { return false; }
+      return true;
+    }
+    // Twitch sets its own volume on the element again when the player changes; the viewer moving Twitch's volume
+    // or muting takes the player back.
+    function keepSilenced() {
+      if (!silenced) return;
+      const video = streamVideoElement();
+      if (!video) return;
+      if (video.muted || twitchVolumeSlider()?.value !== SILENCED_TWITCH_VOLUME) { silenced = false; writeSession(MUTE_PENDING_KEY, null); return; }
+      if (video.volume !== 0) { try { video.volume = 0; } catch (_) { /* ignore */ } }
+    }
+
     function ensureStreamMuted() {
       if (ExtraPotionsCore.suiteSitePaused?.()) return;
+      keepSilenced();
       if (!muteOpenedStreamsEnabled()) return false;
       const pending = mutePendingSnapshot();
       if (!pending) return false;
       if (!watchingLogin()) return false;
 
       const video = document.querySelector("video");
+      if (silencesInsteadOfMuting() && silenceStream(video)) {
+        if (!silenced) logActivity('playback', 'Silenced a Dropper-opened stream', { reason: 'mute-opened-streams-enabled' });
+        silenced = true;
+        // Keep the pending window briefly so Twitch's own start-up volume can be answered.
+        if (Date.now() - Number(pending.at || 0) > 12000) writeSession(MUTE_PENDING_KEY, null);
+        return true;
+      }
       let changed = false;
       if (video && !video.muted) {
         try {
@@ -8913,20 +9064,36 @@ const ExtraPotionsCore = (() => {
       } catch (_) { /* Unsupported or denied wake locks never affect playback. */ }
       finally { wakeLockPending = false; }
     }
-    function automaticViewingArrival(login = watchingLogin(), now = Date.now()) {
-      const requested = readSession(VIEWING_NAVIGATION_KEY, null);
+    function viewingArrival(login, now) {
+      if (!login) return '';
       const selected = readSession(VIEWING_SELECTION_KEY, null);
-      if (selected?.channel === login && selected.until > now) return false;
-      if (requested && requested.channel === login && requested.until > now) return true;
-      // A restored switching tab can outlive the short navigation marker. Keep
-      // its known automatic arrival distinct from an unknown paused player.
-      const saved = readSession(VIEWING_INTENT_KEY, null);
-      return Boolean(login && settings.resumeSessionOnRestart && isAutomationTab() && saved &&
-        saved.account === storageAccountLogin() && saved.channel === login && saved.manualStream === false && !saved.paused);
+      if (selected?.channel === login && selected.until > now) return 'viewer-link';
+      const requested = readSession(VIEWING_NAVIGATION_KEY, null);
+      if (requested?.channel === login && requested.until > now) return 'dropper-navigation';
+      if (!isAutomationTab()) return '';
+      const saved = store.session.get('viewingIntent', null);
+      if (saved && (saved.account !== storageAccountLogin() || (saved.channel === login && saved.paused && saved.pauseReason !== 'unknown'))) return '';
+      if (saved?.channel === login && saved.manualStream && saved.arrivalSource !== 'unclassified-arrival') return '';
+      const route = store.session.get('controller', null);
+      const reloaded = performance.getEntriesByType('navigation')[0]?.type === 'reload';
+      if (settings.findNextStream && reloaded && saved?.channel === login && saved.arrivalSource === 'unclassified-arrival') return 'restored-switching-tab';
+      if (settings.findNextStream && ['open-stream', 'verify', 'earning'].includes(route?.state) && route.stream === login) return 'dropper-navigation';
+      return settings.resumeSessionOnRestart && saved?.channel === login && saved.manualStream === false ? 'dropper-navigation' : '';
     }
 
     // Every change of the playback hold is logged with what caused it, so a diagnostic shows why Dropper says Paused.
+    // What the player reads, logged when it changes (at most every 5 seconds), so a report shows the readings
+    // themselves and not only what Dropper made of them.
+    let readingLoggedAt = 0;
+    function noteReadingChange(before, source) {
+      const after = viewingIntent.snapshot();
+      if (before?.playback === after.playback || ![before?.playback, after.playback].includes('paused') || Date.now() - readingLoggedAt < 5000) return;
+      readingLoggedAt = Date.now();
+      const video = streamVideoElement();
+      logActivity('playback', after.playback === 'paused' ? 'Player reads paused' : `Player reads ${after.playback}`, { source, was: before?.playback || '', readyState: video?.readyState ?? null, muted: video ? Boolean(video.muted) : null, hidden: Boolean(document.hidden), manualStream: Boolean(after.manualStream) });
+    }
     function notePauseChange(before, source) {
+      noteReadingChange(before, source);
       const after = viewingIntent.snapshot();
       if (Boolean(before?.paused) === Boolean(after.paused)) return;
       logActivity('playback', after.paused ? 'Playback marked paused' : 'Playback hold cleared', { source, reason: after.pauseReason || before?.pauseReason || '', remounted: videoMountedDuringPause });
@@ -8937,9 +9104,8 @@ const ExtraPotionsCore = (() => {
       const account = storageAccountLogin();
       if (viewingAccount !== account) resetViewingAccount(account);
       const login = watchingLogin() || '';
-      const automaticArrival = automaticViewingArrival(login);
-      const selected = readSession(VIEWING_SELECTION_KEY, null);
-      const arrivalSource = selected?.channel === login && selected.until > Date.now() ? 'viewer-link' : automaticArrival ? 'dropper-navigation' : '';
+      const arrivalSource = viewingArrival(login, Date.now());
+      const automaticArrival = arrivalSource === 'dropper-navigation' || arrivalSource === 'restored-switching-tab';
       const changed = viewingIntent.context(account, login, automaticArrival, arrivalSource);
       if (changed) {
         viewingVideo = null;
@@ -8947,6 +9113,7 @@ const ExtraPotionsCore = (() => {
       }
       const video = login ? streamVideoElement() : null;
       if (video !== viewingVideo) {
+        blockedVideo = null;
         viewingVideo = video;
         videoMountedDuringPause = viewingIntent.snapshot().paused;
       }
@@ -8954,16 +9121,23 @@ const ExtraPotionsCore = (() => {
       else if (video.ended) viewingIntent.observe('ended');
       else if (video.error) viewingIntent.observe('error');
       else if (video.paused) {
-        // An unrequested paused player is not permission to force playback.
-        if (!automaticArrival || viewingIntent.snapshot().paused) viewingIntent.pause(false);
-        else viewingIntent.observe('paused');
+        // A paused reading is the viewer's hold only on a stream they opened themselves. On a stream Dropper
+        // manages it is an observation: loading, an ad changeover or the browser, never a reason to hold or leave
+        // (iPad, 2026-11-19: Twitch credited minutes throughout). A hold nobody asked for is dropped.
+        const held = viewingIntent.snapshot();
+        if (held.manualStream) viewingIntent.pause(false);
+        else {
+          if (held.paused && held.pauseReason !== 'viewer') viewingIntent.resume();
+          viewingIntent.observe('paused');
+        }
       } else {
+        blockedVideo = null;
         const held = viewingIntent.snapshot();
         const explicitResume = recentPlaybackControl.action === 'resume' && Date.now() - recentPlaybackControl.at < 1500;
-        if (held.paused && (videoMountedDuringPause || held.pauseReason === 'viewer') && !explicitResume) {
-          // Preserve a known pause through a same-channel player replacement.
-          // This does not intercept or replace Twitch's media methods.
-          try { video.pause(); } catch (_) {}
+        if (held.paused && held.pauseReason === 'viewer' && !explicitResume) {
+          // The viewer's own pause stays recorded, but Dropper never pauses the player itself: a player Twitch
+          // restarts keeps playing.
+          viewingIntent.observe(video.readyState > 1 ? 'playing' : 'buffering');
         } else if (held.paused && video.readyState > 1) {
           // A pause nobody asked for (a stall, an ad changeover) ends when the same player is seen playing, even if
           // the browser sent no playing event (iPad Safari, 2026-11-19).
@@ -9012,12 +9186,16 @@ const ExtraPotionsCore = (() => {
         syncViewingContext();
         const before = viewingIntent.snapshot();
         const explicit = Date.now() - recentPlaybackControl.at < 1500;
-        if (event.type === 'pause' && !event.target.ended && !event.target.error) viewingIntent.pause(explicit && recentPlaybackControl.action === 'pause');
+        if (event.type === 'pause' && !event.target.ended && !event.target.error) {
+          if (explicit && recentPlaybackControl.action === 'pause') viewingIntent.pause(true);
+          else if (viewingIntent.snapshot().manualStream) viewingIntent.pause(false);
+          else viewingIntent.observe('paused');
+        }
         if (event.type === 'playing') {
-          if (viewingIntent.resume({ explicit: explicit && recentPlaybackControl.action === 'resume', remounted: videoMountedDuringPause })) {
+          if (viewingIntent.resume({ explicit: explicit && recentPlaybackControl.action === 'resume', remounted: videoMountedDuringPause && before.pauseReason === 'viewer' })) {
             videoMountedDuringPause = false;
             removeSession(VIEWING_NAVIGATION_KEY);
-          } else { try { event.target.pause(); } catch (_) {} }
+          }
         }
         if (event.type === 'waiting' || event.type === 'stalled') viewingIntent.observe('buffering');
         if (event.type === 'ended') viewingIntent.observe('ended');
@@ -9432,17 +9610,17 @@ const ExtraPotionsCore = (() => {
       restoreChannelPlayer();
       contentWarningMemory.process();
       ensureStreamMuted();
-      ensureStreamPlaying();
+      nudgeSettledPausedPlayer(now);
       void syncScreenWakeLock();
       if (now - lastPromoScanAt >= PROMO_SCAN_INTERVAL_MS) suppressTwitchSubscriptionPromos();
     }
 
     return Object.freeze({
-      login: watchingLogin, path: () => location.pathname, stream: readStreamInfo, category, streams, health, locationKey, hidden: () => document.hidden, startedAt,
+      login: watchingLogin, path: () => location.pathname, stream: readStreamInfo, category, streams, revealDirectoryCards, health, locationKey, hidden: () => document.hidden, startedAt,
       slugFor: target => resolveCategorySlug(target), rememberSlug: rememberCategorySlug, channelFromUrl: streamLoginFromUrl, isTrustedUrl: isTrustedTwitchUrl,
       noteNavigation, install, boot, heartbeat, sync: syncViewingContext, resume: () => ensureStreamPlaying(true), restorePlayer: () => restoreChannelPlayer(true),
       player: playerPresentationSnapshot, warnings: contentWarningMemory, promos: { suppress: suppressTwitchSubscriptionPromos, restore: restoreTwitchSubscriptionPromos },
-      videoPlaying: streamVideoIsPlaying, refreshSettings: () => { currentSettings = readSettings(); },
+      videoPlaying: streamVideoIsPlaying, playbackNeedsInput, playbackRecovering, refreshSettings: () => { currentSettings = readSettings(); },
     });
   }
 
@@ -9462,9 +9640,21 @@ const ExtraPotionsCore = (() => {
     let channel = null, channelAccount = '', timer = 0;
     const prefix = () => `${store.scoped(TAB_PRESENCE_KEY)}:`;
 
-    const isSwitchingTab = () => { try { return String(pageWindow.name || '').split('|').includes(AUTOMATION_TAB_NAME); } catch (_) { return false; } };
+    const named = () => { try { return String(pageWindow.name || '').split('|').includes(AUTOMATION_TAB_NAME); } catch (_) { return false; } };
+    function nameTab() { try { if (!named()) pageWindow.name = pageWindow.name ? `${pageWindow.name}|${AUTOMATION_TAB_NAME}` : AUTOMATION_TAB_NAME; } catch (_) {} }
+    // window.name can be cleared under the tab (iPad Safari restoring it, a page script renaming the window), so the
+    // choice is also kept in this tab's session storage and the name is put back from it.
+    function isSwitchingTab() {
+      if (named()) return true;
+      let kept = false;
+      // A tab opened from the switching tab carries a copy of its session storage, so its copy does not count.
+      try { kept = !pageWindow.opener && store.session.get('switchingTab', false) === true; } catch (_) {}
+      if (kept) nameTab();
+      return kept;
+    }
     function chooseForSwitching() {
-      try { if (!isSwitchingTab()) pageWindow.name = pageWindow.name ? `${pageWindow.name}|${AUTOMATION_TAB_NAME}` : AUTOMATION_TAB_NAME; } catch (_) {}
+      nameTab();
+      try { store.session.set('switchingTab', true); } catch (_) {}
     }
 
     function entries() {
@@ -9510,6 +9700,17 @@ const ExtraPotionsCore = (() => {
       const all = entries(), alive = live(all, at);
       for (const key of Object.keys(all)) if (!(key in alive)) { try { local.removeItem(prefix() + key); } catch (_) {} }
       const entry = { at, startedAt, path: location.pathname || '/', hidden: Boolean(document.hidden), automation: isSwitchingTab(), ...describe(), ...extra };
+      // A restored directory can be the only tab left after its switching owner closes or expires.
+      if (!entry.automation && entry.waitReason === 'browsing-tab' && !entry.hidden && !pageWindow.opener
+        && /^\/(?:$|directory(?:\/|$)|drops(?:\/(?:campaigns|inventory))?\/?$)/.test(entry.path)
+        && !Object.keys(alive).some(id => id !== tabId) && store.settings().findNextStream) {
+        const intent = store.session.get('viewingIntent', null);
+        if (intent && intent.account === store.login() && !intent.channel && !intent.paused && !intent.manualStream
+          && !store.session.get('manualStreamLock', null) && !store.session.get('viewingSelection', null)) {
+          chooseForSwitching();
+          entry.automation = isSwitchingTab();
+        }
+      }
       try { local.setItem(prefix() + tabId, JSON.stringify(entry)); } catch (_) {}
       try { channel?.postMessage({ type: 'presence', id: tabId, entry }); } catch (_) {}
       return entry;
@@ -10249,7 +10450,10 @@ const ExtraPotionsCore = (() => {
     let haveInventory = false;
     const details = new Map(), detailsMisses = new Map(), detailsAttempts = new Map();
     let sessionNote = null, sessionDrop = null, available = [];
-    let lastPollAt = 0, nextPollAt = now() + POLL_STARTUP_QUIET_MS, pendingReason = 'startup', inFlight = false, errorStreak = 0, lastError = '', dashboardAt = 0, dashboardWithheldAt = 0;
+    // Rewards Twitch's Inventory lists as earned, by Drop ID ('CLAIMED' or 'CLAIMABLE'). A finished campaign leaves
+    // the in-progress list and the campaign list carries no progress, so this is the only sign that it is done.
+    let earned = new Map();
+    let lastPollAt = 0, nextPollAt = now() + POLL_STARTUP_QUIET_MS, pendingReason = 'startup', inFlight = false, errorStreak = 0, lastError = '', dashboardAt = 0, dashboardWithheldAt = 0, dashboardBlockedUntil = 0;
     const target = () => controller()?.snapshot().target || null;
     const isOpen = (campaign, at = now()) => campaigns.state(campaign, null, at).open;
 
@@ -10266,10 +10470,23 @@ const ExtraPotionsCore = (() => {
     // dropped for real campaigns, inventory-claimed rewards marked, and the selected reward's progress
     // reconciled with a matching session counter.
     function pool(at = now()) {
-      const merged = mergeCampaigns(mergeCampaigns(campaigns.catalog(), [...details.values()]), inventory, mergeCampaigns(campaignsFromMemory(at), campaignsPage?.rows() || []));
-      const routable = suppressPageShells(merged, campaign => isOpen(campaign, at));
+      const merged = mergeCampaigns(mergeCampaigns(campaigns.catalog(), [...details.values()], available.filter(row => watchDrops(row).length)), inventory, mergeCampaigns(campaignsFromMemory(at), campaignsPage?.rows() || []));
+      const routable = suppressPageShells(overlayEarned(merged), campaign => isOpen(campaign, at));
       const claimed = claims ? claims.overlayClaimed(routable) : routable;
       return overlaySession(claimed, at);
+    }
+    function overlayEarned(list) {
+      if (!earned.size) return list;
+      return list.map(campaign => {
+        const drops = dropsOf(campaign);
+        if (!drops.some(drop => earned.has(String(drop?.id)))) return campaign;
+        return { ...campaign, timeBasedDrops: drops.map(drop => {
+          const status = earned.get(String(drop?.id));
+          if (!status) return drop;
+          const required = Number(drop.requiredMinutesWatched) || 0;
+          return { ...drop, self: { ...(drop.self || {}), currentMinutesWatched: Math.max(required, Number(drop.self?.currentMinutesWatched) || 0), isClaimed: status === 'CLAIMED' || Boolean(drop.self?.isClaimed) } };
+        }) };
+      });
     }
     function overlaySession(list, at) {
       const selected = target();
@@ -10296,6 +10513,10 @@ const ExtraPotionsCore = (() => {
       if (!result.valid) return null;
       const viewerId = cleanText(row?.data?.currentUser?.id);
       if (/^\d{1,32}$/.test(viewerId)) store.session.set('viewerId', viewerId);
+      const earnedEdges = row?.data?.currentUser?.inventory?.earnedDropRewards?.edges;
+      if (Array.isArray(earnedEdges)) {
+        earned = new Map(earnedEdges.map(edge => [cleanText(edge?.node?.group?.id), cleanText(edge?.node?.status).toUpperCase()]).filter(([id, status]) => id && ['CLAIMED', 'CLAIMABLE'].includes(status)));
+      }
       claims?.nativeEvidence(row?.data?.currentUser?.inventory, result.campaigns);
       inventory = result.campaigns.filter(campaign => {
         const current = campaigns.state(campaign, null, at);
@@ -10314,6 +10535,7 @@ const ExtraPotionsCore = (() => {
     function acceptDashboard(list, at) {
       if (!Array.isArray(list)) return false;
       dashboardAt = at;
+      dashboardBlockedUntil = 0;
       const selected = controller()?.snapshot().target;
       campaigns.retireUnlisted(list, { keep: [...inventory, ...(selected ? [cleanText(selected.campaignKey || selected.campaignId)] : [])] });
       // The saved catalog row first (3.x withKnownCampaignDetails): names, channel lists and credit it already knew.
@@ -10328,6 +10550,9 @@ const ExtraPotionsCore = (() => {
       return true;
     }
 
+    const errorText = row => (Array.isArray(row?.errors) ? row.errors : []).slice(0, 2).map(item => cleanText(item?.message || item?.extensions?.code)).filter(Boolean).join(' · ').slice(0, 160);
+    const channelDiscovery = new Set();
+    const integrityDenied = row => /failed integrity check/i.test(errorText(row));
     const detailsMissed = (key, at = now()) => { const missedAt = detailsMisses.get(cleanText(key).toLowerCase()) || 0; return Boolean(missedAt && at - missedAt < DETAILS_MISS_TTL_MS); };
 
     // DropCampaignDetails for the campaign the controller waits on, or a selected reward still missing its name or
@@ -10361,9 +10586,15 @@ const ExtraPotionsCore = (() => {
       const asked = context();
       let detailed = null, errorCount = 0;
       try {
-        const [row] = await twitch.request([{ op: 'dropCampaignDetails', variables: { dropID: String(campaign.id), channelLogin: viewerId } }]);
+        const ask = [{ op: 'dropCampaignDetails', variables: { dropID: String(campaign.id), channelLogin: viewerId } }];
+        const [row] = await twitch.request(ask);
+        if (sameContext(asked)) {
+          if (integrityDenied(row)) channelDiscovery.add(key);
+          else channelDiscovery.delete(key);
+        }
         const found = row?.data?.user?.dropCampaign || row?.data?.dropCampaign || null;
         errorCount = Array.isArray(row?.errors) ? row.errors.length : 0;
+        if (!found && errorCount) errorCount = errorText(row) || errorCount;
         if (found?.id && String(found.id) === String(campaign.id) && !errorCount) detailed = found;
       } catch (error) { log('campaign-details', 'DropCampaignDetails skipped', { message: cleanText(error?.message || error) }); return false; }
       if (!sameContext(asked)) { log('campaign-details', 'Late reward details ignored', { campaignKey: key }); return false; }
@@ -10401,6 +10632,7 @@ const ExtraPotionsCore = (() => {
     }
 
     function wantsDashboard(at) {
+      if (at < dashboardBlockedUntil) return false;
       const state = controller()?.snapshot() || {};
       if (/^\/drops\/(?:campaigns|inventory)/.test(page.path())) return true;
       if (state.state === 'select' || (state.state === 'waiting' && ['no-eligible-campaign', 'campaign-details'].includes(state.waitReason))) return true;
@@ -10427,10 +10659,10 @@ const ExtraPotionsCore = (() => {
         acceptInventory(rows[index++], at);
         if (dashboard) {
           const row = rows[index++];
-          // Twitch can answer with no campaign list and no error (seen 2026-11): logged every 15 minutes at most.
+          if (integrityDenied(row)) dashboardBlockedUntil = at + DETAILS_MISS_TTL_MS;
           if (!acceptDashboard(row?.data?.currentUser?.dropCampaigns, at) && at - dashboardWithheldAt >= DETAILS_MISS_TTL_MS) {
             dashboardWithheldAt = at;
-            log('poll', 'Twitch sent no campaign list', { currentUser: row?.data?.currentUser === null ? 'null' : typeof row?.data?.currentUser, errorCount: Array.isArray(row?.errors) ? row.errors.length : 0 });
+            log('poll', 'Twitch sent no campaign list', { currentUser: row?.data?.currentUser === null ? 'null' : typeof row?.data?.currentUser, errorCount: Array.isArray(row?.errors) ? row.errors.length : 0, errors: errorText(row) });
           }
         }
         const streamRow = channel ? rows[index++] : null;
@@ -10528,8 +10760,8 @@ const ExtraPotionsCore = (() => {
 
     return Object.freeze({
       campaigns: pool, inventory: () => inventory, session: () => sessionNote, sessionDrop: () => sessionDrop, available: () => available,
-      detailsMissed, poll, heartbeat, request, markClaimed, interval, ingest,
-      snapshot: () => ({ inventoryHealth, haveInventory, lastPollAt, nextPollAt, errorStreak, lastError, dashboardAt, details: details.size, session: sessionNote,
+      channelDiscovery: key => channelDiscovery.has(key) && detailsMissed(key), detailsMissed, poll, heartbeat, request, markClaimed, interval, ingest,
+      snapshot: () => ({ inventoryHealth, haveInventory, lastPollAt, nextPollAt, errorStreak, lastError, dashboardAt, details: details.size, session: sessionNote, earnedRewards: earned.size,
         viewerId: /^\d{1,32}$/.test(cleanText(store.session.get('viewerId', ''))), twitch: twitch.snapshot?.() || null }),
     });
   }
@@ -10828,6 +11060,7 @@ const ExtraPotionsCore = (() => {
 
   // The strip's second line when Twitch is not counting (it takes the bar's place).
   function stripPause({ controller, game, creditAge = 0 }) {
+    if (controller.waitReason === 'player-blocked') return { text: 'Tap Play on Twitch', tone: 'warn' };
     if (controller.diagnosis === 'credit-stalled') return { text: creditAge ? `Stalled · no credit for ${shortAge(creditAge)}` : 'Stalled · no new credit', tone: 'bad' };
     if (controller.mismatchSince) return { text: game ? `Wrong category · ${game}` : 'Wrong category', tone: 'warn' };
     if (controller.offlineSince) return { text: 'Stream offline', tone: 'bad' };
@@ -10866,7 +11099,7 @@ const ExtraPotionsCore = (() => {
         rewardName: reward ? reward.name || 'Current Drop' : `Waiting for ${site} to start a Drop session`,
         game: reward?.game || game || '', channel: channel || '', percent, credited, required,
         minutesTitle: unknown ? (reward ? 'Loading Drop details' : '') : reward.requiredMinutes ? `${reward.currentMinutes == null ? 'Pending' : reward.currentMinutes} / ${reward.requiredMinutes} min` : 'Waiting for first credited minute',
-        pauseText: intent.paused || !reward ? 'Resume' : 'Pause', pauseDisabled: !reward || !channel || !loggedIn,
+        pauseText: intent.paused || controller.waitReason === 'player-blocked' || !reward ? 'Resume' : 'Pause', pauseDisabled: !reward || !channel || !loggedIn,
         checked: age || '—', checkedTitle: age ? `Checked ${age} ago` : 'Checked —',
         stripPause: reward ? pause : null,
         stripLeft: !pause && known ? `· ${Math.max(0, Math.ceil(reward.requiredMinutes - reward.currentMinutes))}m` : '',
@@ -10958,13 +11191,13 @@ const ExtraPotionsCore = (() => {
   const subscriptionText = entry => (entry?.count ? `${entry.count} subscription reward${entry.count === 1 ? '' : 's'} (up to ${entry.maxSubs} sub${entry.maxSubs === 1 ? '' : 's'})` : '');
 
   // Open games in the order Dropper picks them (or the ranked order under My priority), with each row's line.
-  function campaignRows({ games = [], order = [], strategy = 'priority', pickOrder = [], watching = '', queue = [], pool = [], now = Date.now(), failed = false }) {
+  function campaignRows({ games = [], order = [], strategy = 'priority', pickOrder = [], nextGame = null, watching = '', queue = [], pool = [], now = Date.now(), failed = false }) {
     const key = game => normalizeGameName(game);
     const visible = order.filter(entry => games.some(item => key(item.game) === entry));
     const manual = strategy === 'priority';
     const position = (list, item) => { const index = list.indexOf(key(item.game)); return index < 0 ? Number.MAX_SAFE_INTEGER : index; };
     const sorted = [...games].sort((a, b) => (manual ? 0 : position(pickOrder, a) - position(pickOrder, b)) || position(visible, a) - position(visible, b));
-    const watchingKey = key(watching), nextKey = pickOrder.find(entry => entry !== watchingKey) || '';
+    const watchingKey = key(watching), nextKey = nextGame === null ? pickOrder.find(entry => entry !== watchingKey) || '' : key(nextGame);
     const subs = subscriptionRewards(pool, key);
     const ignoredCount = games.filter(item => item.ignored).length;
     const ignoredKeys = new Set(games.filter(item => item.ignored).map(item => key(item.game)));
@@ -11034,6 +11267,12 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(['3.4.43', '3.4.30', '3.4.27', '3.4.26']);
   const RELEASE_NOTES = {
+    '4.1.15': ["On desktop Chromium browsers, a stream opened with Mute Opened Streams plays at zero volume instead of muted, so Twitch keeps it playing while its tab is in the background. Twitch's volume slider is left at 1%.", "A stream whose player reads paused stays open, and Twitch's watch credit decides whether it counts.", "Recovery Paused clears by itself after five minutes, without Resume in System.", "Rewards Twitch already marks as earned are counted as earned, and Twitch is asked once more when it holds back the campaign list."],
+    '4.1.7': ["Kick finds an eligible channel from Home or the campaign directory when stream switching is on, and verifies watch credit against the reward counter.", "Twitch can use channel and inventory data for a priority campaign when its reward details are unavailable."],
+    '4.1.6': ["On Kick, visiting Home, Browse or an available Drops campaigns page starts a search for an eligible live channel when stream switching is enabled.","Streams you open yourself stay selected. The activity log identifies searches that opened a stream automatically or from Open Next Stream."],
+    '4.1.5': ["Kick checks credited minutes alongside player movement and starts a fresh comparison when the tab returns.", "Active Kick campaigns can be found before the first credited minute. Daily cases and campaign rewards are tracked separately.", "Twitch can continue priority campaign discovery from channel and inventory data when campaign details are withheld."],
+    '4.1.4': ["When Twitch holds back the campaign list or reward details, Dropper asks once more with a fresh token, as 3.x did.", "Twitch's own error text is kept in the activity log."],
+    '4.1.3': ["The tab you chose for switching stays chosen when the page reloads or the browser restores it.", "Built on Core 3.17.4."],
     '4.1.2': ["Recovers when Twitch sends no campaign list: a campaign whose reward details never arrive is skipped instead of waited on.", "Playback is read correctly on iPad: a pause you did not make clears as soon as the stream is seen playing.", "Off a stream, the progress card says No Stream Open instead of Finding stream…"],
     '4.1.1': ["On Kick, the launcher sits in Kick's top bar, like on Twitch.", "On Kick, a stream that goes offline and comes back, or changes game, is checked again within a minute, and at once when you return to the tab.", "Built on Core 3.17.4."],
     '4.1.0': ["Dropper works on Kick: the card shows your Drops progress in place of the Chat title bar and says whether the stream counts.", "On Kick, Open Next Stream opens a live stream Kick says counts, and Claim on Kick opens Kick's Drops page.", "Kick's daily watch rewards, including the Sunset Reward Case, show today's minutes.", "Built on Core 3.17.3."],
@@ -13577,7 +13816,7 @@ const ExtraPotionsCore = (() => {
 
     function cardPause() {
       syncViewingContext();
-      if (intent.snapshot().paused) ensureStreamPlaying(true);
+      if (intent.snapshot().paused || page.playbackNeedsInput?.()) ensureStreamPlaying(true);
       else { intent.pause(true); const video = document.querySelector('video'); if (video && !video.paused) { try { video.pause(); } catch (_) { /* the player refused */ } } }
       render();
     }
@@ -13730,7 +13969,7 @@ const ExtraPotionsCore = (() => {
   // Wiring and startup: the only file that reads browser globals. It builds every module from the real storages,
   // the userscript manager's functions and the page, then runs the heartbeat. Page reading, tabs, the data layer
   // and the menu are wired here as their modules land (milestone 3).
-  const APP_VERSION = '4.1.2';
+  const APP_VERSION = '4.1.15';
   const HEARTBEAT_MS = 5000;
   const ACTIVITY_LOG_LIMIT = 40;
   const SECRET_META = /token|cookie|auth|password|integrity|secret/i;
@@ -13790,13 +14029,30 @@ const ExtraPotionsCore = (() => {
       const network = store.session.get('networkState', null);
       if (/gql|integrity/i.test(network?.reason || '')) store.session.set('networkState', { requestTimes: [], consecutiveFailures: 0, openUntil: 0, reason: '', lastOpenedAt: 0, softBudgetWarnedAt: 0 });
     }
+    // 4.1.10 saved a rejected play() as an unknown viewer pause and removed the routing channel.
+    const savedViewing = store.session.get('viewingIntent', null);
+    const savedRoute = store.session.get('controller', null);
+    if (savedViewing?.paused && savedViewing.pauseReason === 'unknown' && savedViewing.manualStream === false &&
+      savedViewing.arrivalSource === 'dropper-navigation' && location.pathname.toLowerCase().replace(/\/$/, '') === '/' + savedViewing.channel &&
+      savedRoute?.waitReason === 'viewer-paused' && savedRoute.target && savedRoute.updatedAt > Date.now() - CONTROLLER_TIMING.staleSession) {
+      const lastPlayback = store.session.get('activityLog', []).filter(entry => entry.type === 'playback').at(-1);
+      if (lastPlayback?.message === 'Playback resume was blocked' && lastPlayback.at >= savedViewing.lastRecoveryAt) {
+        store.session.set('viewingIntent', { ...savedViewing, paused: false, pauseReason: '' });
+        store.session.set('controller', { ...savedRoute, state: CONTROLLER_STATES.OPEN, stream: savedViewing.channel,
+          waitReason: '', verification: null, evidence: null, deadlineAt: Date.now() + CONTROLLER_TIMING.navigation });
+        log('playback', 'Cleared the hold left by an earlier rejected playback request');
+      }
+    }
     const intent = DropperActiveViewing.createIntent({
       load: account => store.session.get('viewingIntent', null, account),
       save: state => store.session.set('viewingIntent', state, state.account),
     });
     let controller = null;
     const startedAt = Date.now();
-    const tabs = createTabs({ store, local, startedAt, describe: () => ({ routingState: controller?.snapshot().state || 'idle' }) });
+    const tabs = createTabs({ store, local, startedAt, describe: () => {
+      const route = controller?.snapshot();
+      return { routingState: route?.state || 'idle', waitReason: route?.waitReason || '', pauseReason: intent.snapshot().pauseReason || '' };
+    } });
     const page = createPage({
       store, session, gm, intent, log, startedAt, settings: () => store.settings(), onChange: changed('page'),
       wantedGame: () => controller?.snapshot().target?.game || '',
@@ -13823,7 +14079,7 @@ const ExtraPotionsCore = (() => {
     drops = createDrops({ store, twitch, campaigns, claims, campaignsPage, page, cookie: readCookie, log, controller: () => controller, onChange: changed('drops') });
     controller = createController({
       store, campaigns, page, intent, log,
-      data: { campaigns: () => drops.campaigns(), session: () => drops.session(), detailsMissed: key => drops.detailsMissed(key) },
+      data: { campaigns: () => drops.campaigns(), session: () => drops.session(), detailsMissed: key => drops.detailsMissed(key), channelDiscovery: key => drops.channelDiscovery(key) },
       requestPoll: (reason, urgent) => drops.request(reason, urgent),
       navigate: (url, reason) => { page.noteNavigation(url, reason); location.assign(url); },
       slugFor: target => page.slugFor(target),
@@ -13878,7 +14134,7 @@ const ExtraPotionsCore = (() => {
         now: at, loggedIn: Boolean(readCookie('auth-token')), settings, controller: snapshot, reward, intent: intent.snapshot(),
         channel, game: streamGame, lastPollAt: drops.snapshot().lastPollAt, status: statusOwner.current(snapshot.status).text,
         switchingTab: tabs.isSwitchingTab(), locked: Boolean(manualLock()), background: document.hidden,
-        campaigns: campaignRows({ games, order, strategy: settings.campaignStrategy, pickOrder, watching: reward?.game || '', queue, pool, now: at, failed: Boolean(drops.snapshot().lastError) && !pool.length }),
+        campaigns: campaignRows({ games, order, strategy: settings.campaignStrategy, pickOrder, nextGame: controller.nextGame(), watching: channel ? streamGame : '', queue, pool, now: at, failed: Boolean(drops.snapshot().lastError) && !pool.length }),
         deadline: eligibility?.deadline || null, eligibility, peers: tabs.peers().length, inCharge: tabs.inCharge(), unclaimed: unclaimedRewards(mergeCampaigns(pool, drops.inventory()), at),
         creditedAt, playing: page.videoPlaying(),
       });
@@ -13970,8 +14226,7 @@ const ExtraPotionsCore = (() => {
   }
 
   // Kick (kick.com). Dropper's card and menu on Kick: the reward Kick is counting, whether the open stream counts
-  // toward it, a link to Kick's own claim page and a button that opens a stream that counts. Nothing here switches
-  // streams or claims on its own, and Twitch's modules are never built on Kick.
+  // toward it, discovery of eligible streams and a link to Kick's own claim page.
   //
   // Only this file talks to Kick: web.kick.com and kick.com/api with the signed-in session (the session_token
   // cookie as a Bearer token, which is what Kick's own pages send). Kick's caches stay in this tab's session
@@ -13984,7 +14239,7 @@ const ExtraPotionsCore = (() => {
   const KICK_CHANNEL_MS = 60 * 1000;
   // Kick adds credited minutes in steps; new minutes within this window read as earning.
   const KICK_CREDIT_FRESH_MS = 6 * 60 * 1000;
-  const KICK_NEXT_STREAM_CHECKS = 6;
+  const KICK_CHANNEL_SEARCH_BATCH = 2;
   const KICK_CLAIM_URL = 'https://kick.com/drops/campaigns';
   const KICK_IMAGE_BASE = 'https://ext.cdn.kick.com/';
   // The settings Kick shows (Look); Reset on Kick puts only these back.
@@ -14059,6 +14314,19 @@ const ExtraPotionsCore = (() => {
     return out;
   }
 
+  function kickCampaignPool(catalog, progress, now) {
+    const rows = new Map();
+    for (const campaign of kickList(catalog)) {
+      const start = Date.parse(campaign?.starts_at), end = Date.parse(campaign?.ends_at);
+      if (campaign?.id && start <= now && end > now && !/expired|cancel|closed/i.test(campaign.status || '') &&
+          campaign.rewards?.some(reward => reward.required_units > 0) && campaign.rule?.name === 'Watch to redeem') rows.set(campaign.id, campaign);
+    }
+    for (const campaign of kickList(progress)) {
+      if (campaign?.id) rows.set(campaign.id, { ...rows.get(campaign.id), ...campaign });
+    }
+    return [...rows.values()];
+  }
+
   // Which reward the card follows: one the open stream counts toward first, then the one closest to done.
   function kickPickCampaign(progress, eligibleIds = null, now = Date.now()) {
     const open = kickList(progress).filter(campaign => {
@@ -14077,13 +14345,13 @@ const ExtraPotionsCore = (() => {
     if (!challenge || condition?.type !== 'watch_time_minutes') return null;
     const required = Math.max(0, kickNumber(condition.threshold) ?? 0), minutes = Math.max(0, kickNumber(condition.progress) ?? 0);
     const endMs = Date.parse(challenge.active_period?.ends_at || '') || 0;
-    if (!required || (endMs && endMs <= now)) return null;
+    const windowEnd = Date.parse(challenge.window?.ends_at || '');
+    if (!required || (endMs && endMs <= now) || windowEnd <= now) return null;
     const id = `challenge:${cleanText(challenge.id)}`, name = cleanText(challenge.name) || 'Daily Reward', currentMinutes = Math.min(minutes, required);
     return {
       id, name, game: 'Any Stream', campaignId: id, campaignName: name, currentMinutes, requiredMinutes: required,
       percent: progressPercent(currentMinutes, required), remainingMinutes: required - currentMinutes, rewardImage: '',
-      // Kick's word for an opened case is not known yet; a status that mentions claiming or opening counts.
-      isClaimed: /claim|open|redeem/i.test(cleanText(challenge.status)), endAt: cleanText(challenge.window?.ends_at), ended: false,
+      isClaimed: /^(claimed|opened|redeemed)$/i.test(cleanText(challenge.status)), endAt: cleanText(challenge.window?.ends_at), ended: false,
       featured: Boolean(challenge.featured), challenge: true, connected: true,
     };
   }
@@ -14103,13 +14371,14 @@ const ExtraPotionsCore = (() => {
   }
 
   // The card's label for Kick, in the same words Twitch uses where they mean the same thing.
-  function kickCardState({ loggedIn, reward, onChannel, live, eligibility, creditedAt = 0, now = Date.now() }) {
+  function kickCardState({ loggedIn, reward, onChannel, live, eligibility, stalled = false, creditedAt = 0, now = Date.now() }) {
     if (!loggedIn) return ['Login required', 'warn'];
     if (reward && reward.requiredMinutes > 0 && reward.currentMinutes >= reward.requiredMinutes) return [reward.isClaimed ? 'Claimed ✓' : 'Earned', 'good'];
     if (!reward) return ['Idle', ''];
     if (!onChannel) return ['Waiting', ''];
     if (live === false) return ['Waiting', 'warn'];
     if (eligibility === 'no') return ['Not counting', 'warn'];
+    if (stalled) return ['Stalled', 'warn'];
     if (eligibility === 'yes') return creditedAt && now - creditedAt < KICK_CREDIT_FRESH_MS ? ['Earning', 'good'] : ['Syncing', 'warn'];
     return ['Syncing', 'warn'];
   }
@@ -14137,14 +14406,17 @@ const ExtraPotionsCore = (() => {
       if (!response.ok) throw new Error(`Kick answered ${response.status}`);
       return response.json();
     }
-    const data = body => body?.data;
+    const data = body => {
+      if (!Array.isArray(body?.data)) throw new Error('Kick returned an unreadable rewards list');
+      return body.data;
+    };
     return Object.freeze({
       signedIn: () => Boolean(token()),
-      progress: async () => kickList(data(await json(`${KICK_API}/drops/progress`))),
-      campaigns: async () => kickList(data(await json(`${KICK_API}/drops/campaigns`))),
-      challenges: async () => kickList(data(await json(`${KICK_API}/gamification/challenges`))),
+      progress: async () => data(await json(`${KICK_API}/drops/progress`)),
+      campaigns: async () => data(await json(`${KICK_API}/drops/campaigns`)),
+      challenges: async () => data(await json(`${KICK_API}/gamification/challenges`)),
       // The campaigns this stream counts toward, as Kick's stream page asks.
-      counting: async (channelId, categoryId) => kickList(data(await json(`${KICK_API}/drops/campaigns/livestream?channel_id=${encodeURIComponent(channelId)}&category_id=${encodeURIComponent(categoryId)}`))),
+      counting: async (channelId, categoryId) => data(await json(`${KICK_API}/drops/campaigns/livestream?channel_id=${encodeURIComponent(channelId)}&category_id=${encodeURIComponent(categoryId)}`)),
       channel: async slug => {
         const body = await json(`https://kick.com/api/v2/channels/${encodeURIComponent(slug)}/info`, { auth: false });
         const stream = body?.livestream || null, category = kickList(stream?.categories)[0] || null;
@@ -14172,7 +14444,7 @@ const ExtraPotionsCore = (() => {
     const kick = createKickClient({ pageFetch: typeof pageWindow.fetch === 'function' ? pageWindow.fetch.bind(pageWindow) : null, cookie: readCookie, log });
     const state = {
       progress: [], challenges: [], campaigns: [], progressAt: 0, campaignsAt: 0, error: '', loginNeeded: false,
-      slug: '', channel: null, channelAt: 0, channelFailed: '', counting: null, countingAt: 0, countingFor: '',
+      slug: '', channel: null, channelAt: 0, channelFailed: '', counting: null, countingAt: 0, countingFor: '', progressAvailable: false,
       credit: { id: '', minutes: null, at: 0 }, searching: false, notice: '',
     };
     let ui = null, timer = 0, busy = false;
@@ -14181,15 +14453,20 @@ const ExtraPotionsCore = (() => {
     async function refreshProgress(force = false) {
       if (!force && (document.hidden || Date.now() - state.progressAt < KICK_PROGRESS_MS)) return;
       state.progressAt = Date.now();
-      try {
-        state.progress = await kick.progress();
-        state.error = ''; state.loginNeeded = false;
-        try { state.challenges = await kick.challenges(); } catch (error) { log('kick-challenges', cleanText(error?.message || error)); }
-      } catch (error) {
-        state.error = cleanText(error?.message || error); state.loginNeeded = error?.code === 'login';
-        log('kick-progress', state.error);
+      const visibility = visibilityGeneration, slug = kickChannelSlug();
+      const [drops, daily] = await Promise.allSettled([kick.progress(), kick.challenges()]);
+      state.progressAvailable = drops.status === 'fulfilled';
+      state.loginNeeded = [drops, daily].every(result => result.status === 'rejected' && result.reason?.code === 'login');
+      state.error = '';
+      for (const [field, result] of [['progress', drops], ['challenges', daily]]) {
+        if (result.status === 'fulfilled') state[field] = result.value;
+        else {
+          state.error = cleanText(result.reason?.message || result.reason);
+          log('kick-' + field, state.error);
+        }
       }
-      noteCredit();
+      if (visibility !== visibilityGeneration || document.hidden || slug !== kickChannelSlug() || slug !== state.slug) { resetCredit(); return; }
+      noteCredit(drops.status === 'fulfilled', daily.status === 'fulfilled');
     }
     async function refreshCampaigns(force = false) {
       if (!force && Date.now() - state.campaignsAt < KICK_CAMPAIGNS_MS) return;
@@ -14200,6 +14477,8 @@ const ExtraPotionsCore = (() => {
     // stays open: a stream that ends and comes back, or moves category, gets a fresh answer within a minute.
     async function refreshChannel(force = false) {
       const slug = kickChannelSlug();
+      const routed = store.session.get('kickRoutedChannel', '');
+      if (routed && routed !== slug) store.session.remove('kickRoutedChannel');
       if (slug !== state.slug) { state.slug = slug; state.channel = null; state.channelAt = 0; state.channelFailed = ''; state.counting = null; state.countingFor = ''; }
       if (!slug || (!force && document.hidden)) return;
       if (force || Date.now() - state.channelAt >= KICK_CHANNEL_MS) {
@@ -14207,7 +14486,8 @@ const ExtraPotionsCore = (() => {
         try { state.channel = await kick.channel(slug); state.channelFailed = ''; } catch (error) {
           // A Kick page that is not a channel fails every minute; the activity log notes it once.
           if (state.channelFailed !== slug) { state.channelFailed = slug; log('kick-channel', cleanText(error?.message || error), { slug }); }
-          if (!state.channel) return;
+          state.channel = null; state.counting = null; state.countingFor = '';
+          return;
         }
       }
       const channel = state.channel;
@@ -14219,66 +14499,142 @@ const ExtraPotionsCore = (() => {
       try { state.counting = new Set((await kick.counting(channel.id, channel.categoryId)).map(kickCampaignId).filter(Boolean)); }
       catch (error) { state.counting = null; log('kick-counting', cleanText(error?.message || error), { slug }); }
     }
-    function noteCredit() {
-      const { reward } = kickPickTarget(state.progress, state.challenges, state.counting);
-      const id = reward?.campaignId || '', minutes = reward ? kickNumber(reward.currentMinutes) : null;
-      if (id !== state.credit.id) state.credit = { id, minutes, at: 0 };
-      else if (minutes != null && state.credit.minutes != null && minutes > state.credit.minutes) state.credit = { id, minutes, at: Date.now() };
-      else if (minutes != null && state.credit.minutes == null) state.credit.minutes = minutes;
+    const campaignPool = (at = Date.now()) => kickCampaignPool(state.campaigns, state.progress, at);
+    const creditKey = reward => reward ? JSON.stringify([state.slug, state.channel?.id, reward.campaignId, reward.id, reward.endAt]) : '';
+    let visibilityGeneration = 0, previousPlayer = null;
+    function resetCredit() {
+      state.credit = { id: '', minutes: null, at: 0, checkedAt: 0, observedMs: 0, playback: 'unknown' };
+      previousPlayer = null;
+    }
+    function noteCredit(dropsUpdated, dailyUpdated) {
+      const { reward } = kickPickTarget(campaignPool(), state.challenges, state.counting);
+      const eligible = state.channel?.live && (reward?.challenge || state.counting?.has(reward?.campaignId));
+      if (!eligible || !(reward?.challenge ? dailyUpdated : dropsUpdated)) { resetCredit(); return; }
+
+      const at = Date.now(), id = creditKey(reward), minutes = reward.currentMinutes;
+      const last = state.credit, gap = at - last.checkedAt;
+      const continuous = id === last.id && minutes >= last.minutes && gap >= 0 && gap <= 2 * KICK_PROGRESS_MS;
+      const video = document.querySelector('#injected-channel-player video');
+      const sample = video && { video, src: video.currentSrc, time: video.currentTime, playing: !video.paused && !video.ended && !video.error && video.readyState >= 2 };
+      const comparable = continuous && sample?.playing && previousPlayer?.playing &&
+        sample.video === previousPlayer.video && sample.src === previousPlayer.src;
+      const elapsed = comparable ? (sample.time - previousPlayer.time) * 1000 : 0;
+      const advanced = elapsed > 0 && elapsed <= gap * Math.max(1, video.playbackRate) + 2000;
+      const playback = advanced ? 'advancing' : !video ? 'missing' : video.error ? 'error' : video.paused ? 'paused' : 'unconfirmed';
+      const gained = continuous && minutes > last.minutes;
+      state.credit = {
+        id, minutes, previousMinutes: continuous ? last.minutes : null, checkedAt: at, playback,
+        at: gained ? at : continuous ? last.at : 0,
+        observedMs: advanced && !gained ? (last.observedMs || 0) + Math.min(gap, elapsed) : 0,
+      };
+      previousPlayer = sample;
     }
 
+    let signedIn = false, retrySearchAt = 0;
     async function heartbeat(force = false) {
       if (busy) return;
       busy = true;
       try {
+        const authenticated = kick.signedIn();
+        force ||= authenticated !== signedIn;
+        signedIn = authenticated;
         await refreshChannel(force);
-        await refreshProgress(force);
         await refreshCampaigns(force);
+        await refreshProgress(force);
       } finally { busy = false; }
       ui?.heartbeat();
       changed();
+      if (Date.now() >= retrySearchAt && canSearchAutomatically(snapshot())) void openNextStream(true);
     }
 
     // What the card and menu show now.
     function snapshot() {
       const at = Date.now(), loggedIn = kick.signedIn() && !state.loginNeeded;
-      const { campaign, reward } = kickPickTarget(state.progress, state.challenges, state.counting, at);
+      const { campaign, reward } = kickPickTarget(campaignPool(), state.challenges, state.counting, at);
       const onChannel = Boolean(state.slug), live = state.channel ? state.channel.live : null;
       // A daily case counts on any live stream; a Drops campaign only where Kick says so.
       const eligibility = !reward || !onChannel ? '' : reward.challenge ? (live ? 'yes' : '') : !state.counting ? '' : state.counting.has(reward.campaignId) ? 'yes' : 'no';
-      const creditedAt = reward && state.credit.id === reward.campaignId ? state.credit.at : 0;
+      const creditedAt = reward && state.credit.id === creditKey(reward) ? state.credit.at : 0;
       const unclaimed = [...kickUnclaimed(state.progress), ...kickList(state.challenges).map(item => kickChallengeReward(item, at)).filter(item => kickDone(item) && !item.isClaimed).map(item => ({ name: item.name, game: 'Any Stream', campaign: item.name }))];
-      return { at, loggedIn, campaign, reward, onChannel, live, eligibility, creditedAt, unclaimed };
+      const stalled = eligibility === 'yes' && !kickDone(reward) && state.credit.id === creditKey(reward) && state.credit.observedMs >= KICK_CREDIT_FRESH_MS && at - state.credit.checkedAt <= 2 * KICK_PROGRESS_MS;
+      return { at, loggedIn, campaign, reward, onChannel, live, eligibility, creditedAt, stalled, unclaimed };
     }
     function view() {
       const now = snapshot(), settings = store.settings();
       const cardOverride = kickCardState({ ...now, now: now.at });
-      const status = state.notice || kickStatusText({ ...now, unclaimed: now.unclaimed.length });
+      const status = state.notice || (now.stalled ? 'Kick has reported no new watch minutes for six minutes.' : '') || kickStatusText({ ...now, unclaimed: now.unclaimed.length });
       return buildView({
-        now: now.at, loggedIn: now.loggedIn, settings, controller: { state: now.eligibility === 'yes' ? 'earning' : 'idle' }, reward: now.reward,
+        now: now.at, loggedIn: now.loggedIn, settings, controller: { state: cardOverride[0] === 'Earning' ? 'earning' : 'idle' }, reward: now.reward,
         intent: {}, channel: state.channel?.slug || state.slug, game: state.channel?.category || '', lastPollAt: state.progressAt, status,
         background: document.hidden, site: 'Kick', cardOverride, creditedAt: now.creditedAt,
         deadline: now.reward?.endAt ? { minutesUntilDeadline: (Date.parse(now.reward.endAt) - now.at) / 60000, requiredMinutes: now.reward.remainingMinutes } : null,
       });
     }
 
-    // Open Next Stream: a live channel Kick says counts toward the followed campaign. The viewer presses it.
-    async function openNextStream() {
-      const { reward } = snapshot();
+    // A directly opened channel belongs to the viewer. Only resume routing on a channel this tab opened.
+    function canSearchAutomatically(current) {
+      if (document.hidden || !current.loggedIn || !state.progressAvailable || !store.settings().findNextStream) return false;
+      const path = location.pathname.toLowerCase().replace(/\/+$/, '');
+      if (!path || /^\/(browse|following|categories|category)(\/|$)/.test(path)) return true;
+      if (path === '/drops' || path === '/drops/campaigns') return !current.unclaimed.length && !state.error;
+      if (!state.slug || path !== '/' + state.slug || store.session.get('kickRoutedChannel', '') !== state.slug) return false;
+      return current.live === false || (current.live === true && state.counting !== null);
+    }
+
+    function streamSearchReward(current) {
+      if (!current.loggedIn || !current.reward) return null;
+      const available = campaignPool(current.at).filter(item => {
+        const drop = kickReward(item, current.at);
+        return drop && !drop.isClaimed && !kickDone(drop);
+      });
+      const drop = kickReward(kickPickCampaign(available, state.counting, current.at), current.at);
+      if (drop && !kickDone(drop) && (!state.counting?.has(drop.campaignId) || current.stalled)) return drop;
+      return null;
+    }
+
+    async function openNextStream(automatic = false) {
+      const reward = streamSearchReward(snapshot());
       if (!reward || state.searching) return;
+      const origin = location.pathname, generation = visibilityGeneration;
+      function stillWanted() {
+        const current = snapshot();
+        return origin === location.pathname && streamSearchReward(current)?.campaignId === reward.campaignId &&
+          (!automatic || (generation === visibilityGeneration && canSearchAutomatically(current)));
+      }
+      retrySearchAt = Date.now() + KICK_ELIGIBILITY_MS;
       state.searching = true; state.notice = `Looking for a stream that counts toward ${reward.campaignName}…`; changed();
       try {
         const listed = kickList(state.campaigns.find(item => cleanText(item?.id) === reward.campaignId)?.channels).map(item => cleanText(item?.slug || item?.user?.username)).filter(Boolean);
         const candidates = listed.length ? listed : reward.categoryId ? (await kick.liveInCategory(reward.categoryId)).map(item => item.slug) : [];
-        for (const slug of candidates.filter(slug => slug !== state.slug).slice(0, KICK_NEXT_STREAM_CHECKS)) {
-          const channel = await kick.channel(slug).catch(() => null);
-          if (!channel?.live || !channel.id || !channel.categoryId) continue;
-          const counts = await kick.counting(channel.id, channel.categoryId).catch(() => []);
-          if (!counts.some(item => kickCampaignId(item) === reward.campaignId)) continue;
-          log('kick-next-stream', `Opening ${channel.slug}`, { campaign: reward.campaignName });
-          location.assign(`https://kick.com/${channel.slug}`);
-          return;
+        const slugs = [...new Set(candidates)].filter(slug => slug !== state.slug && /^[a-z0-9_-]{2,40}$/i.test(slug));
+        async function eligibleChannel(slug) {
+          const channel = await kick.channel(slug);
+          if (!channel.live || !channel.id || !channel.categoryId) return null;
+          const campaigns = await kick.counting(channel.id, channel.categoryId);
+          return campaigns.some(item => kickCampaignId(item) === reward.campaignId) ? slug : null;
         }
+        let lastFailure = null, checked = 0;
+        for (let start = 0; start < slugs.length; start += KICK_CHANNEL_SEARCH_BATCH) {
+          if (!stillWanted()) return;
+          const batch = slugs.slice(start, start + KICK_CHANNEL_SEARCH_BATCH);
+          const results = await Promise.allSettled(batch.map(eligibleChannel));
+          const eligible = results.find(result => result.status === 'fulfilled' && result.value);
+          if (eligible) {
+            if (!stillWanted()) return;
+            store.session.set('kickRoutedChannel', eligible.value);
+            log('kick-next-stream', `Opening ${eligible.value}`, { campaign: reward.campaignName, source: automatic ? 'automatic' : 'button' });
+            location.assign(`https://kick.com/${eligible.value}`);
+            return;
+          }
+          for (const result of results) {
+            if (result.status === 'fulfilled') checked += 1;
+            else {
+              lastFailure = result.reason;
+              if (lastFailure?.code === 'login') throw lastFailure;
+            }
+          }
+        }
+        if (lastFailure && !checked) throw lastFailure;
         state.notice = `No live stream found that counts toward ${reward.campaignName}. Try again later.`;
       } catch (error) {
         state.notice = cleanText(error?.message || error);
@@ -14296,7 +14652,7 @@ const ExtraPotionsCore = (() => {
         const next = Object.assign(document.createElement('button'), { type: 'button', className: 'life-btn', id: 'tdh-kick-next', textContent: 'Open Next Stream' });
         claim.dataset.expPrimary = '1';
         claim.addEventListener('click', () => { try { window.open(KICK_CLAIM_URL, '_blank', 'noopener'); } catch (_) { location.assign(KICK_CLAIM_URL); } });
-        next.addEventListener('click', openNextStream);
+        next.addEventListener('click', () => openNextStream());
         actions.append(claim, next);
         const list = Object.assign(document.createElement('div'), { className: 'campaign-game-list', id: 'tdh-kick-campaigns' });
         body.append(status, actions, list);
@@ -14307,7 +14663,7 @@ const ExtraPotionsCore = (() => {
         const status = body.querySelector('#tdh-kick-status'), claim = body.querySelector('#tdh-kick-claim'), next = body.querySelector('#tdh-kick-next'), list = body.querySelector('#tdh-kick-campaigns');
         if (status) status.textContent = current?.status.detail || '';
         if (claim) claim.hidden = !now.unclaimed.length;
-        if (next) { next.hidden = !now.loggedIn || !now.reward || now.reward.challenge || now.eligibility === 'yes'; next.disabled = state.searching; }
+        if (next) { next.hidden = !streamSearchReward(now); next.disabled = state.searching; }
         if (!list) return;
         const cases = kickList(state.challenges).map(item => kickChallengeReward(item, now.at)).filter(Boolean).sort((a, b) => Number(b.featured) - Number(a.featured));
         const caseRows = cases.map(reward => {
@@ -14321,7 +14677,7 @@ const ExtraPotionsCore = (() => {
           row.append(copy);
           return row;
         });
-        const rows = kickList(state.progress).map(campaign => ({ campaign, reward: kickReward(campaign, now.at) })).filter(item => item.reward && !item.reward.ended);
+        const rows = campaignPool(now.at).map(campaign => ({ campaign, reward: kickReward(campaign, now.at) })).filter(item => item.reward && !item.reward.ended);
         list.replaceChildren(...caseRows, ...(rows.length ? rows.map(({ campaign, reward }) => {
           const row = Object.assign(document.createElement('div'), { className: 'campaign-game-row' });
           const copy = Object.assign(document.createElement('div'), { className: 'campaign-game-copy' });
@@ -14338,18 +14694,24 @@ const ExtraPotionsCore = (() => {
       reset() {
         store.saveSettings(Object.fromEntries(KICK_RESET_SETTINGS.map(key => [key, SETTING_DEFAULTS[key]])));
         store.session.remove('activityLog');
+        store.session.remove('kickRoutedChannel');
       },
       health() {
         const now = snapshot(), checkedAt = state.progressAt || null;
         if (!now.loggedIn) return { state: 'attention', reason: 'Sign in to Kick to see Drops progress.', checkedAt };
         if (now.eligibility === 'yes' && now.creditedAt && now.at - now.creditedAt < KICK_CREDIT_FRESH_MS) return { state: 'working', reason: 'Kick has recently credited reward progress.', checkedAt };
+        if (now.stalled) return { state: 'attention', reason: 'Kick has reported no new watch minutes for six minutes.', checkedAt };
         return { state: 'waiting', reason: kickStatusText({ ...now, unclaimed: now.unclaimed.length }), checkedAt };
       },
     });
 
     // The menu's Twitch modules, as inert stand-ins: their controls are not on Kick's menu.
-    const controller = { snapshot: () => ({ state: snapshot().eligibility === 'yes' ? 'earning' : 'idle' }), tick() {}, skipStream() { return false; }, reorder() { return {}; }, resumeRecovery() {}, earningConfirmed: () => false, clearSkipped() {} };
-    const drops = { snapshot: () => ({ lastPollAt: state.progressAt, lastError: state.error }), prepend() {}, append() {} };
+    const earningConfirmed = () => { const current = snapshot(); return kickCardState({ ...current, now: current.at })[0] === 'Earning'; };
+    const controller = { snapshot: () => ({ state: earningConfirmed() ? 'earning' : 'idle' }), tick() {}, skipStream() { return false; }, reorder() { return {}; }, resumeRecovery() {}, earningConfirmed, clearSkipped() {} };
+    const drops = { snapshot: () => {
+      const { reward, eligibility, live, creditedAt, stalled } = snapshot();
+      return { previousMinutes: state.credit.previousMinutes ?? null, playback: state.credit.playback || 'unknown', observedMs: state.credit.observedMs || 0, visible: !document.hidden, campaignId: reward?.campaignId || '', lastPollAt: state.progressAt, lastError: state.error, channel: state.slug, live, eligibility, rewardId: reward?.id || '', minutes: reward?.currentMinutes ?? null, checkedAt: state.credit.checkedAt || null, creditedAt, stalled };
+    }, prepend() {}, append() {} };
     const claims = { summary: () => '', ledger: () => [] };
     const page = { warnings: { clear: () => false, process() {} }, sync() {}, resume: () => false, restorePlayer: () => false, login: () => state.slug };
     const tabs = { peers: () => [], chooseForSwitching() {} };
@@ -14365,7 +14727,11 @@ const ExtraPotionsCore = (() => {
       });
       ui.mount();
       log('lifecycle', `Dropper ${APP_VERSION} started on Kick`);
-      document.addEventListener('visibilitychange', () => { if (!document.hidden) heartbeat(true); });
+      document.addEventListener('visibilitychange', () => {
+        visibilityGeneration += 1;
+        resetCredit();
+        if (!document.hidden) heartbeat(true);
+      });
       heartbeat(true);
       timer = setInterval(() => heartbeat(false), HEARTBEAT_MS);
     }

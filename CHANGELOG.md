@@ -1,3 +1,10 @@
+## 4.1.15 — 2026-11-20
+
+- On desktop Chromium browsers, a stream opened with Mute Opened Streams plays at zero volume instead of muted, so Twitch keeps it playing while its tab is in the background. Twitch's volume slider is left at 1%.
+- A stream whose player reads paused stays open, and Twitch's watch credit decides whether it counts.
+- Recovery Paused clears by itself after five minutes, without Resume in System.
+- Rewards Twitch already marks as earned are counted as earned, and Twitch is asked once more when it holds back the campaign list.
+
 ## 4.1.2 — 2026-11-19
 
 - Recovers when Twitch sends no campaign list: a campaign whose reward details never arrive is skipped instead of waited on.
