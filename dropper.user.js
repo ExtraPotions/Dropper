@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      4.2.0
+// @version      4.2.1
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -2524,7 +2524,7 @@ const ExpLauncherFlyout = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.18.0';
+  const version = '3.18.1';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -3866,20 +3866,6 @@ const ExtraPotionsCore = (() => {
       return { top, right:Math.round(right), width, side };
     };
     const slot = slotBand();
-    if (slot?.hub?.dock === 'right') {
-      // A left-rail entry opens beside the rail, rather than at the window's right edge.
-      const viewport = viewWidth(), hub = slot.hub;
-      panel.style.width = Math.min(preferredWidth, Math.max(0, viewport - 16)) + 'px';
-      const w = panel.offsetWidth || preferredWidth;
-      const beside = hub.left + hub.size + 8;
-      const fitsBeside = beside + w <= viewport - 8;
-      const left = fitsBeside ? beside : Math.max(8, Math.min(viewport - w - 8, hub.left));
-      const top = fitsBeside ? (slot.bottom > hub.top + hub.size ? slot.bottom + 8 : hub.top) : slot.bottom + 8;
-      const room = innerHeight - top - 8;
-      limitHeight(room < 160 ? innerHeight - 16 : room);
-      host.dataset.openDirection = 'down';
-      return finish(room < 160 ? 'rail-viewport' : fitsBeside ? 'rail-beside' : 'rail-below', viewport - left - w, room < 160 ? 8 : top, panel.offsetHeight);
-    }
     if (slot) {
       // From the flyout or a site slot: right-aligned 8px from the window edge, beyond the launcher and its open flyout.
       const blocks=reserved&&reserved.left<innerWidth-8&&reserved.right>innerWidth-8-width;
@@ -3950,13 +3936,8 @@ const ExtraPotionsCore = (() => {
       }
     } else if (slotBand()) {
       const band = slotBand();
-      if (band.hub?.dock === 'right') {
-        const left = Math.max(8, Math.min(viewWidth() - width - 8, band.hub.left + band.hub.size + 8));
-        right = left + width; top = band.bottom + 8;
-      } else {
-        right = viewWidth() - 8;
-        top = clearReserved(band.down ? band.bottom + 8 : band.top - height - 8, height, right - width, right, band.down, notice);
-      }
+      right = viewWidth() - 8;
+      top = clearReserved(band.down ? band.bottom + 8 : band.top - height - 8, height, right - width, right, band.down, notice);
     } else if (reserved && reserved.right - 8 >= width) {
       right = reserved.right;
       top = anchorTop ? reserved.bottom + 8 : reserved.top - height - 8;
@@ -4047,14 +4028,14 @@ const ExtraPotionsCore = (() => {
   // The shared launcher sits in the site's slot when it has one, otherwise in the bottom-right corner.
   function flyoutHubBox() {
     const slot = siteSlot();
-    if (slot) return { left:slot.left, top:slot.top, size:slot.size||FLYOUT_TILE, shape:slot.shape, anchor:'top', site:true, dock:slot.dock };
+    if (slot) return { left:slot.left, top:slot.top, size:FLYOUT_TILE, anchor:'top', site:true };
     const origin = innerHeight-60+savedDelta(), anchor = origin <= (innerHeight-48)/2 ? 'top' : 'bottom';
     return { left:viewWidth()-12-48, top:Math.max(8, Math.min(innerHeight-56, origin)) + siteControlShift(origin, anchor), size:48, anchor, site:false };
   }
   function flyoutPanelBox(hub, count) {
     const width = 2 + FLYOUT_PAD*2 + FLYOUT_TILE*count + FLYOUT_GAP*Math.max(0, count-1), height = 2 + FLYOUT_PAD*2 + FLYOUT_TILE;
-    const left = Math.max(8, Math.min(viewWidth() - 8 - width, hub.dock === 'right' ? hub.left + hub.size + 6 : hub.left + hub.size - width));
-    const top = hub.dock === 'right' && hub.left + hub.size + 6 + width <= viewWidth() - 8 ? hub.top : hub.anchor === 'top' ? hub.top + hub.size + 6 : hub.top - 6 - height;
+    const left = Math.max(8, Math.min(viewWidth() - 8 - width, hub.left + hub.size - width));
+    const top = hub.anchor === 'top' ? hub.top + hub.size + 6 : hub.top - 6 - height;
     return { left, top, width, height, right:left+width, bottom:top+height };
   }
   function flyoutBand(state = flyoutState()) {
@@ -4109,38 +4090,11 @@ const ExtraPotionsCore = (() => {
     const first = icons.reduce((a, b) => a.left <= b.left ? a : b), size = Math.round(Math.max(28, Math.min(40, first.height)));
     return { left, top: Math.round(barBox.top + (barBox.height - FLYOUT_TILE) / 2), row: { right, minLeft: searchEnd + 8, size, gap: 8, top: Math.round(barBox.top + (barBox.height - size) / 2) } };
   }
-  // Reddit's left-rail entry belongs to THREAD. Other products alone keep their existing placement.
-  // Native accessible controls/rail geometry supply coordinates; no enhancement-script anchor is used.
-  function redditSlot() {
-    if (!document.querySelector('[data-exp-product-launcher="1"][data-product-id="thread"]')) return null;
-    const rail = document.querySelector('#left-sidebar-container');
-    watchSlotNode(rail);
-    const box = rail && visibleBox(rail);
-    const handles = [...document.querySelectorAll('button[aria-controls="left-sidebar-container"],button[aria-label="Collapse navigation"],button[aria-label="Collapse sidebar"],button[aria-label="Expand navigation"],button[aria-label="Expand sidebar"]')]
-      .filter(node => !node.closest('[data-exp-owned]')).map(visibleBox).filter(Boolean);
-    const handle = handles.find(r => r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < Math.min(innerWidth / 2, 420)) || null;
-    const header = document.querySelector('reddit-header-large,shreddit-header,header[role="banner"]');
-    const headerBox = header && visibleBox(header);
-    const expanded = box && box.width >= 120 && box.right <= Math.min(viewWidth() - 48, 600) && box.bottom > 80;
-    const size = handle ? Math.max(24, Math.min(48, Math.min(handle.width, handle.height))) : 32;
-    let left = expanded ? box.right - size / 2 : handle ? handle.left + (handle.width - size) / 2 : 12;
-    let top = handle ? handle.bottom + 8 : expanded ? Math.max(8, box.top) + 56 : Math.max(8, headerBox?.bottom || 48) + 12;
-    // Sidebar links retain their hit targets. Slide clear of a native control in the proposed slot.
-    const controls = [...(rail?.querySelectorAll('button,a[href]') || [])].slice(0,120).map(visibleBox).filter(Boolean);
-    for (let attempt=0;attempt<8;attempt++) {
-      const blocked = controls.find(r => r.left < left + size && r.right > left && r.top < top + size && r.bottom > top);
-      if (!blocked) break;
-      top = blocked.bottom + 8;
-    }
-    left = Math.max(8, Math.min(viewWidth() - size - 8, left));
-    top = Math.max(8, Math.min(innerHeight - size - 8, top));
-    return {left:Math.round(left),top:Math.round(top),dock:'right',size,shape:'circle'};
-  }
-  const SITE_SLOTS = Object.freeze([{ host:/(^|\.)twitch\.tv$/, find:twitchSlot },{ host:/(^|\.)kick\.com$/, find:kickSlot },{ host:/^(www|sh)\.reddit\.com$/, find:redditSlot }]);
+  const SITE_SLOTS = Object.freeze([{ host:/(^|\.)twitch\.tv$/, find:twitchSlot },{ host:/(^|\.)kick\.com$/, find:kickSlot }]);
   let slotMemo = null, frozenSlot;
   function siteSlot() {
     // While the flyout is open the launcher stays put, so the open flyout never jumps under the pointer.
-    if (frozenSlot !== undefined && frozenSlot?.dock !== 'right' && document.documentElement.dataset.expFlyoutOpen === '1') return frozenSlot;
+    if (frozenSlot !== undefined && document.documentElement.dataset.expFlyoutOpen === '1') return frozenSlot;
     const now = performance.now();
     if (!slotMemo || now - slotMemo.at > 150 || slotMemo.width !== innerWidth || slotMemo.height !== innerHeight) {
       const row = SITE_SLOTS.find(entry => entry.host.test(location.hostname));
@@ -4158,7 +4112,7 @@ const ExtraPotionsCore = (() => {
     if (row) { const width = state.hosts.length * row.size + (state.hosts.length - 1) * row.gap; return { hub:{ left:row.left, top:row.top, size:row.size, width, anchor:'top', site:true, row:true }, panel:null, top:row.top, bottom:row.top + row.size, down:true }; }
     if (state.hosts.length !== 1) return null;
     const slot = siteSlot();
-    return slot ? { hub:{ ...slot, size:slot.size||FLYOUT_TILE, anchor:'top', site:true }, panel:null, top:slot.top, bottom:slot.top + (slot.size||FLYOUT_TILE), down:true } : null;
+    return slot ? { hub:{ ...slot, size:FLYOUT_TILE, anchor:'top', site:true }, panel:null, top:slot.top, bottom:slot.top + FLYOUT_TILE, down:true } : null;
   }
   function slotBand(state = flyoutState()) { return state.active ? flyoutBand(state) : singleSlot(state); }
   function setFlyoutOpen(value) {
@@ -4249,9 +4203,6 @@ const ExtraPotionsCore = (() => {
 :host([data-exp-edge-tab][data-exp-flyout-selected="1"]) ${launcherPart}{border-color:${accent}!important;box-shadow:inset 3px 0 0 ${accent}!important}
 .exp-flyout-hub{all:initial;position:fixed;z-index:2147483601;box-sizing:border-box;display:grid;place-items:center;width:48px;height:48px;border-radius:12px;background:radial-gradient(circle at 50% 35%,#1d1a24,#0c0b10 70%);border:1px solid color-mix(in srgb,${accent} 50%,#3f3f46);box-shadow:inset 0 1px 0 #ffffff12;cursor:pointer;pointer-events:auto}
 .exp-flyout-hub[data-size="40"]{border-radius:10px}
-.exp-flyout-hub[data-shape="circle"]{border-radius:50%;background:var(--theme-panel,#181c1f);box-shadow:none}
-:host([data-exp-rail-launcher="circle"][data-exp-flyout-role="site"]) ${launcherPart}{width:var(--exp-rail-launcher-size)!important;height:var(--exp-rail-launcher-size)!important;min-width:var(--exp-rail-launcher-size)!important;min-height:var(--exp-rail-launcher-size)!important;max-width:var(--exp-rail-launcher-size)!important;max-height:var(--exp-rail-launcher-size)!important;border-radius:50%!important}
-:host([data-exp-rail-launcher="circle"][data-exp-flyout-role="site"]) ${launcherPart}>:is(img,svg,.icon):not(.launcher-ring):not(.ring){width:22px!important;height:22px!important}
 :host([data-exp-flyout-role="site"][data-exp-site-icon]) :is([data-exp-part="launcher"],.launcher){width:var(--exp-site-icon-size)!important;height:var(--exp-site-icon-size)!important;min-width:var(--exp-site-icon-size)!important;min-height:var(--exp-site-icon-size)!important;max-width:var(--exp-site-icon-size)!important;max-height:var(--exp-site-icon-size)!important;padding:0!important;border:0!important;border-radius:6px!important;background:transparent!important;box-shadow:none!important;overflow:visible!important;transition:none!important}
 :host([data-exp-flyout-role="site"][data-exp-site-icon]) :is([data-exp-part="launcher"],.launcher):hover{background:color-mix(in srgb,currentColor 16%,transparent)!important}
 :host([data-exp-flyout-role="site"][data-exp-site-icon]) :is([data-exp-part="launcher"],.launcher):focus-visible{outline:2px solid ${accent}!important;outline-offset:1px!important}
@@ -4264,7 +4215,6 @@ const ExtraPotionsCore = (() => {
 .exp-flyout-hub:focus-visible{outline:2px solid ${accent};outline-offset:3px}
 .exp-flyout-icon{display:grid;place-items:center;width:32px;height:32px;pointer-events:none}
 .exp-flyout-hub[data-size="40"] .exp-flyout-icon{width:26px;height:26px}
-.exp-flyout-hub[data-shape="circle"] .exp-flyout-icon{width:22px;height:22px}
 .exp-flyout-icon>*{display:block!important;position:static!important;width:100%!important;height:100%!important;margin:0!important}
 .exp-flyout-count{position:absolute;right:-6px;bottom:-6px;box-sizing:border-box;min-width:20px;height:16px;padding:0 4px;border-radius:4px;background:#27272a;border:1px solid #3f3f46;outline:2px solid #0e0e10;color:#fafafa;font:600 10px/14px Inter,"Segoe UI",system-ui,sans-serif;text-align:center;pointer-events:none}
 .exp-flyout-mark{position:absolute;top:-5px;right:-5px;width:10px;height:10px;box-sizing:border-box;border-radius:3px;background:var(--exp-flyout-mark,#a1a1aa);outline:2px solid #0e0e10;pointer-events:none}
@@ -4347,9 +4297,8 @@ const ExtraPotionsCore = (() => {
     mark.hidden = !updating;
     if (updating) mark.style.setProperty('--exp-flyout-mark', FLYOUT_ACCENTS[updating] || '#a1a1aa');
     const progressHost = state.order.map(id => state.hosts.find(node => node.dataset.productId === id)).find(node => node?.dataset.expProgress !== undefined);
-    renderRing(hub, box.size, box.shape === 'circle' ? box.size/2 : box.size === FLYOUT_TILE ? 10 : 12, progressHost ? { fraction:Number(progressHost.dataset.expProgress), color:FLYOUT_ACCENTS[progressHost.dataset.productId] || '#a1a1aa' } : null, Boolean(updating));
+    renderRing(hub, box.size, box.size === FLYOUT_TILE ? 10 : 12, progressHost ? { fraction:Number(progressHost.dataset.expProgress), color:FLYOUT_ACCENTS[progressHost.dataset.productId] || '#a1a1aa' } : null, Boolean(updating));
     hub.dataset.size = String(box.size);
-    hub.dataset.shape = box.shape || 'rectangle';
     hub.setAttribute('aria-expanded', String(state.open));
     // The marker and ring are visual; the name carries the same news for screen readers.
     const notes = [];
@@ -4368,9 +4317,6 @@ const ExtraPotionsCore = (() => {
     for (const host of state.hosts) {
       if (!registrations.has(host)) continue;
       const id = host.dataset.productId;
-      const slot=siteSlot();
-      if(slot?.shape==='circle'){host.dataset.expRailLauncher='circle';host.style.setProperty('--exp-rail-launcher-size',slot.size+'px');}
-      else{delete host.dataset.expRailLauncher;host.style.removeProperty('--exp-rail-launcher-size');}
       if (!state.active) {
         if (singleSlot(state)) host.dataset.expFlyoutRole = 'site'; else delete host.dataset.expFlyoutRole;
         if (state.row) { host.dataset.expSiteIcon = '1'; host.style.setProperty('--exp-site-icon-size', state.row.size + 'px'); } else { delete host.dataset.expSiteIcon; host.style.removeProperty('--exp-site-icon-size'); }
@@ -5359,7 +5305,7 @@ const ExtraPotionsCore = (() => {
   document.addEventListener('pointerdown', onFlyoutOutside, true);
   addEventListener('keydown', onFlyoutEscape, true);
   addEventListener('resize',scheduleGrid,{passive:true});
-  addEventListener('scroll',()=>{recheckSiteControls();if (/^(www|sh)\.reddit\.com$/.test(location.hostname)) markSlotStale();},{passive:true,capture:true});
+  addEventListener('scroll',recheckSiteControls,{passive:true,capture:true});
   // Core-owned product bootstrap for downstream consumers.
   function createProductServices(options = {}) {
     const productId = String(options.productId || '').toLowerCase();
@@ -5665,12 +5611,19 @@ const ExtraPotionsCore = (() => {
     }
 
     // Campaign memory is valid only under the 3.2.6 reset marker; without it there is no memory yet.
+    // It is read once per campaign check (hundreds of times per pass over Twitch's ~120 campaigns), so the parsed
+    // value is kept until the stored text changes: parsing it every time blocked Twitch for seconds while loading
+    // (CPU profile 2026-11-21: ~6 s of JSON.parse in the first 30 s). Callers copy before changing it.
+    const memoryCache = new Map();
     function campaignMemory(account) {
-      const marker = parse(read(local, scoped(KEY.campaignMemoryReset, account)), {});
-      if (cleanText(marker?.version) !== CAMPAIGN_MEMORY_RESET_VERSION) return { updatedAt: 0, campaigns: {} };
-      const saved = parse(read(local, scoped(KEY.campaignMemory, account)), {});
-      return saved && typeof saved === 'object' && saved.campaigns && typeof saved.campaigns === 'object'
-        ? saved : { updatedAt: 0, campaigns: {} };
+      const markerRaw = read(local, scoped(KEY.campaignMemoryReset, account)), key = scoped(KEY.campaignMemory, account), raw = read(local, key);
+      const cached = memoryCache.get(key);
+      if (cached && cached.markerRaw === markerRaw && cached.raw === raw) return cached.value;
+      const marker = parse(markerRaw, {});
+      const saved = cleanText(marker?.version) === CAMPAIGN_MEMORY_RESET_VERSION ? parse(raw, {}) : null;
+      const value = saved && typeof saved === 'object' && saved.campaigns && typeof saved.campaigns === 'object' ? saved : { updatedAt: 0, campaigns: {} };
+      memoryCache.set(key, { markerRaw, raw, value });
+      return value;
     }
     function setCampaignMemory(memory, account) {
       const marker = parse(read(local, scoped(KEY.campaignMemoryReset, account)), {});
@@ -5715,8 +5668,8 @@ const ExtraPotionsCore = (() => {
   const CLIENT_IDS = Object.freeze(['kimne78kx3ncx6brgo4mv6wki5h1ko', 'kd1unb4b3q4t58fwlpcbzcbnm76a8fp']);
   const GQL_HASH_PATTERN = /^[a-f0-9]{64}$/;
   const GQL_OPS = Object.freeze({
-    // Inventory: Twitch's own page sends this hash (read 2026-11-19); its earned rewards carry the Drop ID (group.id).
-    inventory: { name: 'Inventory', hash: '5327cc774d7423990c03e57aed7eb3ad66275ffcb7079d91055771f065fd4cc4', variables: { fetchRewardCampaigns: true } },
+    // Inventory: Twitch's own page sends this hash (read 2026-11-21); its earned rewards carry the Drop ID (group.id).
+    inventory: { name: 'Inventory', hash: '3ab317a5753b25125f47d4ce962ebe928ff4e85047b77508340c94ebc20b6230', variables: { fetchRewardCampaigns: true } },
     viewerDropsDashboard: { name: 'ViewerDropsDashboard', hash: '69750554e0a81492f2d343558f84bdf3e324767650a2dbb6e79a3c629b4548cf', variables: { fetchRewardCampaigns: true } },
     currentDrop: { name: 'DropCurrentSessionContext', hash: '4d06b702d25d652afb9ef835d2a550031f1cf762b193523a92166f40ea3d142b', variables: {} },
     streamInfo: { name: 'VideoPlayerStreamInfoOverlayChannel', hash: '198492e0857f6aedead9665c81c5a06d67b25b58034649687124083ff288597d', variables: { channel: '' } },
@@ -5726,7 +5679,9 @@ const ExtraPotionsCore = (() => {
     // its own request, and the category is found by Twitch's search because the campaign data names no game.
     rewardInventory: { name: 'ViewerRewardDropInventory', hash: '828f9f0bdbc735ce3162519717f918b811902984580389a67ad733c684291e62', variables: {} },
     searchGames: { name: 'SearchResultsPage_SearchResults', hash: 'ee645fed322a59291288b848838f8c307451462ae10e78c66e8e8a11297447f4', variables: { platform: 'web', query: '', options: { targets: null, shouldSkipDiscoveryControl: false }, requestID: '' } },
-    dropCampaignDetails: { name: 'DropCampaignDetails', hash: '1f4903ecfff5d0ba12820e28288d3c524606b28916084214a8c0bb9a2043727a', variables: { channelLogin: '', dropID: '' } },
+    // Twitch's drops page sends this hash when a campaign is opened (read 2026-11-21); the older one answers without the
+    // fields Dropper needs (reported as shape-changed, so no campaign details were ever stored).
+    dropCampaignDetails: { name: 'DropCampaignDetails', hash: '041f7b93bde5aae60af885c5e0e0c42943736758c2a4e0076c07ed1148df7068', variables: { channelLogin: '', dropID: '' } },
   });
   const READ_ONLY_OPS = new Set(['inventory', 'viewerDropsDashboard', 'streamInfo', 'currentDrop', 'availableDrops', 'dropCampaignDetails', 'rewardInventory', 'searchGames']);
   const NETWORK = Object.freeze({ windowMs: 60 * 60 * 1000, softBudget: 180, failureThreshold: 3, errorCooldownMs: 5 * 60 * 1000, rateCooldownMs: 15 * 60 * 1000, authCooldownMs: 10 * 60 * 1000 });
@@ -5916,7 +5871,8 @@ const ExtraPotionsCore = (() => {
         }
         if (name === 'Inventory') { const state = inventoryResponseState(row); note(name, state.valid ? 'ok' : state.status, state.detail); return; }
         if (name === 'DropCurrentSessionContext') { const state = sessionResponseState(row); note(name, state.status, JSON.stringify(state.shape)); return; }
-        if (row.data && GQL_EXPECTED_SHAPES[name] && !GQL_EXPECTED_SHAPES[name](row.data)) { note(name, 'shape-changed', 'expected fields missing'); return; }
+        // Twitch withholds a field it fails the integrity check on (null plus an error): that is a refusal, not a new shape.
+        if (row.data && GQL_EXPECTED_SHAPES[name] && !GQL_EXPECTED_SHAPES[name](row.data)) { const denied = errors.some(text => /integrity/i.test(text)); note(name, denied ? 'integrity' : 'shape-changed', denied ? errors.join(' · ') : 'expected fields missing'); return; }
         note(name, errors.length ? 'error' : 'ok', errors.join(' · '));
       });
     }
@@ -6151,6 +6107,8 @@ const ExtraPotionsCore = (() => {
           source: learnedOperation(op.name) ? 'learned-from-twitch' : 'built-in',
           hash: (learnedOperation(op.name)?.hash || op.hash).slice(0, 12),
           lastResult: health[op.name]?.result || null,
+          // Twitch's own error text for a failed result (no request data), so a report shows why it failed.
+          ...(health[op.name]?.result && health[op.name].result !== 'ok' && health[op.name].detail ? { lastDetail: health[op.name].detail } : {}),
         }])),
       };
     }
@@ -6296,12 +6254,25 @@ const ExtraPotionsCore = (() => {
           nextAttemptAt: outcome === 'retryable' && record.attempts < 3 ? now() + 30000 * record.attempts : 0,
         });
       }
+      // Twitch can answer a claim with success and still list the reward as not claimed (an unlinked game account).
+      // Its inventory is the authority: such a claim is opened again, within the same three attempts.
+      function reopen(key) {
+        refresh();
+        const record = records.get(key);
+        if (!record || !['confirmed', 'already-claimed'].includes(record.outcome) || record.evidence === 'inventory') return null;
+        return persist({ ...record, outcome: 'retryable', evidence: 'inventory', nextAttemptAt: 0 });
+      }
       function snapshot() { expire(); return [...records.values()].sort((a, b) => b.updatedAt - a.updatedAt).map(record => ({ ...record })); }
-      return Object.freeze({ begin, settle, snapshot, get storageFailed() { return storageFailed; } });
+      return Object.freeze({ begin, settle, reopen, snapshot, get storageFailed() { return storageFailed; } });
     }
 
     function claimResponse(row) {
-      if (Array.isArray(row?.errors) && row.errors.length) return { outcome: 'unconfirmed', evidence: 'unknown' };
+      if (Array.isArray(row?.errors) && row.errors.length) {
+        // Twitch answers a refused claim with errors in the row, not a failed request: an integrity refusal must reach
+        // the integrity fallback (Twitch's own claim control) instead of reading as unconfirmed.
+        if (row.errors.some(item => /integrity/i.test(text(item?.message) + ' ' + text(item?.extensions?.code)))) return { outcome: 'blocked', evidence: 'integrity' };
+        return { outcome: 'unconfirmed', evidence: 'unknown' };
+      }
       const status = row?.data?.claimDropRewards?.status;
       if (status === 'ELIGIBLE_FOR_ALL') return { outcome: 'confirmed', evidence: 'claim-result' };
       if (status === 'DROP_INSTANCE_ALREADY_CLAIMED') return { outcome: 'already-claimed', evidence: 'claim-result' };
@@ -6608,6 +6579,8 @@ const ExtraPotionsCore = (() => {
             remainingMinutes: 0,
             percent: 100,
             inventorySweep: true,
+            // Twitch accepts a claim for an unlinked game account without granting the reward.
+            linkRequired: campaign?.self?.isAccountConnected === false || campaign?.isAccountConnected === false,
             dropOrder,
           });
         });
@@ -6816,7 +6789,7 @@ const ExtraPotionsCore = (() => {
           id: campaign?.id || prior.id || '', name: campaign?.name || prior.name || '', game: campaignGame(campaign) || prior.game || '',
           startAt: campaign?.startAt || prior.startAt || '', endAt: campaign?.endAt || prior.endAt || '',
           status: completedAt ? 'completed' : campaignState(campaign, { now: at }).listed ? 'open' : cleanText(campaign?.status).toLowerCase() || 'seen',
-          completedAt, seenAt: at, watchDrops: drops.length, completedWatchDrops: drops.filter(dropDone).length, source,
+          completedAt, seenAt: at, rewards: Math.max(campaignDrops(campaign).length, Number(prior.rewards) || 0), watchDrops: drops.length, completedWatchDrops: drops.filter(dropDone).length, source,
         };
         if (JSON.stringify(prior) !== JSON.stringify(next)) { records[key] = next; changed = true; }
         if (completeNow && !prior.completedAt) log('campaign-complete', `Remembered completed campaign ${next.name || next.game}`, { campaignKey: key });
@@ -7477,7 +7450,7 @@ const ExtraPotionsCore = (() => {
       byKey.set(key, {
         key, id: campaign?.id || '', name: cleanText(campaign?.name) || game, game, startAt: campaign?.startAt || '', endAt: campaign?.endAt || '',
         endMs: endMs || FAR_FUTURE, campaign, sequenceRemainingMinutes: sequence.remainingMinutes, sequenceFinishable: sequence.finishable,
-        sequenceMarginMinutes: sequence.marginMinutes, sequenceInProgress: sequence.inProgress, pendingClaims: sequence.pendingClaims,
+        sequenceMarginMinutes: sequence.marginMinutes, sequenceInProgress: sequence.inProgress, pendingClaims: sequence.pendingClaims, watchRewards: sequence.watchRewards,
       });
     }
     return rank([...byKey.values()]);
@@ -7786,6 +7759,14 @@ const ExtraPotionsCore = (() => {
       if (rewardComplete(target)) return false;
       const key = keyOf(target);
       const fresh = findReward(pool(), target);
+      // The campaign is still listed with its rewards but the selected one is gone (a repeatable reward first seen
+      // before its progress loaded, now listed per repeat): choose again instead of watching a reward that no longer exists.
+      const listed = !fresh && target.id ? targetCampaign(target) : null;
+      if ((listed?.timeBasedDrops || listed?.drops || []).length) {
+        log('routing-target-replaced', 'The selected reward is no longer listed in its campaign', { campaignKey: key, dropId: target.id });
+        go(CONTROLLER_STATES.SELECT, { target: null, stream: '', evidence: null, waitReason: '', flight: null }, `Twitch progress changed ${target.campaign || target.game} · selecting next reward`);
+        return true;
+      }
       const current = stateOf(fresh?.campaignObject || campaignFor(target), fresh?.drop || null, at);
       let reason = '';
       if (!current.open) reason = `Campaign ${target.campaign || target.game} is not routable · ${current.reason}`;
@@ -9649,7 +9630,8 @@ const ExtraPotionsCore = (() => {
     // visible until the player has loaded, then give the true reading back; the stream keeps playing after that.
     // A move becomes a page load when the page title shows that Twitch did not follow.
     const ROUTE_FOLLOW_MS = 8000, REVEAL_AFTER_MS = 3000, REVEAL_FOR_MS = 30000, REVEAL_WINDOW_MS = 120000;
-    let routedAt = 0;
+    // A page loaded while hidden (a reload, or Twitch not following an in-page move) needs the same start help.
+    let routedAt = Date.now();
     let reveal = { on: false, since: 0, tries: 0 };
     // The browser's own reading, whatever the page has been told.
     function trulyHidden() {
@@ -9668,9 +9650,10 @@ const ExtraPotionsCore = (() => {
       const code = on
         ? `try{Object.defineProperty(document,"hidden",{configurable:true,get:function(){return false}});Object.defineProperty(document,"visibilityState",{configurable:true,get:function(){return "visible"}});window.__tdhReveal=1;document.dispatchEvent(new Event("visibilitychange"));}catch(e){}`
         : `try{delete document.hidden;delete document.visibilityState;window.__tdhReveal=0;document.dispatchEvent(new Event("visibilitychange"));}catch(e){}`;
+      // Set before the page code runs: its visibilitychange event re-enters the hidden-start check synchronously.
+      reveal = { ...reveal, on, since: on ? Date.now() : 0, tries: reveal.tries + (on ? 1 : 0) };
       runInPage(code);
       try { if (pageWindow.__tdhReveal !== mark && typeof pageWindow.eval === 'function') pageWindow.eval(code); } catch (_) {}
-      reveal = { ...reveal, on, since: on ? Date.now() : 0, tries: reveal.tries + (on ? 1 : 0) };
       logActivity('playback', on ? 'Page reads visible so the stream can start' : 'Page reading given back', { why });
     }
     function streamLoaded() {
@@ -9886,6 +9869,8 @@ const ExtraPotionsCore = (() => {
   const BONUS_CONFIRM_SETTLE_MS = 3000;
   const CLAIM_RETRY_INTERVAL_MS = 30 * 1000;
   const INVENTORY_CLAIM_SWEEP_LIMIT = 3;
+  // Twitch's inventory can lag a claim briefly; after this it is taken as the answer.
+  const CLAIM_REOPEN_AFTER_MS = 10 * 60 * 1000;
   const TWITCH_DOM_SELECTORS = Object.freeze({
     bonusClaim: 'button[aria-label="Claim Bonus"], .claimable-bonus__icon',
     bonusContainer: '.community-points-summary,[data-test-selector="community-points-summary"],[data-a-target="community-points-summary"]',
@@ -10033,10 +10018,19 @@ const ExtraPotionsCore = (() => {
     function reconcileClaimHistory(campaigns) {
       const ledger = claimLedger();
       for (const record of ledger.snapshot()) {
-        if (record.kind !== 'drop' || !record.rewardId || !['pending', 'unconfirmed', 'retryable', 'blocked'].includes(record.outcome)) continue;
+        if (record.kind !== 'drop' || !record.rewardId) continue;
         const campaign = (campaigns || []).find(item => String(item.id || '').toLowerCase() === record.campaignId.toLowerCase());
         const drop = (campaign?.timeBasedDrops || campaign?.drops || []).find(item => String(item.id || '') === record.rewardId);
-        if (drop?.self?.isClaimed === true) recordClaimOutcome(ledger, record, 'confirmed', 'inventory');
+        if (['pending', 'unconfirmed', 'retryable', 'blocked'].includes(record.outcome)) {
+          if (drop?.self?.isClaimed === true) recordClaimOutcome(ledger, record, 'confirmed', 'inventory');
+          continue;
+        }
+        // A claim Twitch answered with success, while its inventory still lists the earned reward as not claimed.
+        const earned = drop?.self?.isClaimed === false && Number(drop?.requiredMinutesWatched) > 0 && Number(drop?.self?.currentMinutesWatched) >= Number(drop.requiredMinutesWatched);
+        if (earned && Date.now() - Number(record.updatedAt || 0) >= CLAIM_REOPEN_AFTER_MS && ledger.reopen(record.key)) {
+          logActivity('claim-reopened', `Twitch still lists ${record.rewardName || 'a claimed reward'} as not claimed`, { rewardId: record.rewardId, game: record.game || null });
+          renderClaimHistory();
+        }
       }
     }
 
@@ -10266,6 +10260,7 @@ const ExtraPotionsCore = (() => {
       const sweep = inventoryClaimSweepState || {};
       if (sweep.reason === 'claimed') parts.push(`Inventory sweep: ${Number(sweep.confirmed || 0)} claimed`);
       else if (sweep.reason === 'none-ready') parts.push('Inventory sweep: none ready');
+      else if (sweep.reason === 'link-required') parts.push(`Inventory sweep: ${sweep.linkRequired.length} need account link`);
       else if (sweep.reason === 'inventory-unavailable') parts.push('Inventory sweep: unavailable');
       else if (sweep.reason === 'secondary-tab') parts.push('Inventory sweep: managed by another tab');
       else if (sweep.reason === 'disabled') parts.push('Inventory sweep: disabled');
@@ -10302,6 +10297,13 @@ const ExtraPotionsCore = (() => {
             if (!claimContextIsCurrent(context)) { ledger.settle(key, attempt.attemptId, 'discarded', 'context-change'); return false; }
             const outcome = DropperActiveViewing.claimResponse(result[0]);
             recordClaimOutcome(ledger, attempt, outcome.outcome, outcome.evidence);
+            // Twitch's reason for a refused claim, for the activity log and diagnostics.
+            const twitchErrors = (Array.isArray(result[0]?.errors) ? result[0].errors : []).map(item => cleanText(item?.message)).filter(Boolean).join(' · ').slice(0, 160);
+            if (twitchErrors) logActivity('claim-error', 'Twitch refused the claim', { rewardId: attempt.rewardId, error: twitchErrors });
+            if (outcome.evidence === 'integrity') {
+              lastClaimIntegrityFallback = { at: Date.now(), drop: drop.name || null, game: drop.game || null, alreadyOnInventory: isInventory(), navigatedToInventory: false };
+              setStatus('Claim needs attention · Use Twitch claim control');
+            }
             queueGqlPollSoon('claim-confirmation', 1500);
             return outcome.outcome === 'confirmed' || outcome.outcome === 'already-claimed';
           } catch (error) {
@@ -10319,16 +10321,16 @@ const ExtraPotionsCore = (() => {
     }
 
     async function sweepClaimReadyInventory(campaigns, source = 'inventory') {
-      const state = { at: Date.now(), source, candidates: 0, selected: 0, confirmed: 0, reason: '' };
+      const state = { at: Date.now(), source, candidates: 0, selected: 0, confirmed: 0, linkRequired: [], reason: '' };
       if (!settings.claimDrops) { state.reason = 'disabled'; inventoryClaimSweepState = state; return 0; }
       if (storageAccountLogin() === 'signed-out') { state.reason = 'signed-out'; inventoryClaimSweepState = state; return 0; }
       if (!isAutoRoutingController()) { state.reason = 'secondary-tab'; inventoryClaimSweepState = state; return 0; }
-      const candidates = DropperActiveViewing.inventoryClaimCandidates(campaigns, {
-        limit: INVENTORY_CLAIM_SWEEP_LIMIT,
-        excludeRewardId: currentDrop()?.id || '',
-      });
+      const ready = DropperActiveViewing.inventoryClaimCandidates(campaigns, { limit: 10, excludeRewardId: currentDrop()?.id || '' });
+      // A claim for an unlinked game account is not sent: Twitch answers success and keeps the reward unclaimed.
+      state.linkRequired = ready.filter(drop => drop.linkRequired).map(drop => ({ name: drop.name, game: drop.game }));
+      const candidates = ready.filter(drop => !drop.linkRequired).slice(0, INVENTORY_CLAIM_SWEEP_LIMIT);
       state.candidates = candidates.length;
-      if (!candidates.length) { state.reason = 'none-ready'; inventoryClaimSweepState = state; return 0; }
+      if (!candidates.length) { state.reason = state.linkRequired.length ? 'link-required' : 'none-ready'; inventoryClaimSweepState = state; logInventorySweep(state); return 0; }
       for (const drop of candidates) {
         if (storageAccountLogin() === 'signed-out' || !isAutoRoutingController()) { state.reason = 'context-changed'; break; }
         state.selected += 1;
@@ -10338,10 +10340,26 @@ const ExtraPotionsCore = (() => {
       state.at = Date.now();
       if (!state.reason) state.reason = state.confirmed ? 'claimed' : 'checked';
       inventoryClaimSweepState = state;
-      logActivity('inventory-claim-sweep', `Checked ${state.selected} completed inventory reward${state.selected === 1 ? '' : 's'}`, {
-        source, candidates: state.candidates, selected: state.selected, confirmed: state.confirmed, limit: INVENTORY_CLAIM_SWEEP_LIMIT,
-      });
+      logInventorySweep(state);
       return state.confirmed;
+    }
+
+    // Logged when the sweep's outcome changes, not on every inventory poll.
+    let lastSweepChecked = '', lastSweepLinks = '[]';
+    function logInventorySweep(state) {
+      const checked = JSON.stringify([state.selected, state.confirmed]);
+      const links = JSON.stringify(state.linkRequired);
+      if (state.selected && checked !== lastSweepChecked) {
+        logActivity('inventory-claim-sweep', `Checked ${state.selected} completed inventory reward${state.selected === 1 ? '' : 's'} · ${state.confirmed} claimed`, {
+          source: state.source, candidates: state.candidates, selected: state.selected, confirmed: state.confirmed, limit: INVENTORY_CLAIM_SWEEP_LIMIT,
+        });
+      }
+      lastSweepChecked = state.selected ? checked : '';
+      if (state.linkRequired.length && links !== lastSweepLinks) {
+        const names = state.linkRequired.map(drop => drop.game ? `${drop.name} (${drop.game})` : drop.name).join(', ').slice(0, 240);
+        logActivity('inventory-claim-sweep', `Account link required to claim ${names}`, { source: state.source, linkRequired: state.linkRequired.length });
+      }
+      lastSweepLinks = links;
     }
 
     function queueInventoryClaimSweep(campaigns, source = 'inventory') {
@@ -10444,7 +10462,8 @@ const ExtraPotionsCore = (() => {
         }
         // A partial legacy list must not turn one claimed native group into a
         // completed campaign. Missing groups still need an authoritative lookup.
-        const nativeRewardsPending = evidence.groups.some(group => group.campaignId === campaignId &&
+        // A reward campaign's own progress list is that lookup (its later rewards are not listed until they unlock).
+        const nativeRewardsPending = !campaign.rewardCampaign && evidence.groups.some(group => group.campaignId === campaignId &&
           !evidence.claimedGroups.has(group.key) && !drops.some(drop => cleanText(drop.id) === group.id));
         return { ...campaign, timeBasedDrops: drops, nativeRewardsPending };
       });
@@ -10528,8 +10547,10 @@ const ExtraPotionsCore = (() => {
   // (campaign fallback), another reward of the same campaign, or unrelated.
   function sessionIdentity(drop, target) {
     const lower = value => cleanText(value).toLowerCase();
-    const targetKey = lower(target?.campaignKey || target?.campaignId), targetId = lower(target?.id);
-    const key = lower(drop?.campaignKey || drop?.campaignId), id = lower(drop?.id);
+    // A repeatable reward is listed once per repeat (`group:2`); Twitch's session names the group itself.
+    const base = value => lower(value).replace(/:\d+$/, '');
+    const targetKey = lower(target?.campaignKey || target?.campaignId), targetId = base(target?.id);
+    const key = lower(drop?.campaignKey || drop?.campaignId), id = base(drop?.id);
     const campaignMatched = Boolean(targetKey && key && targetKey === key);
     const dropMatched = Boolean(targetId && id && targetId === id);
     const exact = Boolean(dropMatched && (!(targetKey && key) || campaignMatched));
@@ -10600,6 +10621,22 @@ const ExtraPotionsCore = (() => {
       game: { id: game.id, displayName: game.name, name: game.name, slug: game.slug }, timeBasedDrops: drops };
   }
 
+  // A repeatable reward listed per repeat (`group:1`, `group:2`) also arrives under its plain group ID from the
+  // channel and catalog lists, without progress. The plain copy would look unstarted and be picked again. With
+  // Twitch's reward progress loaded, only the watch rewards it lists are earnable now (a campaign's final reward,
+  // such as GTA VI's "Ultimate Reward", is listed in its details with a watch goal but unlocks later).
+  function collapseRepeats(list, progressGroups = new Map()) {
+    const base = id => String(id || '').replace(/:\d+$/, '');
+    return (list || []).map(campaign => {
+      const drops = campaign?.timeBasedDrops;
+      if (!Array.isArray(drops)) return campaign;
+      const allowed = progressGroups.get(String(campaign?.id || ''));
+      const repeated = new Set(drops.map(drop => String(drop?.id || '').match(/^(.+):\d+$/)?.[1]).filter(Boolean));
+      if (!allowed && !repeated.size) return campaign;
+      return { ...campaign, timeBasedDrops: drops.filter(drop => !repeated.has(String(drop?.id || '')) && (!allowed || allowed.has(base(drop?.id)))) };
+    });
+  }
+
   function suppressPageShells(list, isOpen) {
     const titleKey = value => normalizeGameName(value);
     const real = new Set((list || []).filter(campaign => !/^page:/i.test(campaignKey(campaign)) && isOpen(campaign)).map(campaign => titleKey(gameOf(campaign))).filter(Boolean));
@@ -10608,7 +10645,7 @@ const ExtraPotionsCore = (() => {
   }
 
   function createDrops({ store, twitch, campaigns, claims = null, campaignsPage = null, page, controller = () => null, cookie = () => '', now = Date.now, log = () => {}, onChange = () => {} } = {}) {
-    let inventory = [], inventoryHealth = { valid: false, status: 'not-seen', at: 0, lastValidAt: 0 };
+    let inventory = [], inventoryHealth = { valid: false, status: 'not-seen', at: 0, lastValidAt: 0 }, inProgressKeys = new Set();
     let haveInventory = false;
     const details = new Map(), detailsMisses = new Map(), detailsAttempts = new Map();
     let sessionNote = null, sessionDrop = null, available = [];
@@ -10624,7 +10661,10 @@ const ExtraPotionsCore = (() => {
     function campaignsFromMemory(at) {
       const memory = store.campaignMemory();
       return Object.entries(memory.campaigns || {}).filter(([, record]) => record && !record.completedAt && !['expired', 'completed', 'closed'].includes(cleanText(record.status).toLowerCase())
-        && cleanText(record.game) && Math.max(0, Number(record.completedWatchDrops || 0)) < Math.max(1, Number(record.watchDrops || 1)))
+        && cleanText(record.game) && Math.max(0, Number(record.completedWatchDrops || 0)) < Math.max(1, Number(record.watchDrops || 1))
+        // Seen with rewards but none to watch (subscription-only): never a routing shell (it targeted Warrior Jar
+        // Alexander, an Elden Ring sub reward, live 2026-11-21 when Twitch withheld the campaign list).
+        && !(Number(record.rewards) > 0 && Number(record.watchDrops) === 0))
         .map(([key, record]) => ({ id: record.id || key, name: cleanText(record.name) || cleanText(record.game), status: 'ACTIVE', startAt: record.startAt || '', endAt: record.endAt || '', game: { id: '', displayName: cleanText(record.game), name: cleanText(record.game), slug: '' }, timeBasedDrops: [] }))
         .filter(campaign => !campaignIsExcluded(campaign) && isOpen(campaign, at));
     }
@@ -10635,11 +10675,16 @@ const ExtraPotionsCore = (() => {
     // reconciled with a matching session counter.
     function pool(at = now()) {
       const merged = mergeCampaigns(mergeCampaigns(campaigns.catalog(), [...details.values()], available.filter(row => watchDrops(row).length), rewardRows(at)), inventory, mergeCampaigns(campaignsFromMemory(at), campaignsPage?.rows() || []));
-      const routable = suppressPageShells(overlayEarned(merged), campaign => isOpen(campaign, at));
+      const routable = suppressPageShells(fillUnstarted(overlayEarned(collapseRepeats(merged, progressGroups()))), campaign => isOpen(campaign, at));
       const claimed = claims ? claims.overlayClaimed(routable) : routable;
       return overlaySession(claimed, at);
     }
+    function progressGroups() {
+      return new Map([...rewardProgress].map(([id, groups]) => [id, new Set(groups.filter(group => cleanText(group?.progressCriteria?.requirementType).toUpperCase() === 'WATCH').map(group => String(group.id)))]));
+    }
     function rewardRows(at) {
+      // Until Twitch's reward progress has answered once, a row would read as unstarted (0 minutes) and be picked.
+      if (!rewardProgressAt) return [];
       return rewardList.filter(campaign => rewardCampaignWanted(campaign, at) && rewardGames.get(campaign.id)?.slug)
         .map(campaign => rewardCampaignRow(campaign, rewardGames.get(campaign.id), rewardProgress.get(String(campaign.id)) || null, at)).filter(Boolean);
     }
@@ -10679,6 +10724,17 @@ const ExtraPotionsCore = (() => {
       } catch (error) {
         log('reward-campaign', 'Reward campaign data unavailable', { message: cleanText(error?.message || error).slice(0, 160) });
       }
+    }
+    // The dashboard lists each reward's requirement but not the viewer's progress; only campaigns with progress are in
+    // the inventory. With a valid inventory, a campaign missing from it has 0 minutes on every unclaimed reward, so its
+    // watch time and deadline are known instead of "untimed". A session counter still wins over this 0 (overlaySession).
+    function fillUnstarted(list) {
+      if (!inventoryHealth.valid) return list;
+      const unknown = drop => drop && drop.self?.currentMinutesWatched == null && !drop.self?.isClaimed;
+      return list.map(campaign => {
+        if (inProgressKeys.has(campaignKey(campaign)) || !dropsOf(campaign).some(unknown)) return campaign;
+        return { ...campaign, timeBasedDrops: dropsOf(campaign).map(drop => unknown(drop) ? { ...drop, self: { ...(drop.self || {}), currentMinutesWatched: 0 } } : drop) };
+      });
     }
     function overlayEarned(list) {
       if (!earned.size) return list;
@@ -10723,6 +10779,7 @@ const ExtraPotionsCore = (() => {
         earned = new Map(earnedEdges.map(edge => [cleanText(edge?.node?.group?.id), cleanText(edge?.node?.status).toUpperCase()]).filter(([id, status]) => id && ['CLAIMED', 'CLAIMABLE'].includes(status)));
       }
       claims?.nativeEvidence(row?.data?.currentUser?.inventory, result.campaigns);
+      inProgressKeys = new Set(result.campaigns.map(campaignKey).filter(Boolean));
       inventory = result.campaigns.filter(campaign => {
         const current = campaigns.state(campaign, null, at);
         if (current.reason === 'expired') campaigns.markCompleted(campaignKey(campaign), { id: campaign?.id, name: campaign?.name, game: gameOf(campaign), startAt: campaign?.startAt, endAt: campaign?.endAt, source: 'campaign-ended', status: 'expired' });
@@ -11361,17 +11418,24 @@ const ExtraPotionsCore = (() => {
   }
 
   // The planner line above the list: total watch time, campaign count, first end, at-risk and untimed counts.
+  // Counts are per game, as Twitch's All Campaigns page shows them: one row per game even when a game runs several
+  // campaigns at once (live 2026-11-21: Twitch listed 82 rows for 101 campaigns, and the old per-campaign count
+  // read as more open campaigns than Twitch shows).
   function campaignPlanText(queue, { isIgnored = () => false, now = Date.now() } = {}) {
-    let campaigns = 0, remaining = 0, unknown = 0, atRisk = 0, earliest = 0;
+    let remaining = 0, earliest = 0;
+    const games = new Set(), unknownGames = new Set(), riskGames = new Set();
     for (const item of queue || []) {
       if (!item || isIgnored(item.game)) continue;
-      campaigns += 1;
+      const game = cleanText(item.game).toLowerCase() || cleanText(item.key);
+      games.add(game);
       const left = viewNumber(item.sequenceRemainingMinutes);
-      if (left === null) unknown += 1; else remaining += Math.max(0, left);
-      if (item.sequenceFinishable === false) atRisk += 1;
+      // A subscription-only campaign has no watch time to know: it is listed, but not untimed.
+      if (left === null) { if (item.watchRewards !== 0) unknownGames.add(game); } else remaining += Math.max(0, left);
+      if (item.sequenceFinishable === false) riskGames.add(game);
       const endMs = viewNumber(item.endMs);
       if (endMs !== null && endMs > now && endMs < Number.MAX_SAFE_INTEGER / 2 && (!earliest || endMs < earliest)) earliest = endMs;
     }
+    const campaigns = games.size, unknown = unknownGames.size, atRisk = riskGames.size;
     if (!campaigns) return '';
     const known = campaigns - unknown;
     const parts = [known > 0 ? `~${viewSpan(remaining)} watch` : 'Watch time unknown', `${campaigns} campaign${campaigns === 1 ? '' : 's'}`];
@@ -11416,7 +11480,7 @@ const ExtraPotionsCore = (() => {
       const end = campaignEndLabel(item.latestEndAt, item.latestEndMs, now), extra = subscriptionText(subs.get(item.key));
       return {
         game: item.game, key: item.key, ignored: item.ignored, latestEndMs: item.latestEndMs, rank: manual ? visible.indexOf(gameKey) : index,
-        meta: `${lead}${item.campaignCount} campaign${item.campaignCount === 1 ? '' : 's'} · ${item.campaignCount > 1 ? `Latest ${end.toLowerCase()}` : end}${extra ? ` · ${extra}` : ''}`,
+        meta: `${lead}${item.campaignCount} campaign${item.campaignCount === 1 ? '' : 's'} · ${item.campaignCount > 1 ? `Latest ${end.replace(/^Ends\b/, 'ends')}` : end}${extra ? ` · ${extra}` : ''}`,
       };
     });
     return {
@@ -11476,6 +11540,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(['3.4.43', '3.4.30', '3.4.27', '3.4.26']);
   const RELEASE_NOTES = {
+    '4.2.1': ["Twitch pages load faster with Dropper running: its saved campaign list is read once instead of on every check.", "The campaign count matches Twitch's All Campaigns page, and campaigns you have not started count as 0 minutes instead of untimed.", "A claimed Drop counts only once Twitch's inventory shows it claimed, and rewards for a game account that is not linked are listed as needing an account link.", "Daily reward campaigns such as the GTAVI Launch Celebration no longer keep a stream open for a reward already earned today, and a stream page loaded while the window is hidden starts playing."],
     '4.2.0': ["On Kick, reorder games, include or ignore them, and change stream switching directly in Campaigns.", "Kick claim history shows earned Drops and watch-time cases, with confirmation from your reward inventory.", "The Kick progress card uses credited minutes, and Twitch can find priority streams when campaign details are unavailable.", "Twitch reward campaigns that name a game, such as the GTAVI Launch Celebration, are listed under that game's category with their watch progress."],
     '4.1.15': ["On desktop Chromium browsers, a stream opened with Mute Opened Streams plays at zero volume instead of muted, so Twitch keeps it playing while its tab is in the background. Twitch's volume slider is left at 1%.", "A stream whose player reads paused stays open, and Twitch's watch credit decides whether it counts.", "Recovery Paused clears by itself after five minutes, without Resume in System.", "Rewards Twitch already marks as earned are counted as earned, and Twitch is asked once more when it holds back the campaign list."],
     '4.1.7': ["Kick finds an eligible channel from Home or the campaign directory when stream switching is on, and verifies watch credit against the reward counter.", "Twitch can use channel and inventory data for a priority campaign when its reward details are unavailable."],
@@ -14185,15 +14250,22 @@ const ExtraPotionsCore = (() => {
   // Wiring and startup: the only file that reads browser globals. It builds every module from the real storages,
   // the userscript manager's functions and the page, then runs the heartbeat. Page reading, tabs, the data layer
   // and the menu are wired here as their modules land (milestone 3).
-  const APP_VERSION = '4.2.0';
+  const APP_VERSION = '4.2.1';
   const HEARTBEAT_MS = 5000;
   const ACTIVITY_LOG_LIMIT = 40;
   const SECRET_META = /token|cookie|auth|password|integrity|secret/i;
 
+  // Every storage key reads the account cookie, so the split cookie string is kept until document.cookie changes.
+  let cookieRaw = null, cookieMap = new Map();
   function readCookie(name) {
     try {
-      const entry = document.cookie.split(';').map(part => part.trim()).find(part => part.startsWith(`${name}=`));
-      return entry ? decodeURIComponent(entry.slice(name.length + 1)) : '';
+      const raw = document.cookie;
+      if (raw !== cookieRaw) {
+        cookieRaw = raw;
+        cookieMap = new Map(raw.split(';').map(part => part.trim()).filter(Boolean).map(part => { const at = part.indexOf('='); return at < 0 ? [part, ''] : [part.slice(0, at), part.slice(at + 1)]; }).reverse());
+      }
+      const value = cookieMap.get(name);
+      return value == null ? '' : decodeURIComponent(value);
     } catch (_) { return ''; }
   }
 

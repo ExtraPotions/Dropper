@@ -1,3 +1,10 @@
+## 4.2.1 — 2026-11-21
+
+- Twitch pages load faster with Dropper running: its saved campaign list is read once instead of on every check.
+- The campaign count matches Twitch's All Campaigns page, and campaigns you have not started count as 0 minutes instead of untimed.
+- A claimed Drop counts only once Twitch's inventory shows it claimed, and rewards for a game account that is not linked are listed as needing an account link.
+- Daily reward campaigns such as the GTAVI Launch Celebration no longer keep a stream open for a reward already earned today, and a stream page loaded while the window is hidden starts playing.
+
 ## 4.2.0 — 2026-11-20
 
 - On Kick, reorder games, include or ignore them, and change stream switching directly in Campaigns.
