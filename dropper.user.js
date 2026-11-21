@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      4.1.15
+// @version      4.2.0
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -2490,8 +2490,9 @@ const ExpSiteColors = (() => {
 // Flyout launcher rules shared by every Core copy on a page. Each copy computes the same answer from the
 // launcher hosts' attributes alone, so products agree on one launcher without messaging each other.
 const ExpLauncherFlyout = (() => {
-  // 2: a site's top bar can hold one icon per product instead of the flyout; copies on 1 keep the grid for everyone.
-  const PROTOCOL = '2';
+  // 3: away from a site's own slot every product is a tab on the window's right edge, and the flyout is used only
+  // inside a site slot. Copies on an older protocol keep the grid for everyone.
+  const PROTOCOL = '3';
   const SUITE_ORDER = Object.freeze(['dropper','ward','thread']);
   // Products that only run on their own sites (Dropper on Twitch, WARD on retailers) lead there.
   const SITE_PRODUCTS = Object.freeze(['dropper','ward','thread']);
@@ -2506,19 +2507,24 @@ const ExpLauncherFlyout = (() => {
     const list = [...hosts];
     return list.length >= 2 && list.every(host => host?.dataset?.expFlyout === PROTOCOL);
   }
+  // Edge tabs need every launcher on the page to know them; one older copy keeps the grid.
+  function tabsReady(hosts = []) {
+    const list = [...hosts];
+    return list.length >= 1 && list.every(host => host?.dataset?.expFlyout === PROTOCOL);
+  }
   function leadProduct(hosts = []) {
     const list = [...hosts];
     const site = flyoutOrder(list.filter(host => host?.dataset?.expSiteProduct === '1'));
     return site[0] || flyoutOrder(list)[0] || '';
   }
-  return Object.freeze({ PROTOCOL, SUITE_ORDER, SITE_PRODUCTS, isSiteProduct, flyoutOrder, flyoutActive, leadProduct });
+  return Object.freeze({ PROTOCOL, SUITE_ORDER, SITE_PRODUCTS, isSiteProduct, flyoutOrder, flyoutActive, tabsReady, leadProduct });
 })();
 
 // Product-neutral shared runtime. Product engines own their settings, content, and actions.
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.17.4';
+  const version = '3.18.0';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -3647,6 +3653,7 @@ const ExtraPotionsCore = (() => {
     applyMatteToggleChrome(shadow);
     return true;
   }
+  function edgeTabs() { return flyoutState().tabs; }
   function layoutGrid() {
     const order = read(GRID_ORDER, []);
     const sorted = [...document.querySelectorAll('[data-exp-product-launcher="1"]')].sort((a,b) => {
@@ -3657,16 +3664,18 @@ const ExtraPotionsCore = (() => {
       const bp = Number(b.dataset.launcherPriority || 0);
       return bp - ap || a.dataset.productId.localeCompare(b.dataset.productId);
     });
+    // Edge tabs are one column, a tab and its gap apart; the older grid is three 56px columns.
+    const tabs = edgeTabs(), pitch = tabs ? TAB_PITCH : 56;
     const assign = (node, slot, span = 1) => {
       const row = Math.floor(slot / 3), column = slot % 3;
       Object.assign(node.dataset, { launcherSlot:String(slot), launcherRow:String(row), launcherColumn:String(column), launcherSpan:String(span) });
       node.style.setProperty('--exp-launcher-x', column * 56 + 'px');
-      node.style.setProperty('--exp-launcher-y', row * 56 + 'px');
-      node.style.setProperty('--exp-launcher-offset', row * 56 + 'px');
+      node.style.setProperty('--exp-launcher-y', row * pitch + 'px');
+      node.style.setProperty('--exp-launcher-offset', row * pitch + 'px');
     };
     // Dropper's progress card spans the space to the left of the launchers, so while any launcher
     // reserves rows, every launcher stacks in the right-hand column where nothing can cover it.
-    const stacked = sorted.some(node => Number(node.dataset.launcherReservedRows) > 0);
+    const stacked = tabs || sorted.some(node => Number(node.dataset.launcherReservedRows) > 0);
     sorted.forEach((node, index) => assign(node, stacked ? index * 3 : index));
     const ids = sorted.map(node => node.dataset.productId);
     const known = new Set(Object.keys(SUITE_PRODUCTS));
@@ -3698,9 +3707,14 @@ const ExtraPotionsCore = (() => {
       return { top: single.hub.top, right: viewWidth() - left - single.hub.size, anchor: 'top', delta: savedDelta(), site: true, size: single.hub.size };
     }
     const { offset, x } = launcherCell(host);
-    const delta = Math.max(8-(innerHeight-60), Math.min(4, Number(read(GRID_DELTA,0)) || 0));
+    const delta = savedDelta();
     const origin = innerHeight-60+delta, anchor = origin <= (innerHeight-48)/2 ? 'top':'bottom';
     document.documentElement.dataset.expLauncherAnchor = anchor;
+    if (state.tabs) {
+      // A tab on the window's right edge. The bottom-anchored stack keeps the older launcher's bottom line.
+      const base = anchor === 'top' ? origin + offset : origin + 48 - TAB_HEIGHT - offset;
+      return { top: Math.max(8, Math.min(innerHeight-TAB_HEIGHT-8, base)) + siteControlShift(origin, anchor), right: 0, anchor, delta, tab: true, width: TAB_WIDTH, height: TAB_HEIGHT };
+    }
     const top = Math.max(8, Math.min(innerHeight-56, anchor === 'top' ? origin+offset : origin-offset));
     return { top: top + siteControlShift(origin, anchor), right: 12+x, anchor, delta };
   }
@@ -3757,12 +3771,14 @@ const ExtraPotionsCore = (() => {
     if (groupDragging) return 0;
     const now = performance.now();
     if (shiftMemo && shiftMemo.origin === origin && now - shiftMemo.at < 1000) return shiftMemo.value;
-    // The flyout launcher is one 48px tile in the corner; the grid is every launcher cell.
-    const cells = ExpLauncherFlyout.flyoutActive(launcherHosts()) ? [{ offset:0, x:0 }] : [...document.querySelectorAll('[data-exp-product-launcher="1"]')].map(launcherCell);
+    // Every launcher cell: a column of tabs on the edge, or the older grid 12px in from it.
+    const cells = [...document.querySelectorAll('[data-exp-product-launcher="1"]')].map(launcherCell);
     if (!cells.length) return 0;
-    const tops = cells.map(cell => Math.max(8, Math.min(innerHeight-56, anchor === 'top' ? origin+cell.offset : origin-cell.offset)));
-    const c = SITE_CONTROL_CLEARANCE;
-    const group = { top: Math.min(...tops) - c, bottom: Math.max(...tops) + 48 + c, right: innerWidth - 12 + c, left: innerWidth - 12 - 48 - Math.max(...cells.map(cell => cell.x)) - c };
+    const tabs = flyoutState().tabs, c = SITE_CONTROL_CLEARANCE;
+    const tops = cells.map(cell => tabs ? Math.max(8, Math.min(innerHeight-TAB_HEIGHT-8, anchor === 'top' ? origin+cell.offset : origin+48-TAB_HEIGHT-cell.offset)) : Math.max(8, Math.min(innerHeight-56, anchor === 'top' ? origin+cell.offset : origin-cell.offset)));
+    const group = tabs
+      ? { top: Math.min(...tops) - c, bottom: Math.max(...tops) + TAB_HEIGHT + c, right: innerWidth, left: innerWidth - TAB_REACH - c }
+      : { top: Math.min(...tops) - c, bottom: Math.max(...tops) + 48 + c, right: innerWidth - 12 + c, left: innerWidth - 12 - 48 - Math.max(...cells.map(cell => cell.x)) - c };
     const at = s => ({ ...group, top: group.top + s, bottom: group.bottom + s });
     const fits = s => at(s).top >= 8 - c && at(s).bottom <= innerHeight - 8 + c;
     const hits = (s, blockers) => blockers.some(b => b.left < group.right && b.right > group.left && b.top < at(s).bottom && b.bottom > at(s).top);
@@ -3798,7 +3814,7 @@ const ExtraPotionsCore = (() => {
       if (!host || groupDragging || document.hidden) return;
       const before = shiftMemo ? shiftMemo.value : 0;
       shiftMemo = null;
-      const delta = Math.max(8-(innerHeight-60), Math.min(4, Number(read(GRID_DELTA,0)) || 0));
+      const delta = savedDelta();
       const origin = innerHeight-60+delta, value = siteControlShift(origin, origin <= (innerHeight-48)/2 ? 'top':'bottom');
       siteCheckLast = performance.now();
       siteCheckGap = value !== before ? 0 : Math.min(SITE_CHECK_GAP_MAX, Math.max(1000, siteCheckGap * 2));
@@ -3897,6 +3913,8 @@ const ExtraPotionsCore = (() => {
     const band = [...geometry.launchers, ...(reserved ? [reserved] : [])].filter(box => box.left < innerWidth - 12 && box.right > innerWidth - 12 - width)
       .reduce((all, box) => ({ top:Math.min(all.top, box.top), bottom:Math.max(all.bottom, box.bottom) }), { top:own.top, bottom:own.bottom });
     const below = innerHeight - band.bottom - 16, above = band.top - 16;
+    // In a very short window neither side has room: the open menu takes the viewport, as it does from a site slot.
+    if (Math.max(above, below) < 160) { limitHeight(innerHeight - 16); host.dataset.openDirection = 'down'; return finish('viewport', 8, 8, panel.offsetHeight); }
     const up = anchorTop ? below < 160 && above > below : !(above < 160 && below > above);
     limitHeight(up ? above : below);
     const h = panel.offsetHeight;
@@ -3975,13 +3993,18 @@ const ExtraPotionsCore = (() => {
   const FLYOUT_ACCENTS = Object.freeze({ dropper:'#bc94f5', ward:'#5fd9a0', thread:'#ff7636' });
   const FLYOUT_NAMES = Object.freeze({ dropper:'Dropper', ward:'WARD', thread:'THREAD' });
   const FLYOUT_TILE = 40, FLYOUT_GAP = 6, FLYOUT_PAD = 7;
+  // Edge tab: 34x44 drawn, 44px of reach from the edge for touch, 4px between stacked tabs.
+  const TAB_WIDTH = 34, TAB_HEIGHT = 44, TAB_REACH = 44, TAB_PITCH = 48;
   const launcherHosts = () => [...document.querySelectorAll('[data-exp-product-launcher="1"]')];
   const hostLauncher = host => host?.shadowRoot?.querySelector('[data-exp-part="launcher"],.launcher') || null;
   function flyoutState() {
     const hosts = launcherHosts();
     const row = hosts.length === 1 || (hosts.length > 1 && hosts.every(host => host.dataset.expFlyout === ExpLauncherFlyout.PROTOCOL)) ? siteRow(hosts.length) : null;
-    const active = !row && ExpLauncherFlyout.flyoutActive(hosts);
-    return { hosts, active, row, lead: active ? ExpLauncherFlyout.leadProduct(hosts) : '', order: active || row ? ExpLauncherFlyout.flyoutOrder(hosts) : [], open: active && document.documentElement.dataset.expFlyoutOpen === '1' };
+    // Away from a site's own slot the products are edge tabs; the flyout serves a slot too small for a row of icons.
+    const slot = row ? null : siteSlot();
+    const active = !row && Boolean(slot) && ExpLauncherFlyout.flyoutActive(hosts);
+    const tabs = !row && !slot && ExpLauncherFlyout.tabsReady(hosts);
+    return { hosts, active, tabs, row, lead: active ? ExpLauncherFlyout.leadProduct(hosts) : '', order: active || row ? ExpLauncherFlyout.flyoutOrder(hosts) : [], open: active && document.documentElement.dataset.expFlyoutOpen === '1' };
   }
   // A top bar with room for every product's icon side by side (Twitch); otherwise null and the flyout is used.
   function siteRow(count) {
@@ -4014,7 +4037,13 @@ const ExtraPotionsCore = (() => {
     for (const box of boxes) if (box.top < top + height && box.bottom > top) top = down ? box.bottom + 8 : box.top - height - 8;
     return top;
   }
-  function savedDelta() { return Math.max(8-(innerHeight-60), Math.min(4, Number(read(GRID_DELTA,0)) || 0)); }
+  // The saved group position, measured from the bottom corner. Tabs that were never moved start a fifth of the
+  // way down the window, below a site's header.
+  function savedDelta() {
+    const saved = Number(read(GRID_DELTA,0)) || 0;
+    const value = !saved && flyoutState().tabs ? Math.max(64, Math.round(innerHeight * .2)) - (innerHeight-60) : saved;
+    return Math.max(8-(innerHeight-60), Math.min(4, value));
+  }
   // The shared launcher sits in the site's slot when it has one, otherwise in the bottom-right corner.
   function flyoutHubBox() {
     const slot = siteSlot();
@@ -4212,6 +4241,12 @@ const ExtraPotionsCore = (() => {
 :host([data-exp-flyout-role]) ${launcherPart} > :is(img,svg,.icon):not(.launcher-ring):not(.ring){width:26px!important;height:26px!important}
 :host([data-exp-flyout-role="hidden"]) ${launcherPart}{visibility:hidden!important;pointer-events:none!important}
 :host([data-exp-flyout-selected="1"]) ${launcherPart}{border-color:${accent}!important;box-shadow:inset 0 0 0 1px ${accent}!important}
+:host([data-exp-edge-tab]) ${launcherPart}{width:${TAB_WIDTH}px!important;height:${TAB_HEIGHT}px!important;min-width:${TAB_WIDTH}px!important;min-height:${TAB_HEIGHT}px!important;max-width:${TAB_WIDTH}px!important;max-height:${TAB_HEIGHT}px!important;border-radius:10px 0 0 10px!important;border-right-width:0!important;box-sizing:border-box!important;overflow:visible!important;transform:none!important}
+:host([data-exp-edge-tab]) ${launcherPart} > :is(img,svg,.icon):not(.launcher-ring):not(.ring){width:24px!important;height:24px!important}
+:host([data-exp-edge-tab]) ${launcherPart} :is(.ring,.launcher-ring,.launcher-badge,.update-badge){display:none!important}
+:host([data-exp-edge-tab]) ${launcherPart}::before{content:'';position:absolute;top:0;bottom:0;right:0;left:${TAB_WIDTH - TAB_REACH}px}
+:host([data-exp-edge-tab][data-exp-update="1"]) ${launcherPart}::after{content:'';position:absolute;top:3px;left:3px;width:7px;height:7px;border-radius:2px;background:${accent};pointer-events:none}
+:host([data-exp-edge-tab][data-exp-flyout-selected="1"]) ${launcherPart}{border-color:${accent}!important;box-shadow:inset 3px 0 0 ${accent}!important}
 .exp-flyout-hub{all:initial;position:fixed;z-index:2147483601;box-sizing:border-box;display:grid;place-items:center;width:48px;height:48px;border-radius:12px;background:radial-gradient(circle at 50% 35%,#1d1a24,#0c0b10 70%);border:1px solid color-mix(in srgb,${accent} 50%,#3f3f46);box-shadow:inset 0 1px 0 #ffffff12;cursor:pointer;pointer-events:auto}
 .exp-flyout-hub[data-size="40"]{border-radius:10px}
 .exp-flyout-hub[data-shape="circle"]{border-radius:50%;background:var(--theme-panel,#181c1f);box-shadow:none}
@@ -4339,8 +4374,11 @@ const ExtraPotionsCore = (() => {
       if (!state.active) {
         if (singleSlot(state)) host.dataset.expFlyoutRole = 'site'; else delete host.dataset.expFlyoutRole;
         if (state.row) { host.dataset.expSiteIcon = '1'; host.style.setProperty('--exp-site-icon-size', state.row.size + 'px'); } else { delete host.dataset.expSiteIcon; host.style.removeProperty('--exp-site-icon-size'); }
-        delete host.dataset.expFlyoutSelected; removeHub(host); continue;
+        if (state.tabs) host.dataset.expEdgeTab = '1'; else delete host.dataset.expEdgeTab;
+        if (state.tabs && menu === id) host.dataset.expFlyoutSelected = '1'; else delete host.dataset.expFlyoutSelected;
+        removeHub(host); continue;
       }
+      delete host.dataset.expEdgeTab;
       delete host.dataset.expSiteIcon; host.style.removeProperty('--exp-site-icon-size');
       const role = state.open ? 'tile' : 'hidden';
       if (host.dataset.expFlyoutRole !== role) host.dataset.expFlyoutRole = role;
@@ -4358,14 +4396,14 @@ const ExtraPotionsCore = (() => {
     const on = (node,type,fn,opts) => { node.addEventListener(type,fn,opts); removers.push(() => node.removeEventListener(type,fn,opts)); };
     let startX=0,startY=0,startDelta=0,pointer=null,dragged=false,mode='',axis='',order=[];
     launcher.title = launcher.title || title || 'Drag to move the launchers. Shift+drag or Alt+Arrow keys reorder.';
-    on(launcher,'pointerdown',e=>{if(e.button!==0||(reorder&&(flyoutState().active||singleSlot()))||(!reorder&&e.shiftKey)||!canDrag())return;pointer=e.pointerId;startX=e.clientX;startY=e.clientY;startDelta=Number(read(GRID_DELTA,0))||0;mode=e.shiftKey?'order':'group';order=interactionGridOrder();if(!order.includes(id))order.push(id);dragged=false;axis='';e.preventDefault();try{launcher.setPointerCapture(e.pointerId);}catch{}});
+    on(launcher,'pointerdown',e=>{if(e.button!==0||(reorder&&(flyoutState().active||singleSlot()))||(!reorder&&e.shiftKey)||!canDrag())return;pointer=e.pointerId;startX=e.clientX;startY=e.clientY;startDelta=savedDelta();mode=e.shiftKey?'order':'group';order=interactionGridOrder();if(!order.includes(id))order.push(id);dragged=false;axis='';e.preventDefault();try{launcher.setPointerCapture(e.pointerId);}catch{}});
     // Listen on window in the capture phase so host pages that stop pointer events (Twitch's player) cannot stall a drag.
     on(launcher,'dragstart',e=>e.preventDefault());
-    on(window,'pointermove',e=>{if(e.pointerId!==pointer)return;const dx=e.clientX-startX,dy=e.clientY-startY;if(!axis&&Math.max(Math.abs(dx),Math.abs(dy))>4)axis=mode;if(!axis)return;dragged=true;groupDragging=true;e.preventDefault();launcher.classList.add('is-dragging');if(axis==='group')write(GRID_DELTA,Math.round(Math.max(8-(innerHeight-60),Math.min(4,startDelta+dy))));else{const from=order.indexOf(id),offset=Math.abs(dx)>Math.abs(dy)?Math.round(-dx/56):Math.round(dy/56)*3,to=Math.max(0,Math.min(order.length-1,from+offset)),next=[...order];next.splice(from,1);next.splice(to,0,id);write(GRID_ORDER,next);}layoutGrid();emit('launcher-grid-moved',id);layout();},{passive:false,capture:true});
+    on(window,'pointermove',e=>{if(e.pointerId!==pointer)return;const dx=e.clientX-startX,dy=e.clientY-startY;if(!axis&&Math.max(Math.abs(dx),Math.abs(dy))>4)axis=mode;if(!axis)return;dragged=true;groupDragging=true;e.preventDefault();launcher.classList.add('is-dragging');if(axis==='group')write(GRID_DELTA,Math.round(Math.max(8-(innerHeight-60),Math.min(4,startDelta+dy))));else{const from=order.indexOf(id),offset=flyoutState().tabs?Math.round(dy/TAB_PITCH)*(document.documentElement.dataset.expLauncherAnchor==='top'?1:-1):Math.abs(dx)>Math.abs(dy)?Math.round(-dx/56):Math.round(dy/56)*3,to=Math.max(0,Math.min(order.length-1,from+offset)),next=[...order];next.splice(from,1);next.splice(to,0,id);write(GRID_ORDER,next);}layoutGrid();emit('launcher-grid-moved',id);layout();},{passive:false,capture:true});
     const end=e=>{if(e.pointerId===pointer){pointer=null;if(groupDragging){groupDragging=false;shiftMemo=null;layoutGrid();emit('launcher-grid-moved',id);layout();}launcher.classList.remove('is-dragging');try{launcher.releasePointerCapture(e.pointerId);}catch{}}};
     on(window,'pointerup',end,true);on(window,'pointercancel',end,true);on(launcher,'lostpointercapture',end);
     on(launcher,'click',e=>{if(dragged){e.preventDefault();e.stopImmediatePropagation();dragged=false;}},true);
-    on(launcher,'keydown',e=>{if(!reorder||flyoutState().active||!e.altKey||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();let next=interactionGridOrder();if(!next.includes(id))next.push(id);const from=next.indexOf(id),offset={ArrowLeft:1,ArrowRight:-1,ArrowUp:-3,ArrowDown:3}[e.key],to=Math.max(0,Math.min(next.length-1,from+offset));next=[...next];next.splice(from,1);next.splice(to,0,id);write(GRID_ORDER,next);layoutGrid();emit('launcher-grid-moved',id);layout();launcher.focus();});
+    on(launcher,'keydown',e=>{if(!reorder||flyoutState().active||!e.altKey||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();let next=interactionGridOrder();if(!next.includes(id))next.push(id);const from=next.indexOf(id),up=document.documentElement.dataset.expLauncherAnchor==='top'?-1:1,offset=flyoutState().tabs?{ArrowLeft:0,ArrowRight:0,ArrowUp:up,ArrowDown:-up}[e.key]:{ArrowLeft:1,ArrowRight:-1,ArrowUp:-3,ArrowDown:3}[e.key],to=Math.max(0,Math.min(next.length-1,from+offset));next=[...next];next.splice(from,1);next.splice(to,0,id);write(GRID_ORDER,next);layoutGrid();emit('launcher-grid-moved',id);layout();launcher.focus();});
     return () => { while (removers.length) removers.pop()(); };
   }
   function interactionGridOrder() {
@@ -4479,7 +4517,7 @@ const ExtraPotionsCore = (() => {
     document.addEventListener('exp-core:coordination', refresh);
     addEventListener('resize', refresh);
     layoutGrid(); syncFlyout(); emit('launcher-added', id);
-    const dispose = () => { stopProtect(); backdropStyle?.dispose(); flyoutStyle?.dispose(); host.shadowRoot?.removeEventListener('keydown', onTileKey); host.removeEventListener('toggle', onHostToggle); removeHub(host); delete host.dataset.expFlyoutRole; delete host.dataset.expFlyoutSelected; cancelAnimationFrame(frame); document.removeEventListener('exp-core:coordination', refresh); removeEventListener('resize', refresh); delete host.dataset.expProductLauncher; delete host.dataset.expFlyout; delete host.dataset.expSiteProduct; registrations.delete(host); layoutGrid(); emit('launcher-removed', id); };
+    const dispose = () => { stopProtect(); backdropStyle?.dispose(); flyoutStyle?.dispose(); host.shadowRoot?.removeEventListener('keydown', onTileKey); host.removeEventListener('toggle', onHostToggle); removeHub(host); delete host.dataset.expFlyoutRole; delete host.dataset.expFlyoutSelected; delete host.dataset.expEdgeTab; cancelAnimationFrame(frame); document.removeEventListener('exp-core:coordination', refresh); removeEventListener('resize', refresh); delete host.dataset.expProductLauncher; delete host.dataset.expFlyout; delete host.dataset.expSiteProduct; registrations.delete(host); layoutGrid(); emit('launcher-removed', id); };
     registrations.set(host, dispose);
     return dispose;
   }
@@ -5660,6 +5698,15 @@ const ExtraPotionsCore = (() => {
     return KEYS.find(entry => entry.area === area && new RegExp(patterns[entry.scope](escape(entry.key))).test(storageKey)) || null;
   }
 
+  function syncRecordAccess(store, currentAccount) {
+    return {
+      ignored: { read: account => store.ignoredGames(account).games, write: (account, games) => store.local.set('ignoredGames', { updatedAt: Date.now(), games }, account) },
+      order: { read: () => store.priorityOrder(currentAccount()), write: list => store.setPriorityOrder(list, currentAccount()) },
+      priorities: { read: account => store.priorities(account), set: (account, id, value) => store.setPriority(id, value, account) },
+      claims: { read: account => store.claimRecords(account).map(item => item.record), put: (account, id, record) => store.putClaimRecord(id, record, account), remove: (account, id) => store.removeClaimRecord(id, account) },
+    };
+  }
+
   // Twitch requests. The only module that talks to Twitch's servers. One request path: GM transport first (it is
   // not bound by the page's CORS rules), the page's own fetch as fallback; the second client ID after auth,
   // integrity or network failures; a circuit breaker after repeated failures.
@@ -5675,9 +5722,13 @@ const ExtraPotionsCore = (() => {
     streamInfo: { name: 'VideoPlayerStreamInfoOverlayChannel', hash: '198492e0857f6aedead9665c81c5a06d67b25b58034649687124083ff288597d', variables: { channel: '' } },
     availableDrops: { name: 'ChannelDropsCampaigns', hash: 'bc073ff0bb13797898f83e93dc8009838545dec95ff7fe92243c8fa3a740f7e7', variables: { channelID: '' } },
     claimDrop: { name: 'DropsPage_ClaimDropRewards', hash: '3b8a08f5a35dc95d7de229dea731a106a9aa9fa2e84c8f693fd159943f273e4f', variables: { input: { dropInstanceID: '' } } },
+    // Reward campaigns (badges and emotes for watching a category, such as a game launch celebration): progress is
+    // its own request, and the category is found by Twitch's search because the campaign data names no game.
+    rewardInventory: { name: 'ViewerRewardDropInventory', hash: '828f9f0bdbc735ce3162519717f918b811902984580389a67ad733c684291e62', variables: {} },
+    searchGames: { name: 'SearchResultsPage_SearchResults', hash: 'ee645fed322a59291288b848838f8c307451462ae10e78c66e8e8a11297447f4', variables: { platform: 'web', query: '', options: { targets: null, shouldSkipDiscoveryControl: false }, requestID: '' } },
     dropCampaignDetails: { name: 'DropCampaignDetails', hash: '1f4903ecfff5d0ba12820e28288d3c524606b28916084214a8c0bb9a2043727a', variables: { channelLogin: '', dropID: '' } },
   });
-  const READ_ONLY_OPS = new Set(['inventory', 'viewerDropsDashboard', 'streamInfo', 'currentDrop', 'availableDrops', 'dropCampaignDetails']);
+  const READ_ONLY_OPS = new Set(['inventory', 'viewerDropsDashboard', 'streamInfo', 'currentDrop', 'availableDrops', 'dropCampaignDetails', 'rewardInventory', 'searchGames']);
   const NETWORK = Object.freeze({ windowMs: 60 * 60 * 1000, softBudget: 180, failureThreshold: 3, errorCooldownMs: 5 * 60 * 1000, rateCooldownMs: 15 * 60 * 1000, authCooldownMs: 10 * 60 * 1000 });
   const INTEGRITY_MARGIN_MS = 60 * 1000;
 
@@ -7854,7 +7905,7 @@ const ExtraPotionsCore = (() => {
       const acl = candidate.allowListMatch, tagged = candidate.dropsTagged;
       go(CONTROLLER_STATES.OPEN, {
         slug, stream: candidate.login, baseline: baselineOf(target), deadlineAt: at + CONTROLLER_TIMING.navigation,
-        evidence: { source: acl ? 'campaign-acl' : 'category', dropsTagged: tagged, campaignAclMatched: acl, campaignAllowListPresent: allowed.length > 0, campaignAllowListMatch: acl, evidenceRank: candidate.evidenceRank, evidenceLabel: candidate.evidenceLabel, game: target.game, seenAt: at },
+        evidence: { source: acl ? 'campaign-acl' : 'category', gqlCampaignSupported: Boolean(campaignFor(target)?.rewardCampaign), dropsTagged: tagged, campaignAclMatched: acl, campaignAllowListPresent: allowed.length > 0, campaignAllowListMatch: acl, evidenceRank: candidate.evidenceRank, evidenceLabel: candidate.evidenceLabel, game: target.game, seenAt: at },
       }, acl ? `Opening campaign-allowed stream ${candidate.login}` : tagged ? `Opening Drops-tagged stream ${candidate.login} for campaign verification` : `Opening category stream ${candidate.login} for Drop verification`);
       setStatus(acl ? `Opening ${candidate.login} For ${target.campaign || target.game}` : tagged ? `Opening ${candidate.login} · Verifying ${target.game} Campaign` : `Opening ${candidate.login} · Verifying Drops eligibility`);
       move(candidate.href, manual ? 'manual-stream-skip' : acl ? 'routing-open-campaign-acl-stream' : tagged ? 'routing-open-drops-verification-stream' : 'routing-open-probationary-stream', { manual });
@@ -8024,7 +8075,8 @@ const ExtraPotionsCore = (() => {
         return go(CONTROLLER_STATES.FIND, { failed: failedWith(session, channel), stream: '', recovery: resetRecovery, deadlineAt: 0 }, `Playback stopped on ${channel}`);
       }
       const holding = { 'credit-delayed-background': `Twitch credit delayed in background · Holding ${channel}`, 'foreground-revalidation-grace': 'Browser active again · Rechecking Twitch credit', 'credit-delayed': `Twitch credit delayed · Holding ${channel}`, buffering: `Playback buffering · Holding ${channel}` }[diagnosis.code];
-      if (holding) { setStatus(holding); return false; }
+      // A stream that never loaded in a hidden window cannot earn; say so instead of blaming Twitch's credit.
+      if (holding) { setStatus(diagnosis.code === 'credit-delayed-background' && health.loaded === false ? `Stream has not started in the hidden window · Holding ${channel}` : holding); return false; }
       const stallMs = healthy ? CONTROLLER_TIMING.healthyStalled : CONTROLLER_TIMING.unhealthyStalled;
       if (diagnosis.code === 'credit-stalled' && anchor && at - anchor >= stallMs) {
         const stage = Number(session.recovery?.stage || 0);
@@ -8246,7 +8298,7 @@ const ExtraPotionsCore = (() => {
   const VIEWING_SELECTION_KEY = 'dropper-viewing-selection-v1';
   const MUTE_PENDING_KEY = 'dropper-mute-pending-v1';
 
-  function createPage({ store, session = sessionStorage, gm = null, settings: readSettings, intent, wantedGame = () => '', isAutomationTab = () => true, sitePaused = () => false, onChange = () => {}, log = () => {}, startedAt = Date.now() } = {}) {
+  function createPage({ store, session = sessionStorage, gm = null, pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window, settings: readSettings, intent, wantedGame = () => '', isAutomationTab = () => true, sitePaused = () => false, onChange = () => {}, log = () => {}, startedAt = Date.now() } = {}) {
     // 3.x's names, so the carried-over code reads as it did.
     const viewingIntent = intent;
     const logActivity = log;
@@ -9581,6 +9633,7 @@ const ExtraPotionsCore = (() => {
         playing: streamVideoIsPlaying(), playback: viewing.playback || 'unknown', pauseReason: viewing.pauseReason || '',
         visibilityState: attention.visibilityState, pictureInPicture: Boolean(document.pictureInPictureElement),
         backgrounded: attention.backgrounded, foregroundGraceRemainingMs: attention.foregroundGraceRemainingMs,
+        loaded: streamLoaded(),
       };
     }
     const streams = () => (isDirectoryCategoryPage() ? collectDirectoryStreamCandidates(wantedGame(), '') : []);
@@ -9589,6 +9642,68 @@ const ExtraPotionsCore = (() => {
     function noteNavigation(url, reason) {
       noteRequestedViewingNavigation(url);
       if (streamLoginFromUrl(url)) requestMuteAfterNavigation(reason);
+    }
+    // A stream Dropper opens while the window is hidden never starts by itself (Desktop Vivaldi, 2026-11-21, live):
+    // Twitch's player waits until the page reads as visible, and in a document that was never shown not even that
+    // starts it. What works: stay in the open document by moving through Twitch's own router, let the page read as
+    // visible until the player has loaded, then give the true reading back; the stream keeps playing after that.
+    // A move becomes a page load when the page title shows that Twitch did not follow.
+    const ROUTE_FOLLOW_MS = 8000, REVEAL_AFTER_MS = 3000, REVEAL_FOR_MS = 30000, REVEAL_WINDOW_MS = 120000;
+    let routedAt = 0;
+    let reveal = { on: false, since: 0, tries: 0 };
+    // The browser's own reading, whatever the page has been told.
+    function trulyHidden() {
+      try { return Boolean(Object.getOwnPropertyDescriptor(window.Document.prototype, 'hidden').get.call(document)); } catch (_) { return Boolean(document.hidden); }
+    }
+    function runInPage(code) {
+      try {
+        const script = document.createElement('script');
+        script.textContent = code;
+        (document.documentElement || document.head || document.body).appendChild(script);
+        script.remove();
+      } catch (_) {}
+    }
+    function setReveal(on, why) {
+      const mark = on ? 1 : 0;
+      const code = on
+        ? `try{Object.defineProperty(document,"hidden",{configurable:true,get:function(){return false}});Object.defineProperty(document,"visibilityState",{configurable:true,get:function(){return "visible"}});window.__tdhReveal=1;document.dispatchEvent(new Event("visibilitychange"));}catch(e){}`
+        : `try{delete document.hidden;delete document.visibilityState;window.__tdhReveal=0;document.dispatchEvent(new Event("visibilitychange"));}catch(e){}`;
+      runInPage(code);
+      try { if (pageWindow.__tdhReveal !== mark && typeof pageWindow.eval === 'function') pageWindow.eval(code); } catch (_) {}
+      reveal = { ...reveal, on, since: on ? Date.now() : 0, tries: reveal.tries + (on ? 1 : 0) };
+      logActivity('playback', on ? 'Page reads visible so the stream can start' : 'Page reading given back', { why });
+    }
+    function streamLoaded() {
+      const video = streamVideoElement();
+      return Boolean(video && (video.readyState > 0 || video.currentTime > 0));
+    }
+    function helpHiddenStreamStart(now) {
+      if (reveal.on) {
+        const why = !trulyHidden() ? 'shown' : streamVideoIsPlaying() ? 'playing' : now - reveal.since >= REVEAL_FOR_MS ? 'timeout' : '';
+        if (why) setReveal(false, why);
+        return;
+      }
+      if (!routedAt || reveal.tries >= 2 || now - routedAt < REVEAL_AFTER_MS || now - routedAt > REVEAL_WINDOW_MS) return;
+      if (trulyHidden() && watchingLogin() && !streamLoaded()) setReveal(true, 'stream-not-started');
+    }
+    function open(url, assign = target => location.assign(target)) {
+      let target = null;
+      try { target = new URL(url, location.href); } catch (_) {}
+      if (!trulyHidden() || !target || target.origin !== location.origin) { assign(url); return false; }
+      const title = document.title;
+      try {
+        history.pushState({}, '', target.href);
+        window.dispatchEvent(new window.PopStateEvent('popstate', { state: history.state }));
+      } catch (_) { assign(url); return false; }
+      routedAt = Date.now();
+      reveal = { ...reveal, tries: 0 };
+      logActivity('navigation', 'Moved inside the open page while the window is hidden', { to: target.pathname });
+      setTimeout(() => {
+        if (document.title !== title || locationKey() !== `${target.origin}${target.pathname}${target.search}`) return;
+        logActivity('navigation', 'Twitch did not follow the move; loading the page', { to: target.pathname });
+        assign(url);
+      }, ROUTE_FOLLOW_MS);
+      return true;
     }
     // At document start: listeners only.
     function install() {
@@ -9610,15 +9725,18 @@ const ExtraPotionsCore = (() => {
       restoreChannelPlayer();
       contentWarningMemory.process();
       ensureStreamMuted();
+      helpHiddenStreamStart(now);
       nudgeSettledPausedPlayer(now);
       void syncScreenWakeLock();
       if (now - lastPromoScanAt >= PROMO_SCAN_INTERVAL_MS) suppressTwitchSubscriptionPromos();
     }
 
     return Object.freeze({
-      login: watchingLogin, path: () => location.pathname, stream: readStreamInfo, category, streams, revealDirectoryCards, health, locationKey, hidden: () => document.hidden, startedAt,
+      login: watchingLogin, path: () => location.pathname, stream: readStreamInfo, category, streams, revealDirectoryCards, health, locationKey, hidden: () => document.hidden,
+      // When this page or Dropper's last move inside it began: the settling time counts from there.
+      get startedAt() { return Math.max(startedAt, routedAt); },
       slugFor: target => resolveCategorySlug(target), rememberSlug: rememberCategorySlug, channelFromUrl: streamLoginFromUrl, isTrustedUrl: isTrustedTwitchUrl,
-      noteNavigation, install, boot, heartbeat, sync: syncViewingContext, resume: () => ensureStreamPlaying(true), restorePlayer: () => restoreChannelPlayer(true),
+      noteNavigation, open, install, boot, heartbeat, sync: syncViewingContext, resume: () => ensureStreamPlaying(true), restorePlayer: () => restoreChannelPlayer(true),
       player: playerPresentationSnapshot, warnings: contentWarningMemory, promos: { suppress: suppressTwitchSubscriptionPromos, restore: restoreTwitchSubscriptionPromos },
       videoPlaying: streamVideoIsPlaying, playbackNeedsInput, playbackRecovering, refreshSettings: () => { currentSettings = readSettings(); },
     });
@@ -10438,6 +10556,50 @@ const ExtraPotionsCore = (() => {
   }
 
   // Page-scraped rows (`page:` IDs) give way to a real open campaign for the same game.
+  // Reward campaigns. Twitch lists them beside Drops campaigns with no game; the first word of the name is the
+  // search term ("GTAVI Launch Celebration"), and a category is accepted only when that word is its acronym or
+  // part of its name. Campaigns that list many participating categories are left alone.
+  const REWARD_PROGRESS_MS = 5 * 60 * 1000;
+  const REWARD_SEARCH_RETRY_MS = 6 * 60 * 60 * 1000;
+  const rewardWord = campaign => cleanText(campaign?.name).split(/\s+/)[0] || '';
+  function rewardWordMatchesGame(word, game) {
+    const flat = value => cleanText(value).normalize('NFKD').toLowerCase().replace(/[^a-z0-9 ]+/g, '').trim();
+    const wanted = flat(word).replace(/ /g, ''), words = flat(game).split(/\s+/).filter(Boolean);
+    if (wanted.length < 3 || !words.length) return false;
+    const acronym = words.map(part => /^(?:[ivx]+|\d+)$/.test(part) ? part : part[0]).join('');
+    return wanted === acronym || (wanted.length >= 4 && words.join('').includes(wanted));
+  }
+  const rewardWatchGroup = group => Number(group?.unlockRequirements?.minuteWatchedGoal) > 0 && !(Number(group?.unlockRequirements?.subsGoal) > 0);
+  const rewardCampaignWanted = (campaign, at) => Boolean(campaign?.id && rewardWord(campaign) && !/participating categories/i.test(cleanText(campaign.summary))
+    && (!parseTime(campaign.endsAt) || parseTime(campaign.endsAt) > at) && (campaign.rewardGroups || []).some(rewardWatchGroup));
+  // One reward campaign in the shape of a Drops campaign. A reward that repeats (one hour a day, six times) becomes
+  // one reward per repeat: the granted ones read claimed, and the next one opens when today's window ends.
+  function rewardCampaignRow(campaign, game, progress, at) {
+    const groups = Array.isArray(progress) ? progress.filter(group => cleanText(group?.progressCriteria?.requirementType).toUpperCase() === 'WATCH') : (campaign.rewardGroups || []).filter(rewardWatchGroup).slice(0, 1);
+    const drops = groups.flatMap(group => {
+      const self = group.self || {}, repeat = Math.min(60, Math.max(1, Number(group.progressCriteria?.repeatableConfig?.repeatableTimes) || 1));
+      const required = Number(group.progressCriteria?.requirements?.minutesWatched ?? group.unlockRequirements?.minuteWatchedGoal) || 0;
+      if (!group.id || required <= 0) return [];
+      const grants = Math.min(repeat, Math.max(0, Number(self.grantCount) || 0)), windowEnd = parseTime(self.currentWindow?.expiresAt), nextAt = parseTime(self.nextEligibleAt);
+      const windowLive = !windowEnd || windowEnd > at;
+      const current = windowLive ? Math.min(required, Number(self.currentMinutesWatched) || 0) : 0;
+      // Full minutes in a live window after a grant are the finished repeat's; the next one waits for the window to end.
+      const waitsUntil = Math.max(nextAt > at ? nextAt : 0, grants > 0 && windowLive && windowEnd && current >= required ? windowEnd : 0);
+      const reward = (group.rewards || [])[0] || {};
+      const label = cleanText(group.name) || cleanText(reward.name) || cleanText(campaign.name);
+      const image = cleanText(reward.thumbnailImage?.image1xURL || reward.bannerImage?.image1xURL || '');
+      return Array.from({ length: Math.min(repeat, grants + 1) }, (_, index) => {
+        const granted = index < grants;
+        return { id: repeat > 1 ? `${group.id}:${index + 1}` : String(group.id), name: repeat > 1 ? `${label} ${index + 1}/${repeat}` : label, requiredMinutesWatched: required,
+          startAt: !granted && waitsUntil ? new Date(waitsUntil).toISOString() : campaign.startsAt || '', endAt: campaign.endsAt || '', rewardImage: image,
+          self: { currentMinutesWatched: granted ? required : waitsUntil ? 0 : current, isClaimed: granted, dropInstanceID: '' } };
+      });
+    });
+    if (!drops.length) return null;
+    return { id: String(campaign.id), name: cleanText(campaign.name), status: 'ACTIVE', startAt: campaign.startsAt || '', endAt: campaign.endsAt || '', rewardCampaign: true,
+      game: { id: game.id, displayName: game.name, name: game.name, slug: game.slug }, timeBasedDrops: drops };
+  }
+
   function suppressPageShells(list, isOpen) {
     const titleKey = value => normalizeGameName(value);
     const real = new Set((list || []).filter(campaign => !/^page:/i.test(campaignKey(campaign)) && isOpen(campaign)).map(campaign => titleKey(gameOf(campaign))).filter(Boolean));
@@ -10453,6 +10615,8 @@ const ExtraPotionsCore = (() => {
     // Rewards Twitch's Inventory lists as earned, by Drop ID ('CLAIMED' or 'CLAIMABLE'). A finished campaign leaves
     // the in-progress list and the campaign list carries no progress, so this is the only sign that it is done.
     let earned = new Map();
+    let rewardList = [], rewardProgress = new Map(), rewardProgressAt = 0;
+    const rewardGames = new Map();
     let lastPollAt = 0, nextPollAt = now() + POLL_STARTUP_QUIET_MS, pendingReason = 'startup', inFlight = false, errorStreak = 0, lastError = '', dashboardAt = 0, dashboardWithheldAt = 0, dashboardBlockedUntil = 0;
     const target = () => controller()?.snapshot().target || null;
     const isOpen = (campaign, at = now()) => campaigns.state(campaign, null, at).open;
@@ -10470,10 +10634,51 @@ const ExtraPotionsCore = (() => {
     // dropped for real campaigns, inventory-claimed rewards marked, and the selected reward's progress
     // reconciled with a matching session counter.
     function pool(at = now()) {
-      const merged = mergeCampaigns(mergeCampaigns(campaigns.catalog(), [...details.values()], available.filter(row => watchDrops(row).length)), inventory, mergeCampaigns(campaignsFromMemory(at), campaignsPage?.rows() || []));
+      const merged = mergeCampaigns(mergeCampaigns(campaigns.catalog(), [...details.values()], available.filter(row => watchDrops(row).length), rewardRows(at)), inventory, mergeCampaigns(campaignsFromMemory(at), campaignsPage?.rows() || []));
       const routable = suppressPageShells(overlayEarned(merged), campaign => isOpen(campaign, at));
       const claimed = claims ? claims.overlayClaimed(routable) : routable;
       return overlaySession(claimed, at);
+    }
+    function rewardRows(at) {
+      return rewardList.filter(campaign => rewardCampaignWanted(campaign, at) && rewardGames.get(campaign.id)?.slug)
+        .map(campaign => rewardCampaignRow(campaign, rewardGames.get(campaign.id), rewardProgress.get(String(campaign.id)) || null, at)).filter(Boolean);
+    }
+    function acceptRewardCampaigns(list) {
+      if (!Array.isArray(list)) return false;
+      rewardList = list.filter(campaign => campaign && typeof campaign === 'object' && campaign.id);
+      return true;
+    }
+    function acceptRewardProgress(list, at) {
+      if (!Array.isArray(list)) return false;
+      rewardProgress = new Map(list.filter(campaign => campaign?.id && Array.isArray(campaign.rewardGroups)).map(campaign => [String(campaign.id), campaign.rewardGroups]));
+      rewardProgressAt = at;
+      return true;
+    }
+    // After the main poll and apart from it, so a failure here never costs the Drops data. One category search per
+    // poll at most; progress every poll while a reward campaign is the selected one, otherwise every five minutes.
+    async function loadRewards(at) {
+      const wanted = rewardList.filter(campaign => rewardCampaignWanted(campaign, at));
+      if (!wanted.length) return;
+      try {
+        const unknown = wanted.find(campaign => { const known = rewardGames.get(campaign.id); return !known || (!known.slug && at - known.at >= REWARD_SEARCH_RETRY_MS); });
+        if (unknown) {
+          const word = rewardWord(unknown);
+          const rows = await twitch.request([{ op: 'searchGames', variables: { query: word, requestID: cleanText(globalThis.crypto?.randomUUID?.() || `${at}`) } }]);
+          const edges = rows[0]?.data?.searchFor?.games?.edges;
+          const game = (Array.isArray(edges) ? edges : []).map(edge => edge?.item).find(item => item?.slug && rewardWordMatchesGame(word, item.displayName || item.name));
+          rewardGames.set(unknown.id, game ? { id: String(game.id || ''), name: cleanText(game.displayName || game.name), slug: cleanText(game.slug), at } : { slug: '', at });
+          log('reward-campaign', game ? `Reward campaign ${cleanText(unknown.name)} counts in ${cleanText(game.displayName || game.name)}` : `No Twitch category found for reward campaign ${cleanText(unknown.name)}`);
+          if (game) page.rememberSlug?.(cleanText(game.displayName || game.name), cleanText(game.slug), 'twitch-gql');
+        }
+        if (!wanted.some(campaign => rewardGames.get(campaign.id)?.slug)) return;
+        const selected = cleanText(target()?.campaignKey || target()?.campaignId).toLowerCase();
+        const active = wanted.some(campaign => String(campaign.id).toLowerCase() === selected);
+        if (rewardProgressAt && !active && at - rewardProgressAt < REWARD_PROGRESS_MS) return;
+        const rows = await twitch.request([{ op: 'rewardInventory' }]);
+        acceptRewardProgress(rows[0]?.data?.currentUser?.inventory?.viewerRewardDropCampaignsInProgress, at);
+      } catch (error) {
+        log('reward-campaign', 'Reward campaign data unavailable', { message: cleanText(error?.message || error).slice(0, 160) });
+      }
     }
     function overlayEarned(list) {
       if (!earned.size) return list;
@@ -10659,6 +10864,7 @@ const ExtraPotionsCore = (() => {
         acceptInventory(rows[index++], at);
         if (dashboard) {
           const row = rows[index++];
+          acceptRewardCampaigns(row?.data?.rewardCampaignsAvailableToUser);
           if (integrityDenied(row)) dashboardBlockedUntil = at + DETAILS_MISS_TTL_MS;
           if (!acceptDashboard(row?.data?.currentUser?.dropCampaigns, at) && at - dashboardWithheldAt >= DETAILS_MISS_TTL_MS) {
             dashboardWithheldAt = at;
@@ -10667,6 +10873,7 @@ const ExtraPotionsCore = (() => {
         }
         const streamRow = channel ? rows[index++] : null;
         await loadDetails(now());
+        await loadRewards(now());
         if (channel) await loadSession(channel, streamRow?.data?.user?.id ? String(streamRow.data.user.id) : '', now());
         else { sessionNote = null; sessionDrop = null; available = []; }
         lastError = '';
@@ -10713,7 +10920,7 @@ const ExtraPotionsCore = (() => {
     function ingest(rows, operations = [], source = 'twitch-page-intercept') {
       if (!Array.isArray(rows) || !rows.length) return false;
       const at = now();
-      let inventoryRow = null, dashboard = null, sessionRow = null, channelCampaigns = null;
+      let inventoryRow = null, dashboard = null, sessionRow = null, channelCampaigns = null, rewards = false;
       const detailed = [];
       rows.forEach((row, index) => {
         if (!row || typeof row !== 'object') return;
@@ -10723,11 +10930,13 @@ const ExtraPotionsCore = (() => {
         const found = data.user?.dropCampaign || data.dropCampaign;
         if (found?.id && Array.isArray(dropsOf(found))) detailed.push(found);
         if (Array.isArray(data.currentUser?.dropCampaigns)) dashboard = data.currentUser.dropCampaigns;
+        if (acceptRewardCampaigns(data.rewardCampaignsAvailableToUser)) rewards = true;
+        if (acceptRewardProgress(data.currentUser?.inventory?.viewerRewardDropCampaignsInProgress, at)) rewards = true;
         if (data.currentUser?.dropCurrentSession || data.currentUser?.dropCurrentSessionContext) sessionRow = row;
         const list = data.channelDropCampaigns || data.channel?.viewerDropCampaigns || data.user?.viewerDropCampaigns || data.channel?.dropCampaigns;
         if (Array.isArray(list)) channelCampaigns = list;
       });
-      if (!inventoryRow && !dashboard && !sessionRow && !channelCampaigns && !detailed.length) return false;
+      if (!inventoryRow && !dashboard && !sessionRow && !channelCampaigns && !detailed.length && !rewards) return false;
       if (inventoryRow) acceptInventory(inventoryRow, at);
       if (dashboard) acceptDashboard(dashboard, at);
       for (const found of detailed) {
@@ -11267,6 +11476,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(['3.4.43', '3.4.30', '3.4.27', '3.4.26']);
   const RELEASE_NOTES = {
+    '4.2.0': ["On Kick, reorder games, include or ignore them, and change stream switching directly in Campaigns.", "Kick claim history shows earned Drops and watch-time cases, with confirmation from your reward inventory.", "The Kick progress card uses credited minutes, and Twitch can find priority streams when campaign details are unavailable.", "Twitch reward campaigns that name a game, such as the GTAVI Launch Celebration, are listed under that game's category with their watch progress."],
     '4.1.15': ["On desktop Chromium browsers, a stream opened with Mute Opened Streams plays at zero volume instead of muted, so Twitch keeps it playing while its tab is in the background. Twitch's volume slider is left at 1%.", "A stream whose player reads paused stays open, and Twitch's watch credit decides whether it counts.", "Recovery Paused clears by itself after five minutes, without Resume in System.", "Rewards Twitch already marks as earned are counted as earned, and Twitch is asked once more when it holds back the campaign list."],
     '4.1.7': ["Kick finds an eligible channel from Home or the campaign directory when stream switching is on, and verifies watch credit against the reward counter.", "Twitch can use channel and inventory data for a priority campaign when its reward details are unavailable."],
     '4.1.6': ["On Kick, visiting Home, Browse or an available Drops campaigns page starts a search for an eligible live channel when stream switching is enabled.","Streams you open yourself stay selected. The activity log identifies searches that opened a stream automatically or from Open Next Stream."],
@@ -12549,7 +12759,7 @@ const ExtraPotionsCore = (() => {
       for (const id of ['tdh-hide-sub-promos', 'tdh-keep-tab']) s.getElementById(id)?.closest('.fl-switch')?.remove();
       s.querySelector('[data-dropper-site-colors]')?.remove();
       const body = s.getElementById('tdh-drops-body');
-      if (body) { body.replaceChildren(); site.mountCampaigns?.(body, { setStatus, render }); }
+      if (body) { body.replaceChildren(); site.mountCampaigns?.(body, { setStatus, render, switchHtml }); }
     }
 
     function layoutChrome() {
@@ -12565,8 +12775,11 @@ const ExtraPotionsCore = (() => {
       // sits exactly where Core places it.
       const placement = ExtraPotionsCore.launcherPlacement(ui.host);
       const shared = Boolean(placement.flyout || placement.site);
-      const launcherWidth = shared ? placement.size || 40 : 48;
-      const rowHeight = pageCardShown ? Math.max(112, progressCard.offsetHeight || 112) : launcherWidth;
+      // Away from a site slot the launcher is an edge tab: narrower than it is tall and flush with the window edge.
+      const tab = Boolean(placement.tab);
+      const launcherWidth = shared ? placement.size || 40 : tab ? placement.width : 48;
+      const launcherHeight = tab ? placement.height : launcherWidth;
+      const rowHeight = pageCardShown ? Math.max(112, progressCard.offsetHeight || 112) : launcherHeight;
       const panelWidth = ExtraPotionsCore.menuWidth();
       const menuPanelWidth = Math.min(panelWidth, Math.max(0, window.innerWidth - 24));
       const rowGap = pageCardShown ? 8 : 0;
@@ -12585,11 +12798,11 @@ const ExtraPotionsCore = (() => {
       const anchor = placement.anchor;
       ui.cluster.dataset.launcherAnchor = anchor;
       ui.cluster.dataset.sharedLauncher = shared ? "1" : "0";
-      clusterTop = shared || anchor === "top" ? placement.top : placement.top - (rowHeight - 48);
+      clusterTop = shared || anchor === "top" ? placement.top : placement.top - (rowHeight - launcherHeight);
 
       if (badgeRow) {
         badgeRow.style.setProperty("width", `${Math.min(rowWidth, window.innerWidth - 24)}px`, "important");
-        badgeRow.style.setProperty("right", `${shared ? Math.round(placement.right) : 12}px`, "important");
+        badgeRow.style.setProperty("right", `${shared ? Math.round(placement.right) : tab ? 0 : 12}px`, "important");
         badgeRow.style.setProperty("left", "auto", "important");
         // A shared launcher sits exactly where exp-core puts it (a site slot may be closer than 8px to the top).
         badgeRow.style.setProperty("top", `${shared ? clusterTop : Math.max(8, Math.min(window.innerHeight - rowHeight - 8, clusterTop))}px`, "important");
@@ -12672,7 +12885,10 @@ const ExtraPotionsCore = (() => {
     function attachMenuToCard(card) {
       const box = card?.getBoundingClientRect();
       if (!box || !box.width || !box.height) { delete ui.dock.dataset.cabinet; delete card?.dataset.cabinet; return null; }
-      const below = card.dataset.chatDocked === 'true' || ui.cluster.dataset.launcherAnchor === 'top' || box.top + box.height / 2 < innerHeight / 2;
+      let below = card.dataset.chatDocked === 'true' || ui.cluster.dataset.launcherAnchor === 'top' || box.top + box.height / 2 < innerHeight / 2;
+      // A short window can leave almost nothing on the usual side: take the roomier side instead.
+      const roomBelow = innerHeight - box.bottom - 8, roomAbove = box.top - 8;
+      if ((below ? roomBelow : roomAbove) < 160 && (below ? roomAbove : roomBelow) > (below ? roomBelow : roomAbove)) below = !below;
       const side = below ? 'below' : 'above';
       card.dataset.cabinet = side; ui.dock.dataset.cabinet = side;
       const room = Math.max(0, below ? innerHeight - box.bottom - 8 : box.top - 8);
@@ -13969,7 +14185,7 @@ const ExtraPotionsCore = (() => {
   // Wiring and startup: the only file that reads browser globals. It builds every module from the real storages,
   // the userscript manager's functions and the page, then runs the heartbeat. Page reading, tabs, the data layer
   // and the menu are wired here as their modules land (milestone 3).
-  const APP_VERSION = '4.1.15';
+  const APP_VERSION = '4.2.0';
   const HEARTBEAT_MS = 5000;
   const ACTIVITY_LOG_LIMIT = 40;
   const SECRET_META = /token|cookie|auth|password|integrity|secret/i;
@@ -14054,7 +14270,7 @@ const ExtraPotionsCore = (() => {
       return { routingState: route?.state || 'idle', waitReason: route?.waitReason || '', pauseReason: intent.snapshot().pauseReason || '' };
     } });
     const page = createPage({
-      store, session, gm, intent, log, startedAt, settings: () => store.settings(), onChange: changed('page'),
+      store, session, gm, pageWindow, intent, log, startedAt, settings: () => store.settings(), onChange: changed('page'),
       wantedGame: () => controller?.snapshot().target?.game || '',
       isAutomationTab: tabs.isSwitchingTab, sitePaused: () => Boolean(ExtraPotionsCore.suiteSitePaused?.()),
     });
@@ -14081,7 +14297,7 @@ const ExtraPotionsCore = (() => {
       store, campaigns, page, intent, log,
       data: { campaigns: () => drops.campaigns(), session: () => drops.session(), detailsMissed: key => drops.detailsMissed(key), channelDiscovery: key => drops.channelDiscovery(key) },
       requestPoll: (reason, urgent) => drops.request(reason, urgent),
-      navigate: (url, reason) => { page.noteNavigation(url, reason); location.assign(url); },
+      navigate: (url, reason) => { page.noteNavigation(url, reason); page.open(url); },
       slugFor: target => page.slugFor(target),
       inCharge: () => tabs.inCharge(), switchingTab: tabs.isSwitchingTab, manualLock,
       sitePaused: () => Boolean(ExtraPotionsCore.suiteSitePaused?.()),
@@ -14190,10 +14406,7 @@ const ExtraPotionsCore = (() => {
     // and a menu section. Record kinds and IDs match what 3.x synced, so the wire format is unchanged.
     const sync = Object.freeze({
       account: () => store.login(),
-      ignored: { read: account => store.ignoredGames(account).games, write: (account, games) => store.local.set('ignoredGames', { updatedAt: Date.now(), games }, account) },
-      order: { read: () => store.priorityOrder(), write: list => store.setPriorityOrder(list) },
-      priorities: { read: account => store.priorities(account), set: (account, id, value) => store.setPriority(id, value, account) },
-      claims: { read: account => store.claimRecords(account).map(item => item.record), put: (account, id, record) => store.putClaimRecord(id, record, account), remove: (account, id) => store.removeClaimRecord(id, account) },
+      ...syncRecordAccess(store, store.login),
       channels: { read: () => { const current = store.settings(); return { protected: [...current.protectedChannels], excluded: [...current.excludedChannels] }; }, write: lists => saveSettings({ protectedChannels: lists.protected, excludedChannels: lists.excluded }) },
       changed: reason => { ui?.render(); controller.tick(reason || 'sync'); },
       paused: () => Boolean(intent.snapshot().paused),
@@ -14226,11 +14439,11 @@ const ExtraPotionsCore = (() => {
   }
 
   // Kick (kick.com). Dropper's card and menu on Kick: the reward Kick is counting, whether the open stream counts
-  // toward it, discovery of eligible streams and a link to Kick's own claim page.
+  // toward it, eligible-stream discovery and inventory-confirmed claims.
   //
   // Only this file talks to Kick: web.kick.com and kick.com/api with the signed-in session (the session_token
-  // cookie as a Bearer token, which is what Kick's own pages send). Kick's caches stay in this tab's session
-  // storage; the only shared value Kick touches is Look (settings), through the store like Twitch.
+  // cookie as a Bearer token, which is what Kick's own pages send). Game choices and claim history use
+  // the signed-in viewer's numeric Kick ID; a watched channel is never the viewer identity.
   const KICK_API = 'https://web.kick.com/api/v1';
   const KICK_PROGRESS_MS = 60 * 1000;
   const KICK_CAMPAIGNS_MS = 10 * 60 * 1000;
@@ -14240,7 +14453,7 @@ const ExtraPotionsCore = (() => {
   // Kick adds credited minutes in steps; new minutes within this window read as earning.
   const KICK_CREDIT_FRESH_MS = 6 * 60 * 1000;
   const KICK_CHANNEL_SEARCH_BATCH = 2;
-  const KICK_CLAIM_URL = 'https://kick.com/drops/campaigns';
+  const KICK_CLAIM_URL = 'https://kick.com/drops/inventory';
   const KICK_IMAGE_BASE = 'https://ext.cdn.kick.com/';
   // The settings Kick shows (Look); Reset on Kick puts only these back.
   const KICK_RESET_SETTINGS = Object.freeze(['dropDetails', 'progressInTitle', 'reduceMotion', 'uiTheme']);
@@ -14328,12 +14541,16 @@ const ExtraPotionsCore = (() => {
   }
 
   // Which reward the card follows: one the open stream counts toward first, then the one closest to done.
-  function kickPickCampaign(progress, eligibleIds = null, now = Date.now()) {
+  function kickPickCampaign(progress, eligibleIds = null, now = Date.now(), order = []) {
     const open = kickList(progress).filter(campaign => {
       const reward = kickReward(campaign, now);
       return reward && !reward.ended && !(reward.isClaimed && reward.currentMinutes >= reward.requiredMinutes);
     });
-    const rank = list => [...list].sort((a, b) => (kickReward(b, now).percent ?? 0) - (kickReward(a, now).percent ?? 0));
+    const position = campaign => {
+      const index = order.indexOf(normalizeGameName(campaign.category?.name));
+      return index < 0 ? Infinity : index;
+    };
+    const rank = list => [...list].sort((a, b) => position(a) - position(b) || (kickReward(b, now).percent ?? 0) - (kickReward(a, now).percent ?? 0));
     if (eligibleIds?.size) { const counting = rank(open.filter(campaign => eligibleIds.has(cleanText(campaign.id)))); if (counting.length) return counting[0]; }
     return rank(open)[0] || null;
   }
@@ -14351,7 +14568,7 @@ const ExtraPotionsCore = (() => {
     return {
       id, name, game: 'Any Stream', campaignId: id, campaignName: name, currentMinutes, requiredMinutes: required,
       percent: progressPercent(currentMinutes, required), remainingMinutes: required - currentMinutes, rewardImage: '',
-      isClaimed: /^(claimed|opened|redeemed)$/i.test(cleanText(challenge.status)), endAt: cleanText(challenge.window?.ends_at), ended: false,
+      isClaimed: Boolean(challenge.claimed_at) || /^(claimed|opened|redeemed)$/i.test(cleanText(challenge.status)), endAt: cleanText(challenge.window?.ends_at), ended: false,
       featured: Boolean(challenge.featured), challenge: true, connected: true,
     };
   }
@@ -14359,8 +14576,8 @@ const ExtraPotionsCore = (() => {
 
   // What the card follows: a Drops campaign this stream counts toward, else a daily case still to earn (any stream
   // counts, the featured one first), else the Drops campaign closest to done, else a case earned but not opened.
-  function kickPickTarget(progress, challenges, eligibleIds = null, now = Date.now()) {
-    const campaign = kickPickCampaign(progress, eligibleIds, now), drop = kickReward(campaign, now);
+  function kickPickTarget(progress, challenges, eligibleIds = null, now = Date.now(), order = []) {
+    const campaign = kickPickCampaign(progress, eligibleIds, now, order), drop = kickReward(campaign, now);
     const cases = kickList(challenges).map(item => kickChallengeReward(item, now)).filter(Boolean).sort((a, b) => Number(b.featured) - Number(a.featured));
     if (drop && eligibleIds?.has(drop.campaignId)) return { reward: drop, campaign };
     const toEarn = cases.find(item => !kickDone(item));
@@ -14397,14 +14614,15 @@ const ExtraPotionsCore = (() => {
   // Kick's API through the page's own fetch, as Kick's pages call it.
   function createKickClient({ pageFetch, cookie, log = () => {} }) {
     const token = () => cleanText(cookie('session_token'));
-    async function json(url, { auth = true } = {}) {
+    async function json(url, { auth = true, method = 'GET', body, credentials = 'omit' } = {}) {
       if (typeof pageFetch !== 'function') throw new Error('No fetch on this page');
       const headers = { Accept: 'application/json' };
       if (auth) { const value = token(); if (!value) throw Object.assign(new Error('Not signed in to Kick'), { code: 'login' }); headers.Authorization = `Bearer ${value}`; }
-      const response = await pageFetch(url, { headers, credentials: 'omit', signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(KICK_REQUEST_MS) : undefined });
-      if (response.status === 401 || response.status === 403) throw Object.assign(new Error(`Kick refused (${response.status})`), { code: 'login' });
+      if (body) headers['Content-Type'] = 'application/json';
+      const response = await pageFetch(url, { method, headers, credentials, body: body && JSON.stringify(body), signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(KICK_REQUEST_MS) : undefined });
+      if (response.status === 401 || response.status === 403) throw Object.assign(new Error(`Kick refused (${response.status})`), { code: 'login', status: response.status });
       if (!response.ok) throw new Error(`Kick answered ${response.status}`);
-      return response.json();
+      return response.status === 204 ? null : response.json();
     }
     const data = body => {
       if (!Array.isArray(body?.data)) throw new Error('Kick returned an unreadable rewards list');
@@ -14412,6 +14630,13 @@ const ExtraPotionsCore = (() => {
     };
     return Object.freeze({
       signedIn: () => Boolean(token()),
+      viewer: async () => {
+        const response = await json('https://kick.com/api/v1/user', { credentials: 'same-origin' });
+        const id = response?.user?.id ?? response?.id;
+        return /^[1-9]\d{0,18}$/.test(String(id)) ? 'kick:' + id : '';
+      },
+      claimDrop: (campaignId, rewardId) => json(KICK_API + '/drops/claim', { method: 'POST', body: { campaign_id: campaignId, reward_id: rewardId } }),
+      claimChallenge: id => json(KICK_API + '/gamification/challenges/' + encodeURIComponent(id) + '/claim', { method: 'POST' }),
       progress: async () => data(await json(`${KICK_API}/drops/progress`)),
       campaigns: async () => data(await json(`${KICK_API}/drops/campaigns`)),
       challenges: async () => data(await json(`${KICK_API}/gamification/challenges`)),
@@ -14449,12 +14674,82 @@ const ExtraPotionsCore = (() => {
     };
     let ui = null, timer = 0, busy = false;
     const changed = () => ui?.render();
+    let sessionCookie = '', viewer = '', viewerCheckedAt = 0, remoteHold = false, pausedVideo = null;
+    const account = () => viewer && readCookie('session_token') === sessionCookie ? viewer : '';
+    const order = () => account() ? store.priorityOrder(account()) : [];
+    const availableCampaigns = at => campaignPool(at).filter(item => !account() || !store.isIgnored(item.category?.name, account(), at));
+    const ledger = () => account() ? store.claimStorage(account()).read() : [];
+    let turnReady = () => true;
+    const sections = [], resetKeys = [], whenReady = [];
+
+    async function refreshViewer() {
+      const cookie = readCookie('session_token') || '';
+      const different = cookie !== sessionCookie;
+      if (different) {
+        sessionCookie = cookie; viewer = ''; viewerCheckedAt = 0;
+        state.progress = []; state.campaigns = []; state.challenges = []; state.progressAvailable = false;
+        state.counting = null; state.countingFor = ''; resetCredit();
+      }
+      if (cookie && !viewer && Date.now() - viewerCheckedAt >= KICK_PROGRESS_MS) {
+        viewerCheckedAt = Date.now();
+        try { const identity = await kick.viewer(); if (cookie === readCookie('session_token')) viewer = identity; } catch { /* Retry the account lookup on the next progress interval. */ }
+      }
+      return different;
+    }
+
+    async function reconcileClaims(dropsFresh, challengesFresh) {
+      const owner = account();
+      if (!owner) return;
+      const items = [];
+      if (dropsFresh) for (const campaign of state.progress) {
+        if (campaign.rule?.name !== 'Watch to redeem') continue;
+        for (const reward of kickList(campaign.rewards)) {
+          if (!campaign.id || !reward.id || !(reward.required_units > 0) || (reward.claimed !== true && !(campaign.progress_units >= reward.required_units))) continue;
+          items.push({ key: 'drop:' + campaign.id + ':' + reward.id, campaignId: campaign.id, rewardId: reward.id,
+            rewardName: reward.name, game: campaign.category?.name, claimed: reward.claimed === true,
+            eligible: campaign.user_app_connected !== false || !campaign.connect_url, submit: () => kick.claimDrop(campaign.id, reward.id) });
+        }
+      }
+      if (challengesFresh) for (const challenge of state.challenges) {
+        const reward = kickChallengeReward(challenge);
+        if (!reward || !kickDone(reward) || !challenge.id || !reward.endAt) continue;
+        items.push({ key: 'case:' + challenge.id + ':' + reward.endAt, campaignId: reward.campaignId, rewardId: challenge.id,
+          rewardName: reward.name, game: 'Any Stream', claimed: reward.isClaimed, eligible: true, submit: () => kick.claimChallenge(challenge.id) });
+      }
+      const history = DropperActiveViewing.createClaims(store.claimStorage(owner));
+      async function process() {
+        for (const item of items) {
+          if (account() !== owner) return;
+          let record = history.snapshot().find(row => row.key === item.key);
+          if (item.claimed) {
+            record ||= history.begin(item);
+            if (record) history.settle(item.key, record.attemptId, 'confirmed', 'inventory');
+          } else if (turnReady() && !remoteHold && !document.hidden && store.settings().claimDrops && item.eligible) {
+            record = history.begin(item);
+            if (!record) continue;
+            try {
+              await item.submit();
+              history.settle(item.key, record.attemptId, 'unconfirmed', 'request');
+            } catch (error) {
+              const denied = error?.code === 'login';
+              history.settle(item.key, record.attemptId, denied ? 'blocked' : 'unconfirmed', denied ? 'permission' : 'network');
+              log('kick-claim', cleanText(error?.message || error));
+            }
+            log('kick-claim', 'Checking inventory for ' + item.rewardName);
+            state.progressAt = 0;
+          }
+        }
+      }
+      if (navigator.locks?.request) await navigator.locks.request('dropper-kick-claims:' + owner, { ifAvailable: true }, lock => lock && process());
+      else await process();
+    }
 
     async function refreshProgress(force = false) {
       if (!force && (document.hidden || Date.now() - state.progressAt < KICK_PROGRESS_MS)) return;
       state.progressAt = Date.now();
-      const visibility = visibilityGeneration, slug = kickChannelSlug();
+      const visibility = visibilityGeneration, slug = kickChannelSlug(), cookie = sessionCookie;
       const [drops, daily] = await Promise.allSettled([kick.progress(), kick.challenges()]);
+      if (cookie !== (readCookie('session_token') || '')) return;
       state.progressAvailable = drops.status === 'fulfilled';
       state.loginNeeded = [drops, daily].every(result => result.status === 'rejected' && result.reason?.code === 'login');
       state.error = '';
@@ -14467,6 +14762,7 @@ const ExtraPotionsCore = (() => {
       }
       if (visibility !== visibilityGeneration || document.hidden || slug !== kickChannelSlug() || slug !== state.slug) { resetCredit(); return; }
       noteCredit(drops.status === 'fulfilled', daily.status === 'fulfilled');
+      await reconcileClaims(drops.status === 'fulfilled', daily.status === 'fulfilled');
     }
     async function refreshCampaigns(force = false) {
       if (!force && Date.now() - state.campaignsAt < KICK_CAMPAIGNS_MS) return;
@@ -14507,7 +14803,7 @@ const ExtraPotionsCore = (() => {
       previousPlayer = null;
     }
     function noteCredit(dropsUpdated, dailyUpdated) {
-      const { reward } = kickPickTarget(campaignPool(), state.challenges, state.counting);
+      const { reward } = kickPickTarget(availableCampaigns(), state.challenges, state.counting, Date.now(), order());
       const eligible = state.channel?.live && (reward?.challenge || state.counting?.has(reward?.campaignId));
       if (!eligible || !(reward?.challenge ? dailyUpdated : dropsUpdated)) { resetCredit(); return; }
 
@@ -14531,11 +14827,14 @@ const ExtraPotionsCore = (() => {
     }
 
     let signedIn = false, retrySearchAt = 0;
+    const unavailable = new Map();
     async function heartbeat(force = false) {
       if (busy) return;
       busy = true;
       try {
+        const accountChanged = await refreshViewer();
         const authenticated = kick.signedIn();
+        force ||= accountChanged;
         force ||= authenticated !== signedIn;
         signedIn = authenticated;
         await refreshChannel(force);
@@ -14550,7 +14849,7 @@ const ExtraPotionsCore = (() => {
     // What the card and menu show now.
     function snapshot() {
       const at = Date.now(), loggedIn = kick.signedIn() && !state.loginNeeded;
-      const { campaign, reward } = kickPickTarget(campaignPool(), state.challenges, state.counting, at);
+      const { campaign, reward } = kickPickTarget(availableCampaigns(at), state.challenges, state.counting, at, order());
       const onChannel = Boolean(state.slug), live = state.channel ? state.channel.live : null;
       // A daily case counts on any live stream; a Drops campaign only where Kick says so.
       const eligibility = !reward || !onChannel ? '' : reward.challenge ? (live ? 'yes' : '') : !state.counting ? '' : state.counting.has(reward.campaignId) ? 'yes' : 'no';
@@ -14562,7 +14861,7 @@ const ExtraPotionsCore = (() => {
     function view() {
       const now = snapshot(), settings = store.settings();
       const cardOverride = kickCardState({ ...now, now: now.at });
-      const status = state.notice || (now.stalled ? 'Kick has reported no new watch minutes for six minutes.' : '') || kickStatusText({ ...now, unclaimed: now.unclaimed.length });
+      const status = remoteHold ? 'Another device is earning on Kick.' : state.notice || (now.stalled ? 'Kick has reported no new watch minutes for six minutes.' : '') || kickStatusText({ ...now, unclaimed: now.unclaimed.length });
       return buildView({
         now: now.at, loggedIn: now.loggedIn, settings, controller: { state: cardOverride[0] === 'Earning' ? 'earning' : 'idle' }, reward: now.reward,
         intent: {}, channel: state.channel?.slug || state.slug, game: state.channel?.category || '', lastPollAt: state.progressAt, status,
@@ -14573,7 +14872,7 @@ const ExtraPotionsCore = (() => {
 
     // A directly opened channel belongs to the viewer. Only resume routing on a channel this tab opened.
     function canSearchAutomatically(current) {
-      if (document.hidden || !current.loggedIn || !state.progressAvailable || !store.settings().findNextStream) return false;
+      if (!turnReady() || remoteHold || document.hidden || !current.loggedIn || !state.progressAvailable || !store.settings().findNextStream) return false;
       const path = location.pathname.toLowerCase().replace(/\/+$/, '');
       if (!path || /^\/(browse|following|categories|category)(\/|$)/.test(path)) return true;
       if (path === '/drops' || path === '/drops/campaigns') return !current.unclaimed.length && !state.error;
@@ -14583,22 +14882,25 @@ const ExtraPotionsCore = (() => {
 
     function streamSearchReward(current) {
       if (!current.loggedIn || !current.reward) return null;
-      const available = campaignPool(current.at).filter(item => {
+      const available = availableCampaigns(current.at).filter(item => {
         const drop = kickReward(item, current.at);
-        return drop && !drop.isClaimed && !kickDone(drop);
+        return drop && !drop.ended && !drop.isClaimed && !kickDone(drop);
       });
-      const drop = kickReward(kickPickCampaign(available, state.counting, current.at), current.at);
+      const ranking = order();
+      const preferred = preferredGameCandidates(available, ranking, item => item.category?.name);
+      const ready = preferred.filter(item => !(unavailable.get(item.id) > current.at));
+      const drop = kickReward(kickPickCampaign(ready.length ? ready : preferred, ranking.length ? null : state.counting, current.at, ranking), current.at);
       if (drop && !kickDone(drop) && (!state.counting?.has(drop.campaignId) || current.stalled)) return drop;
       return null;
     }
 
     async function openNextStream(automatic = false) {
       const reward = streamSearchReward(snapshot());
-      if (!reward || state.searching) return;
+      if (!reward || state.searching || remoteHold) return;
       const origin = location.pathname, generation = visibilityGeneration;
       function stillWanted() {
         const current = snapshot();
-        return origin === location.pathname && streamSearchReward(current)?.campaignId === reward.campaignId &&
+        return !remoteHold && origin === location.pathname && streamSearchReward(current)?.campaignId === reward.campaignId &&
           (!automatic || (generation === visibilityGeneration && canSearchAutomatically(current)));
       }
       retrySearchAt = Date.now() + KICK_ELIGIBILITY_MS;
@@ -14635,6 +14937,10 @@ const ExtraPotionsCore = (() => {
           }
         }
         if (lastFailure && !checked) throw lastFailure;
+        if (!stillWanted()) return;
+        unavailable.set(reward.campaignId, Date.now() + KICK_ELIGIBILITY_MS);
+        const alternative = streamSearchReward(snapshot());
+        if (alternative && alternative.campaignId !== reward.campaignId && !(unavailable.get(alternative.campaignId) > Date.now())) retrySearchAt = 0;
         state.notice = `No live stream found that counts toward ${reward.campaignName}. Try again later.`;
       } catch (error) {
         state.notice = cleanText(error?.message || error);
@@ -14642,9 +14948,11 @@ const ExtraPotionsCore = (() => {
     }
 
     // The Campaigns drawer on Kick: status, the two buttons and the campaigns in progress.
+    let previousRows = '';
     const site = Object.freeze({
       ...KICK_SITE_BASE,
-      mountCampaigns(body) {
+      mountCampaigns(body, { switchHtml }) {
+        previousRows = '';
         const status = Object.assign(document.createElement('div'), { className: 'campaign-manager-note', id: 'tdh-kick-status' });
         status.setAttribute('role', 'status');
         const actions = Object.assign(document.createElement('div'), { className: 'action-pair action-stack' });
@@ -14655,17 +14963,36 @@ const ExtraPotionsCore = (() => {
         next.addEventListener('click', () => openNextStream());
         actions.append(claim, next);
         const list = Object.assign(document.createElement('div'), { className: 'campaign-game-list', id: 'tdh-kick-campaigns' });
-        body.append(status, actions, list);
+        const controls = document.createElement('div');
+        for (const [key, label] of [['findNextStream', 'Automatic Stream Switching'], ['claimDrops', 'Claim Earned Rewards']]) {
+          controls.insertAdjacentHTML('beforeend', switchHtml('tdh-kick-' + key, label, '', store.settings()[key]));
+          controls.querySelector('#tdh-kick-' + key).addEventListener('click', () => saveSettings({ [key]: !store.settings()[key] }));
+        }
+        const history = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.textContent = 'Claim History';
+        const records = document.createElement('div');
+        records.id = 'tdh-kick-history';
+        history.append(summary, records);
+        body.append(status, controls, actions, list, history);
       },
       renderCampaigns(body, current) {
         if (!body) return;
         const now = snapshot();
         const status = body.querySelector('#tdh-kick-status'), claim = body.querySelector('#tdh-kick-claim'), next = body.querySelector('#tdh-kick-next'), list = body.querySelector('#tdh-kick-campaigns');
-        if (status) status.textContent = current?.status.detail || '';
+        if (status) status.textContent = now.loggedIn && !account() ? 'Waiting for Kick to identify your account.' : current?.status.detail || '';
         if (claim) claim.hidden = !now.unclaimed.length;
         if (next) { next.hidden = !streamSearchReward(now); next.disabled = state.searching; }
+        for (const key of ['findNextStream', 'claimDrops']) body.querySelector('#tdh-kick-' + key)?.setAttribute('aria-checked', String(store.settings()[key]));
+        const history = body.querySelector('#tdh-kick-history');
+        if (history) history.replaceChildren(...ledger().map(item => Object.assign(document.createElement('div'), { className: 'campaign-game-meta', textContent: item.rewardName + ' · ' + item.outcome })));
         if (!list) return;
         const cases = kickList(state.challenges).map(item => kickChallengeReward(item, now.at)).filter(Boolean).sort((a, b) => Number(b.featured) - Number(a.featured));
+        const rows = campaignPool(now.at).map(campaign => ({ campaign, reward: kickReward(campaign, now.at) })).filter(item => item.reward && !item.reward.ended);
+        const owner = account();
+        const signature = JSON.stringify([owner, order(), owner && store.ignoredGames(owner).games, cases, rows.map(item => item.reward), state.error]);
+        if (signature === previousRows) return;
+        previousRows = signature;
         const caseRows = cases.map(reward => {
           const row = Object.assign(document.createElement('div'), { className: 'campaign-game-row' });
           const copy = Object.assign(document.createElement('div'), { className: 'campaign-game-copy' });
@@ -14677,7 +15004,10 @@ const ExtraPotionsCore = (() => {
           row.append(copy);
           return row;
         });
-        const rows = campaignPool(now.at).map(campaign => ({ campaign, reward: kickReward(campaign, now.at) })).filter(item => item.reward && !item.reward.ended);
+        const games = [...new Set(rows.map(({ reward }) => normalizeGameName(reward.game)).filter(Boolean))];
+        const all = [...new Set([...order(), ...games])], visible = all.filter(game => games.includes(game));
+        rows.sort((a,b) => visible.indexOf(normalizeGameName(a.reward.game)) - visible.indexOf(normalizeGameName(b.reward.game)));
+        const rendered = new Set();
         list.replaceChildren(...caseRows, ...(rows.length ? rows.map(({ campaign, reward }) => {
           const row = Object.assign(document.createElement('div'), { className: 'campaign-game-row' });
           const copy = Object.assign(document.createElement('div'), { className: 'campaign-game-copy' });
@@ -14686,11 +15016,39 @@ const ExtraPotionsCore = (() => {
             Object.assign(document.createElement('div'), { className: 'campaign-game-meta', textContent: `${reward.name} · ${reward.currentMinutes} / ${reward.requiredMinutes} min · ${campaignEndLabel(campaign.ends_at, 0, now.at)}${reward.connected ? '' : ' · Link your game account on Kick'}` }),
           );
           row.append(copy);
+          const game = normalizeGameName(reward.game);
+          if (game && !rendered.has(game)) {
+            rendered.add(game);
+            const group = document.createElement('div');
+            group.className = 'campaign-game-actions';
+            const index = visible.indexOf(game), ignored = store.isIgnored(game, owner);
+            const addAction = (text, label, disabled, action) => {
+              const button = Object.assign(document.createElement('button'), { type: 'button', className: 'life-btn', textContent: text, disabled: !owner || disabled });
+              button.setAttribute('aria-label', label + ' ' + reward.game);
+              button.addEventListener('click', () => {
+                if (!owner || account() !== owner) return;
+                action(); unavailable.clear(); retrySearchAt = 0; changed();
+              });
+              group.append(button);
+            };
+            for (const [step, label] of [[-1, 'Up'], [1, 'Down']]) {
+              const other = visible[index + step];
+              addAction(label, 'Move ' + label.toLowerCase(), !other, () => {
+                const ranked = [...all], a = ranked.indexOf(game), b = ranked.indexOf(other);
+                [ranked[a], ranked[b]] = [ranked[b], ranked[a]];
+                store.setPriorityOrder(ranked, owner);
+              });
+            }
+            addAction(ignored ? 'Include' : 'Ignore', ignored ? 'Include' : 'Ignore', false, () => {
+              const ends = rows.filter(item => normalizeGameName(item.reward.game) === game).map(item => Date.parse(item.reward.endAt)).filter(Number.isFinite);
+              store.setIgnoredGame(reward.game, ends.length ? Math.max(...ends) : Number.MAX_SAFE_INTEGER, !ignored, owner);
+            });
+            row.append(group);
+          }
           return row;
         }) : caseRows.length ? [] : [Object.assign(document.createElement('div'), { className: 'campaign-manager-note', textContent: state.error && !state.progress.length ? 'Kick campaigns unavailable. Retrying.' : 'No Kick campaigns in progress. Watching a stream in a Drops campaign starts one.' })]));
       },
-      // Reset on Kick: Look back to its defaults and Kick's own caches in this tab. Game choices, priorities and claim
-      // history live in storage Twitch shares (and Dropper S syncs), so they are left alone.
+      // Reset the appearance and this tab's activity while preserving account preferences and claim history.
       reset() {
         store.saveSettings(Object.fromEntries(KICK_RESET_SETTINGS.map(key => [key, SETTING_DEFAULTS[key]])));
         store.session.remove('activityLog');
@@ -14712,7 +15070,7 @@ const ExtraPotionsCore = (() => {
       const { reward, eligibility, live, creditedAt, stalled } = snapshot();
       return { previousMinutes: state.credit.previousMinutes ?? null, playback: state.credit.playback || 'unknown', observedMs: state.credit.observedMs || 0, visible: !document.hidden, campaignId: reward?.campaignId || '', lastPollAt: state.progressAt, lastError: state.error, channel: state.slug, live, eligibility, rewardId: reward?.id || '', minutes: reward?.currentMinutes ?? null, checkedAt: state.credit.checkedAt || null, creditedAt, stalled };
     }, prepend() {}, append() {} };
-    const claims = { summary: () => '', ledger: () => [] };
+    const claims = { summary: () => ledger().length + ' claim records', ledger };
     const page = { warnings: { clear: () => false, process() {} }, sync() {}, resume: () => false, restorePlayer: () => false, login: () => state.slug };
     const tabs = { peers: () => [], chooseForSwitching() {} };
     const intent = { snapshot: () => ({}), allowSwitching() {}, pause() {} };
@@ -14721,11 +15079,12 @@ const ExtraPotionsCore = (() => {
 
     function boot() {
       ui = createUi({
-        store, controller, drops, claims, page, tabs, intent, campaigns, view, saveSettings, log, site,
+        store, controller, drops, claims, page, tabs, intent, campaigns, view, saveSettings, log, site, sections, resetKeys,
         notify: text => { state.notice = cleanText(text); setTimeout(() => { if (state.notice === cleanText(text)) { state.notice = ''; changed(); } }, 60 * 1000); },
         poll: () => heartbeat(true),
       });
       ui.mount();
+      for (const callback of whenReady.splice(0)) callback();
       log('lifecycle', `Dropper ${APP_VERSION} started on Kick`);
       document.addEventListener('visibilitychange', () => {
         visibilityGeneration += 1;
@@ -14740,9 +15099,28 @@ const ExtraPotionsCore = (() => {
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true }); else boot();
     }
     function stop() { clearInterval(timer); timer = 0; }
+    function pauseRemotePlayer() {
+      const video = document.querySelector('#injected-channel-player video, main video');
+      if (remoteHold && video && !video.paused) { pausedVideo = video; video.pause(); }
+    }
+    const sync = Object.freeze({
+      site: 'kick', account, ...syncRecordAccess(store, account),
+      checkTurnWith: predicate => { turnReady = predicate; },
+      changed: () => { retrySearchAt = 0; changed(); },
+      paused: () => remoteHold,
+      pause: () => { remoteHold = true; document.addEventListener('play', pauseRemotePlayer, true); pauseRemotePlayer(); changed(); },
+      resume: () => {
+        remoteHold = false; document.removeEventListener('play', pauseRemotePlayer, true);
+        if (pausedVideo?.isConnected && pausedVideo.paused) pausedVideo.play().catch(() => {});
+        pausedVideo = null; changed();
+      },
+      diagnostics: () => ui?.diagnostics(), resetting: () => Boolean(ui?.resetting()), shadow: () => ui?.shadow(), log,
+      addSection: section => sections.push(section), addResetKeys: keys => resetKeys.push(...keys),
+      ready: callback => { if (ui) callback(); else whenReady.push(callback); },
+    });
     window.dropperShow = () => ui?.open();
     window.dropperDebug = () => ui?.diagnostics() || null;
-    return Object.freeze({ site: 'kick', start, stop, heartbeat, view, snapshot, saveSettings, log, store, kick, state, openNextStream, sync: null, get ui() { return ui; }, version: APP_VERSION });
+    return Object.freeze({ site: 'kick', start, stop, heartbeat, view, snapshot, saveSettings, log, store, kick, state, openNextStream, sync, get ui() { return ui; }, version: APP_VERSION });
   }
 
   const dropper = isKickHost() ? createKickDropper() : createDropper();

@@ -6,11 +6,11 @@
 
 1. Install a userscript manager such as [Violentmonkey](https://violentmonkey.github.io/get-it/) or [Tampermonkey](https://www.tampermonkey.net/).
 2. [Install Dropper for Twitch](https://github.com/ExtraPotions/Dropper/releases/latest/download/dropper.user.js) and confirm in your userscript manager.
-3. Sign in to Twitch, refresh, and open the Dropper launcher in Twitch's top bar. With other ExtraPotions products installed, they share one launcher: open it and choose Dropper.
+3. Sign in to Twitch, refresh, and open the Dropper launcher in Twitch's top bar. Other ExtraPotions products have their own icons beside it. In a narrow window or theater mode Dropper is a tab on the right edge instead.
 
 The script appears as **Dropper for Twitch** in your userscript manager.
 
-Stream switching starts at **Follow Campaign Order** in the first eligible tab. Saved choices, manual stream holds and pauses are respected; additional browsing tabs stay where you open them. Change the policy in **Settings → Stream Switching**.
+Stream switching starts at **Follow Campaign Order** in the first eligible tab. Saved choices, manual stream holds and pauses are respected; additional browsing tabs stay where you open them. Change the policy in **Settings → Stream Switching**. With **My Priority** and **Follow Campaign Order**, the first game with a watch reward keeps its place during stream searches and temporary cooldowns. Once its rewards are finished or ineligible, Dropper moves to the next game.
 
 ## Features and controls
 
@@ -18,13 +18,18 @@ Stream switching starts at **Follow Campaign Order** in the first eligible tab. 
 - **Check eligibility:** see whether the stream you are watching matches the campaign: account, campaign, reward, game, and stream.
 - **Keep rewards in reach:** browse campaigns, review your history, and open your Drops inventory from the menu.
 - **Choose your games:** follow the games you care about and ignore the rest.
+- **Reward campaigns:** a Twitch reward campaign that names a game, such as a launch celebration, appears under that game's category. A reward that repeats daily shows each day as its own step.
 - **Site theme:** choose Slate Blue Light, Dark or System in **Look → Site Theme**. System follows your device. Twitch's functional purchase, live and status colors keep their meaning.
 
 ## Kick
 
-On Kick, the launcher sits in Kick's top bar. On a Kick channel, the card takes the place of the Chat title bar and shows the reward Kick is counting for you, with credited minutes. **Not counting** means Kick does not credit this stream toward your campaign; **Open Next Stream** in **Campaigns** opens a live stream Kick says counts. When a reward is earned, **Claim on Kick** opens Kick's Drops page, where you claim it. Kick's daily watch rewards, such as the Sunset Reward Case, count on any live stream: **Campaigns** shows today's minutes, and the card follows the featured one when the open stream doesn't count toward a Drops campaign. You open the case on Kick. With stream switching on, opening Kick Home, Browse, Following, a category or the Drops campaigns page starts a search for an eligible live channel. The campaigns page stays open when a reward is ready to claim. Channels you open yourself stay selected. You can change the switching setting on Twitch. Kick decides eligibility and credit; Dropper checks the open stream again every minute, so a stream that goes offline, comes back or changes category is picked up without a reload.
+Open **Campaigns** to set stream switching, turn **Claim Earned Rewards** on or off, and move games **Up** or **Down**. **Ignore** takes a game out of selection until its campaigns end. **Include** restores it. Game order, ignores and claim history belong to the signed-in Kick viewer.
 
-**Syncing** means Kick has yet to report a new watch minute. **Earning** follows an increase in the reward counter. After six observed minutes of advancing playback with no increase, the card shows **Stalled**. Returning to the tab starts a fresh comparison. **Open Next Stream** can find another eligible Drops stream, including while the card follows a daily reward.
+From Kick Home, Browse, Following, a category or the campaigns page, Dropper can find a channel Kick says counts for your selected game. A channel you open yourself stays selected. **Open Next Stream** lets you choose to move. An earned reward keeps the campaigns page open for you.
+
+The card shows the reward the current stream counts toward. **Earning** follows an increase in Kick's credited minutes. **Stalled** follows six observed minutes of advancing playback with flat credit. A daily case can earn on any live stream.
+
+When **Claim Earned Rewards** is on, Dropper requests earned watch-time Drops and cases for the signed-in account. **Claim History** shows confirmation after Kick reports the reward claimed. An unconfirmed request stays in history for review. **Claim on Kick** opens your inventory.
 
 ## Shared menu
 

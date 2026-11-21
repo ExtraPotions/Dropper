@@ -1,3 +1,10 @@
+## 4.2.0 — 2026-11-20
+
+- On Kick, reorder games, include or ignore them, and change stream switching directly in Campaigns.
+- Kick claim history shows earned Drops and watch-time cases, with confirmation from your reward inventory.
+- The Kick progress card uses credited minutes, and Twitch can find priority streams when campaign details are unavailable.
+- Twitch reward campaigns that name a game, such as the GTAVI Launch Celebration, are listed under that game's category with their watch progress.
+
 ## 4.1.15 — 2026-11-20
 
 - On desktop Chromium browsers, a stream opened with Mute Opened Streams plays at zero volume instead of muted, so Twitch keeps it playing while its tab is in the background. Twitch's volume slider is left at 1%.

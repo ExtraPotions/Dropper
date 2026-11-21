@@ -11,7 +11,7 @@ After installing, sign in to Twitch or Kick, refresh, and open Dropper from its 
 - Track credited watch time for the current reward on a compact card in the Stream Chat title bar, and check stream eligibility.
 - Browse campaigns, review reward history and open your Drops inventory.
 - Choose games and manage stream-switching preferences on Twitch.
-- On Kick, see whether the open stream counts, open a stream that does, and go to Kick’s claim page.
+- On Kick, rank or ignore games, choose stream switching in Campaigns, and review reward credit and claim history.
 - Choose Light, Dark or System for the menu and for a Slate Blue Twitch theme.
 
 Twitch and Kick determine eligibility and credit. Saved choices, manual stream holds and pauses are respected; additional browsing tabs stay where you open them.
