@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      4.2.1
+// @version      4.2.2
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -5794,6 +5794,8 @@ const ExtraPotionsCore = (() => {
     let capture = { integrity: '', integrityExpiresAt: 0, clientId: '', deviceId: '', sessionId: '', clientVersion: '' };
     let integrity = { token: '', clientId: '', expiresAt: 0, transport: '', deviceId: '' };
     let integrityRequest = null, lastTransport = '';
+    // The last page token Twitch refused: the page may keep sending it, and it is never adopted again.
+    let rejectedPageToken = '';
     const health = {};
     let learned = (() => { const saved = store.local.get('gqlOperations', {}); return saved && typeof saved === 'object' ? saved : {}; })();
 
@@ -5805,7 +5807,9 @@ const ExtraPotionsCore = (() => {
       if (headers && typeof headers.forEach === 'function' && !Array.isArray(headers)) headers.forEach((value, key) => { map[String(key).toLowerCase()] = String(value); });
       else if (Array.isArray(headers)) for (const [key, value] of headers) map[String(key).toLowerCase()] = String(value);
       else if (headers && typeof headers === 'object') for (const [key, value] of Object.entries(headers)) map[key.toLowerCase()] = String(value);
-      if (map['client-integrity']) {
+      if (map['client-integrity'] && map['client-integrity'] !== rejectedPageToken) {
+        // A new page token puts the page first again after a GM fallback.
+        if (map['client-integrity'] !== capture.integrity && lastTransport === 'gm') lastTransport = '';
         capture.integrity = map['client-integrity'];
         capture.integrityExpiresAt = Math.max(Number(capture.integrityExpiresAt || 0), now() + 10 * 60 * 1000);
       }
@@ -5980,7 +5984,10 @@ const ExtraPotionsCore = (() => {
       integrity = { token: '', clientId: '', expiresAt: 0, transport: '', deviceId: '' };
       integrityRequest = null;
       store.session.remove('clientIntegrity');
-      if (clearCapture) Object.assign(capture, { integrity: '', integrityExpiresAt: 0 });
+      if (clearCapture) {
+        if (capture.integrity) rejectedPageToken = capture.integrity;
+        Object.assign(capture, { integrity: '', integrityExpiresAt: 0 });
+      }
     }
     function cachedIntegrity(clientId, transport) {
       const device = deviceId();
@@ -6064,7 +6071,8 @@ const ExtraPotionsCore = (() => {
           } catch (error) {
             // The first actionable failure wins over the page dead end.
             if (!lastError || pageDeadEnd(lastError) || !pageDeadEnd(error)) lastError = error;
-            if (/integrity/i.test(error?.message || '') && !pageDeadEnd(error)) { clearIntegrity({ clearCapture: true }); lastTransport = 'gm'; }
+            // Only a refused page token drops the page's token; a refused GM token leaves it for the next request.
+            if (/integrity/i.test(error?.message || '') && !pageDeadEnd(error)) { clearIntegrity({ clearCapture: transport === 'page' }); lastTransport = transport === 'page' ? 'gm' : (capturedIntegrity() ? '' : 'gm'); }
             if (error?.circuitOpen || error?.gqlDefinitionFailure) throw error;
             if (pageDeadEnd(error)) { skipPage = true; lastTransport = 'gm'; }
             else if (/failed to fetch|network error|timed out/i.test(error?.message || '') && transport === 'page') lastTransport = 'gm';
@@ -6074,7 +6082,21 @@ const ExtraPotionsCore = (() => {
       };
 
       if (claimOnly) {
-        try { const rows = await send(CLIENT_IDS[0], { transport: transports()[0] || 'page' }); succeeded(); return rows; } catch (error) { failed(error); throw error; }
+        // Claims go only with the token Twitch's page minted: Twitch refuses a claim made with Dropper's own token.
+        // Without one nothing is sent; a refused page token is dropped and never sent again.
+        if (typeof pageFetch !== 'function' || !capturedIntegrity(CLIENT_IDS[0])) throw new Error('Twitch page integrity unavailable');
+        const refused = rows => rows.some(row => (Array.isArray(row?.errors) ? row.errors : []).some(item => /integrity/i.test(`${item?.message || ''} ${item?.extensions?.code || ''}`)));
+        try {
+          const rows = await send(CLIENT_IDS[0], { transport: 'page' });
+          if (refused(rows)) clearIntegrity({ clearCapture: true });
+          else lastTransport = 'page';
+          succeeded();
+          return rows;
+        } catch (error) {
+          if (/integrity/i.test(error?.message || '') && !pageDeadEnd(error)) clearIntegrity({ clearCapture: true });
+          failed(error);
+          throw error;
+        }
       }
       try {
         const rows = await tryClient(CLIENT_IDS[0]);
@@ -6113,7 +6135,7 @@ const ExtraPotionsCore = (() => {
       };
     }
 
-    return Object.freeze({ request, captureHeaders, learnFromPage, acceptPageIntegrity, clearIntegrity, snapshot, deviceId, isLoggedIn: () => Boolean(authToken()) });
+    return Object.freeze({ request, captureHeaders, learnFromPage, acceptPageIntegrity, clearIntegrity, snapshot, deviceId, hasPageIntegrity: () => typeof pageFetch === 'function' && Boolean(capturedIntegrity(CLIENT_IDS[0])), isLoggedIn: () => Boolean(authToken()) });
   }
 
   // BEGIN DROPPER ACTIVE VIEWING
@@ -6259,7 +6281,10 @@ const ExtraPotionsCore = (() => {
       function reopen(key) {
         refresh();
         const record = records.get(key);
-        if (!record || !['confirmed', 'already-claimed'].includes(record.outcome) || record.evidence === 'inventory') return null;
+        // A claim refused on Twitch's integrity check is opened again too, within the same three attempts.
+        const answered = ['confirmed', 'already-claimed'].includes(record?.outcome) && record.evidence !== 'inventory';
+        const refused = record?.outcome === 'blocked' && record.evidence === 'integrity' && record.attempts < 3;
+        if (!answered && !refused) return null;
         return persist({ ...record, outcome: 'retryable', evidence: 'inventory', nextAttemptAt: 0 });
       }
       function snapshot() { expire(); return [...records.values()].sort((a, b) => b.updatedAt - a.updatedAt).map(record => ({ ...record })); }
@@ -9921,6 +9946,7 @@ const ExtraPotionsCore = (() => {
     let anonymousClaimBackoff = { bonus: { streak: 0, until: 0 }, drop: { streak: 0, until: 0 } };
     let lastDropAt = 0, lastBonusAt = 0, lastClaimAttemptAt = 0;
     let lastClaimIntegrityFallback = null;
+    const claimWaitLogged = new Set();
     let inventoryClaimSweepState = null, inventoryClaimSweepPromise = null;
     let dropClaimObserver = null, bonusClaimObserver = null, claimScanTimer = null;
     let lastClaimScanAt = 0, claimScanQueuedAt = 0;
@@ -10022,8 +10048,8 @@ const ExtraPotionsCore = (() => {
         const campaign = (campaigns || []).find(item => String(item.id || '').toLowerCase() === record.campaignId.toLowerCase());
         const drop = (campaign?.timeBasedDrops || campaign?.drops || []).find(item => String(item.id || '') === record.rewardId);
         if (['pending', 'unconfirmed', 'retryable', 'blocked'].includes(record.outcome)) {
-          if (drop?.self?.isClaimed === true) recordClaimOutcome(ledger, record, 'confirmed', 'inventory');
-          continue;
+          if (drop?.self?.isClaimed === true) { recordClaimOutcome(ledger, record, 'confirmed', 'inventory'); continue; }
+          if (!(record.outcome === 'blocked' && record.evidence === 'integrity')) continue;
         }
         // A claim Twitch answered with success, while its inventory still lists the earned reward as not claimed.
         const earned = drop?.self?.isClaimed === false && Number(drop?.requiredMinutesWatched) > 0 && Number(drop?.self?.currentMinutesWatched) >= Number(drop.requiredMinutesWatched);
@@ -10279,6 +10305,12 @@ const ExtraPotionsCore = (() => {
       if (context.account === 'signed-out') return false;
       const key = claimRecordKey(drop);
       if (!key) return false;
+      // Twitch accepts a claim only with its page's own integrity token; until the page sends one, nothing is
+      // sent and no attempt is used.
+      if (typeof twitch.hasPageIntegrity === 'function' && !twitch.hasPageIntegrity()) {
+        if (!claimWaitLogged.has(key)) { claimWaitLogged.add(key); logActivity('claim-waiting', `${cleanText(drop.name || 'A Drop')} waits for Twitch's page token to claim`, { rewardId: drop.id || null }); }
+        return false;
+      }
       try {
         return await withClaimLock(key, context, async () => {
           const ledger = claimLedger();
@@ -11540,6 +11572,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(['3.4.43', '3.4.30', '3.4.27', '3.4.26']);
   const RELEASE_NOTES = {
+    '4.2.2': ["Drops are claimed only with the integrity token Twitch's own page uses, since Twitch refused claims made with Dropper's own token.", "A claim Twitch refused is tried again while its inventory still lists the reward as not claimed, up to three attempts."],
     '4.2.1': ["Twitch pages load faster with Dropper running: its saved campaign list is read once instead of on every check.", "The campaign count matches Twitch's All Campaigns page, and campaigns you have not started count as 0 minutes instead of untimed.", "A claimed Drop counts only once Twitch's inventory shows it claimed, and rewards for a game account that is not linked are listed as needing an account link.", "Daily reward campaigns such as the GTAVI Launch Celebration no longer keep a stream open for a reward already earned today, and a stream page loaded while the window is hidden starts playing."],
     '4.2.0': ["On Kick, reorder games, include or ignore them, and change stream switching directly in Campaigns.", "Kick claim history shows earned Drops and watch-time cases, with confirmation from your reward inventory.", "The Kick progress card uses credited minutes, and Twitch can find priority streams when campaign details are unavailable.", "Twitch reward campaigns that name a game, such as the GTAVI Launch Celebration, are listed under that game's category with their watch progress."],
     '4.1.15': ["On desktop Chromium browsers, a stream opened with Mute Opened Streams plays at zero volume instead of muted, so Twitch keeps it playing while its tab is in the background. Twitch's volume slider is left at 1%.", "A stream whose player reads paused stays open, and Twitch's watch credit decides whether it counts.", "Recovery Paused clears by itself after five minutes, without Resume in System.", "Rewards Twitch already marks as earned are counted as earned, and Twitch is asked once more when it holds back the campaign list."],
@@ -14250,7 +14283,7 @@ const ExtraPotionsCore = (() => {
   // Wiring and startup: the only file that reads browser globals. It builds every module from the real storages,
   // the userscript manager's functions and the page, then runs the heartbeat. Page reading, tabs, the data layer
   // and the menu are wired here as their modules land (milestone 3).
-  const APP_VERSION = '4.2.1';
+  const APP_VERSION = '4.2.2';
   const HEARTBEAT_MS = 5000;
   const ACTIVITY_LOG_LIMIT = 40;
   const SECRET_META = /token|cookie|auth|password|integrity|secret/i;

@@ -1,3 +1,8 @@
+## 4.2.2 — 2026-11-21
+
+- Drops are claimed only with the integrity token Twitch's own page uses, since Twitch refused claims made with Dropper's own token.
+- A claim Twitch refused is tried again while its inventory still lists the reward as not claimed, up to three attempts.
+
 ## 4.2.1 — 2026-11-21
 
 - Twitch pages load faster with Dropper running: its saved campaign list is read once instead of on every check.
