@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      4.2.2
+// @version      4.2.3
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -1615,7 +1615,6 @@ const ExtraPotionsTools = (() => {
       finally{report.disabled=false;}
     }));
     report.dataset.expSystemReport='1';
-    ExpMenuHelp.setMenuHelp(report,'Attaches fresh diagnostics to a GitHub issue. GitHub issues are public; remove private data before submitting.');
     const support=document.createElement('section');support.setAttribute('aria-label','Diagnostics and Support');support.append(diagnostics,report);
     // Reset: one tap arms, a second tap within a few seconds confirms. No browser dialogs.
     const resetStatus=note('');resetStatus.setAttribute('role','status');resetStatus.setAttribute('aria-live','polite');
@@ -1633,7 +1632,6 @@ const ExtraPotionsTools = (() => {
     reset.dataset.expDestructive='1';
     function disarm(){clearTimeout(armTimer);armedUntil=0;reset.textContent='Reset All Settings';delete reset.dataset.expResetArmed;resetStatus.textContent='';}
     reset.style.cssText+=';font-weight:600';
-    ExpMenuHelp.setMenuHelp(reset,`Clears ${product} settings and stored data on this browser. This cannot be undone. Tap twice within 4 seconds to confirm.`);
     const resetCard=document.createElement('section');resetCard.setAttribute('aria-label','Reset Settings');resetCard.style.cssText='margin-block-start:12px;padding-block-start:8px';resetCard.append(reset,resetStatus);
     reset.addEventListener('blur',disarm);
     for(const [key,node] of [['status',timeline],['support',support],['preferences',preferences],['reset',resetCard]]){
@@ -2524,7 +2522,7 @@ const ExpLauncherFlyout = (() => {
 // exp-core owns shared UI, launcher, diagnostics, update, and coordination behavior.
 const ExtraPotionsCore = (() => {
   'use strict';
-  const version = '3.18.1';
+  const version = '3.18.2';
   const sourceVersion = version; // Backward-compatible alias for Core's own foundation version.
   const SUPPORT_URL = 'https://ko-fi.com/expdare';
   const protocol = 'exp-core-coordination-v1';
@@ -4281,7 +4279,7 @@ const ExtraPotionsCore = (() => {
       hub.addEventListener('click', event => { const opening = document.documentElement.dataset.expFlyoutOpen !== '1'; setFlyoutOpen(opening); if (opening && event.detail === 0) focusFlyout(flyoutState().order[0]); });
       hub.addEventListener('keydown', onHubKey);
       // The corner launcher keeps vertical drag and its saved position; a site slot cannot be dragged.
-      hub.expDragCleanup = bindLauncherDrag(hub, host.dataset.productId, { reorder:false, canDrag:() => !flyoutHubBox().site, title:'Drag to move the launcher.', layout:syncFlyout });
+      hub.expDragCleanup = bindLauncherDrag(hub, host.dataset.productId, { reorder:false, canDrag:() => !flyoutHubBox().site, layout:syncFlyout });
       shadow.append(panel, hub);
     }
     const icon = hub.querySelector('.exp-flyout-icon');
@@ -4341,7 +4339,7 @@ const ExtraPotionsCore = (() => {
     const removers = [];
     const on = (node,type,fn,opts) => { node.addEventListener(type,fn,opts); removers.push(() => node.removeEventListener(type,fn,opts)); };
     let startX=0,startY=0,startDelta=0,pointer=null,dragged=false,mode='',axis='',order=[];
-    launcher.title = launcher.title || title || 'Drag to move the launchers. Shift+drag or Alt+Arrow keys reorder.';
+    if (reorder || title) launcher.title = launcher.title || title || 'Drag to move the launchers. Shift+drag or Alt+Arrow keys reorder.';
     on(launcher,'pointerdown',e=>{if(e.button!==0||(reorder&&(flyoutState().active||singleSlot()))||(!reorder&&e.shiftKey)||!canDrag())return;pointer=e.pointerId;startX=e.clientX;startY=e.clientY;startDelta=savedDelta();mode=e.shiftKey?'order':'group';order=interactionGridOrder();if(!order.includes(id))order.push(id);dragged=false;axis='';e.preventDefault();try{launcher.setPointerCapture(e.pointerId);}catch{}});
     // Listen on window in the capture phase so host pages that stop pointer events (Twitch's player) cannot stall a drag.
     on(launcher,'dragstart',e=>e.preventDefault());
@@ -6864,7 +6862,8 @@ const ExtraPotionsCore = (() => {
       for (const campaign of campaigns || []) {
         const current = campaignState(campaign, { now: at });
         const game = campaignGame(campaign), key = normalizeGameName(game);
-        if (!current.listed || !current.datesKnown || !key) continue;
+        // A campaign whose watch-time Drops are all earned has nothing left to watch for.
+        if (!current.listed || !current.datesKnown || !key || watchDropsComplete(campaign)) continue;
         const row = byGame.get(key) || { key, game, campaignKeys: new Set(), campaignNames: new Set(), earliestEndMs: current.endMs, latestEndMs: current.endMs, latestEndAt: current.endAt };
         row.campaignKeys.add(campaignKey(campaign) || `${key}:${current.endMs}`);
         const name = cleanText(campaign?.name);
@@ -11396,7 +11395,6 @@ const ExtraPotionsCore = (() => {
         dot: CARD_TONE_COLORS[label] || (/Earning|Claim/.test(label) ? '#22c55e' : '#9147ff'),
         rewardName: reward ? reward.name || 'Current Drop' : `Waiting for ${site} to start a Drop session`,
         game: reward?.game || game || '', channel: channel || '', percent, credited, required,
-        minutesTitle: unknown ? (reward ? 'Loading Drop details' : '') : reward.requiredMinutes ? `${reward.currentMinutes == null ? 'Pending' : reward.currentMinutes} / ${reward.requiredMinutes} min` : 'Waiting for first credited minute',
         pauseText: intent.paused || controller.waitReason === 'player-blocked' || !reward ? 'Resume' : 'Pause', pauseDisabled: !reward || !channel || !loggedIn,
         checked: age || '—', checkedTitle: age ? `Checked ${age} ago` : 'Checked —',
         stripPause: reward ? pause : null,
@@ -11572,6 +11570,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(['3.4.43', '3.4.30', '3.4.27', '3.4.26']);
   const RELEASE_NOTES = {
+    '4.2.3': ["Campaigns whose watch-time Drops are all earned no longer stay in the campaign list.", "Removed hovertips that only repeated a setting's label.", "Built on Core 3.18.2."],
     '4.2.2': ["Drops are claimed only with the integrity token Twitch's own page uses, since Twitch refused claims made with Dropper's own token.", "A claim Twitch refused is tried again while its inventory still lists the reward as not claimed, up to three attempts."],
     '4.2.1': ["Twitch pages load faster with Dropper running: its saved campaign list is read once instead of on every check.", "The campaign count matches Twitch's All Campaigns page, and campaigns you have not started count as 0 minutes instead of untimed.", "A claimed Drop counts only once Twitch's inventory shows it claimed, and rewards for a game account that is not linked are listed as needing an account link.", "Daily reward campaigns such as the GTAVI Launch Celebration no longer keep a stream open for a reward already earned today, and a stream page loaded while the window is hidden starts playing."],
     '4.2.0': ["On Kick, reorder games, include or ignore them, and change stream switching directly in Campaigns.", "Kick claim history shows earned Drops and watch-time cases, with confirmation from your reward inventory.", "The Kick progress card uses credited minutes, and Twitch can find priority streams when campaign details are unavailable.", "Twitch reward campaigns that name a game, such as the GTAVI Launch Celebration, are listed under that game's category with their watch progress."],
@@ -12527,7 +12526,7 @@ const ExtraPotionsCore = (() => {
             </div>
             <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-drops-body"><span class="fl-tool-title">Drops</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-drops-body">
               ${switchHtml("tdh-claim-drops", "Auto-claim Drops", "", settings.claimDrops)}
-              ${switchHtml("tdh-claim-bonus", "Auto-Claim Bonus Chests", "Attempts free bonus claims. A click is not counted as confirmation.", settings.claimBonus)}
+              ${switchHtml("tdh-claim-bonus", "Auto-Claim Bonus Chests", "", settings.claimBonus)}
               <div class="auth-required" id="tdh-auth-required" hidden>
                 <span>Twitch Login Required</span>
                 <button type="button" class="life-btn" id="tdh-twitch-login" aria-label="Open Twitch Login">Log in</button>
@@ -12571,8 +12570,8 @@ const ExtraPotionsCore = (() => {
                 <button type="button" class="life-btn" id="tdh-stream-lock" aria-pressed="false">Stay on This Stream</button>
                 <button type="button" class="life-btn" id="tdh-recovery-action" hidden>Recheck Twitch</button>
               </div>
-              ${switchHtml("tdh-find-next", "Automatic Stream Switching", "Uses eligible alternatives only when you permit switching. Manual selections and pauses stay protected.", settings.findNextStream)}
-              ${switchHtml("tdh-mute-next", "Mute Opened Streams", "Mutes streams Dropper opens or switches to, Including same-tab routing.", settings.muteRestarted)}
+              ${switchHtml("tdh-find-next", "Automatic Stream Switching", "", settings.findNextStream)}
+              ${switchHtml("tdh-mute-next", "Mute Opened Streams", "", settings.muteRestarted)}
               <details class="auth-advanced"><summary>Interruption Rules</summary><div class="auth-advanced-body">
                 <label for="tdh-protected-channels">Protected Channels</label><input id="tdh-protected-channels" placeholder="channel1, channel2" maxlength="2000">
                 <label for="tdh-excluded-channels">Never Automatically Open</label><input id="tdh-excluded-channels" placeholder="channel1, channel2" maxlength="2000">
@@ -12582,25 +12581,25 @@ const ExtraPotionsCore = (() => {
               <details class="auth-advanced">
                 <summary>Playback Options</summary>
                 <div class="auth-advanced-body">
-                  ${switchHtml("tdh-remember-content-warnings", "Remember Accepted Warnings", "Remembers content warning types you accept across all Twitch channels. New warning types still ask.", settings.rememberContentWarnings)}
+                  ${switchHtml("tdh-remember-content-warnings", "Remember Accepted Warnings", "", settings.rememberContentWarnings)}
                   <button id="tdh-forget-content-warnings" type="button" class="life-btn">Forget Accepted Warnings</button>
-                  ${switchHtml("tdh-restore-channel-player", "Restore Player on Arrival", "Returns an initial Twitch mini-player to the normal channel view. Stops after you interact with the page.", settings.restoreChannelPlayer)}
+                  ${switchHtml("tdh-restore-channel-player", "Restore Player on Arrival", "", settings.restoreChannelPlayer)}
                   <button id="tdh-restore-channel-player-now" type="button" class="life-btn">Restore Channel Player</button>
-                  ${switchHtml("tdh-background-earning", "Background Tracking", "Reports actual Twitch credit in hidden tabs or Picture-in-Picture. Does not simulate viewing.", settings.backgroundEarning)}
+                  ${switchHtml("tdh-background-earning", "Background Tracking", "", settings.backgroundEarning)}
                 </div>
               </details>
               <details class="auth-advanced">
                 <summary>Routing & Backup</summary>
                 <div class="auth-advanced-body">
-                  ${switchHtml("tdh-resume-session", "Resume Last Drop Session", "After a browser restart, the tab chosen for switching resumes its stream. Twitch verifies credit again before progress counts.", settings.resumeSessionOnRestart)}
-                  <button type="button" class="life-btn" id="tdh-clear-skipped-streamers" data-help="Clears The Temporary Streamer Rotation And Immediately Retries Discovery When Waiting.">Clear Skipped Streamers</button>
+                  ${switchHtml("tdh-resume-session", "Resume Last Drop Session", "", settings.resumeSessionOnRestart)}
+                  <button type="button" class="life-btn" id="tdh-clear-skipped-streamers">Clear Skipped Streamers</button>
                 </div>
               </details>
             </div></section>
             <section class="fl-tool-panel"><div class="fl-tool-header" data-panel="tdh-progress-body"><span class="fl-tool-title">Appearance</span><button class="fl-tool-chevron" type="button" aria-expanded="false">▸</button></div><div class="fl-tool-body fl-tool-hidden" id="tdh-progress-body">
               ${switchHtml("tdh-drop-details", "Drop Details", "", settings.dropDetails)}
               ${switchHtml("tdh-progress-title", "Show Progress in Tab", "", settings.progressInTitle)}
-              ${switchHtml("tdh-keep-tab", "Keep Screen Awake", "Requests a screen wake lock during actual playback. Does not override visibility or pauses.", settings.keepTabActive)}
+              ${switchHtml("tdh-keep-tab", "Keep Screen Awake", "", settings.keepTabActive)}
               ${switchHtml("tdh-hide-sub-promos", "Hide Twitch Subscribe Promos", "", settings.hideTwitchSubscriptionPromos)}
               ${switchHtml("tdh-reduce-motion", "Reduce Motion", "", settings.reduceMotion)}
             </div></section>
@@ -13806,7 +13805,7 @@ const ExtraPotionsCore = (() => {
       const card = lastView.card;
       setText('tdh-drop-name', card.rewardName);
       const meta = setText('tdh-drop-meta', `${card.credited} / ${card.required} min`);
-      if (meta) { meta.setAttribute('aria-label', currentDrop ? `${card.credited} of ${card.required} minutes credited by ${site.name}` : `${site.name} credited progress unknown`); meta.title = card.minutesTitle; }
+      if (meta) meta.setAttribute('aria-label', currentDrop ? `${card.credited} of ${card.required} minutes credited by ${site.name}` : `${site.name} credited progress unknown`);
       const fill = shadowNode('tdh-drop-fill'), ring = shadowNode('tdh-ring'), bar = fill?.closest('[role=progressbar]');
       if (bar) { if (card.percent == null) bar.removeAttribute('aria-valuenow'); else bar.setAttribute('aria-valuenow', String(card.percent)); }
       if (fill) fill.style.width = `${card.percent ?? 0}%`;
@@ -13830,7 +13829,7 @@ const ExtraPotionsCore = (() => {
       const detail = shadowNode('tdh-drop-state');
       if (detail) { detail.textContent = card.shortLabel; detail.className = cls; detail.title = card.label; detail.setAttribute('aria-label', card.label); }
       const updated = shadowNode('tdh-updated-ago');
-      if (updated) { updated.textContent = card.checked; updated.title = card.checkedTitle; updated.setAttribute('aria-label', card.checkedTitle); updated.className = 'progress-age'; }
+      if (updated) { updated.textContent = card.checked; updated.setAttribute('aria-label', card.checkedTitle); updated.className = 'progress-age'; }
       const dot = shadowNode('tdh-compact-dot');
       if (dot) dot.style.background = card.dot;
       renderSkipStreamerControl();
@@ -14124,7 +14123,6 @@ const ExtraPotionsCore = (() => {
       if (label) label.textContent = armed ? 'Confirm' : 'Skip';
       if (countdown) { countdown.hidden = !armed; countdown.textContent = armed ? `${armed.remainingSeconds}s` : ''; }
       const who = active || armed?.login;
-      button.title = armed ? `Click again within ${armed.remainingSeconds}s to skip ${who}` : canSkip ? `Arm skip for ${active}; click again within 3 seconds to confirm` : 'No active streamer to skip';
       button.setAttribute('aria-label', armed ? `Confirm skip ${who}, ${armed.remainingSeconds} seconds remaining` : canSkip ? `Arm skip streamer ${active}` : 'No active streamer to skip');
     }
 
@@ -14283,7 +14281,7 @@ const ExtraPotionsCore = (() => {
   // Wiring and startup: the only file that reads browser globals. It builds every module from the real storages,
   // the userscript manager's functions and the page, then runs the heartbeat. Page reading, tabs, the data layer
   // and the menu are wired here as their modules land (milestone 3).
-  const APP_VERSION = '4.2.2';
+  const APP_VERSION = '4.2.3';
   const HEARTBEAT_MS = 5000;
   const ACTIVITY_LOG_LIMIT = 40;
   const SECRET_META = /token|cookie|auth|password|integrity|secret/i;

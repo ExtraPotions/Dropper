@@ -1,3 +1,9 @@
+## 4.2.3 — 2026-11-21
+
+- Campaigns whose watch-time Drops are all earned no longer stay in the campaign list.
+- Removed hovertips that only repeated a setting's label.
+- Built on Core 3.18.2.
+
 ## 4.2.2 — 2026-11-21
 
 - Drops are claimed only with the integrity token Twitch's own page uses, since Twitch refused claims made with Dropper's own token.
