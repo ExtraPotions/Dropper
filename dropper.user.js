@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dropper for Twitch
 // @namespace    twitch-drops-helper
-// @version      4.2.3
+// @version      4.2.4
 // @description  A browser-only Twitch companion for the streams you choose to watch: track credited reward progress, manage campaigns, and collect earned rewards.
 // @icon         https://raw.githubusercontent.com/ExtraPotions/Dropper/main/assets/dropper-launcher.svg
 // @homepageURL  https://github.com/ExtraPotions/Dropper
@@ -7962,19 +7962,34 @@ const ExtraPotionsCore = (() => {
       let session = read();
       const channel = login(), target = lower(session.stream), info = page.stream(), targetReward = session.target;
       session = syncAllowList(session, channel || target);
+      const streamLive = gqlOfflineConfirmed(session, at) ? false : info.live;
       const gameMatches = Boolean(info.game && targetReward?.game && gameNamesMatch(targetReward.game, info.game));
       if (channel && target && channel !== target) {
-        if (session.deadlineAt && at >= session.deadlineAt) return go(CONTROLLER_STATES.FIND, { failed: failedWith(session, target), stream: '', deadlineAt: 0 }, 'Verification route changed before target stream stabilized');
+        if (at - page.startedAt >= CONTROLLER_TIMING.settle || (session.deadlineAt && at >= session.deadlineAt)) {
+          return go(CONTROLLER_STATES.FIND, { failed: failedWith(session, target), stream: '', evidence: null, mismatchSince: 0, offlineSince: 0, deadlineAt: 0 }, 'Verification route changed before target stream stabilized');
+        }
         return false;
       }
       if (at - page.startedAt < CONTROLLER_TIMING.settle) { setStatus(`Loading ${target || channel || targetReward?.game} Before verification…`); return false; }
+      if (!channel || streamLive === false) {
+        const since = session.offlineSince || at;
+        if (!session.offlineSince) session = write({ ...session, offlineSince: since });
+        if (at - since >= CONTROLLER_TIMING.offlineGrace || (session.deadlineAt && at >= session.deadlineAt)) {
+          return go(CONTROLLER_STATES.FIND, { failed: failedWith(session, target || channel), stream: '', evidence: null, mismatchSince: 0, offlineSince: 0, deadlineAt: 0 },
+            at - since >= CONTROLLER_TIMING.offlineGrace ? `Rejected ${target || channel || 'stream'} · stream went offline` : `Verification deadline expired for ${target || channel || 'stream'}`);
+        }
+        setStatus(`Waiting for ${target || channel || targetReward?.game} Stream to recover`);
+        return false;
+      }
+      if (session.offlineSince) session = write({ ...session, offlineSince: 0 });
       if (info.game && !gameMatches) {
         const since = session.mismatchSince || at;
         if (!session.mismatchSince) session = write({ ...session, mismatchSince: since });
-        if (at - since >= CONTROLLER_TIMING.categoryGrace) return go(CONTROLLER_STATES.FIND, { failed: failedWith(session, target || channel), stream: '', evidence: null, mismatchSince: 0, deadlineAt: 0 }, `Rejected ${target || channel || 'stream'} · category is ${info.game}`);
+        if (at - since >= CONTROLLER_TIMING.categoryGrace) return go(CONTROLLER_STATES.FIND, { failed: failedWith(session, target || channel), stream: '', evidence: null, mismatchSince: 0, offlineSince: 0, deadlineAt: 0 }, `Rejected ${target || channel || 'stream'} · category is ${info.game}`);
         setStatus(`Verifying ${targetReward?.game} · Twitch still shows ${info.game}`);
         return false;
       }
+      if (session.mismatchSince) session = write({ ...session, mismatchSince: 0 });
       // The first known observation can be historical progress: it becomes the baseline, never proof.
       const minutes = targetReward?.currentMinutes ?? null, percent = targetReward?.percent ?? null;
       const identity = Boolean(channel && channel === target);
@@ -7986,7 +8001,7 @@ const ExtraPotionsCore = (() => {
       const evidence = session.evidence || {};
       const campaignProof = Boolean(evidence.campaignAclMatched || evidence.gqlCampaignSupported);
       const sessionProof = Boolean(evidence.gqlSessionDropMatched && evidence.gqlSessionIdentityLevel === 'exact-drop');
-      if (info.live && gameMatches && (sessionProof || progressProof)) {
+      if (streamLive && gameMatches && (sessionProof || progressProof)) {
         const key = keyOf(targetReward);
         const without = map => Object.fromEntries(Object.entries(map || {}).filter(([entry]) => entry !== key));
         return go(CONTROLLER_STATES.EARNING, {
@@ -7997,7 +8012,7 @@ const ExtraPotionsCore = (() => {
         }, `Verified earning on ${channel || target} for ${targetReward?.campaign || targetReward?.game}`);
       }
       // Campaign support proves eligibility, not earning: an eligible live stream waits for Twitch's first credit.
-      if (campaignProof && info.live && gameMatches && session.deadlineAt && !session.firstCreditWindow) {
+      if (campaignProof && streamLive && gameMatches && session.deadlineAt && !session.firstCreditWindow) {
         session = write({ ...session, firstCreditWindow: true, deadlineAt: Math.max(session.deadlineAt, (session.enteredAt || at) + CONTROLLER_TIMING.firstCredit) });
       }
       const remaining = session.deadlineAt ? Math.max(0, session.deadlineAt - at) : 0;
@@ -8008,13 +8023,13 @@ const ExtraPotionsCore = (() => {
         return false;
       }
       if (session.deadlineAt && at >= session.deadlineAt) {
-        if (campaignProof && info.live && gameMatches) {
+        if (campaignProof && streamLive && gameMatches) {
           if (creditDeadline(session, target || channel, at)) return true;
           session = read();
         }
-        return go(CONTROLLER_STATES.FIND, { failed: failedWith(session, target || channel), stream: '', evidence: null, mismatchSince: 0, deadlineAt: 0 }, `Verification deadline expired for ${target || channel || 'stream'}`);
+        return go(CONTROLLER_STATES.FIND, { failed: failedWith(session, target || channel), stream: '', evidence: null, mismatchSince: 0, offlineSince: 0, deadlineAt: 0 }, `Verification deadline expired for ${target || channel || 'stream'}`);
       }
-      setStatus(campaignProof && info.live && gameMatches ? `Eligible ${target || channel || 'Drops stream'} · ${creditLabel(session, at)}`
+      setStatus(campaignProof && streamLive && gameMatches ? `Eligible ${target || channel || 'Drops stream'} · ${creditLabel(session, at)}`
         : (evidence.dropsTagged || info.dropsEnabled) ? `Verifying ${target || channel || 'Drops stream'} · Waiting for campaign proof` : `Verifying ${target || channel || 'Drops stream'} For ${targetReward?.game}`);
       return false;
     }
@@ -8033,20 +8048,25 @@ const ExtraPotionsCore = (() => {
       const target = session.target;
       if (!target || target.isClaimed) return go(CONTROLLER_STATES.SELECT, {}, 'Current Drop claimed or cleared');
       if (rewardComplete(target)) return advance(target, 'Earning reached 100%');
-      const channel = login(), info = page.stream();
+      const channel = login(), targetStream = lower(session.stream), info = page.stream();
+      if (channel && targetStream && channel !== targetStream) {
+        return go(CONTROLLER_STATES.FIND, { failed: failedWith(session, targetStream), stream: '', evidence: null, verification: null, mismatchSince: 0, offlineSince: 0, deadlineAt: 0 }, `${targetStream} redirected to ${channel} · finding next eligible stream`);
+      }
       session = syncAllowList(session, channel);
       const allowed = targetAllowList(target).map(item => item.login);
       const verified = Boolean(session.evidence?.verifiedChannel && channel === lower(session.evidence.verifiedChannel) && session.evidence.campaignVerified === true);
       if (allowed.length && channel && !allowed.includes(channel) && !verified) {
-        return go(CONTROLLER_STATES.FIND, { failed: failedWith(session, channel), stream: '', evidence: null, deadlineAt: 0 }, `Verified session invalidated · ${channel} is not verified for ${target.campaign || target.game}`);
+        return go(CONTROLLER_STATES.FIND, { failed: failedWith(session, channel), stream: '', evidence: null, verification: null, deadlineAt: 0 }, `Verified session invalidated · ${channel} is not verified for ${target.campaign || target.game}`);
       }
-      if (!channel || !info.live) {
+      const streamLive = gqlOfflineConfirmed(session, at) ? false : info.live;
+      if (!channel || streamLive === false) {
         const since = session.offlineSince || at;
         if (!session.offlineSince) session = write({ ...session, offlineSince: since });
-        if (at - since >= CONTROLLER_TIMING.offlineGrace) return go(CONTROLLER_STATES.FIND, { failed: failedWith(session, session.stream || channel), stream: '', offlineSince: 0, deadlineAt: 0 }, 'Verified stream went offline');
+        if (at - since >= CONTROLLER_TIMING.offlineGrace) return go(CONTROLLER_STATES.FIND, { failed: failedWith(session, session.stream || channel), stream: '', evidence: null, verification: null, offlineSince: 0, deadlineAt: 0 }, 'Verified stream went offline');
         setStatus(`Waiting for ${session.stream || target.game} Stream to recover`);
         return false;
       }
+      if (session.offlineSince) session = write({ ...session, offlineSince: 0 });
       const gameMatches = Boolean(info.game && gameNamesMatch(target.game, info.game));
       if (info.game && !gameMatches) {
         const since = session.mismatchSince || at;
@@ -8055,7 +8075,7 @@ const ExtraPotionsCore = (() => {
         setStatus(`Category changed to ${info.game} · Confirming before switching`);
         return false;
       }
-      if (session.offlineSince || session.mismatchSince) session = write({ ...session, offlineSince: 0, mismatchSince: 0 });
+      if (session.mismatchSince) session = write({ ...session, mismatchSince: 0 });
 
       const health = page.health?.() || {};
       const creditedAt = Number(store.session.get('creditedProgressAt', 0)) || 0;
@@ -8216,22 +8236,37 @@ const ExtraPotionsCore = (() => {
 
     // Twitch evidence for the stream being verified or earned, from a poll: campaigns this channel supports and
     // the current reward session. Campaign support records eligibility only; the exact reward proves earning.
-    function observe({ channel, available = null, session: rewardSession = null } = {}) {
-      const session = read(), target = session.target, stream = lower(session.stream), channelLogin = lower(channel);
-      if (!target || !channelLogin || channelLogin !== stream || !stateOf(campaignFor(target), null, now()).open) return false;
+    function observe({ channel, available = null, session: rewardSession = null, live, liveAt = now() } = {}) {
+      const session = read(), target = session.target, stream = lower(session.stream), channelLogin = lower(channel), at = now();
+      if (!target || !channelLogin || channelLogin !== stream || !stateOf(campaignFor(target), null, at).open) return false;
+      const priorSampleAt = Number(session.evidence?.gqlStreamLiveAt) || 0;
+      const sampleAge = at - liveAt;
+      const newSample = live !== undefined && liveAt > priorSampleAt && sampleAge >= 0 && sampleAge <= CONTROLLER_TIMING.sessionFresh;
+      const priorCount = liveAt - priorSampleAt <= CONTROLLER_TIMING.sessionFresh ? Number(session.evidence?.gqlOfflineCount) || 0 : 0;
+      const offlineCount = live === false ? priorCount + 1 : 0;
+      const livePatch = newSample ? {
+        gqlStreamLive: live === false && offlineCount < 2 ? null : live,
+        gqlOfflineCount: offlineCount,
+        gqlStreamLiveAt: liveAt,
+      } : {};
+      const liveUpdated = newSample;
       const sessionGame = !rewardSession || !target.game || gameNamesMatch(target.game, rewardSession.game || '');
       const campaignMatch = Boolean(rewardSession && sessionGame && keyOf(target) && lower(rewardSession.campaignKey || rewardSession.campaignId) === keyOf(target));
       const dropMatch = Boolean(rewardSession && sessionGame && target.id && cleanText(rewardSession.id) === cleanText(target.id));
       if (session.state === CONTROLLER_STATES.EARNING) {
-        if (!campaignMatch || !dropMatch) return false;
-        write({ ...session, evidence: { ...(session.evidence || {}), gqlCampaignSupported: true, gqlSessionMatched: true, gqlSessionCampaignMatched: true, gqlSessionDropMatched: true, gqlSessionIdentityLevel: 'exact-drop', gqlEvidenceAt: now() } });
+        if ((!campaignMatch || !dropMatch) && !liveUpdated) return false;
+        write({ ...session, evidence: { ...(session.evidence || {}), ...livePatch, ...(campaignMatch && dropMatch ? { gqlCampaignSupported: true, gqlSessionMatched: true, gqlSessionCampaignMatched: true, gqlSessionDropMatched: true, gqlSessionIdentityLevel: 'exact-drop', gqlEvidenceAt: at } : {}) } });
         return true;
       }
       if (session.state !== CONTROLLER_STATES.VERIFY) return false;
-      const supported = Array.isArray(available) && available.length ? available.some(item => stateOf(item, null, now()).open && (campaignKey(item) === keyOf(target) || lower(item?.id) === keyOf(target))) : null;
-      if (supported !== true && !campaignMatch && !dropMatch) return false;
+      const supported = Array.isArray(available) && available.length ? available.some(item => stateOf(item, null, at).open && (campaignKey(item) === keyOf(target) || lower(item?.id) === keyOf(target))) : null;
+      if (supported !== true && !campaignMatch && !dropMatch) {
+        if (!liveUpdated) return false;
+        write({ ...syncAllowList(session, channelLogin), evidence: { ...(read().evidence || {}), ...livePatch } });
+        return true;
+      }
       const level = dropMatch ? 'exact-drop' : campaignMatch ? (target.id && rewardSession?.id ? 'campaign-only-different-drop' : 'campaign-fallback') : 'none';
-      write({ ...syncAllowList(session, channelLogin), evidence: { ...(read().evidence || {}), gqlCampaignSupported: Boolean(session.evidence?.gqlCampaignSupported || supported === true), gqlSessionMatched: campaignMatch || dropMatch, gqlSessionCampaignMatched: campaignMatch, gqlSessionDropMatched: dropMatch, gqlSessionIdentityLevel: level, gqlEvidenceAt: now() } });
+      write({ ...syncAllowList(session, channelLogin), evidence: { ...(read().evidence || {}), ...livePatch, gqlCampaignSupported: Boolean(session.evidence?.gqlCampaignSupported || supported === true), gqlSessionMatched: campaignMatch || dropMatch, gqlSessionCampaignMatched: campaignMatch, gqlSessionDropMatched: dropMatch, gqlSessionIdentityLevel: level, gqlEvidenceAt: at } });
       log('stream-verification-evidence', dropMatch ? 'Twitch matched the selected Drop session' : campaignMatch ? 'Twitch matched the target campaign session' : 'Twitch confirmed target campaign support', { channel: channelLogin });
       return true;
     }
@@ -8281,6 +8316,13 @@ const ExtraPotionsCore = (() => {
     return Object.freeze({ tick, observe, nextGame, skipStream, clearSkipped, reorder, resumeRecovery, earningConfirmed, snapshot, status: () => status });
   }
 
+  function gqlOfflineConfirmed(session, at) {
+    const evidence = session?.evidence;
+    const age = at - Number(evidence?.gqlStreamLiveAt);
+    return evidence?.gqlStreamLive === false && Number(evidence.gqlOfflineCount) >= 2 &&
+      Number(evidence.gqlStreamLiveAt) > 0 && age >= 0 && age <= CONTROLLER_TIMING.sessionFresh;
+  }
+
   function locationKeyOf(url) {
     try { const parsed = new URL(url); return `${parsed.origin}${parsed.pathname}${parsed.search}`; } catch (_) { return ''; }
   }
@@ -8302,6 +8344,10 @@ const ExtraPotionsCore = (() => {
   const VIEWING_NAVIGATION_KEY = 'dropper-viewing-navigation-v1';
   const VIEWING_SELECTION_KEY = 'dropper-viewing-selection-v1';
   const MUTE_PENDING_KEY = 'dropper-mute-pending-v1';
+  const RAID_DOM_SELECTOR = '[data-a-target*="raid" i], [data-test-selector*="raid" i], [class*="raid-banner" i], [class*="raid-indicator" i]';
+  const OFFLINE_ROOT_SELECTOR = '.channel-root--offline, .channel-root__player--offline, .channel-root__info--offline';
+  const LIVE_ROOT_SELECTOR = '.channel-root--live, .channel-root__player--live, .channel-root__info--live';
+  const STATUS_INDICATOR_SELECTOR = '.tw-channel-status-text-indicator, [class*="ChannelStatusTextIndicator"], [data-a-target="channel-status-text-indicator"], [data-test-selector="stream-status-indicator"]';
 
   function createPage({ store, session = sessionStorage, gm = null, pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window, settings: readSettings, intent, wantedGame = () => '', isAutomationTab = () => true, sitePaused = () => false, onChange = () => {}, log = () => {}, startedAt = Date.now() } = {}) {
     // 3.x's names, so the carried-over code reads as it did.
@@ -8327,6 +8373,8 @@ const ExtraPotionsCore = (() => {
     let videoMountedDuringPause = false;
     let viewingListenersInstalled = false;
     let recentPlaybackControl = { action: '', at: 0 };
+    let activeChannelStatus = { channel: '', offlineOrRaid: false };
+    let viewerRaidFrom = '';
     const playerPresentationRecovery = { attempted: false, viewerInteracted: false, lastResult: '' };
     let screenWakeLock = null;
     let wakeLockPending = false;
@@ -8341,6 +8389,8 @@ const ExtraPotionsCore = (() => {
       viewingVideo = null;
       videoMountedDuringPause = false;
       recentPlaybackControl = { action: '', at: 0 };
+      activeChannelStatus = { channel: '', offlineOrRaid: false };
+      viewerRaidFrom = '';
     }
 
     function watchingLogin() {
@@ -8719,7 +8769,15 @@ const ExtraPotionsCore = (() => {
       const viewers = cleanText(document.querySelector('[data-a-target="animated-channel-viewers-count"]')?.textContent);
       const uptime = cleanText(document.querySelector('.live-time span[aria-hidden="true"]')?.textContent);
       const dropsEnabled = streamHasDropsEnabledTag(root);
-      const live = Boolean(root.querySelector('.tw-channel-status-text-indicator, [class*="ChannelStatusTextIndicator"]')) || /\bLIVE\b/i.test(root.textContent || "");
+      const offlineRoot = Boolean(document.querySelector(OFFLINE_ROOT_SELECTOR) && !document.querySelector(LIVE_ROOT_SELECTOR));
+      const indicators = [...root.querySelectorAll(STATUS_INDICATOR_SELECTOR)];
+      const statusText = indicators.map(node => cleanText(node.textContent));
+      const indicatorOffline = statusText.some(text => /^(?:offline|rerun|vod|last live)\b/i.test(text));
+      const liveRoot = Boolean(document.querySelector(LIVE_ROOT_SELECTOR) || (viewers && uptime));
+      const live = offlineRoot || indicatorOffline ? false
+        : liveRoot || statusText.some(text => /^live$/i.test(text)) ? true
+          : indicators.length ? null : false;
+      activeChannelStatus = { channel: login, offlineOrRaid: offlineRoot || indicatorOffline || Boolean(streamVideoElement()?.ended || document.querySelector(RAID_DOM_SELECTOR)) };
       return { channelName, title, game, games, gameSlug, gameCategoryUrl, viewers, uptime, dropsEnabled, live };
     }
 
@@ -9134,7 +9192,24 @@ const ExtraPotionsCore = (() => {
       const route = store.session.get('controller', null);
       const reloaded = performance.getEntriesByType('navigation')[0]?.type === 'reload';
       if (settings.findNextStream && reloaded && saved?.channel === login && saved.arrivalSource === 'unclassified-arrival') return 'restored-switching-tab';
-      if (settings.findNextStream && ['open-stream', 'verify', 'earning'].includes(route?.state) && route.stream === login) return 'dropper-navigation';
+      if (settings.findNextStream && ['open-stream', 'verify', 'earning', 'waiting'].includes(route?.state)) {
+        if (route.stream === login) return 'dropper-navigation';
+        const current = typeof viewingIntent !== 'undefined' ? viewingIntent.snapshot() : null;
+        const inPageFromRoute = Boolean(
+          current?.channel &&
+          current.channel !== login &&
+          current.account === storageAccountLogin() &&
+          current.manualStream === false &&
+          (!current.paused || current.pauseReason !== 'viewer') &&
+          String(route?.stream || '').trim().toLowerCase() === current.channel
+        );
+        const twitchRaidOrOffline = inPageFromRoute && (
+          new URL(location.href).searchParams.get('referrer')?.toLowerCase() === 'raid' ||
+          (activeChannelStatus.channel === current.channel && activeChannelStatus.offlineOrRaid) ||
+          gqlOfflineConfirmed(route, now)
+        );
+        if (twitchRaidOrOffline && viewerRaidFrom !== current.channel) return 'dropper-navigation';
+      }
       return settings.resumeSessionOnRestart && saved?.channel === login && saved.manualStream === false ? 'dropper-navigation' : '';
     }
 
@@ -9167,6 +9242,7 @@ const ExtraPotionsCore = (() => {
       if (changed) {
         viewingVideo = null;
         recentPlaybackControl = { action: '', at: 0 };
+        viewerRaidFrom = '';
       }
       const video = login ? streamVideoElement() : null;
       if (video !== viewingVideo) {
@@ -9215,6 +9291,11 @@ const ExtraPotionsCore = (() => {
     function recordViewerChannelSelection(event) {
       if (!event.isTrusted || event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
       if (event.composedPath?.().some(node => node?.id === 'tdh-root')) return;
+      const control = event.target?.closest?.('button, [role="button"], a[href]');
+      if (control && (control.closest(RAID_DOM_SELECTOR) ||
+          /\braid\b/i.test(`${control.getAttribute('aria-label') || ''} ${control.textContent || ''}`))) {
+        viewerRaidFrom = watchingLogin();
+      }
       const anchor = event.target?.closest?.('a[href]');
       if (!anchor || anchor.hasAttribute('download') || (anchor.target && anchor.target !== '_self')) return;
       if (!isTrustedTwitchUrl(anchor.href)) return;
@@ -9255,7 +9336,10 @@ const ExtraPotionsCore = (() => {
           }
         }
         if (event.type === 'waiting' || event.type === 'stalled') viewingIntent.observe('buffering');
-        if (event.type === 'ended') viewingIntent.observe('ended');
+        if (event.type === 'ended') {
+          activeChannelStatus = { channel: watchingLogin(), offlineOrRaid: true };
+          viewingIntent.observe('ended');
+        }
         if (event.type === 'error') viewingIntent.observe('error');
         notePauseChange(before, 'video-' + event.type);
         refreshViewingControls();
@@ -9274,7 +9358,14 @@ const ExtraPotionsCore = (() => {
       for (const type of ['fullscreenchange', 'enterpictureinpicture', 'leavepictureinpicture']) {
         document.addEventListener(type, () => { syncViewingContext(); queueClaimScan(); refreshViewingControls(); }, true);
       }
-      window.addEventListener('popstate', () => { syncViewingContext(); refreshViewingControls(); });
+      window.addEventListener('popstate', event => {
+        const channel = watchingLogin();
+        if (event.isTrusted && channel && channel !== viewingIntent.snapshot().channel) {
+          writeSession(VIEWING_SELECTION_KEY, { channel, until: Date.now() + 30000 });
+        }
+        syncViewingContext();
+        refreshViewingControls();
+      });
       document.addEventListener('visibilitychange', syncScreenWakeLock);
       window.addEventListener('pagehide', () => { try { screenWakeLock?.release(); } catch (_) {} screenWakeLock = null; });
     }
@@ -10900,7 +10991,7 @@ const ExtraPotionsCore = (() => {
     }
 
     // The reward session and supported campaigns on the current channel; the controller gets them as evidence.
-    async function loadSession(channel, channelId, at) {
+    async function loadSession(channel, channelId, at, streamLive = null, liveAt = at) {
       const selected = target();
       const note = { at, channel, responseStatus: null, identityLevel: 'none', dropId: null, campaignKey: null, minutes: null, error: null };
       sessionDrop = null; available = [];
@@ -10921,7 +11012,7 @@ const ExtraPotionsCore = (() => {
         note.identityLevel = sessionDrop && selected ? sessionIdentity(sessionDrop, selected).level : 'none';
       } catch (error) { note.error = cleanText(error?.message || error); note.responseStatus = 'error'; }
       sessionNote = note;
-      controller()?.observe({ channel, available, session: sessionDrop });
+      controller()?.observe({ channel, available, session: sessionDrop, live: streamLive, liveAt });
     }
 
     function wantsDashboard(at) {
@@ -10960,9 +11051,17 @@ const ExtraPotionsCore = (() => {
           }
         }
         const streamRow = channel ? rows[index++] : null;
+        const streamErrors = Array.isArray(streamRow?.errors) && streamRow.errors.length > 0;
+        const streamUser = !streamErrors ? streamRow?.data?.user : null;
+        const streamLogin = cleanText(streamUser?.login).toLowerCase();
+        const streamLive = streamUser && typeof streamUser === 'object' && Object.hasOwn(streamUser, 'stream') &&
+          (!streamLogin || streamLogin === cleanText(channel).toLowerCase()) &&
+          (streamUser.stream === null || (typeof streamUser.stream === 'object' && !Array.isArray(streamUser.stream)))
+          ? Boolean(streamUser.stream) : null;
+        const liveAt = now();
         await loadDetails(now());
         await loadRewards(now());
-        if (channel) await loadSession(channel, streamRow?.data?.user?.id ? String(streamRow.data.user.id) : '', now());
+        if (channel) await loadSession(channel, streamUser?.id ? String(streamUser.id) : '', now(), streamLive, liveAt);
         else { sessionNote = null; sessionDrop = null; available = []; }
         lastError = '';
         errorStreak = 0;
@@ -10982,7 +11081,7 @@ const ExtraPotionsCore = (() => {
     function interval() {
       if (errorStreak > 0) return Math.min(POLL_INTERVAL_MS * 2 ** Math.min(errorStreak - 1, 3), POLL_MAX_BACKOFF_MS);
       const state = controller()?.snapshot() || {};
-      if (!state.target || ['select', 'find-stream', 'open-stream', 'verify', 'waiting'].includes(state.state)) return POLL_RECOVERY_INTERVAL_MS;
+      if (!state.target || state.offlineSince || ['select', 'find-stream', 'open-stream', 'verify', 'waiting'].includes(state.state)) return POLL_RECOVERY_INTERVAL_MS;
       const creditedAt = Number(store.session.get('creditedProgressAt', 0)) || 0;
       return creditedAt && now() - creditedAt > 90 * 1000 ? POLL_RECOVERY_INTERVAL_MS : POLL_INTERVAL_MS;
     }
@@ -11008,7 +11107,7 @@ const ExtraPotionsCore = (() => {
     function ingest(rows, operations = [], source = 'twitch-page-intercept') {
       if (!Array.isArray(rows) || !rows.length) return false;
       const at = now();
-      let inventoryRow = null, dashboard = null, sessionRow = null, channelCampaigns = null, rewards = false;
+      let inventoryRow = null, dashboard = null, sessionRow = null, channelCampaigns = null, streamLive = null, streamInfoSeen = false, rewards = false;
       const detailed = [];
       rows.forEach((row, index) => {
         if (!row || typeof row !== 'object') return;
@@ -11021,10 +11120,18 @@ const ExtraPotionsCore = (() => {
         if (acceptRewardCampaigns(data.rewardCampaignsAvailableToUser)) rewards = true;
         if (acceptRewardProgress(data.currentUser?.inventory?.viewerRewardDropCampaignsInProgress, at)) rewards = true;
         if (data.currentUser?.dropCurrentSession || data.currentUser?.dropCurrentSessionContext) sessionRow = row;
+        if (operations?.[index]?.name === GQL_OPS.streamInfo.name && data.user && typeof data.user === 'object' && Object.hasOwn(data.user, 'stream')) {
+          const userLogin = cleanText(data.user.login).toLowerCase(), activeLogin = cleanText(page.login()).toLowerCase();
+          if (userLogin && activeLogin && userLogin === activeLogin &&
+              (data.user.stream === null || (typeof data.user.stream === 'object' && !Array.isArray(data.user.stream)))) {
+            streamInfoSeen = true;
+            streamLive = Boolean(data.user.stream);
+          }
+        }
         const list = data.channelDropCampaigns || data.channel?.viewerDropCampaigns || data.user?.viewerDropCampaigns || data.channel?.dropCampaigns;
         if (Array.isArray(list)) channelCampaigns = list;
       });
-      if (!inventoryRow && !dashboard && !sessionRow && !channelCampaigns && !detailed.length && !rewards) return false;
+      if (!inventoryRow && !dashboard && !sessionRow && !channelCampaigns && !streamInfoSeen && !detailed.length && !rewards) return false;
       if (inventoryRow) acceptInventory(inventoryRow, at);
       if (dashboard) acceptDashboard(dashboard, at);
       for (const found of detailed) {
@@ -11032,14 +11139,14 @@ const ExtraPotionsCore = (() => {
         if (key && dropsOf(found).length) details.set(key, compactCampaigns(mergeCampaigns(known ? [known] : [], [found]))[0]);
       }
       const channel = page.login();
-      if (channel && (sessionRow || channelCampaigns)) {
+      if (channel && (sessionRow || channelCampaigns || streamInfoSeen)) {
         if (channelCampaigns) { available = parseAvailableCampaigns({ data: { channel: { viewerDropCampaigns: channelCampaigns } } }); claims?.nativeEvidence(null, available); }
         if (sessionRow) {
           const selected = target();
           sessionDrop = parseSessionDrop(sessionRow, mergeCampaigns(pool(at), available));
           if (sessionDrop && selected?.game && sessionDrop.game && !gameNamesMatch(sessionDrop.game, selected.game)) sessionDrop = null;
         }
-        controller()?.observe({ channel, available, session: sessionDrop });
+        controller()?.observe({ channel, available, session: sessionDrop, ...(streamInfoSeen ? { live: streamLive } : {}) });
       }
       log('page-gql', 'Twitch page data seen', { source, inventory: Boolean(inventoryRow), dashboard: Boolean(dashboard), session: Boolean(sessionRow), channel: Boolean(channelCampaigns), details: detailed.length });
       onChange('data');
@@ -11570,6 +11677,7 @@ const ExtraPotionsCore = (() => {
   const UPDATE_RELOAD_PENDING_TTL_MS = 2 * 60 * 1000;
   const QUIET_RELEASES = Object.freeze(['3.4.43', '3.4.30', '3.4.27', '3.4.26']);
   const RELEASE_NOTES = {
+    '4.2.4': ["Stream switching continues to the next eligible stream when the current one goes offline or raids another channel.", "Channels you open or follow yourself stay protected from switching."],
     '4.2.3': ["Campaigns whose watch-time Drops are all earned no longer stay in the campaign list.", "Removed hovertips that only repeated a setting's label.", "Built on Core 3.18.2."],
     '4.2.2': ["Drops are claimed only with the integrity token Twitch's own page uses, since Twitch refused claims made with Dropper's own token.", "A claim Twitch refused is tried again while its inventory still lists the reward as not claimed, up to three attempts."],
     '4.2.1': ["Twitch pages load faster with Dropper running: its saved campaign list is read once instead of on every check.", "The campaign count matches Twitch's All Campaigns page, and campaigns you have not started count as 0 minutes instead of untimed.", "A claimed Drop counts only once Twitch's inventory shows it claimed, and rewards for a game account that is not linked are listed as needing an account link.", "Daily reward campaigns such as the GTAVI Launch Celebration no longer keep a stream open for a reward already earned today, and a stream page loaded while the window is hidden starts playing."],
@@ -14281,7 +14389,7 @@ const ExtraPotionsCore = (() => {
   // Wiring and startup: the only file that reads browser globals. It builds every module from the real storages,
   // the userscript manager's functions and the page, then runs the heartbeat. Page reading, tabs, the data layer
   // and the menu are wired here as their modules land (milestone 3).
-  const APP_VERSION = '4.2.3';
+  const APP_VERSION = '4.2.4';
   const HEARTBEAT_MS = 5000;
   const ACTIVITY_LOG_LIMIT = 40;
   const SECRET_META = /token|cookie|auth|password|integrity|secret/i;

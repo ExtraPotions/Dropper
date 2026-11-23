@@ -1,3 +1,8 @@
+## 4.2.4 — 2026-11-22
+
+- Stream switching continues to the next eligible stream when the current one goes offline or raids another channel.
+- Channels you open or follow yourself stay protected from switching.
+
 ## 4.2.3 — 2026-11-21
 
 - Campaigns whose watch-time Drops are all earned no longer stay in the campaign list.
