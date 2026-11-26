@@ -19,7 +19,7 @@ Stream switching starts at **Follow Campaign Order** in the first eligible tab. 
 - **Keep rewards in reach:** browse open campaigns, review your history, and open your Drops inventory from the menu. Finished watch-Drop campaigns leave the campaign list.
 - **Choose your games:** follow the games you care about and ignore the rest.
 - **Reward campaigns:** a Twitch reward campaign that names a game, such as a launch celebration, appears under that game's category. A reward that repeats daily shows each day as its own step.
-- **Site theme:** choose Slate Blue Light, Dark or System in **Look → Site Theme**. System follows your device. Twitch's functional purchase, live and status colors keep their meaning.
+- **Site theme:** choose Light, Dark or System in **Look → Site Theme**. System follows your device. Twitch's functional purchase, live and status colors keep their meaning.
 
 ## Kick
 
@@ -41,4 +41,4 @@ Each section is a drawer: opening one closes the others, and the menu reopens on
 
 ## Look
 
-The menu is charcoal with purple highlights, in Light, Dark and System. System follows your device and updates when its appearance changes. Site theme uses Slate Blue with the same three choices and is independent of the menu. Legacy palette settings migrate to System. Gem themes, palette choices and custom menu opacity are no longer available.
+The menu is charcoal with purple highlights, in Light, Dark and System. System follows your device and updates when its appearance changes. Site theme uses the same charcoal with purple highlights and the same three choices and is independent of the menu. Legacy palette settings migrate to System. Gem themes, palette choices and custom menu opacity are no longer available.

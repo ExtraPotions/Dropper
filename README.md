@@ -12,7 +12,7 @@ After installing, sign in to Twitch or Kick, refresh, and open Dropper from its 
 - Browse campaigns, review reward history and open your Drops inventory.
 - Choose games and manage stream-switching preferences on Twitch.
 - On Kick, rank or ignore games, choose stream switching in Campaigns, and review reward credit and claim history.
-- Choose Light, Dark or System for the menu and for a Slate Blue Twitch theme.
+- Choose Light, Dark or System for the menu and for a charcoal Twitch theme.
 
 Twitch and Kick determine eligibility and credit. Saved choices, manual stream holds and pauses are respected; additional browsing tabs stay where you open them.
 
@@ -29,4 +29,4 @@ Twitch and Kick determine eligibility and credit. Saved choices, manual stream h
 Donations are optional. All features remain available without donating.
 
 Dropper is independent and is not affiliated with or endorsed by Twitch or Kick.
-Menus are charcoal with purple highlights in Light, Dark or System mode. Site themes use Slate Blue in the same three modes.
+Menus are charcoal with purple highlights in Light, Dark or System mode. Site themes use the same charcoal and purple in the same three modes.
